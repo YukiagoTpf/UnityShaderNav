@@ -7,7 +7,7 @@
 | # | Plan | 状态 | Spec §10 验收 | 备注 |
 |---|---|---|---|---|
 | 01 | project-scaffolding | ✅ Done（5 处偏离已记） | — | F5 manual 待人工 |
-| 02 | shaderlab-block-parser | ⏸ Next | — | |
+| 02 | shaderlab-block-parser | ✅ Done（0 偏离） | — | |
 | 03 | hlsl-symbol-collector | ⏸ Blocked by R1 spike | — | tree-sitter-hlsl 节点名需要先验证 |
 | 04 | single-file-definition | ⏸ Planned | Case 1, 8 | |
 | 05 | macro-pattern-recognizer | ⏸ Planned | Case 5, 6, 7 | |
@@ -50,6 +50,35 @@
 
 **Codex 独立 review**：尝试两次均被 Windows sandbox 拦截（`exit -1`），未拿到第二意见。session `019e4fb0-565d-7c22-92c2-94c1e3ed556b` 可用 `! codex resume <id>` 在原生 CLI 续跑。
 
+## Plan 02 实施记录
+
+**Commits**：`302756b..840c05c`（8 个 Task 各一 commit）
+
+| Task | 状态 | Commit |
+|---|---|---|
+| 1 类型定义（in shared） | ✅ | `302756b` |
+| 2 单 Pass fixture + 最小 blockScanner | ✅ | `34606dd` |
+| 3 多 Pass + HLSLINCLUDE | ✅ | `429eaff` |
+| 4 CG 兼容 + 注释/字符串干扰 | ✅ | `e96b4bc` |
+| 5 嵌套大括号 + 未闭合块 | ✅ | `bec8560` |
+| 6 structureScanner | ✅ | `87a5dce` |
+| 7 块扫描 ↔ 结构扫描 交叉验证 | ✅ | `7736a01` |
+| 8 性能 smoke | ✅ | `840c05c` |
+
+**Plan 与现实偏离**：**0 处**。subagent 全部照抄 plan markdown 的代码片段和命令。
+
+**主 agent 验证结果**（2026-05-22）：
+- `npm run build`：3 个 workspace tsc 全过
+- `npm test`：vitest 4 test files / 12 cases 全过（8 blockScanner + 2 structureScanner + 1 perf + 1 handshake）+ test-electron activation 1/1
+- 性能 smoke：1000 块合成 .shader 实测 0.34~1.11ms（threshold 50ms，~100x 余量）
+- 类型契约：`shared/src/protocol.ts` 通过 `export * from './structure';` re-export `ShaderLabBlock` / `ShaderLabStructureNode` / `StructureResult` 等。server 端 `blockScanner.ts` / `structureScanner.ts` 都 `import from '@unity-shader-nav/shared'`，符合 B3 修订意图
+
+**新建文件**：
+- `shared/src/structure.ts`
+- `server/src/parser/shaderlab/{blockScanner,structureScanner,index}.ts`
+- `tests/server/parser/shaderlab/{blockScanner,structureScanner,blockScanner.perf}.test.ts`
+- `tests/server/parser/shaderlab/fixtures/{single-pass,multi-pass,hlslinclude-with-passes,cg-legacy,mixed-comments,nested-braces,unterminated-block}.shader`
+
 ## 进行中 TODO
 
 ### 🟡 Plan 01 follow-up（不阻塞 Plan 02，但要在 Plan 13 publish 前清掉）
@@ -73,6 +102,8 @@
   3. Output 频道 "UnityShaderNav" 有 `[UnityShaderNav] server initialized`
   4. 新建 `.shader` / `.hlsl` 文件，语言模式正确识别
 
+- **Plan 02 Manual driver**（可选）：plan §Manual Verification 给的 `node /tmp/verify-plan02.mjs <fixture>` 驱动脚本未跑 —— 12 个单测已覆盖所有 fixture 路径，跑驱动只是冗余可视化，可跳过
+
 ### ⏳ 已展望的风险（来自 REVIEW，未排进 Blocker）
 
 - **R6/R7/R8**：性能并发模型 — cold start 串行 `fs.stat()`、persist 全量重写、`fullScan()` 无 bounded concurrency。Plan 07/08/09 前要补 concurrency model 段落
@@ -82,11 +113,13 @@
 
 ## 下一步
 
-1. 决策点：在 Plan 02 之前**先做 R1 spike** 还是**先跑 Plan 02**？Plan 02 是纯 ShaderLab 块扫描，不依赖 tree-sitter，可以独立完成；但 Plan 03 必须等 R1。建议：派 subagent 并行——Plan 02 实施 + R1 spike 单独跑。
-2. Plan 02 完成后接 Plan 03，按 R1 spike 拿到的真实节点名调整 collector。
+1. **R1 spike 紧迫**：Plan 03 完全依赖 tree-sitter-hlsl 的真实节点名。Plan 02 已完成、不依赖 tree-sitter，所以下一步必须做 R1 spike 才能进 Plan 03。
+2. Plan 03 完成后接 Plan 04（首次 F12 端到端，覆盖 Spec §10 Case 1/8）。
 
 ## 历史回放（review 修订）
 
 - 2026-05-22：13 个 plan 文档 + 1 份 REVIEW（10🔴 / 9🟡 / 7🟢）落库
 - 2026-05-22：10 Blocker 全部修订（commit `04e5140..406a4f5`，分 8 个 thematic commit）
-- 2026-05-22：Plan 01 实施（commit `657ec18..d76c4a8`，分 7 个 task commit）
+- 2026-05-22：Plan 01 实施（commit `657ec18..d76c4a8`，7 个 task commit）
+- 2026-05-22：CLAUDE.md + PROGRESS.md 落库（commit `618d456`）
+- 2026-05-22：Plan 02 实施（commit `302756b..840c05c`，8 个 task commit，0 偏离）
