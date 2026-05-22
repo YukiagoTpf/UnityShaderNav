@@ -396,7 +396,9 @@ git commit -m "fix(plan-01): use rimraf for cross-platform clean script"
 
 完成本计划的判定标准：
 
-1. ✅ `npm run build` 全 workspace 零错；`unity-shader-nav/client/out/server.js` 存在（VSIX 即可携 server）
+> Note: Phase 01-05 full review (2026-05-23) found that copying `server/out` was not enough for VSIX runtime closure because the copied `server.js` still required private workspace/server-only packages. The client build now runs `copy-server.mjs` and then `scripts/build.mjs`, so the packaged entry is `client/out/server/server.js` as an esbuild bundle; copied parser files remain for package-layout smoke tests, and `web-tree-sitter` is declared as the remaining client runtime dependency.
+
+1. ✅ `npm run build` 全 workspace 零错；`unity-shader-nav/client/out/server/server.js` 存在（VSIX 即可携 server）
 2. ✅ `npm test` 全过：mocha 2 case（manifest 校验 + onLanguage:shaderlab 真激活观察）+ vitest 12 case（不变）
 3. ✅ `vsce package`（从 `unity-shader-nav/client/` 下跑）生成的 .vsix 安装后能激活并 spawn server（**手动验证**，CI 暂不覆盖）
 4. ✅ `npm run clean` 在 Win cmd / PowerShell / bash 任何一种下都能跑
@@ -405,7 +407,7 @@ git commit -m "fix(plan-01): use rimraf for cross-platform clean script"
 ## Manual Verification
 
 1. 跑 `cd unity-shader-nav && npm run clean && npm run build && npm test`，全程零错
-2. 跑 `cd unity-shader-nav/client && npx vsce package --no-dependencies --no-yarn`（需要先 `npm install -D @vscode/vsce`），产物 `.vsix` 中确认含 `out/extension.js` + `out/server.js`
+2. 跑 `cd unity-shader-nav/client && npx vsce package --no-dependencies --no-yarn`（需要先 `npm install -D @vscode/vsce`），产物 `.vsix` 中确认含 `out/extension.js` + `out/server/server.js`
 3. （可选）`code --install-extension <path>.vsix` 后重启 VSCode，打开 `.shader` 文件，确认状态栏出现 `UnityShaderNav: ready`
 
 完成后回到 PROGRESS.md 更新 Plan 01 状态为"Done (after fix)"，清掉 follow-up TODO 里的 publisher 与 vitest --root 两条。

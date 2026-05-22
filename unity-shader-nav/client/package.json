@@ -89,12 +89,13 @@
     }
   },
   "scripts": {
-    "build": "tsc -p . && node ../scripts/copy-server.mjs",
+    "build": "tsc -p . && node ../scripts/copy-server.mjs && node ../scripts/build.mjs",
     "watch": "tsc -p . -w"
   },
   "dependencies": {
     "@unity-shader-nav/shared": "0.0.1",
-    "vscode-languageclient": "^9.0.1"
+    "vscode-languageclient": "^9.0.1",
+    "web-tree-sitter": "^0.22.6"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",

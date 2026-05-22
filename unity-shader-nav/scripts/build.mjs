@@ -1,5 +1,9 @@
 import { cp } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
+
+const monorepoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 const common = {
   bundle: true,
@@ -10,8 +14,20 @@ const common = {
   format: 'cjs',
 };
 
-await build({ ...common, entryPoints: ['client/src/extension.ts'], outfile: 'client/out/extension.js' });
-await build({ ...common, entryPoints: ['server/src/server.ts'],    outfile: 'client/out/server/server.js' });
-await cp('server/grammars', 'client/out/grammars', { recursive: true, force: true });
+await build({
+  ...common,
+  entryPoints: [resolve(monorepoRoot, 'client/src/extension.ts')],
+  outfile: resolve(monorepoRoot, 'client/out/extension.js'),
+});
+await build({
+  ...common,
+  entryPoints: [resolve(monorepoRoot, 'server/src/server.ts')],
+  outfile: resolve(monorepoRoot, 'client/out/server/server.js'),
+});
+await cp(
+  resolve(monorepoRoot, 'server/grammars'),
+  resolve(monorepoRoot, 'client/out/grammars'),
+  { recursive: true, force: true },
+);
 
 console.log('bundle done');
