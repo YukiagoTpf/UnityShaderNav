@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "com.example.urp": {
+      "version": "file:com.example.urp",
+      "source": "embedded"
+    }
+  }
+}
