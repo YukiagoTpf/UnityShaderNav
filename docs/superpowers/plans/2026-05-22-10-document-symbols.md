@@ -40,39 +40,26 @@ tests/integration/client/document-symbols.test.ts
 
 - [ ] **Step 1: shared types**
 
+复用 Plan 02 在 `shared/src/structure.ts` 里定义的递归 `StructureResult` —— 不要再造一个手写分层的 Lite 版本（避免 Plan 02 的 `ShaderLabStructureNode` ↔ Plan 10 Lite 之间靠 `as any` 强转，曾在 review 中标为 B3 Blocker）。
+
 ```typescript
 // shared/src/symbols.ts 内补充：
-export interface ShaderLabStructureLite {
-  shaders: Array<{
-    name?: string;
-    headerLine: number;
-    closeLine: number;
-    children: Array<{
-      kind: 'subshader' | 'pass';
-      name?: string;
-      headerLine: number;
-      closeLine: number;
-      children: Array<{ kind: 'pass'; name?: string; headerLine: number; closeLine: number }>;
-    }>;
-  }>;
-}
+import type { StructureResult } from './structure';
 
 export interface FileIndex {
   uri: string;
   symbols: SymbolEntry[];
   references: ReferenceEntry[];
-  structure?: ShaderLabStructureLite;
+  /** Only populated for .shader files (set by fileIndexer). */
+  structure?: StructureResult;
 }
 ```
-
-> 用一个轻量"接口序列化版"，避免引 server-side `ShaderLabStructureNode` 进 shared。
 
 - [ ] **Step 2: fileIndexer 填充**
 
 ```typescript
-// 在 .shader 分支末尾：
-const structure = scanStructure(text);
-merged.structure = structure as any; // 字段名一致即可
+// 在 .shader 分支末尾（无 as any 强转）：
+merged.structure = scanStructure(text);
 ```
 
 - [ ] **Step 3: 单测**
@@ -176,7 +163,8 @@ import {
 import type {
   FileIndex,
   Range,
-  ShaderLabStructureLite,
+  ShaderLabStructureNode,
+  StructureResult,
   SymbolEntry,
 } from '@unity-shader-nav/shared';
 
