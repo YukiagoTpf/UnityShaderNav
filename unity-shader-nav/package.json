@@ -3,9 +3,9 @@
   "private": true,
   "version": "0.0.1",
   "workspaces": [
-    "client",
+    "shared",
     "server",
-    "shared"
+    "client"
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",

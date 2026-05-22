@@ -10,6 +10,6 @@ const common = {
 };
 
 await build({ ...common, entryPoints: ['client/src/extension.ts'], outfile: 'client/out/extension.js' });
-await build({ ...common, entryPoints: ['server/src/server.ts'],    outfile: 'server/out/server.js'    });
+await build({ ...common, entryPoints: ['server/src/server.ts'],    outfile: 'client/out/server/server.js' });
 
 console.log('bundle done');

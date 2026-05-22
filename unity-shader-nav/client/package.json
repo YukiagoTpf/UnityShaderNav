@@ -45,7 +45,7 @@
     ]
   },
   "scripts": {
-    "build": "tsc -p .",
+    "build": "tsc -p . && node ../scripts/copy-server.mjs",
     "watch": "tsc -p . -w"
   },
   "dependencies": {

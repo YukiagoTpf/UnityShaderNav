@@ -8,9 +8,7 @@ import {
 } from 'vscode-languageclient/node';
 
 export function createLanguageClient(context: ExtensionContext): LanguageClient {
-  const serverModule = context.asAbsolutePath(
-    path.join('..', 'server', 'out', 'server.js'),
-  );
+  const serverModule = context.asAbsolutePath(path.join('out', 'server', 'server.js'));
 
   const serverOptions: ServerOptions = {
     run:   { module: serverModule, transport: TransportKind.ipc },

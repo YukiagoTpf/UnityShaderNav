@@ -1,6 +1,0 @@
-**/*.ts
-**/tsconfig*.json
-tests/**
-.vscode/**
-scripts/**
-node_modules/**/test/**

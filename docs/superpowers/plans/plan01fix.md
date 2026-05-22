@@ -68,26 +68,26 @@ unity-shader-nav/
 
 - [ ] **Step 2: 写 `scripts/copy-server.mjs`**
 
+> **Note (实施时发现)**：server/out 不止 `server.js` 一个文件 —— 还包括 `connection.js` 和 `parser/` 子树（Plan 02 起加入）。只 copy 单文件会让 server 启动时 `require('./connection')` 找不到目标。改成 copy 整个 `server/out/` 树到 `client/out/server/` 子目录，client.ts 用 `out/server/server.js` 解析。esbuild build.mjs 输出位置也对齐到这个子目录。
+
 ```javascript
-// Copy the tsc-built server bundle (and its sourcemap) into client/out so a
-// packaged VSIX rooted at client/ can find it via context.asAbsolutePath('out/server.js').
-import { copyFile, mkdir, access } from 'node:fs/promises';
+// Copy the tsc-built server output tree into client/out/server so a packaged
+// VSIX rooted at client/ can find the LSP entry via
+// context.asAbsolutePath('out/server/server.js'). Mirrors the layout that
+// scripts/build.mjs (esbuild) produces.
+import { cp, access } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const monorepoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const from = resolve(monorepoRoot, 'server/out/server.js');
-const fromMap = resolve(monorepoRoot, 'server/out/server.js.map');
-const to = resolve(monorepoRoot, 'client/out/server.js');
-const toMap = resolve(monorepoRoot, 'client/out/server.js.map');
+const from = resolve(monorepoRoot, 'server/out');
+const to = resolve(monorepoRoot, 'client/out/server');
 
-try { await access(from); }
-catch { throw new Error(`copy-server: missing ${from} — did the server workspace build first?`); }
+try { await access(resolve(from, 'server.js')); }
+catch { throw new Error(`copy-server: missing ${from}/server.js — did the server workspace build first?`); }
 
-await mkdir(dirname(to), { recursive: true });
-await copyFile(from, to);
-try { await copyFile(fromMap, toMap); } catch { /* sourcemap optional */ }
-console.log(`[copy-server] ${from} → ${to}`);
+await cp(from, to, { recursive: true, force: true });
+console.log(`[copy-server] ${from} -> ${to}`);
 ```
 
 - [ ] **Step 3: client 的 build 脚本接 copy**
@@ -96,12 +96,12 @@ console.log(`[copy-server] ${from} → ${to}`);
 
 - [ ] **Step 4: 调整 `scripts/build.mjs`（esbuild 路径）**
 
-`server` entry 的 outfile 从 `server/out/server.js` 改成 `client/out/server.js`。esbuild 路径与 tsc+copy 路径就一致了。
+`server` entry 的 outfile 从 `server/out/server.js` 改成 `client/out/server/server.js`。esbuild bundle 路径与 tsc+copy 子目录一致。
 
 - [ ] **Step 5: 改 `client/src/client.ts` 的服务端模块解析**
 
 ```typescript
-const serverModule = context.asAbsolutePath(path.join('out', 'server.js'));
+const serverModule = context.asAbsolutePath(path.join('out', 'server', 'server.js'));
 ```
 
 - [ ] **Step 6: 把 `.vscodeignore` 搬到 `client/`**
