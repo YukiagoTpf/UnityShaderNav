@@ -25,10 +25,10 @@
 新建：
 ```
 server/src/index/chainLookup.ts
-tests/server/index/chainLookup.test.ts
+server/tests/index/chainLookup.test.ts
 tests/integration/client/chain-lookup.test.ts
 
-tests/server/index/fixtures/chain/
+server/tests/index/fixtures/chain/
 ├── L1-param.hlsl
 ├── L2-local.hlsl
 ├── L3a-global.hlsl
@@ -46,7 +46,7 @@ tests/server/index/fixtures/chain/
 
 **Files:**
 - Modify: `server/src/index/wordAt.ts`
-- Modify: `tests/server/index/wordAt.test.ts`
+- Modify: `server/tests/index/wordAt.test.ts`
 
 - [ ] **Step 1: 增 API**
 
@@ -88,7 +88,7 @@ export function memberAccessAt(text: string, pos: Position): MemberAccess | null
 - [ ] **Step 2: 测试**
 
 ```typescript
-import { memberAccessAt } from '../../../server/src/index/wordAt';
+import { memberAccessAt } from '../../src/index/wordAt';
 
 describe('memberAccessAt', () => {
   it('returns member + receiver for "a.b"', () => {
@@ -107,7 +107,7 @@ describe('memberAccessAt', () => {
 - [ ] **Step 3: Commit**
 
 ```bash
-git add server/src/index/wordAt.ts tests/server/index/wordAt.test.ts
+git add server/src/index/wordAt.ts server/tests/index/wordAt.test.ts
 git commit -m "feat(plan-11): memberAccessAt parser"
 ```
 
@@ -117,7 +117,7 @@ git commit -m "feat(plan-11): memberAccessAt parser"
 
 **Files:**
 - Create: `server/src/index/chainLookup.ts`
-- Create: `tests/server/index/chainLookup.test.ts`
+- Create: `server/tests/index/chainLookup.test.ts`
 
 - [ ] **Step 1: 实现 + tests 同步**
 
@@ -205,8 +205,8 @@ export function resolveMember(
 
 ```typescript
 import { describe, it, expect } from 'vitest';
-import { GlobalSymbolIndex } from '../../../server/src/index/globalIndex';
-import { resolveMember } from '../../../server/src/index/chainLookup';
+import { GlobalSymbolIndex } from '../../src/index/globalIndex';
+import { resolveMember } from '../../src/index/chainLookup';
 import type { FileIndex } from '@unity-shader-nav/shared';
 
 function makeIndex(): { idx: FileIndex; global: GlobalSymbolIndex } {
@@ -262,8 +262,8 @@ describe('resolveMember: L3a global', () => {
 - [ ] **Step 3: 跑测 + Commit**
 
 ```bash
-npx vitest run tests/server/index/chainLookup.test.ts
-git add server/src/index/chainLookup.ts tests/server/index/chainLookup.test.ts
+npx vitest run server/tests/index/chainLookup.test.ts
+git add server/src/index/chainLookup.ts server/tests/index/chainLookup.test.ts
 git commit -m "feat(plan-11): chain lookup L1-L3a"
 ```
 

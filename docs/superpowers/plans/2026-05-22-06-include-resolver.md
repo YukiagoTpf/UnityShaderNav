@@ -29,7 +29,7 @@ server/src/parser/include/
 ├── lineScanner.ts          # 从文本中提取 #include 行的位置 + 路径字符串
 └── lineScanner.test.ts 入 tests/
 
-tests/server/include/
+server/tests/include/
 ├── resolver.test.ts
 ├── lineScanner.test.ts
 └── fixtures/
@@ -62,13 +62,13 @@ tests/integration/client/
 
 **Files:**
 - Create: `server/src/parser/include/lineScanner.ts`
-- Create: `tests/server/parser/include/lineScanner.test.ts`
+- Create: `server/tests/parser/include/lineScanner.test.ts`
 
 - [ ] **Step 1: 类型 + 测试**
 
 ```typescript
 import { describe, it, expect } from 'vitest';
-import { scanIncludes } from '../../../../server/src/parser/include/lineScanner';
+import { scanIncludes } from '../../../src/parser/include/lineScanner';
 
 describe('scanIncludes', () => {
   it('extracts #include directives with quoted path and range', () => {
@@ -139,8 +139,8 @@ export function scanIncludes(text: string): IncludeDirective[] {
 - [ ] **Step 3: 跑测试 + Commit**
 
 ```bash
-npx vitest run tests/server/parser/include/lineScanner.test.ts
-git add server/src/parser/include/lineScanner.ts tests/server/parser/include/lineScanner.test.ts
+npx vitest run server/tests/parser/include/lineScanner.test.ts
+git add server/src/parser/include/lineScanner.ts server/tests/parser/include/lineScanner.test.ts
 git commit -m "feat(plan-06): scan #include directives with path ranges"
 ```
 
@@ -199,16 +199,16 @@ git commit -m "feat(plan-06): include resolver types"
 
 ## Task 3: 准备 fixture 项目
 
-**Files:** 见 file structure 中的 `tests/server/include/fixtures/projectA/...`
+**Files:** 见 file structure 中的 `server/tests/include/fixtures/projectA/...`
 
 - [ ] **Step 1: 创建目录与文件**
 
 ```bash
-mkdir -p tests/server/include/fixtures/projectA/Assets/Shaders/Inner
-mkdir -p tests/server/include/fixtures/projectA/Assets/CustomCG
-mkdir -p tests/server/include/fixtures/projectA/ProjectSettings
-mkdir -p tests/server/include/fixtures/projectA/Packages
-touch tests/server/include/fixtures/projectA/{ProjectSettings,Packages}/.gitkeep
+mkdir -p server/tests/include/fixtures/projectA/Assets/Shaders/Inner
+mkdir -p server/tests/include/fixtures/projectA/Assets/CustomCG
+mkdir -p server/tests/include/fixtures/projectA/ProjectSettings
+mkdir -p server/tests/include/fixtures/projectA/Packages
+touch server/tests/include/fixtures/projectA/{ProjectSettings,Packages}/.gitkeep
 ```
 
 - [ ] **Step 2: 写文件**
@@ -244,7 +244,7 @@ float MyHelper() { return 0; }
 - [ ] **Step 3: Commit**
 
 ```bash
-git add tests/server/include/fixtures/projectA
+git add server/tests/include/fixtures/projectA
 git commit -m "test(plan-06): include resolver fixture project"
 ```
 
@@ -254,7 +254,7 @@ git commit -m "test(plan-06): include resolver fixture project"
 
 **Files:**
 - Create: `server/src/include/resolver.ts`
-- Create: `tests/server/include/resolver.test.ts`
+- Create: `server/tests/include/resolver.test.ts`
 
 - [ ] **Step 1: 失败测试**
 
@@ -262,8 +262,8 @@ git commit -m "test(plan-06): include resolver fixture project"
 import { describe, it, expect } from 'vitest';
 import { resolve as pathResolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { resolveInclude } from '../../../server/src/include/resolver';
-import type { IncludeContext } from '../../../server/src/include/types';
+import { resolveInclude } from '../../src/include/resolver';
+import type { IncludeContext } from '../../src/include/types';
 
 const fixtureRoot = pathResolve(__dirname, 'fixtures/projectA');
 
@@ -374,8 +374,8 @@ export { pathToFileURL };
 - [ ] **Step 3: 跑测试，PASS。Commit**
 
 ```bash
-npx vitest run tests/server/include/resolver.test.ts
-git add server/src/include/resolver.ts tests/server/include/resolver.test.ts
+npx vitest run server/tests/include/resolver.test.ts
+git add server/src/include/resolver.ts server/tests/include/resolver.test.ts
 git commit -m "feat(plan-06): include resolver relative-path search"
 ```
 
@@ -384,7 +384,7 @@ git commit -m "feat(plan-06): include resolver relative-path search"
 ## Task 5: resolver — Assets fallback + includeDirectories
 
 **Files:**
-- Modify: `tests/server/include/resolver.test.ts`
+- Modify: `server/tests/include/resolver.test.ts`
 
 - [ ] **Step 1: 追加测试**
 
@@ -421,13 +421,13 @@ describe('resolveInclude: includeDirectories', () => {
 - [ ] **Step 2: 跑测试，应该已经 PASS（Task 4 实现已包含 fallback 链）**
 
 ```bash
-npx vitest run tests/server/include/resolver.test.ts
+npx vitest run server/tests/include/resolver.test.ts
 ```
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add tests/server/include/resolver.test.ts
+git add server/tests/include/resolver.test.ts
 git commit -m "test(plan-06): resolver Assets fallback + includeDirectories"
 ```
 
@@ -436,10 +436,10 @@ git commit -m "test(plan-06): resolver Assets fallback + includeDirectories"
 ## Task 6: 大小写敏感性 + fallback warning
 
 **Files:**
-- Create: `tests/server/include/fixtures/caseSensitivity/Assets/Shaders/Main.hlsl`
-- Create: `tests/server/include/fixtures/caseSensitivity/Assets/Shaders/helper.hlsl`
-- Create: `tests/server/include/fixtures/caseSensitivity/ProjectSettings/.gitkeep`
-- Modify: `tests/server/include/resolver.test.ts`
+- Create: `server/tests/include/fixtures/caseSensitivity/Assets/Shaders/Main.hlsl`
+- Create: `server/tests/include/fixtures/caseSensitivity/Assets/Shaders/helper.hlsl`
+- Create: `server/tests/include/fixtures/caseSensitivity/ProjectSettings/.gitkeep`
+- Modify: `server/tests/include/resolver.test.ts`
 
 - [ ] **Step 1: 建 fixture**
 
@@ -508,7 +508,7 @@ for (const c of candidates) {
 - [ ] **Step 5: Commit**
 
 ```bash
-git add server/src/include/resolver.ts tests/server/include
+git add server/src/include/resolver.ts server/tests/include
 git commit -m "feat(plan-06): case-insensitive fallback with warning flag"
 ```
 
@@ -518,14 +518,14 @@ git commit -m "feat(plan-06): case-insensitive fallback with warning flag"
 
 **Files:**
 - Create: `server/src/workspace/detectUnityRoot.ts`
-- Create: `tests/server/workspace/detectUnityRoot.test.ts`
+- Create: `server/tests/workspace/detectUnityRoot.test.ts`
 
 - [ ] **Step 1: 测试**
 
 ```typescript
 import { describe, it, expect } from 'vitest';
 import { resolve, join } from 'node:path';
-import { detectUnityRoot } from '../../../server/src/workspace/detectUnityRoot';
+import { detectUnityRoot } from '../../src/workspace/detectUnityRoot';
 
 const fixtureA = resolve(__dirname, '../include/fixtures/projectA');
 
@@ -574,7 +574,7 @@ export async function detectUnityRoot(startDir: string): Promise<string | null> 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add server/src/workspace tests/server/workspace
+git add server/src/workspace server/tests/workspace
 git commit -m "feat(plan-06): Unity project root autodetect"
 ```
 
@@ -618,7 +618,7 @@ for (const inc of incs) {
 
 - [ ] **Step 3: 单测**
 
-`tests/server/parser/hlsl/fileIndexer.test.ts` 追加：
+`server/tests/parser/hlsl/fileIndexer.test.ts` 追加：
 
 ```typescript
 it('records #include directives as references with context=include', async () => {
@@ -632,7 +632,7 @@ it('records #include directives as references with context=include', async () =>
 - [ ] **Step 4: 跑测 + Commit**
 
 ```bash
-git add shared/src/symbols.ts server/src/parser/hlsl/fileIndexer.ts tests/server/parser/hlsl/fileIndexer.test.ts
+git add shared/src/symbols.ts server/src/parser/hlsl/fileIndexer.ts server/tests/parser/hlsl/fileIndexer.test.ts
 git commit -m "feat(plan-06): record #include directives as references"
 ```
 
@@ -643,7 +643,7 @@ git commit -m "feat(plan-06): record #include directives as references"
 **Files:**
 - Modify: `server/src/handlers/definition.ts`
 - Modify: `server/src/server.ts`（注入 IncludeContext）
-- Create: `tests/server/handlers/definition-include.test.ts`
+- Create: `server/tests/handlers/definition-include.test.ts`
 
 - [ ] **Step 1: 修改 definition handler**
 
@@ -735,7 +735,7 @@ registerDefinitionHandler(connection, documents, store, () => includeCtx);
 
 ```typescript
 import { describe, it, expect } from 'vitest';
-import { resolveInclude } from '../../server/src/include';
+import { resolveInclude } from '../src/include';
 import { resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -755,7 +755,7 @@ describe('definition include integration (in-process)', () => {
 - [ ] **Step 4: Commit**
 
 ```bash
-git add server/src/handlers/definition.ts server/src/server.ts tests/server/handlers
+git add server/src/handlers/definition.ts server/src/server.ts server/tests/handlers
 git commit -m "feat(plan-06): F12 on #include opens target file"
 ```
 
@@ -765,7 +765,7 @@ git commit -m "feat(plan-06): F12 on #include opens target file"
 
 **Files:**
 - Create: `tests/integration/client/include-jump.test.ts`
-- Use fixtures from `tests/server/include/fixtures/projectA/`
+- Use fixtures from `server/tests/include/fixtures/projectA/`
 
 - [ ] **Step 1: 测试**
 
@@ -824,7 +824,7 @@ git commit -m "test(plan-06): e2e F12 on #include directive"
 
 ## Manual Verification
 
-1. F5 → 打开 `tests/server/include/fixtures/projectA`
+1. F5 → 打开 `server/tests/include/fixtures/projectA`
 2. 打开 `Assets/Shaders/Main.shader`
 3. 光标放在 `#include "Common.hlsl"` 的 `Common` 上 → F12 → 应跳到 `Common.hlsl`（光标定位到第 0 行）
 4. 光标放在 `#include "Inner/Lighting.hlsl"` → F12 → 跳到 `Inner/Lighting.hlsl`

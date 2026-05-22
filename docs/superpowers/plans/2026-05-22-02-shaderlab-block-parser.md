@@ -27,7 +27,7 @@ unity-shader-nav/server/src/parser/
 │   └── index.ts               # 公开 API 出口（types 从 shared 取）
 └── (parser/ 目录在本计划首次创建)
 
-unity-shader-nav/tests/server/parser/shaderlab/
+unity-shader-nav/server/tests/parser/shaderlab/
 ├── blockScanner.test.ts
 ├── structureScanner.test.ts
 └── fixtures/
@@ -122,8 +122,8 @@ git commit -m "feat(plan-02): shaderlab parser types in shared"
 ## Task 2: 单 Pass fixture + 最小 blockScanner
 
 **Files:**
-- Create: `tests/server/parser/shaderlab/fixtures/single-pass.shader`
-- Create: `tests/server/parser/shaderlab/blockScanner.test.ts`
+- Create: `server/tests/parser/shaderlab/fixtures/single-pass.shader`
+- Create: `server/tests/parser/shaderlab/blockScanner.test.ts`
 - Create: `server/src/parser/shaderlab/blockScanner.ts`
 - Create: `server/src/parser/shaderlab/index.ts`
 
@@ -153,7 +153,7 @@ Shader "Test/Single" {
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { scanBlocks } from '../../../../server/src/parser/shaderlab/blockScanner';
+import { scanBlocks } from '../../../src/parser/shaderlab/blockScanner';
 
 const fixture = (name: string): string =>
   readFileSync(join(__dirname, 'fixtures', name), 'utf8');
@@ -178,7 +178,7 @@ describe('scanBlocks: single-pass', () => {
 - [ ] **Step 3: 跑挂**
 
 ```bash
-npx vitest run tests/server/parser/shaderlab/blockScanner.test.ts
+npx vitest run server/tests/parser/shaderlab/blockScanner.test.ts
 ```
 
 预期：FAIL，找不到 `scanBlocks`。
@@ -265,7 +265,7 @@ export { scanBlocks } from './blockScanner';
 - [ ] **Step 6: 跑过**
 
 ```bash
-npx vitest run tests/server/parser/shaderlab/blockScanner.test.ts
+npx vitest run server/tests/parser/shaderlab/blockScanner.test.ts
 ```
 
 预期：PASS。
@@ -273,7 +273,7 @@ npx vitest run tests/server/parser/shaderlab/blockScanner.test.ts
 - [ ] **Step 7: Commit**
 
 ```bash
-git add server/src/parser/shaderlab/{blockScanner,index}.ts tests/server/parser/shaderlab/{fixtures/single-pass.shader,blockScanner.test.ts}
+git add server/src/parser/shaderlab/{blockScanner,index}.ts server/tests/parser/shaderlab/{fixtures/single-pass.shader,blockScanner.test.ts}
 git commit -m "feat(plan-02): block scanner minimal HLSLPROGRAM detection"
 ```
 
@@ -282,9 +282,9 @@ git commit -m "feat(plan-02): block scanner minimal HLSLPROGRAM detection"
 ## Task 3: 多 Pass + HLSLINCLUDE
 
 **Files:**
-- Create: `tests/server/parser/shaderlab/fixtures/multi-pass.shader`
-- Create: `tests/server/parser/shaderlab/fixtures/hlslinclude-with-passes.shader`
-- Modify: `tests/server/parser/shaderlab/blockScanner.test.ts`
+- Create: `server/tests/parser/shaderlab/fixtures/multi-pass.shader`
+- Create: `server/tests/parser/shaderlab/fixtures/hlslinclude-with-passes.shader`
+- Modify: `server/tests/parser/shaderlab/blockScanner.test.ts`
 
 - [ ] **Step 1: 写 `multi-pass.shader`**
 
@@ -354,7 +354,7 @@ describe('scanBlocks: HLSLINCLUDE + Pass', () => {
 - [ ] **Step 4: 跑测试**
 
 ```bash
-npx vitest run tests/server/parser/shaderlab/blockScanner.test.ts
+npx vitest run server/tests/parser/shaderlab/blockScanner.test.ts
 ```
 
 预期：全部 PASS（Task 2 的实现已经支持多块）。如果挂，修 `scanBlocks`。
@@ -362,7 +362,7 @@ npx vitest run tests/server/parser/shaderlab/blockScanner.test.ts
 - [ ] **Step 5: Commit**
 
 ```bash
-git add tests/server/parser/shaderlab/{fixtures,blockScanner.test.ts}
+git add server/tests/parser/shaderlab/{fixtures,blockScanner.test.ts}
 git commit -m "test(plan-02): multi-pass + HLSLINCLUDE fixtures"
 ```
 
@@ -371,9 +371,9 @@ git commit -m "test(plan-02): multi-pass + HLSLINCLUDE fixtures"
 ## Task 4: CG 兼容 + 注释/字符串干扰
 
 **Files:**
-- Create: `tests/server/parser/shaderlab/fixtures/cg-legacy.shader`
-- Create: `tests/server/parser/shaderlab/fixtures/mixed-comments.shader`
-- Modify: `tests/server/parser/shaderlab/blockScanner.test.ts`
+- Create: `server/tests/parser/shaderlab/fixtures/cg-legacy.shader`
+- Create: `server/tests/parser/shaderlab/fixtures/mixed-comments.shader`
+- Modify: `server/tests/parser/shaderlab/blockScanner.test.ts`
 - Modify: `server/src/parser/shaderlab/blockScanner.ts`（如需）
 
 - [ ] **Step 1: 写 `cg-legacy.shader`**
@@ -435,7 +435,7 @@ describe('scanBlocks: comments do not trigger', () => {
 - [ ] **Step 4: 跑测试**
 
 ```bash
-npx vitest run tests/server/parser/shaderlab/blockScanner.test.ts
+npx vitest run server/tests/parser/shaderlab/blockScanner.test.ts
 ```
 
 `mixed-comments` 应该已经过（`trimDirective` 已经剥 `//`）。`cg-legacy` 也应该过。如果挂，调整实现。
@@ -443,7 +443,7 @@ npx vitest run tests/server/parser/shaderlab/blockScanner.test.ts
 - [ ] **Step 5: Commit**
 
 ```bash
-git add tests/server/parser/shaderlab/{fixtures,blockScanner.test.ts}
+git add server/tests/parser/shaderlab/{fixtures,blockScanner.test.ts}
 git commit -m "test(plan-02): CG legacy + comment-disambiguation fixtures"
 ```
 
@@ -452,9 +452,9 @@ git commit -m "test(plan-02): CG legacy + comment-disambiguation fixtures"
 ## Task 5: 嵌套大括号 + 未闭合块
 
 **Files:**
-- Create: `tests/server/parser/shaderlab/fixtures/nested-braces.shader`
-- Create: `tests/server/parser/shaderlab/fixtures/unterminated-block.shader`
-- Modify: `tests/server/parser/shaderlab/blockScanner.test.ts`
+- Create: `server/tests/parser/shaderlab/fixtures/nested-braces.shader`
+- Create: `server/tests/parser/shaderlab/fixtures/unterminated-block.shader`
+- Modify: `server/tests/parser/shaderlab/blockScanner.test.ts`
 
 - [ ] **Step 1: 写 `nested-braces.shader`**（HLSL 里很多花括号，不能干扰）
 
@@ -514,7 +514,7 @@ describe('scanBlocks: unterminated block', () => {
 - [ ] **Step 4: 跑测试**
 
 ```bash
-npx vitest run tests/server/parser/shaderlab/blockScanner.test.ts
+npx vitest run server/tests/parser/shaderlab/blockScanner.test.ts
 ```
 
 预期：全 PASS。
@@ -522,7 +522,7 @@ npx vitest run tests/server/parser/shaderlab/blockScanner.test.ts
 - [ ] **Step 5: Commit**
 
 ```bash
-git add tests/server/parser/shaderlab/{fixtures,blockScanner.test.ts}
+git add server/tests/parser/shaderlab/{fixtures,blockScanner.test.ts}
 git commit -m "test(plan-02): nested braces + unterminated block"
 ```
 
@@ -531,7 +531,7 @@ git commit -m "test(plan-02): nested braces + unterminated block"
 ## Task 6: structureScanner — Shader / SubShader / Pass 嵌套
 
 **Files:**
-- Create: `tests/server/parser/shaderlab/structureScanner.test.ts`
+- Create: `server/tests/parser/shaderlab/structureScanner.test.ts`
 - Create: `server/src/parser/shaderlab/structureScanner.ts`
 - Modify: `server/src/parser/shaderlab/index.ts`
 
@@ -541,7 +541,7 @@ git commit -m "test(plan-02): nested braces + unterminated block"
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { scanStructure } from '../../../../server/src/parser/shaderlab/structureScanner';
+import { scanStructure } from '../../../src/parser/shaderlab/structureScanner';
 
 const fixture = (name: string): string =>
   readFileSync(join(__dirname, 'fixtures', name), 'utf8');
@@ -576,7 +576,7 @@ describe('scanStructure: multi-pass with names', () => {
 - [ ] **Step 2: 跑挂**
 
 ```bash
-npx vitest run tests/server/parser/shaderlab/structureScanner.test.ts
+npx vitest run server/tests/parser/shaderlab/structureScanner.test.ts
 ```
 
 预期：FAIL。
@@ -664,7 +664,7 @@ export { scanStructure } from './structureScanner';
 - [ ] **Step 5: 跑测试**
 
 ```bash
-npx vitest run tests/server/parser/shaderlab/structureScanner.test.ts
+npx vitest run server/tests/parser/shaderlab/structureScanner.test.ts
 ```
 
 预期：PASS。
@@ -672,7 +672,7 @@ npx vitest run tests/server/parser/shaderlab/structureScanner.test.ts
 - [ ] **Step 6: Commit**
 
 ```bash
-git add server/src/parser/shaderlab/{structureScanner.ts,index.ts} tests/server/parser/shaderlab/structureScanner.test.ts
+git add server/src/parser/shaderlab/{structureScanner.ts,index.ts} server/tests/parser/shaderlab/structureScanner.test.ts
 git commit -m "feat(plan-02): scan ShaderLab Shader/SubShader/Pass tree"
 ```
 
@@ -681,12 +681,12 @@ git commit -m "feat(plan-02): scan ShaderLab Shader/SubShader/Pass tree"
 ## Task 7: 与块扫描器交叉验证
 
 **Files:**
-- Modify: `tests/server/parser/shaderlab/blockScanner.test.ts`
+- Modify: `server/tests/parser/shaderlab/blockScanner.test.ts`
 
 - [ ] **Step 1: 追加一组组合测试**——确保 blockScanner 输出和 structureScanner 不冲突
 
 ```typescript
-import { scanStructure } from '../../../../server/src/parser/shaderlab/structureScanner';
+import { scanStructure } from '../../../src/parser/shaderlab/structureScanner';
 
 describe('scan integration: blocks fall inside their owning Pass', () => {
   it('every HLSLPROGRAM block sits inside some Pass node', () => {
@@ -708,7 +708,7 @@ describe('scan integration: blocks fall inside their owning Pass', () => {
 - [ ] **Step 2: 跑测试**
 
 ```bash
-npx vitest run tests/server/parser/shaderlab/blockScanner.test.ts
+npx vitest run server/tests/parser/shaderlab/blockScanner.test.ts
 ```
 
 预期：PASS。如果挂，多半是 structureScanner 的花括号深度算错；修。
@@ -716,7 +716,7 @@ npx vitest run tests/server/parser/shaderlab/blockScanner.test.ts
 - [ ] **Step 3: Commit**
 
 ```bash
-git add tests/server/parser/shaderlab/blockScanner.test.ts
+git add server/tests/parser/shaderlab/blockScanner.test.ts
 git commit -m "test(plan-02): cross-check blocks belong to Pass nodes"
 ```
 
@@ -725,13 +725,13 @@ git commit -m "test(plan-02): cross-check blocks belong to Pass nodes"
 ## Task 8: 性能验证（防回归）
 
 **Files:**
-- Create: `tests/server/parser/shaderlab/blockScanner.perf.test.ts`
+- Create: `server/tests/parser/shaderlab/blockScanner.perf.test.ts`
 
 - [ ] **Step 1: 写性能 smoke**
 
 ```typescript
 import { describe, it, expect } from 'vitest';
-import { scanBlocks } from '../../../../server/src/parser/shaderlab/blockScanner';
+import { scanBlocks } from '../../../src/parser/shaderlab/blockScanner';
 
 describe('blockScanner perf smoke', () => {
   it('scans 10000-line synthetic shader in < 50ms', () => {
@@ -759,7 +759,7 @@ describe('blockScanner perf smoke', () => {
 - [ ] **Step 2: 跑测试**
 
 ```bash
-npx vitest run tests/server/parser/shaderlab/blockScanner.perf.test.ts
+npx vitest run server/tests/parser/shaderlab/blockScanner.perf.test.ts
 ```
 
 预期：PASS。若挂，可调阈值（dev 机性能差异允许 50-100ms）。
@@ -767,7 +767,7 @@ npx vitest run tests/server/parser/shaderlab/blockScanner.perf.test.ts
 - [ ] **Step 3: Commit**
 
 ```bash
-git add tests/server/parser/shaderlab/blockScanner.perf.test.ts
+git add server/tests/parser/shaderlab/blockScanner.perf.test.ts
 git commit -m "test(plan-02): perf smoke for blockScanner"
 ```
 
@@ -796,7 +796,7 @@ console.log('blocks:', scanBlocks(text));
 console.log('structure:', JSON.stringify(scanStructure(text), null, 2));
 EOF
 
-node /tmp/verify-plan02.mjs tests/server/parser/shaderlab/fixtures/multi-pass.shader
+node /tmp/verify-plan02.mjs server/tests/parser/shaderlab/fixtures/multi-pass.shader
 ```
 
 预期：终端打出 2 个 block 和一棵 shader → subshader → 2× pass 的结构树，每个 pass 各带名字。

@@ -23,7 +23,7 @@ server/src/parser/preproc/
 ├── scanDefines.ts
 └── scanDefines.test.ts 入 tests/
 
-tests/server/parser/preproc/
+server/tests/parser/preproc/
 ├── scanDefines.test.ts
 └── fixtures/
     └── defines.hlsl
@@ -41,8 +41,8 @@ tests/integration/client/
 
 **Files:**
 - Create: `server/src/parser/preproc/scanDefines.ts`
-- Create: `tests/server/parser/preproc/scanDefines.test.ts`
-- Create: `tests/server/parser/preproc/fixtures/defines.hlsl`
+- Create: `server/tests/parser/preproc/scanDefines.test.ts`
+- Create: `server/tests/parser/preproc/fixtures/defines.hlsl`
 
 - [ ] **Step 1: fixture**
 
@@ -60,7 +60,7 @@ tests/integration/client/
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { scanDefines } from '../../../../server/src/parser/preproc/scanDefines';
+import { scanDefines } from '../../../src/parser/preproc/scanDefines';
 
 const fixture = (n: string) => readFileSync(join(__dirname, 'fixtures', n), 'utf8');
 
@@ -124,8 +124,8 @@ export function scanDefines(text: string): DefineDirective[] {
 - [ ] **Step 4: 跑测 + Commit**
 
 ```bash
-npx vitest run tests/server/parser/preproc/scanDefines.test.ts
-git add server/src/parser/preproc/scanDefines.ts tests/server/parser/preproc
+npx vitest run server/tests/parser/preproc/scanDefines.test.ts
+git add server/src/parser/preproc/scanDefines.ts server/tests/parser/preproc
 git commit -m "feat(plan-12): scan #define directives"
 ```
 
@@ -135,7 +135,7 @@ git commit -m "feat(plan-12): scan #define directives"
 
 **Files:**
 - Modify: `server/src/parser/hlsl/fileIndexer.ts`
-- Modify: `tests/server/parser/hlsl/fileIndexer.test.ts`
+- Modify: `server/tests/parser/hlsl/fileIndexer.test.ts`
 
 - [ ] **Step 1: 在 `.shader` 每个块后、`.hlsl` 全文 collect 后，scan defines 并 push 为 `kind: 'macro'`**
 
@@ -174,7 +174,7 @@ it('records #define as macro symbol', async () => {
 - [ ] **Step 3: 跑测 + Commit**
 
 ```bash
-git add server/src/parser/hlsl/fileIndexer.ts tests/server/parser/hlsl/fileIndexer.test.ts
+git add server/src/parser/hlsl/fileIndexer.ts server/tests/parser/hlsl/fileIndexer.test.ts
 git commit -m "feat(plan-12): index #define as macro symbols"
 ```
 

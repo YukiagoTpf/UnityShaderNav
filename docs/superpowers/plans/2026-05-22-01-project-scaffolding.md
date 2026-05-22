@@ -239,7 +239,7 @@ git commit -m "chore(plan-01): add shared package with protocol constants"
   "scripts": {
     "build": "tsc -p .",
     "watch": "tsc -p . -w",
-    "test": "vitest run --root .. tests/server"
+    "test": "vitest run --root .. server/tests"
   },
   "dependencies": {
     "@unity-shader-nav/shared": "0.0.1",
@@ -267,11 +267,11 @@ git commit -m "chore(plan-01): add shared package with protocol constants"
 }
 ```
 
-- [ ] **Step 3: 写失败测试 `tests/server/handshake.test.ts`**
+- [ ] **Step 3: 写失败测试 `server/tests/handshake.test.ts`**
 
 ```typescript
 import { describe, it, expect } from 'vitest';
-import { createInitializeResult } from '../../server/src/connection';
+import { createInitializeResult } from '../src/connection';
 
 describe('LSP handshake', () => {
   it('returns text document sync incremental + serverInfo', () => {
@@ -286,7 +286,7 @@ describe('LSP handshake', () => {
 
 ```bash
 npm install -w @unity-shader-nav/server
-cd server && npx vitest run --root . ../tests/server/handshake.test.ts
+cd server && npx vitest run --root . ../server/tests/handshake.test.ts
 ```
 
 预期：FAIL，`createInitializeResult is not a function`（或模块找不到）。
@@ -351,7 +351,7 @@ connection.listen();
 
 ```bash
 npm run build -w @unity-shader-nav/server
-npx vitest run --root . tests/server/handshake.test.ts
+npx vitest run --root . server/tests/handshake.test.ts
 ```
 
 预期：build OK，test PASS。
@@ -359,7 +359,7 @@ npx vitest run --root . tests/server/handshake.test.ts
 - [ ] **Step 8: Commit**
 
 ```bash
-git add unity-shader-nav/server unity-shader-nav/tests/server
+git add unity-shader-nav/server
 git commit -m "feat(plan-01): server skeleton with initialize handshake"
 ```
 

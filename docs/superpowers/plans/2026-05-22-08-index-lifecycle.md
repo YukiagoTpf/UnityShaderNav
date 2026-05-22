@@ -27,7 +27,7 @@ server/src/lifecycle/
 
 client/src/watcher.ts        # 客户端 FileSystemWatcher，把事件转给 server
 
-tests/server/lifecycle/
+server/tests/lifecycle/
 ├── debouncer.test.ts
 ├── fileWatcher.test.ts     # 用 in-memory event 模拟
 └── requestSuspender.test.ts
@@ -44,13 +44,13 @@ tests/server/lifecycle/
 
 **Files:**
 - Create: `server/src/lifecycle/debouncer.ts`
-- Create: `tests/server/lifecycle/debouncer.test.ts`
+- Create: `server/tests/lifecycle/debouncer.test.ts`
 
 - [ ] **Step 1: 测试**
 
 ```typescript
 import { describe, it, expect, vi } from 'vitest';
-import { Debouncer } from '../../../server/src/lifecycle/debouncer';
+import { Debouncer } from '../../src/lifecycle/debouncer';
 
 describe('Debouncer', () => {
   it('emits aggregated events after window', async () => {
@@ -120,8 +120,8 @@ export class Debouncer<T> {
 - [ ] **Step 3: Commit**
 
 ```bash
-npx vitest run tests/server/lifecycle/debouncer.test.ts
-git add server/src/lifecycle/debouncer.ts tests/server/lifecycle/debouncer.test.ts
+npx vitest run server/tests/lifecycle/debouncer.test.ts
+git add server/src/lifecycle/debouncer.ts server/tests/lifecycle/debouncer.test.ts
 git commit -m "feat(plan-08): debouncer with rebuild threshold"
 ```
 
@@ -131,7 +131,7 @@ git commit -m "feat(plan-08): debouncer with rebuild threshold"
 
 **Files:**
 - Modify: `server/src/workspace/workspace.ts`
-- Modify: `tests/server/workspace/workspace.test.ts`
+- Modify: `server/tests/workspace/workspace.test.ts`
 
 - [ ] **Step 1: 加方法**
 
@@ -195,7 +195,7 @@ it('applies "changed" event by re-reading file from disk', async () => {
 - [ ] **Step 4: Commit**
 
 ```bash
-git add server/src tests/server
+git add server/src server/tests
 git commit -m "feat(plan-08): Workspace.applyChanges + rebuild"
 ```
 
@@ -322,13 +322,13 @@ git commit -m "feat(plan-08): server-side file watcher dispatcher"
 
 **Files:**
 - Create: `server/src/lifecycle/requestSuspender.ts`
-- Create: `tests/server/lifecycle/requestSuspender.test.ts`
+- Create: `server/tests/lifecycle/requestSuspender.test.ts`
 
 - [ ] **Step 1: 测试**
 
 ```typescript
 import { describe, it, expect } from 'vitest';
-import { RequestSuspender } from '../../../server/src/lifecycle/requestSuspender';
+import { RequestSuspender } from '../../src/lifecycle/requestSuspender';
 
 describe('RequestSuspender', () => {
   it('runs work immediately when not suspended', async () => {
@@ -389,7 +389,7 @@ export class RequestSuspender {
 - [ ] **Step 3: 跑测 + Commit**
 
 ```bash
-git add server/src/lifecycle/requestSuspender.ts tests/server/lifecycle/requestSuspender.test.ts
+git add server/src/lifecycle/requestSuspender.ts server/tests/lifecycle/requestSuspender.test.ts
 git commit -m "feat(plan-08): RequestSuspender for cold-start suspension"
 ```
 

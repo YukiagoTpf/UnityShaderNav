@@ -21,7 +21,7 @@
 server/src/handlers/documentSymbol.ts
 server/src/index/documentSymbols.ts
 
-tests/server/index/documentSymbols.test.ts
+server/tests/index/documentSymbols.test.ts
 tests/integration/client/document-symbols.test.ts
 ```
 
@@ -77,7 +77,7 @@ it('attaches structure for .shader files', async () => {
 - [ ] **Step 4: Commit**
 
 ```bash
-git add shared/src server/src/parser/hlsl/fileIndexer.ts tests/server/parser/hlsl/fileIndexer.test.ts
+git add shared/src server/src/parser/hlsl/fileIndexer.ts server/tests/parser/hlsl/fileIndexer.test.ts
 git commit -m "feat(plan-10): include ShaderLab structure in FileIndex"
 ```
 
@@ -87,13 +87,13 @@ git commit -m "feat(plan-10): include ShaderLab structure in FileIndex"
 
 **Files:**
 - Create: `server/src/index/documentSymbols.ts`
-- Create: `tests/server/index/documentSymbols.test.ts`
+- Create: `server/tests/index/documentSymbols.test.ts`
 
 - [ ] **Step 1: 失败测试**
 
 ```typescript
 import { describe, it, expect } from 'vitest';
-import { buildDocumentSymbols } from '../../../server/src/index/documentSymbols';
+import { buildDocumentSymbols } from '../../src/index/documentSymbols';
 import type { FileIndex } from '@unity-shader-nav/shared';
 
 const sym = (name: string, kind: any, line: number, parent?: string) => ({
@@ -266,13 +266,13 @@ export function buildDocumentSymbols(idx: FileIndex): DocumentSymbol[] {
 - [ ] **Step 3: 跑测，迭代调试**
 
 ```bash
-npx vitest run tests/server/index/documentSymbols.test.ts
+npx vitest run server/tests/index/documentSymbols.test.ts
 ```
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add server/src/index/documentSymbols.ts tests/server/index/documentSymbols.test.ts
+git add server/src/index/documentSymbols.ts server/tests/index/documentSymbols.test.ts
 git commit -m "feat(plan-10): build DocumentSymbol tree with ShaderLab nesting"
 ```
 
@@ -398,7 +398,7 @@ git commit -m "test(plan-10): outline e2e"
 
 ## Manual Verification
 
-1. F5 → 打开 `tests/server/parser/hlsl/fixtures/structs.hlsl` → Ctrl+Shift+O → 看到 `Attributes`、`Varyings`，下面挂着各字段
+1. F5 → 打开 `server/tests/parser/hlsl/fixtures/structs.hlsl` → Ctrl+Shift+O → 看到 `Attributes`、`Varyings`，下面挂着各字段
 2. 打开 `Main.shader` → Ctrl+Shift+O → `Shader "T/Inc"` → `SubShader` → `Pass ""` → `main`
 
 完成后进入 Plan 11。

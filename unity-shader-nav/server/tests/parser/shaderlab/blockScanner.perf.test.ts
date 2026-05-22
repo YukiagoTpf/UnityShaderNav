@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { scanBlocks } from '../../../../server/src/parser/shaderlab/blockScanner';
+import { scanBlocks } from '../../../src/parser/shaderlab/blockScanner';
 
 describe('blockScanner perf smoke', () => {
   it('scans 10000-line synthetic shader in < 50ms', () => {

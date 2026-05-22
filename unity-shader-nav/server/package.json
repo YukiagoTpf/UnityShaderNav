@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc -p .",
     "watch": "tsc -p . -w",
-    "test": "vitest run --root .. tests/server"
+    "test": "vitest run"
   },
   "dependencies": {
     "@unity-shader-nav/shared": "0.0.1",

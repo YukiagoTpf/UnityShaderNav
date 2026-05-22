@@ -52,7 +52,7 @@ server/src/index/
 ├── globalIndex.ts         # GlobalSymbolIndex
 └── (其他文件已存在)
 
-tests/server/packages/
+server/tests/packages/
 ├── lockfile.test.ts
 ├── packageResolver.test.ts
 └── fixtures/
@@ -61,7 +61,7 @@ tests/server/packages/
         ├── registry.json
         ├── git.json
         └── local.json
-tests/server/workspace/
+server/tests/workspace/
 ├── workspaceManager.test.ts
 └── fixtures/
     ├── projectA/                  # 复用 Plan 06 的 fixture（或在此新建）
@@ -90,8 +90,8 @@ tests/integration/client/
 
 **Files:**
 - Create: `server/src/packages/lockfile.ts`
-- Create: `tests/server/packages/lockfile.test.ts`
-- Create: `tests/server/packages/fixtures/packages-lock-samples/*.json`
+- Create: `server/tests/packages/lockfile.test.ts`
+- Create: `server/tests/packages/fixtures/packages-lock-samples/*.json`
 
 - [ ] **Step 1: fixture `embedded.json`**
 
@@ -168,7 +168,7 @@ tests/integration/client/
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { parsePackagesLock, resolvePackagePhysicalPath } from '../../../server/src/packages/lockfile';
+import { parsePackagesLock, resolvePackagePhysicalPath } from '../../src/packages/lockfile';
 
 const fixtures = (n: string) =>
   readFileSync(join(__dirname, 'fixtures/packages-lock-samples', n), 'utf8');
@@ -325,8 +325,8 @@ export function resolvePackagePhysicalPath(
 - [ ] **Step 7: 跑测 + Commit**
 
 ```bash
-npx vitest run tests/server/packages/lockfile.test.ts
-git add server/src/packages/lockfile.ts tests/server/packages
+npx vitest run server/tests/packages/lockfile.test.ts
+git add server/src/packages/lockfile.ts server/tests/packages
 git commit -m "feat(plan-07): packages-lock.json parser + physical path resolver"
 ```
 
@@ -337,7 +337,7 @@ git commit -m "feat(plan-07): packages-lock.json parser + physical path resolver
 **Files:**
 - Create: `server/src/packages/packageResolver.ts`
 - Create: `server/src/packages/index.ts`
-- Create: `tests/server/packages/packageResolver.test.ts`
+- Create: `server/tests/packages/packageResolver.test.ts`
 
 - [ ] **Step 1: 测试**
 
@@ -347,7 +347,7 @@ import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
 import { mkdtemp, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { PackageResolver } from '../../../server/src/packages';
+import { PackageResolver } from '../../src/packages';
 
 async function makeFakeProject(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'usn-'));
@@ -474,8 +474,8 @@ export { parsePackagesLock, resolvePackagePhysicalPath } from './lockfile';
 - [ ] **Step 4: 跑测 + Commit**
 
 ```bash
-npx vitest run tests/server/packages/packageResolver.test.ts
-git add server/src/packages/{packageResolver.ts,index.ts} tests/server/packages
+npx vitest run server/tests/packages/packageResolver.test.ts
+git add server/src/packages/{packageResolver.ts,index.ts} server/tests/packages
 git commit -m "feat(plan-07): PackageResolver from packages-lock.json"
 ```
 
@@ -485,7 +485,7 @@ git commit -m "feat(plan-07): PackageResolver from packages-lock.json"
 
 **Files:**
 - Modify: `server/src/include/resolver.ts`
-- Modify: `tests/server/include/resolver.test.ts`
+- Modify: `server/tests/include/resolver.test.ts`
 
 - [ ] **Step 1: 修改 resolver**
 
@@ -535,17 +535,17 @@ describe('resolveInclude: Packages/...', () => {
 });
 ```
 
-- [ ] **Step 3: 补 fixture：在 `tests/server/include/fixtures/projectA/Packages/com.example.urp/ShaderLibrary/Core.hlsl` 写空文件**
+- [ ] **Step 3: 补 fixture：在 `server/tests/include/fixtures/projectA/Packages/com.example.urp/ShaderLibrary/Core.hlsl` 写空文件**
 
 ```bash
-mkdir -p tests/server/include/fixtures/projectA/Packages/com.example.urp/ShaderLibrary
-echo 'float Core() { return 0; }' > tests/server/include/fixtures/projectA/Packages/com.example.urp/ShaderLibrary/Core.hlsl
+mkdir -p server/tests/include/fixtures/projectA/Packages/com.example.urp/ShaderLibrary
+echo 'float Core() { return 0; }' > server/tests/include/fixtures/projectA/Packages/com.example.urp/ShaderLibrary/Core.hlsl
 ```
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add server/src/include/resolver.ts tests/server/include
+git add server/src/include/resolver.ts server/tests/include
 git commit -m "feat(plan-07): resolve Packages/* via PackageResolver map"
 ```
 
@@ -555,14 +555,14 @@ git commit -m "feat(plan-07): resolve Packages/* via PackageResolver map"
 
 **Files:**
 - Create: `server/src/index/globalIndex.ts`
-- Create: `tests/server/index/globalIndex.test.ts`
+- Create: `server/tests/index/globalIndex.test.ts`
 - Modify: `server/src/index/index.ts`
 
 - [ ] **Step 1: 测试**
 
 ```typescript
 import { describe, it, expect } from 'vitest';
-import { GlobalSymbolIndex } from '../../../server/src/index/globalIndex';
+import { GlobalSymbolIndex } from '../../src/index/globalIndex';
 import type { FileIndex } from '@unity-shader-nav/shared';
 
 const fileIndex = (uri: string, names: string[]): FileIndex => ({
@@ -646,8 +646,8 @@ export class GlobalSymbolIndex {
 - [ ] **Step 3: 跑测 + Commit**
 
 ```bash
-npx vitest run tests/server/index/globalIndex.test.ts
-git add server/src/index/globalIndex.ts tests/server/index/globalIndex.test.ts
+npx vitest run server/tests/index/globalIndex.test.ts
+git add server/src/index/globalIndex.ts server/tests/index/globalIndex.test.ts
 git commit -m "feat(plan-07): cross-file GlobalSymbolIndex"
 ```
 
@@ -657,7 +657,7 @@ git commit -m "feat(plan-07): cross-file GlobalSymbolIndex"
 
 **Files:**
 - Modify: `server/src/index/symbolResolver.ts`
-- Modify: `tests/server/index/symbolResolver.test.ts`
+- Modify: `server/tests/index/symbolResolver.test.ts`
 
 - [ ] **Step 1: 修改签名 — 把 Plan 04 预留的 `_global` 槽填上**
 
@@ -728,7 +728,7 @@ const links = resolveDefinition(idx, word.text, params.position, getGlobalIndex(
 - [ ] **Step 4: 跑测 + Commit**
 
 ```bash
-git add server/src/index/symbolResolver.ts server/src/handlers/definition.ts tests/server/index/symbolResolver.test.ts
+git add server/src/index/symbolResolver.ts server/src/handlers/definition.ts server/tests/index/symbolResolver.test.ts
 git commit -m "feat(plan-07): cross-file symbol resolution"
 ```
 
@@ -738,7 +738,7 @@ git commit -m "feat(plan-07): cross-file symbol resolution"
 
 **Files:**
 - Create: `server/src/workspace/walkFiles.ts`
-- Create: `tests/server/workspace/walkFiles.test.ts`
+- Create: `server/tests/workspace/walkFiles.test.ts`
 
 - [ ] **Step 1: 决策**：用原生 `fs.readdir(..., { withFileTypes: true })` + 手写 excludePatterns（minimatch 风格简化版）。不引入 `glob` 依赖以减小 vsix 体积。
 
@@ -795,7 +795,7 @@ export async function walkFiles(
 ```typescript
 import { describe, it, expect } from 'vitest';
 import { resolve } from 'node:path';
-import { walkFiles } from '../../../server/src/workspace/walkFiles';
+import { walkFiles } from '../../src/workspace/walkFiles';
 
 const root = resolve(__dirname, '../include/fixtures/projectA');
 
@@ -816,7 +816,7 @@ describe('walkFiles', () => {
 - [ ] **Step 4: Commit**
 
 ```bash
-git add server/src/workspace/walkFiles.ts tests/server/workspace/walkFiles.test.ts
+git add server/src/workspace/walkFiles.ts server/tests/workspace/walkFiles.test.ts
 git commit -m "feat(plan-07): walkFiles with excludePatterns"
 ```
 
@@ -826,7 +826,7 @@ git commit -m "feat(plan-07): walkFiles with excludePatterns"
 
 **Files:**
 - Create: `server/src/workspace/workspace.ts`
-- Create: `tests/server/workspace/workspace.test.ts`
+- Create: `server/tests/workspace/workspace.test.ts`
 
 - [ ] **Step 1: 实现**
 
@@ -950,7 +950,7 @@ export class Workspace {
 import { describe, it, expect } from 'vitest';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
-import { Workspace } from '../../../server/src/workspace/workspace';
+import { Workspace } from '../../src/workspace/workspace';
 import { DEFAULT_SETTINGS } from '@unity-shader-nav/shared';
 
 const fakeConnection: any = {
@@ -986,7 +986,7 @@ describe('Workspace.bootstrap', () => {
 - [ ] **Step 3: 跑测 + Commit**
 
 ```bash
-git add server/src/workspace/workspace.ts tests/server/workspace/workspace.test.ts tests/server/include/fixtures/projectA/Packages/packages-lock.json
+git add server/src/workspace/workspace.ts server/tests/workspace/workspace.test.ts server/tests/include/fixtures/projectA/Packages/packages-lock.json
 git commit -m "feat(plan-07): Workspace with full scan + global index"
 ```
 
@@ -996,7 +996,7 @@ git commit -m "feat(plan-07): Workspace with full scan + global index"
 
 **Files:**
 - Create: `server/src/workspace/workspaceManager.ts`
-- Create: `tests/server/workspace/workspaceManager.test.ts`
+- Create: `server/tests/workspace/workspaceManager.test.ts`
 - Modify: `server/src/workspace/index.ts`
 
 - [ ] **Step 1: 实现**
@@ -1046,7 +1046,7 @@ export class WorkspaceManager {
 import { describe, it, expect } from 'vitest';
 import { pathToFileURL } from 'node:url';
 import { resolve, join } from 'node:path';
-import { WorkspaceManager } from '../../../server/src/workspace/workspaceManager';
+import { WorkspaceManager } from '../../src/workspace/workspaceManager';
 import { DEFAULT_SETTINGS } from '@unity-shader-nav/shared';
 
 const fakeConn: any = { window: { createWorkDoneProgress: async () => ({ begin(){}, report(){}, done(){} }) } };
@@ -1079,7 +1079,7 @@ export { walkFiles } from './walkFiles';
 - [ ] **Step 4: Commit**
 
 ```bash
-git add server/src/workspace tests/server/workspace
+git add server/src/workspace server/tests/workspace
 git commit -m "feat(plan-07): WorkspaceManager multi-root isolation"
 ```
 
@@ -1281,7 +1281,7 @@ suite('F12 cross-file', () => {
 需要一个独立的第二 fixture `projectB`，结构与 projectA 平行但**符号名互不重叠**，用于验证 multi-root 路由不串。
 
 ```
-tests/server/workspace/fixtures/projectB/
+server/tests/workspace/fixtures/projectB/
 ├── Assets/Shaders/
 │   ├── OnlyInB.hlsl        # float4 OnlyInB() { return 0; }
 │   └── BMain.shader        # 调用 OnlyInB()，不调用 projectA 里的 Common/Core
@@ -1424,7 +1424,7 @@ git commit -m "feat(plan-07): status bar reflects standalone/ready mode"
 
 ## Manual Verification
 
-1. F5 → 打开 `tests/server/include/fixtures/projectA`
+1. F5 → 打开 `server/tests/include/fixtures/projectA`
 2. 观察状态栏出现 `UnityShaderNav: ready`
 3. Output 频道有 `[index] file:///.../Common.hlsl → N symbols`
 4. 打开 `Main.shader`，光标在 `Core()` 调用上 → F12 → 跳到 `Packages/com.example.urp/ShaderLibrary/Core.hlsl`

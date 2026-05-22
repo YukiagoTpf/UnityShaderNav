@@ -33,7 +33,7 @@ server/src/config/
 
 shared/src/settings.ts     # ExtensionSettings 接口（与 spec §9 对齐）
 
-tests/server/macros/
+server/tests/macros/
 ├── patterns.test.ts
 ├── matcher.test.ts
 └── fixtures/
@@ -107,7 +107,7 @@ git commit -m "feat(plan-05): ExtensionSettings type with macros & references co
 
 **Files:**
 - Create: `server/src/macros/patterns.ts`
-- Create: `tests/server/macros/patterns.test.ts`
+- Create: `server/tests/macros/patterns.test.ts`
 
 模式规则：
 - `IDENTIFIER` — 字面宏名（如 `TEXTURE2D`）
@@ -122,7 +122,7 @@ git commit -m "feat(plan-05): ExtensionSettings type with macros & references co
 
 ```typescript
 import { describe, it, expect } from 'vitest';
-import { parsePattern } from '../../../server/src/macros/patterns';
+import { parsePattern } from '../../src/macros/patterns';
 
 describe('parsePattern', () => {
   it('parses a single-capture macro', () => {
@@ -204,8 +204,8 @@ export function parsePattern(src: string): CompiledPattern {
 - [ ] **Step 3: 跑测试 + Commit**
 
 ```bash
-npx vitest run tests/server/macros/patterns.test.ts
-git add server/src/macros/patterns.ts tests/server/macros/patterns.test.ts
+npx vitest run server/tests/macros/patterns.test.ts
+git add server/src/macros/patterns.ts server/tests/macros/patterns.test.ts
 git commit -m "feat(plan-05): macro pattern grammar parser"
 ```
 
@@ -353,10 +353,10 @@ git commit -m "feat(plan-05): MacroPatternTable merging builtin + user patterns"
 
 **Files:**
 - Create: `server/src/macros/matcher.ts`
-- Create: `tests/server/macros/matcher.test.ts`
-- Create: `tests/server/macros/fixtures/textures.hlsl`
-- Create: `tests/server/macros/fixtures/cbuffer-macro.hlsl`
-- Create: `tests/server/macros/fixtures/instanced-prop.hlsl`
+- Create: `server/tests/macros/matcher.test.ts`
+- Create: `server/tests/macros/fixtures/textures.hlsl`
+- Create: `server/tests/macros/fixtures/cbuffer-macro.hlsl`
+- Create: `server/tests/macros/fixtures/instanced-prop.hlsl`
 
 - [ ] **Step 1: fixtures**
 
@@ -386,9 +386,9 @@ UNITY_INSTANCING_BUFFER_END(Props)
 ```typescript
 import { describe, it, expect } from 'vitest';
 import type Parser from 'web-tree-sitter';
-import { parseHlsl } from '../../../server/src/parser/hlsl/parser';
-import { MacroPatternTable } from '../../../server/src/macros';
-import { matchDeclarationCall } from '../../../server/src/macros/matcher';
+import { parseHlsl } from '../../src/parser/hlsl/parser';
+import { MacroPatternTable } from '../../src/macros';
+import { matchDeclarationCall } from '../../src/macros/matcher';
 
 describe('matcher: TEXTURE2D / SAMPLER', () => {
   it('extracts _MainTex from TEXTURE2D call', async () => {
@@ -468,7 +468,7 @@ export function matchDeclarationCall(
 - [ ] **Step 4: 跑测试，PASS。Commit**
 
 ```bash
-git add server/src/macros/matcher.ts tests/server/macros/{fixtures,matcher.test.ts}
+git add server/src/macros/matcher.ts server/tests/macros/{fixtures,matcher.test.ts}
 git commit -m "feat(plan-05): match call_expression against declaration patterns"
 ```
 
@@ -477,9 +477,9 @@ git commit -m "feat(plan-05): match call_expression against declaration patterns
 ## Task 6: matcher — `#pragma` reference patterns
 
 **Files:**
-- Create: `tests/server/macros/fixtures/pragmas.shader`
+- Create: `server/tests/macros/fixtures/pragmas.shader`
 - Modify: `server/src/macros/matcher.ts`
-- Modify: `tests/server/macros/matcher.test.ts`
+- Modify: `server/tests/macros/matcher.test.ts`
 
 - [ ] **Step 1: fixture**
 
@@ -501,7 +501,7 @@ Shader "T/Pragma" {
 - [ ] **Step 2: 测试**
 
 ```typescript
-import { matchPragmaLine } from '../../../server/src/macros/matcher';
+import { matchPragmaLine } from '../../src/macros/matcher';
 
 describe('matcher: #pragma vertex', () => {
   it('returns target identifier and range', () => {
@@ -557,7 +557,7 @@ export function matchPragmaLine(
 - [ ] **Step 4: 跑测试 + Commit**
 
 ```bash
-git add server/src/macros/matcher.ts tests/server/macros/{fixtures/pragmas.shader,matcher.test.ts}
+git add server/src/macros/matcher.ts server/tests/macros/{fixtures/pragmas.shader,matcher.test.ts}
 git commit -m "feat(plan-05): match #pragma vertex/fragment/kernel references"
 ```
 
@@ -627,14 +627,14 @@ export function registerDocuments(connection, store, table: MacroPatternTable) {
 // reindex: await indexFile(doc.uri, doc.getText(), table);
 ```
 
-- [ ] **Step 4: 更新单元测试**——给 `collector.test.ts` 和 `fileIndexer.test.ts` 加表参数；建一个新测试 `tests/server/macros/integration.test.ts`：
+- [ ] **Step 4: 更新单元测试**——给 `collector.test.ts` 和 `fileIndexer.test.ts` 加表参数；建一个新测试 `server/tests/macros/integration.test.ts`：
 
 ```typescript
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { indexFile } from '../../../server/src/parser/hlsl';
-import { MacroPatternTable } from '../../../server/src/macros';
+import { indexFile } from '../../src/parser/hlsl';
+import { MacroPatternTable } from '../../src/macros';
 
 describe('integration: macros end-to-end', () => {
   it('TEXTURE2D(_MainTex) registers _MainTex as variable', async () => {
@@ -666,7 +666,7 @@ describe('integration: macros end-to-end', () => {
 ```bash
 npm run build -w @unity-shader-nav/server
 npx vitest run
-git add server/src tests/server/macros/integration.test.ts
+git add server/src server/tests/macros/integration.test.ts
 git commit -m "feat(plan-05): wire macro recognition into collector + fileIndexer"
 ```
 

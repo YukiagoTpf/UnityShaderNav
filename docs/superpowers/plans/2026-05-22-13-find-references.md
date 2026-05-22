@@ -22,7 +22,7 @@
 server/src/index/globalReferences.ts
 server/src/handlers/references.ts
 
-tests/server/index/globalReferences.test.ts
+server/tests/index/globalReferences.test.ts
 tests/integration/client/find-references.test.ts
 ```
 
@@ -38,7 +38,7 @@ tests/integration/client/find-references.test.ts
 
 **Files:**
 - Create: `server/src/index/globalReferences.ts`
-- Create: `tests/server/index/globalReferences.test.ts`
+- Create: `server/tests/index/globalReferences.test.ts`
 
 - [ ] **Step 1: 实现 + 测试**
 
@@ -113,7 +113,7 @@ describe('GlobalReferenceIndex', () => {
 - [ ] **Step 2: Commit**
 
 ```bash
-git add server/src/index/globalReferences.ts tests/server/index/globalReferences.test.ts
+git add server/src/index/globalReferences.ts server/tests/index/globalReferences.test.ts
 git commit -m "feat(plan-13): GlobalReferenceIndex"
 ```
 

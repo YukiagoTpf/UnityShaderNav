@@ -32,7 +32,7 @@ server/src/parser/hlsl/
 
 shared/src/symbols.ts                     # SymbolEntry / ReferenceEntry 类型（从 server 移出，方便 client 共用）
 
-tests/server/parser/hlsl/
+server/tests/parser/hlsl/
 ├── parser.test.ts
 ├── collector.test.ts
 ├── fileIndexer.test.ts
@@ -201,7 +201,7 @@ git commit -m "chore(plan-03): vendor tree-sitter-hlsl.wasm"
 **Files:**
 - Create: `server/src/parser/hlsl/parser.ts`
 - Modify: `server/package.json`（加 `web-tree-sitter`）
-- Create: `tests/server/parser/hlsl/parser.test.ts`
+- Create: `server/tests/parser/hlsl/parser.test.ts`
 
 - [ ] **Step 1: 装依赖**
 
@@ -213,7 +213,7 @@ npm install -w @unity-shader-nav/server web-tree-sitter@^0.22.0
 
 ```typescript
 import { describe, it, expect } from 'vitest';
-import { parseHlsl } from '../../../../server/src/parser/hlsl/parser';
+import { parseHlsl } from '../../../src/parser/hlsl/parser';
 
 describe('parseHlsl', () => {
   it('parses a trivial function and returns a Tree with non-null rootNode', async () => {
@@ -268,7 +268,7 @@ export async function getLanguage(): Promise<Parser.Language> {
 
 ```bash
 npm run build -w @unity-shader-nav/server
-npx vitest run tests/server/parser/hlsl/parser.test.ts
+npx vitest run server/tests/parser/hlsl/parser.test.ts
 ```
 
 预期：PASS。
@@ -276,7 +276,7 @@ npx vitest run tests/server/parser/hlsl/parser.test.ts
 - [ ] **Step 6: Commit**
 
 ```bash
-git add server/src/parser/hlsl/parser.ts tests/server/parser/hlsl/parser.test.ts server/package.json
+git add server/src/parser/hlsl/parser.ts server/tests/parser/hlsl/parser.test.ts server/package.json
 git commit -m "feat(plan-03): web-tree-sitter HLSL parser singleton"
 ```
 
@@ -337,8 +337,8 @@ git commit -m "feat(plan-03): tree-sitter node helpers"
 ## Task 5: collector — 全局函数
 
 **Files:**
-- Create: `tests/server/parser/hlsl/fixtures/functions.hlsl`
-- Create: `tests/server/parser/hlsl/collector.test.ts`
+- Create: `server/tests/parser/hlsl/fixtures/functions.hlsl`
+- Create: `server/tests/parser/hlsl/collector.test.ts`
 - Create: `server/src/parser/hlsl/collector.ts`
 
 - [ ] **Step 1: 写 `functions.hlsl` fixture**
@@ -355,8 +355,8 @@ float3 mul3(float3 v, float k) { return v * k; }
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseHlsl } from '../../../../server/src/parser/hlsl/parser';
-import { collect } from '../../../../server/src/parser/hlsl/collector';
+import { parseHlsl } from '../../../src/parser/hlsl/parser';
+import { collect } from '../../../src/parser/hlsl/collector';
 
 const fixture = (n: string) => readFileSync(join(__dirname, 'fixtures', n), 'utf8');
 
@@ -490,7 +490,7 @@ export function collect(
 
 ```bash
 npm run build -w @unity-shader-nav/server
-npx vitest run tests/server/parser/hlsl/collector.test.ts
+npx vitest run server/tests/parser/hlsl/collector.test.ts
 ```
 
 PASS 之前可能需要 1-2 轮微调（节点类型名）。
@@ -498,7 +498,7 @@ PASS 之前可能需要 1-2 轮微调（节点类型名）。
 - [ ] **Step 6: Commit**
 
 ```bash
-git add server/src/parser/hlsl/collector.ts tests/server/parser/hlsl/{fixtures/functions.hlsl,collector.test.ts}
+git add server/src/parser/hlsl/collector.ts server/tests/parser/hlsl/{fixtures/functions.hlsl,collector.test.ts}
 git commit -m "feat(plan-03): collect HLSL function symbols + parameters"
 ```
 
@@ -507,9 +507,9 @@ git commit -m "feat(plan-03): collect HLSL function symbols + parameters"
 ## Task 6: collector — struct / cbuffer
 
 **Files:**
-- Create: `tests/server/parser/hlsl/fixtures/structs.hlsl`
-- Create: `tests/server/parser/hlsl/fixtures/cbuffer.hlsl`
-- Modify: `tests/server/parser/hlsl/collector.test.ts`
+- Create: `server/tests/parser/hlsl/fixtures/structs.hlsl`
+- Create: `server/tests/parser/hlsl/fixtures/cbuffer.hlsl`
+- Modify: `server/tests/parser/hlsl/collector.test.ts`
 - Modify: `server/src/parser/hlsl/collector.ts`
 
 - [ ] **Step 1: fixture `structs.hlsl`**
@@ -650,7 +650,7 @@ function collectCbuffer(node: Parser.SyntaxNode, st: CollectorState): void {
 - [ ] **Step 5: 跑测试 + 迭代**
 
 ```bash
-npx vitest run tests/server/parser/hlsl/collector.test.ts
+npx vitest run server/tests/parser/hlsl/collector.test.ts
 ```
 
 PASS。
@@ -658,7 +658,7 @@ PASS。
 - [ ] **Step 6: Commit**
 
 ```bash
-git add server/src/parser/hlsl/collector.ts tests/server/parser/hlsl/{fixtures,collector.test.ts}
+git add server/src/parser/hlsl/collector.ts server/tests/parser/hlsl/{fixtures,collector.test.ts}
 git commit -m "feat(plan-03): collect struct + cbuffer + members"
 ```
 
@@ -667,8 +667,8 @@ git commit -m "feat(plan-03): collect struct + cbuffer + members"
 ## Task 7: collector — 局部变量 + proximity tie-break 元数据
 
 **Files:**
-- Create: `tests/server/parser/hlsl/fixtures/locals-and-params.hlsl`
-- Create: `tests/server/parser/hlsl/fixtures/shadowing-loop.hlsl`
+- Create: `server/tests/parser/hlsl/fixtures/locals-and-params.hlsl`
+- Create: `server/tests/parser/hlsl/fixtures/shadowing-loop.hlsl`
 - Modify: `collector.test.ts`、`collector.ts`
 
 - [ ] **Step 1: fixture `locals-and-params.hlsl`**
@@ -767,7 +767,7 @@ if (bodyNode) collectLocals(textOf(nameNode), bodyNode, scopeRange, st);
 - [ ] **Step 6: Commit**
 
 ```bash
-git add server/src/parser/hlsl/collector.ts tests/server/parser/hlsl/{fixtures,collector.test.ts}
+git add server/src/parser/hlsl/collector.ts server/tests/parser/hlsl/{fixtures,collector.test.ts}
 git commit -m "feat(plan-03): collect local variables with scope metadata"
 ```
 
@@ -847,7 +847,7 @@ if (node.type === 'call_expression') {
 - [ ] **Step 4: Commit**
 
 ```bash
-git add server/src/parser/hlsl/collector.ts tests/server/parser/hlsl/collector.test.ts
+git add server/src/parser/hlsl/collector.ts server/tests/parser/hlsl/collector.test.ts
 git commit -m "feat(plan-03): collect call/member/type references"
 ```
 
@@ -857,7 +857,7 @@ git commit -m "feat(plan-03): collect call/member/type references"
 
 **Files:**
 - Create: `server/src/parser/hlsl/fileIndexer.ts`
-- Create: `tests/server/parser/hlsl/fileIndexer.test.ts`
+- Create: `server/tests/parser/hlsl/fileIndexer.test.ts`
 
 - [ ] **Step 1: 写测试**
 
@@ -865,7 +865,7 @@ git commit -m "feat(plan-03): collect call/member/type references"
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { indexFile } from '../../../../server/src/parser/hlsl/fileIndexer';
+import { indexFile } from '../../../src/parser/hlsl/fileIndexer';
 
 describe('fileIndexer: pure .hlsl', () => {
   it('treats whole file as one HLSL block', async () => {
@@ -954,7 +954,7 @@ export async function indexFile(
 
 ```bash
 npm run build -w @unity-shader-nav/server
-npx vitest run tests/server/parser/hlsl/fileIndexer.test.ts
+npx vitest run server/tests/parser/hlsl/fileIndexer.test.ts
 ```
 
 预期：PASS。
@@ -970,7 +970,7 @@ export { indexFile } from './fileIndexer';
 - [ ] **Step 5: Commit**
 
 ```bash
-git add server/src/parser/hlsl/{fileIndexer.ts,index.ts} tests/server/parser/hlsl/fileIndexer.test.ts
+git add server/src/parser/hlsl/{fileIndexer.ts,index.ts} server/tests/parser/hlsl/fileIndexer.test.ts
 git commit -m "feat(plan-03): file indexer flattening .shader blocks"
 ```
 
@@ -979,7 +979,7 @@ git commit -m "feat(plan-03): file indexer flattening .shader blocks"
 ## Task 10: 嵌套 struct fixture（chain lookup 元数据已就绪验证）
 
 **Files:**
-- Create: `tests/server/parser/hlsl/fixtures/nested-struct.hlsl`
+- Create: `server/tests/parser/hlsl/fixtures/nested-struct.hlsl`
 - Modify: `collector.test.ts`
 
 - [ ] **Step 1: fixture**
@@ -1017,7 +1017,7 @@ describe('collector: nested struct metadata', () => {
 - [ ] **Step 4: Commit**
 
 ```bash
-git add tests/server/parser/hlsl/{fixtures,collector.test.ts}
+git add server/tests/parser/hlsl/{fixtures,collector.test.ts}
 git commit -m "test(plan-03): nested struct metadata for L2 chain lookup"
 ```
 
@@ -1047,8 +1047,8 @@ console.log('SYMBOLS', JSON.stringify(idx.symbols, null, 2));
 console.log('REFS COUNT', idx.references.length);
 EOF
 
-node /tmp/dump-index.mjs tests/server/parser/hlsl/fixtures/structs.hlsl
-node /tmp/dump-index.mjs tests/server/parser/shaderlab/fixtures/multi-pass.shader
+node /tmp/dump-index.mjs server/tests/parser/hlsl/fixtures/structs.hlsl
+node /tmp/dump-index.mjs server/tests/parser/shaderlab/fixtures/multi-pass.shader
 ```
 
 预期：能看到带 `kind`/`name`/`location` 的符号数组；多 Pass 文件里 `vert` 出现两次，行号是 .shader 原文件坐标。

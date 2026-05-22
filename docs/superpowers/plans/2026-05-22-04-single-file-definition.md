@@ -31,7 +31,7 @@ server/src/handlers/
 ├── definition.ts           # LSP textDocument/definition handler
 └── documents.ts            # TextDocuments 与 store 同步
 
-tests/server/index/
+server/tests/index/
 ├── wordAt.test.ts
 ├── symbolResolver.test.ts
 └── integration.test.ts     # 一个 in-process LSP smoke
@@ -50,13 +50,13 @@ tests/integration/client/
 
 **Files:**
 - Create: `server/src/index/wordAt.ts`
-- Create: `tests/server/index/wordAt.test.ts`
+- Create: `server/tests/index/wordAt.test.ts`
 
 - [ ] **Step 1: 失败测试**
 
 ```typescript
 import { describe, it, expect } from 'vitest';
-import { wordAt } from '../../../server/src/index/wordAt';
+import { wordAt } from '../../src/index/wordAt';
 
 describe('wordAt', () => {
   it('returns the identifier under cursor', () => {
@@ -122,13 +122,13 @@ export function wordAt(text: string, pos: Position): WordAt | null {
 - [ ] **Step 4: 跑过**
 
 ```bash
-npx vitest run tests/server/index/wordAt.test.ts
+npx vitest run server/tests/index/wordAt.test.ts
 ```
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add server/src/index/wordAt.ts tests/server/index/wordAt.test.ts
+git add server/src/index/wordAt.ts server/tests/index/wordAt.test.ts
 git commit -m "feat(plan-04): wordAt helper for identifier extraction"
 ```
 
@@ -190,14 +190,14 @@ git commit -m "feat(plan-04): IndexStore (in-memory)"
 
 **Files:**
 - Create: `server/src/index/symbolResolver.ts`
-- Create: `tests/server/index/symbolResolver.test.ts`
+- Create: `server/tests/index/symbolResolver.test.ts`
 
 - [ ] **Step 1: 失败测试**
 
 ```typescript
 import { describe, it, expect } from 'vitest';
 import type { FileIndex, Position, SymbolEntry } from '@unity-shader-nav/shared';
-import { resolveDefinition } from '../../../server/src/index/symbolResolver';
+import { resolveDefinition } from '../../src/index/symbolResolver';
 
 function sym(over: Partial<SymbolEntry> & Pick<SymbolEntry, 'name' | 'kind'>): SymbolEntry {
   return {
@@ -362,7 +362,7 @@ export function resolveDefinition(
 
 ```bash
 npm run build -w @unity-shader-nav/server
-npx vitest run tests/server/index/symbolResolver.test.ts
+npx vitest run server/tests/index/symbolResolver.test.ts
 ```
 
 预期：全 PASS。
@@ -370,7 +370,7 @@ npx vitest run tests/server/index/symbolResolver.test.ts
 - [ ] **Step 5: Commit**
 
 ```bash
-git add server/src/index/symbolResolver.ts server/src/index/index.ts tests/server/index/symbolResolver.test.ts
+git add server/src/index/symbolResolver.ts server/src/index/index.ts server/tests/index/symbolResolver.test.ts
 git commit -m "feat(plan-04): symbol resolver with proximity tie-break"
 ```
 
@@ -531,7 +531,7 @@ connection.listen();
 
 - [ ] **Step 3: 测试 capabilities 在 handshake**
 
-修改 `tests/server/handshake.test.ts`：
+修改 `server/tests/handshake.test.ts`：
 
 ```typescript
 it('advertises definitionProvider', () => {
@@ -551,7 +551,7 @@ npm run build -w @unity-shader-nav/server
 - [ ] **Step 5: Commit**
 
 ```bash
-git add server/src/{server.ts,connection.ts} tests/server/handshake.test.ts
+git add server/src/{server.ts,connection.ts} server/tests/handshake.test.ts
 git commit -m "feat(plan-04): wire definition handler in server"
 ```
 
@@ -560,7 +560,7 @@ git commit -m "feat(plan-04): wire definition handler in server"
 ## Task 7: in-process LSP smoke
 
 **Files:**
-- Create: `tests/server/index/integration.test.ts`
+- Create: `server/tests/index/integration.test.ts`
 
 - [ ] **Step 1: 测试**
 
@@ -568,10 +568,10 @@ git commit -m "feat(plan-04): wire definition handler in server"
 
 ```typescript
 import { describe, it, expect } from 'vitest';
-import { IndexStore } from '../../../server/src/index';
-import { indexFile } from '../../../server/src/parser/hlsl';
-import { wordAt } from '../../../server/src/index/wordAt';
-import { resolveDefinition } from '../../../server/src/index/symbolResolver';
+import { IndexStore } from '../../src/index';
+import { indexFile } from '../../src/parser/hlsl';
+import { wordAt } from '../../src/index/wordAt';
+import { resolveDefinition } from '../../src/index/symbolResolver';
 
 describe('e2e (in-process): F12 inside .hlsl', () => {
   it('jumps from call site to function declaration', async () => {
@@ -600,13 +600,13 @@ float4 main() { return add(float4(0,0,0,1), float4(1,1,1,1)); }
 - [ ] **Step 2: 跑测试 + 调整字符列位**
 
 ```bash
-npx vitest run tests/server/index/integration.test.ts
+npx vitest run server/tests/index/integration.test.ts
 ```
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add tests/server/index/integration.test.ts
+git add server/tests/index/integration.test.ts
 git commit -m "test(plan-04): in-process F12 smoke"
 ```
 

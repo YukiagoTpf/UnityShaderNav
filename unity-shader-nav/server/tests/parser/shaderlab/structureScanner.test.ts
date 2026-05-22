@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { scanStructure } from '../../../../server/src/parser/shaderlab/structureScanner';
+import { scanStructure } from '../../../src/parser/shaderlab/structureScanner';
 
 const fixture = (name: string): string =>
   readFileSync(join(__dirname, 'fixtures', name), 'utf8');

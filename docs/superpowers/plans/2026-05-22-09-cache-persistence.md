@@ -26,7 +26,7 @@ server/src/cache/
 ├── cacheManager.ts        # 与 Workspace 协作的高层 API
 └── index.ts
 
-tests/server/cache/
+server/tests/cache/
 ├── cacheStore.test.ts
 ├── cacheManager.test.ts
 └── fixtures/
@@ -106,8 +106,8 @@ git commit -m "feat(plan-09): CacheManifest types"
 **Files:**
 - Create: `server/src/cache/cacheStore.ts`
 - Create: `server/src/cache/fingerprint.ts`
-- Create: `tests/server/cache/cacheStore.test.ts`
-- Create: `tests/server/cache/fingerprint.test.ts`
+- Create: `server/tests/cache/cacheStore.test.ts`
+- Create: `server/tests/cache/fingerprint.test.ts`
 
 - [ ] **Step 1: 实现 fingerprint 计算**
 
@@ -180,7 +180,7 @@ import { describe, it, expect } from 'vitest';
 import { DEFAULT_SETTINGS } from '@unity-shader-nav/shared';
 import {
   settingsHash, macroTableHash, fingerprintsEqual, buildFingerprint,
-} from '../../../server/src/cache/fingerprint';
+} from '../../src/cache/fingerprint';
 
 describe('settingsHash', () => {
   it('is stable across permutations of included fields', () => {
@@ -290,8 +290,8 @@ it('returns null when fingerprint mismatches', async () => {
 - [ ] **Step 5: 跑测 + Commit**
 
 ```bash
-npx vitest run tests/server/cache/cacheStore.test.ts tests/server/cache/fingerprint.test.ts
-git add server/src/cache/{cacheStore.ts,fingerprint.ts} tests/server/cache
+npx vitest run server/tests/cache/cacheStore.test.ts server/tests/cache/fingerprint.test.ts
+git add server/src/cache/{cacheStore.ts,fingerprint.ts} server/tests/cache
 git commit -m "feat(plan-09): CacheStore + fingerprint (grammar/settings/macros)"
 ```
 
@@ -335,7 +335,7 @@ export function chooseCacheDir(input: CacheLocationInput): string | null {
 
 ```typescript
 import { describe, it, expect } from 'vitest';
-import { chooseCacheDir } from '../../../server/src/cache/cacheLocation';
+import { chooseCacheDir } from '../../src/cache/cacheLocation';
 import { join } from 'node:path';
 
 describe('chooseCacheDir', () => {
@@ -372,7 +372,7 @@ export { CacheManager } from './cacheManager';
 - [ ] **Step 4: Commit**
 
 ```bash
-git add server/src/cache tests/server/cache
+git add server/src/cache server/tests/cache
 git commit -m "feat(plan-09): cache directory selection"
 ```
 
@@ -422,7 +422,7 @@ git commit -m "feat(plan-09): pass globalStorageDir from client to server"
 
 **Files:**
 - Create: `server/src/cache/cacheManager.ts`
-- Create: `tests/server/cache/cacheManager.test.ts`
+- Create: `server/tests/cache/cacheManager.test.ts`
 
 - [ ] **Step 1: 实现**
 
@@ -491,8 +491,8 @@ import { mkdtemp, writeFile, stat, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { CacheManager } from '../../../server/src/cache/cacheManager';
-import { CacheStore } from '../../../server/src/cache/cacheStore';
+import { CacheManager } from '../../src/cache/cacheManager';
+import { CacheStore } from '../../src/cache/cacheStore';
 
 describe('CacheManager.isValid', () => {
   it('returns true when mtime and size unchanged', async () => {
@@ -535,7 +535,7 @@ describe('CacheManager.isValid', () => {
 - [ ] **Step 3: 跑测 + Commit**
 
 ```bash
-git add server/src/cache/cacheManager.ts tests/server/cache/cacheManager.test.ts
+git add server/src/cache/cacheManager.ts server/tests/cache/cacheManager.test.ts
 git commit -m "feat(plan-09): CacheManager with mtime/size validation"
 ```
 
@@ -645,7 +645,7 @@ git commit -m "feat(plan-09): Workspace bootstraps from cache when available"
 ## Task 7: 集成测 — 关闭后再开冷启动 < 4s
 
 **Files:**
-- Create: `tests/server/cache/coldStart.test.ts`
+- Create: `server/tests/cache/coldStart.test.ts`
 
 - [ ] **Step 1: 测试（in-process）**
 
@@ -654,7 +654,7 @@ import { describe, it, expect } from 'vitest';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import { rm } from 'node:fs/promises';
-import { Workspace } from '../../../server/src/workspace/workspace';
+import { Workspace } from '../../src/workspace/workspace';
 import { DEFAULT_SETTINGS } from '@unity-shader-nav/shared';
 
 const fakeConn: any = { window: { createWorkDoneProgress: async () => ({ begin(){}, report(){}, done(){} }) } };
@@ -692,7 +692,7 @@ describe('cold start with cache', () => {
 - [ ] **Step 2: Commit**
 
 ```bash
-git add tests/server/cache/coldStart.test.ts
+git add server/tests/cache/coldStart.test.ts
 git commit -m "test(plan-09): cold-start cache roundtrip"
 ```
 

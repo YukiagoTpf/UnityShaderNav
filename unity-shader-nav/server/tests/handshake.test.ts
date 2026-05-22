@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createInitializeResult } from '../../server/src/connection';
+import { createInitializeResult } from '../src/connection';
 
 describe('LSP handshake', () => {
   it('returns text document sync incremental + serverInfo', () => {
