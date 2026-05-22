@@ -43,7 +43,50 @@
         ],
         "configuration": "./language-configuration/hlsl.json"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "UnityShaderNav",
+      "properties": {
+        "unityShaderNav.projectRoot": {
+          "type": "string",
+          "default": "",
+          "description": "Path to Unity project root (containing Assets/ and ProjectSettings/). Empty = autodetect."
+        },
+        "unityShaderNav.includeDirectories": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Extra include search paths."
+        },
+        "unityShaderNav.excludePatterns": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["**/Library/**", "**/Temp/**", "**/Logs/**"]
+        },
+        "unityShaderNav.declarationMacros": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "pattern": {
+                "type": "string",
+                "description": "e.g. MY_TEX2D($name)"
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["variable", "cbuffer"]
+              }
+            },
+            "required": ["pattern", "kind"]
+          },
+          "default": []
+        },
+        "unityShaderNav.findReferences.includePackages": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    }
   },
   "scripts": {
     "build": "tsc -p . && node ../scripts/copy-server.mjs",
