@@ -1,0 +1,16 @@
+{
+  "dependencies": {
+    "com.example.urp": {
+      "version": "file:com.example.urp",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {}
+    },
+    "com.unity.render-pipelines.core": {
+      "version": "12.1.7",
+      "depth": 1,
+      "source": "builtin",
+      "dependencies": {}
+    }
+  }
+}

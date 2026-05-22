@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "com.example.local": {
+      "version": "file:../shared-rp",
+      "depth": 0,
+      "source": "local",
+      "dependencies": {}
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "dependencies": {
+    "com.unity.render-pipelines.universal": {
+      "version": "14.0.10",
+      "depth": 0,
+      "source": "registry",
+      "dependencies": {},
+      "url": "https://packages.unity.com",
+      "hash": "abc123"
+    }
+  }
+}
