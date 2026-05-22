@@ -7,7 +7,7 @@
 | # | Plan | 状态 | Spec §10 验收 | 备注 |
 |---|---|---|---|---|
 | 01 | project-scaffolding | ✅ Done + plan01fix 应用 | — | F5 manual 待人工；vsix 打包路径已修正 |
-| 02 | shaderlab-block-parser | ✅ Done（0 偏离） | — | |
+| 02 | shaderlab-block-parser | ✅ Done + plan02fix 应用 | — | sanitizer 接管字符串/注释；scanStructure 加 range 覆盖 |
 | 03 | hlsl-symbol-collector | ⏸ Blocked by R1 spike | — | tree-sitter-hlsl 节点名需要先验证 |
 | 04 | single-file-definition | ⏸ Planned | Case 1, 8 | |
 | 05 | macro-pattern-recognizer | ⏸ Planned | Case 5, 6, 7 | |
@@ -103,6 +103,39 @@
 - server 的 vitest cwd 落在 server workspace，不会再扫到 Plan 03+ 的 in-flight 失败
 - `npm run clean` 在 Win cmd / Git Bash 都可用，并清掉 `*.tsbuildinfo` 避免 stale incremental cache
 
+## Plan 02 Fix 实施记录
+
+源自 `docs/superpowers/plans/plan02review.md`（用户写的 P1/P2 review，4 个 finding）。**Commits**：`93f00ae..7d48312`（plan doc + 5 个 Task commit）。
+
+| Task | 修的问题 | 状态 | Commit |
+|---|---|---|---|
+| 0 | plan02fix.md + plan02review.md 入库 | ✅ | `93f00ae` |
+| 1 | 新增 sanitizeLine 基础设施（共享 //, /* */, string 处理） | ✅ | `9f422f6` |
+| 2 | P1#1: scanStructure brace 计数被字符串里的 `}` 误终止 | ✅ | `25f55ed` |
+| 3 | P2#1: scanBlocks 不识别 directive 行后的 `/* */` | ✅ | `9b1ed3a` |
+| 4 | P1#2: `Pass { Name "X" }` 紧凑写法没填 `node.name` | ✅ | `2271ef4` |
+| 5 | P2#2: structureScanner 范围断言加强（4 新 case） | ✅ | `7d48312` |
+
+**关键设计决策（实施中修订）**：
+- 最初 sanitizer 把字符串内容全部屏蔽（commit `9f422f6`）。但跑 structureScanner 原有测试时发现，`SHADER_RE = /^\s*Shader\s+"([^"]*)"/` 要从字符串里捕 shader 名，全屏蔽会让它捕到空字符串。Task 2 (commit `25f55ed`) 重新定义 sanitizer：字符串内**只屏蔽结构性字符 `{` `}`**，其他字符保留。这样 regex name capture 和 brace 计数共用同一份 sanitized 输出，不需要双 pass。plan02fix.md 已同步更新这个设计。
+
+**主 agent 验证结果**（2026-05-22）：
+- `npm run clean && npm run build && npm test` 端到端 PASS
+- vitest **27/27**（sanitize 8 + handshake 1 + blockScanner 9 + structureScanner 8 + perf 1）
+- mocha **2/2** 不变
+- 性能 smoke 仍 < 50ms（sanitizer 单趟 O(n)，对原 perf 几乎无影响）
+
+**Plan 10 依赖锁定**：
+- `ShaderLabStructureNode.headerLine` 和 `.closeLine` 现在被 4 个新 case 明确断言（single-pass / multi-subshader / unterminated / block-comment-between-tokens）。Plan 10 用这些字段做 Document Symbols 树时不会再因 string/comment 边缘 case 出错。
+
+## 与 plan01fix 的协调（事后核对）
+
+plan02fix 没碰任何 plan01fix 已建立的约定：
+- 测试落 `server/tests/parser/shaderlab/`（plan01fix Task 4 拓扑）✓
+- 类型在 `shared/src/structure.ts`，无新 server-local types ✓
+- workspaces 顺序 / build chain / publisher / `.vscodeignore` 不动 ✓
+- 跨 plan signature 兼容性不动（plan02fix 不动 indexFile / resolveDefinition 等签名）✓
+
 ## 进行中 TODO
 
 ### 🟡 Plan 01 follow-up（plan01fix 之后还剩的）
@@ -148,3 +181,4 @@
 - 2026-05-22：CLAUDE.md + PROGRESS.md 落库（commit `618d456`）
 - 2026-05-22：Plan 02 实施（commit `302756b..840c05c`，8 个 task commit，0 偏离）
 - 2026-05-22：plan01fix 实施（commit `6658479..ada540b`，1 个 plan doc commit + 5 个 task commit，源自用户写的 plan01review.md）
+- 2026-05-22：plan02fix 实施（commit `93f00ae..7d48312`，1 个 plan doc commit + 5 个 task commit，源自用户写的 plan02review.md；含 sanitizer 设计的中途修订）
