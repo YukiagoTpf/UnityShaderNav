@@ -56,3 +56,23 @@ describe('scanBlocks: comments do not trigger', () => {
     expect(result.blocks[0].unterminated).toBe(false);
   });
 });
+
+describe('scanBlocks: nested braces inside HLSL', () => {
+  it('does not get confused by braces in HLSL body', () => {
+    const result = scanBlocks(fixture('nested-braces.shader'));
+    expect(result.blocks).toHaveLength(1);
+    expect(result.blocks[0].unterminated).toBe(false);
+  });
+});
+
+describe('scanBlocks: unterminated block', () => {
+  it('flags unterminated=true and extends endLine to EOF', () => {
+    const text = fixture('unterminated-block.shader');
+    const lines = text.split(/\r?\n/);
+    const result = scanBlocks(text);
+
+    expect(result.blocks).toHaveLength(1);
+    expect(result.blocks[0].unterminated).toBe(true);
+    expect(result.blocks[0].endLine).toBe(lines.length - 1);
+  });
+});
