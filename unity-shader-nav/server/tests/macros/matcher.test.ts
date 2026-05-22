@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type Parser from 'web-tree-sitter';
 import { parseHlsl } from '../../src/parser/hlsl/parser';
 import { MacroPatternTable } from '../../src/macros';
-import { matchDeclarationCall } from '../../src/macros/matcher';
+import { matchDeclarationCall, matchPragmaLine } from '../../src/macros/matcher';
 
 describe('matcher: TEXTURE2D / SAMPLER', () => {
   it('extracts _MainTex from TEXTURE2D call', async () => {
@@ -19,5 +19,21 @@ describe('matcher: TEXTURE2D / SAMPLER', () => {
     const match = matchDeclarationCall(calls[0], table);
     expect(match?.symbolKind).toBe('variable');
     expect(match?.capturedName).toBe('_MainTex');
+  });
+});
+
+describe('matcher: #pragma vertex', () => {
+  it('returns target identifier and range', () => {
+    const table = new MacroPatternTable();
+    const line = '      #pragma vertex vert';
+    const match = matchPragmaLine(line, 5, table);
+    expect(match?.capturedName).toBe('vert');
+    expect(match?.nameRange.start.line).toBe(5);
+    expect(line.slice(match!.nameRange.start.character, match!.nameRange.end.character)).toBe('vert');
+  });
+
+  it('returns null for unrecognized pragma', () => {
+    const table = new MacroPatternTable();
+    expect(matchPragmaLine('#pragma multi_compile _ FOG', 0, table)).toBeNull();
   });
 });

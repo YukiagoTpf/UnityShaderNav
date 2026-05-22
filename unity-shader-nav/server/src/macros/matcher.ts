@@ -9,6 +9,11 @@ export interface DeclarationMatch {
   nameRange: Range;
 }
 
+export interface ReferenceMatch {
+  capturedName: string;
+  nameRange: Range;
+}
+
 function firstNamedDescendantOfType(
   node: Parser.SyntaxNode,
   type: string,
@@ -58,4 +63,26 @@ export function matchDeclarationCall(
   }
 
   return null;
+}
+
+export function matchPragmaLine(
+  line: string,
+  lineNumber: number,
+  table: MacroPatternTable,
+): ReferenceMatch | null {
+  const text = line.replace(/\/\/.*$/, '');
+  const m = /^\s*(#pragma\s+\S+)\s+(\S+)/.exec(text);
+  if (!m) return null;
+  const head = m[1];
+  if (table.findRef(head).length === 0) return null;
+
+  const captured = m[2];
+  const startChar = text.indexOf(captured, m[0].length - captured.length);
+  return {
+    capturedName: captured,
+    nameRange: {
+      start: { line: lineNumber, character: startChar },
+      end: { line: lineNumber, character: startChar + captured.length },
+    },
+  };
 }
