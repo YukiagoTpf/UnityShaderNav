@@ -1,4 +1,5 @@
 import type { BlockKind, ScanResult, ShaderLabBlock } from '@unity-shader-nav/shared';
+import { sanitizeLine } from './sanitize';
 
 const START_DIRECTIVES: Record<string, BlockKind> = {
   HLSLPROGRAM: 'HLSLPROGRAM',
@@ -15,7 +16,7 @@ const END_DIRECTIVES_FOR: Record<BlockKind, string> = {
 };
 
 function trimDirective(line: string): string {
-  return line.replace(/\/\/.*$/, '').trim();
+  return sanitizeLine(line).trim();
 }
 
 export function scanBlocks(text: string): ScanResult {
