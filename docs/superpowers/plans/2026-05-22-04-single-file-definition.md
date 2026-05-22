@@ -119,6 +119,8 @@ export function wordAt(text: string, pos: Position): WordAt | null {
 }
 ```
 
+> Note: Task 1 的计划实现片段会在光标位于空白时向左扩展并返回前一个 identifier，但同一 Task 的测试明确要求 whitespace/symbol 返回 `null`。实际实现以测试语义为准：只有光标当前字符是 identifier 字符时才扩展。
+
 - [ ] **Step 4: 跑过**
 
 ```bash
