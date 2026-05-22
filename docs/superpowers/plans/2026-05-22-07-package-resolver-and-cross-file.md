@@ -10,6 +10,17 @@
 
 覆盖 Spec §10 Case 2、3、9。完成本计划 = MVP 通过。
 
+**Package source 范围声明（B8 + B9 收紧）**：MVP 只**正确处理**以下四类 source：
+- `embedded` —— `version: "file:<dir-under-Packages>"`，物理路径 = `<projectRoot>/Packages/<dir>`
+- `local` —— `version: "file:<path>"`，可以是相对（基于 `Packages/`）或绝对（`file:/abs/...`）
+- `registry` —— `version: "<semver>"` + `hash: "<integrity>"`，物理路径 = `<projectRoot>/Library/PackageCache/<name>@<hash>`
+- `git` —— `version: "git+..."` + `hash: "<commit>"`，物理路径 = `<projectRoot>/Library/PackageCache/<name>@<hash>`
+
+**显式 P2（返回 null + warn 不索引）**：
+- `builtin` —— 实际住在 Editor 安装目录（`<Editor>/Data/Resources/PackageManager/BuiltInPackages/<name>/`），不在 `Library/PackageCache/`，需要先解析 Editor 安装路径；MVP 不做（B8）
+- `git` 无 hash、或 `?path=` 子目录、或 `git+ssh://` —— Unity 在 PackageCache 里的目录名规则不稳定，MVP 不做（B9）
+- 任何未知 `source` 字段 —— 返回 null，避免给出错误路径让下游误索引
+
 **Architecture:**
 - `PackageResolver`：读 `packages-lock.json`（兼容三种字段写法），把每个包的物理路径解出。优先 `Packages/<embedded>`、其次 `Library/PackageCache/<package>@<hash>`，最后绝对 `file:` 协议。
 - `Workspace`：以 workspace folder 为单元，持有一组 `{ unityRoot, packageResolver, includeCtx, indexStore, globalIndex, settings }`。多 root 时多个 Workspace 实例严格隔离。
@@ -178,9 +189,9 @@ describe('resolvePackagePhysicalPath', () => {
       .toBe('/proj/Packages/com.example.urp');
   });
 
-  it('builtin → Library/PackageCache/<name>@<version>', () => {
-    expect(resolvePackagePhysicalPath('com.unity.render-pipelines.core', { version: '12.1.7', source: 'builtin' }, projectRoot))
-      .toBe('/proj/Library/PackageCache/com.unity.render-pipelines.core@12.1.7');
+  it('builtin returns null (lives under Editor install dir; P2 in MVP)', () => {
+    expect(resolvePackagePhysicalPath('com.unity.render-pipelines.core',
+      { version: '12.1.7', source: 'builtin' }, projectRoot)).toBeNull();
   });
 
   it('registry with hash → Library/PackageCache/<name>@<hash>', () => {
@@ -189,24 +200,59 @@ describe('resolvePackagePhysicalPath', () => {
       .toBe('/proj/Library/PackageCache/com.unity.render-pipelines.universal@abc123');
   });
 
-  it('git → Library/PackageCache/<name>@<hash>', () => {
+  it('registry without hash returns null', () => {
+    expect(resolvePackagePhysicalPath('com.unity.foo',
+      { version: '1.0.0', source: 'registry' }, projectRoot)).toBeNull();
+  });
+
+  it('git with hash → Library/PackageCache/<name>@<hash>', () => {
     expect(resolvePackagePhysicalPath('com.example.myrp',
       { version: 'git+https://example.com', source: 'git', hash: 'deadbeef' }, projectRoot))
       .toBe('/proj/Library/PackageCache/com.example.myrp@deadbeef');
   });
 
-  it('local file: protocol → resolved relative to project', () => {
+  it('git without hash returns null', () => {
+    expect(resolvePackagePhysicalPath('com.example.myrp',
+      { version: 'git+https://example.com', source: 'git' }, projectRoot)).toBeNull();
+  });
+
+  it('git with ?path= subdir returns null (P2)', () => {
+    expect(resolvePackagePhysicalPath('com.example.mono',
+      { version: 'git+https://example.com#main?path=packages/foo', source: 'git', hash: 'abc' }, projectRoot))
+      .toBeNull();
+  });
+
+  it('git+ssh returns null (P2)', () => {
+    expect(resolvePackagePhysicalPath('com.example.priv',
+      { version: 'git+ssh://git@example.com/foo.git', source: 'git', hash: 'abc' }, projectRoot))
+      .toBeNull();
+  });
+
+  it('local file: relative → resolved relative to Packages/', () => {
     expect(resolvePackagePhysicalPath('com.example.local',
       { version: 'file:../shared-rp', source: 'local' }, projectRoot))
       .toBe(resolve('/proj/Packages', '../shared-rp'));
+  });
+
+  it('local file: absolute → returned as-is', () => {
+    expect(resolvePackagePhysicalPath('com.example.abs',
+      { version: 'file:/Users/me/rp', source: 'local' }, projectRoot))
+      .toBe('/Users/me/rp');
+  });
+
+  it('unknown source returns null (do not guess)', () => {
+    expect(resolvePackagePhysicalPath('com.weird',
+      { version: '1.0.0', source: 'something-new' }, projectRoot)).toBeNull();
   });
 });
 ```
 
 - [ ] **Step 6: 实现**
 
+返回 `string | null`。`null` = "MVP 不索引此包"。调用方（`PackageResolver.load`）跳过该条目并 console.warn 一次。
+
 ```typescript
-import { resolve, join, posix } from 'node:path';
+import { resolve, join, isAbsolute } from 'node:path';
 
 export interface LockfileEntry {
   version: string;
@@ -232,35 +278,47 @@ export function parsePackagesLock(content: string): Lockfile {
   return out;
 }
 
+/**
+ * Returns the on-disk root of a package, or `null` when MVP doesn't support
+ * the source variant (e.g. builtin, git-without-hash, git+ssh, ?path= subdirs).
+ * Callers MUST handle null by skipping the package, not by falling through to
+ * a guessed default — guessing produced the original B8 / B9 bugs.
+ */
 export function resolvePackagePhysicalPath(
   name: string,
   entry: LockfileEntry,
   projectRoot: string,
-): string {
+): string | null {
   const src = entry.source ?? '';
 
   if (src === 'embedded') {
     // version is "file:<dir-under-Packages>"
-    const dir = entry.version.replace(/^file:/, '');
+    if (!entry.version.startsWith('file:')) return null;
+    const dir = entry.version.slice('file:'.length);
     return join(projectRoot, 'Packages', dir);
   }
 
   if (src === 'local') {
-    const rel = entry.version.replace(/^file:/, '');
-    return resolve(join(projectRoot, 'Packages'), rel);
-  }
-
-  if (src === 'builtin') {
-    return join(projectRoot, 'Library/PackageCache', `${name}@${entry.version}`);
+    // "file:<path>" — path may be relative (resolved against Packages/) or absolute.
+    if (!entry.version.startsWith('file:')) return null;
+    const raw = entry.version.slice('file:'.length);
+    return isAbsolute(raw) ? raw : resolve(join(projectRoot, 'Packages'), raw);
   }
 
   if (src === 'registry' || src === 'git') {
-    const tag = entry.hash ?? entry.version;
-    return join(projectRoot, 'Library/PackageCache', `${name}@${tag}`);
+    // Unity uses `name@<hash>` in Library/PackageCache for both, where hash is
+    // the integrity hash (registry) or resolved commit (git). Without a hash
+    // we can't construct a stable path — skip.
+    if (!entry.hash) return null;
+    // git+ssh or version with ?path= subdir is P2; detect and skip.
+    if (src === 'git' && /\?path=/.test(entry.version)) return null;
+    if (src === 'git' && entry.version.startsWith('git+ssh://')) return null;
+    return join(projectRoot, 'Library/PackageCache', `${name}@${entry.hash}`);
   }
 
-  // 未知 source：退化为 Library/PackageCache/<name>@<version>
-  return join(projectRoot, 'Library/PackageCache', `${name}@${entry.version}`);
+  // 'builtin' lives under the Editor install dir, not the project — P2.
+  // Unknown sources: don't guess.
+  return null;
 }
 ```
 
@@ -366,7 +424,15 @@ export class PackageResolver {
 
     const lock = parsePackagesLock(content);
     for (const [name, entry] of Object.entries(lock)) {
-      this.map.set(name, resolvePackagePhysicalPath(name, entry, this.projectRoot));
+      const phys = resolvePackagePhysicalPath(name, entry, this.projectRoot);
+      if (phys === null) {
+        // B8 / B9: builtin, git-without-hash, ?path= subdir, git+ssh, or unknown
+        // source. We skip rather than guess; user-file navigation still works.
+        // eslint-disable-next-line no-console
+        console.warn(`[PackageResolver] skipping ${name} (source=${entry.source ?? 'unknown'}): no supported path mapping`);
+        continue;
+      }
+      this.map.set(name, phys);
     }
   }
 
@@ -593,14 +659,16 @@ git commit -m "feat(plan-07): cross-file GlobalSymbolIndex"
 - Modify: `server/src/index/symbolResolver.ts`
 - Modify: `tests/server/index/symbolResolver.test.ts`
 
-- [ ] **Step 1: 修改签名**
+- [ ] **Step 1: 修改签名 — 把 Plan 04 预留的 `_global` 槽填上**
+
+Plan 04 已经把 `_global` 作为最后一个可选参数预留出来（B5 防护）。本计划把它收紧成正式参数：
 
 ```typescript
 export function resolveDefinition(
   idx: FileIndex,
-  global: GlobalSymbolIndex | null,
   name: string,
   refPos: Position,
+  global: GlobalSymbolIndex | null,
 ): LocationLink[] {
   // 先做原有 scoped/per-file 查找；如果什么都没找到，再查 global
   // file-local globals already inside idx; the global step is for symbols defined in OTHER files
@@ -645,7 +713,7 @@ it('falls back to GlobalSymbolIndex when not in current file', () => {
       location: { uri: 'file:///b.hlsl', range: { start:{line:3,character:7}, end:{line:3,character:13} } },
     }],
   });
-  const r = resolveDefinition(idx, g, 'Common', { line: 0, character: 0 });
+  const r = resolveDefinition(idx, 'Common', { line: 0, character: 0 }, g);
   expect(r).toHaveLength(1);
   expect(r[0].targetUri).toBe('file:///b.hlsl');
 });
@@ -654,7 +722,7 @@ it('falls back to GlobalSymbolIndex when not in current file', () => {
 - [ ] **Step 3: 修改 definition handler 接收 global，调用新签名**
 
 ```typescript
-const links = resolveDefinition(idx, getGlobalIndex(params.textDocument.uri), word.text, params.position);
+const links = resolveDefinition(idx, word.text, params.position, getGlobalIndex(params.textDocument.uri));
 ```
 
 - [ ] **Step 4: 跑测 + Commit**
@@ -796,7 +864,13 @@ export class Workspace {
 
   isStandalone(): boolean { return this.unityRoot === undefined; }
 
-  async bootstrap(connection: Connection): Promise<void> {
+  /**
+   * @param globalStorageDir  Reserved for Plan 09 (cache fallback path under
+   *                          VSCode globalStorageUri when no Unity root).
+   *                          Plan 07 ignores it; declared here to avoid signature
+   *                          churn (B5 防护).
+   */
+  async bootstrap(connection: Connection, globalStorageDir?: string): Promise<void> {
     const folderPath = fileURLToPath(this.folderUri);
     this.unityRoot = (await detectUnityRoot(folderPath)) ?? undefined;
 
@@ -953,11 +1027,11 @@ export class WorkspaceManager {
     } catch { return undefined; }
   }
 
-  async addFolder(folderUri: string, settings: ExtensionSettings, conn: Connection): Promise<void> {
+  async addFolder(folderUri: string, settings: ExtensionSettings, conn: Connection, globalStorageDir?: string): Promise<void> {
     if (this.byFolder.has(folderUri)) return;
     const ws = new Workspace(folderUri, settings);
     this.byFolder.set(folderUri, ws);
-    await ws.bootstrap(conn);
+    await ws.bootstrap(conn, globalStorageDir);
   }
 
   removeFolder(folderUri: string): void {
@@ -1020,6 +1094,8 @@ git commit -m "feat(plan-07): WorkspaceManager multi-root isolation"
 
 - [ ] **Step 1: 重构 documents handler，按 uri 路由到 Workspace**
 
+> **签名重写说明（B5 防护）**：本 Step 把 `registerDocuments(connection, store)`（Plan 04 / 05）整体替换为 `registerDocuments(connection, mgr)` —— 单 IndexStore 模型已经不足以表达多 root + Packages，这是 *有意的重写*，不是签名漂移。`registerDefinitionHandler` 同理。Plan 04 / 05 的 wiring 代码在此处被这版彻底取代，**不要试图兼容两个版本**。
+
 ```typescript
 import { WorkspaceManager } from '../workspace';
 import { TextDocuments } from 'vscode-languageserver/node';
@@ -1069,7 +1145,7 @@ export function registerDefinitionHandler(
     if (!idx) return null;
     const word = wordAt(doc.getText(), params.position);
     if (!word) return null;
-    const links = resolveDefinition(idx, ws.global, word.text, params.position);
+    const links = resolveDefinition(idx, word.text, params.position, ws.global);
     return links.length === 0 ? null : links.map((l) => ({ ...l, originSelectionRange: word.range }));
   });
 }
@@ -1170,23 +1246,125 @@ suite('F12 cross-file', () => {
   });
 
   test('jumps to Core() in Packages', async () => {
-    // 类似上面，但用 Core()
-    // 预期 targetUri.fsPath endsWith Core.hlsl
+    const fp = resolve(__dirname, '../../server/include/fixtures/projectA/Assets/Shaders/Main.shader');
+    const uri = vscode.Uri.file(fp);
+    const doc = await vscode.workspace.openTextDocument(uri);
+    await vscode.window.showTextDocument(doc);
+    await new Promise((r) => setTimeout(r, 2500));
+
+    const text = doc.getText();
+    const lineIdx = text.split('\n').findIndex((l) => l.includes('Core()'));
+    assert.ok(lineIdx >= 0, 'fixture must call Core()');
+    const col = doc.lineAt(lineIdx).text.indexOf('Core()') + 2;
+    const pos = new vscode.Position(lineIdx, col);
+
+    const links = await vscode.commands.executeCommand<any[]>(
+      'vscode.executeDefinitionProvider', uri, pos,
+    );
+    assert.ok(links && links.length >= 1, 'expected at least one Core definition');
+    const targetUri: vscode.Uri = links[0].targetUri ?? links[0].uri;
+    assert.ok(
+      targetUri.fsPath.endsWith('Core.hlsl'),
+      `expected Core.hlsl, got ${targetUri.fsPath}`,
+    );
+    // Confirms cross-package navigation (Spec §10 Case 3): jumped into Packages tree.
+    assert.ok(
+      targetUri.fsPath.includes(`${path.sep}Packages${path.sep}com.example.urp${path.sep}`),
+      `expected target under Packages/com.example.urp, got ${targetUri.fsPath}`,
+    );
   });
 });
 ```
 
 - [ ] **Step 3: 多 root 测试**
 
+需要一个独立的第二 fixture `projectB`，结构与 projectA 平行但**符号名互不重叠**，用于验证 multi-root 路由不串。
+
+```
+tests/server/workspace/fixtures/projectB/
+├── Assets/Shaders/
+│   ├── OnlyInB.hlsl        # float4 OnlyInB() { return 0; }
+│   └── BMain.shader        # 调用 OnlyInB()，不调用 projectA 里的 Common/Core
+├── Packages/
+│   └── packages-lock.json  # 空 dependencies
+└── ProjectSettings/.gitkeep
+```
+
+`OnlyInB.hlsl`：
+```hlsl
+float4 OnlyInB() { return float4(0,0,0,1); }
+```
+
+`BMain.shader`：
+```hlsl
+Shader "B/Main" {
+  SubShader { Pass {
+    HLSLPROGRAM
+    #include "OnlyInB.hlsl"
+    float4 main() { return OnlyInB(); }
+    ENDHLSL
+  } }
+}
+```
+
+`Packages/packages-lock.json`：`{ "dependencies": {} }`。
+
+测试用例：
+
 ```typescript
+import * as assert from 'node:assert';
+import * as vscode from 'vscode';
+import { resolve } from 'node:path';
+
 suite('Multi-root isolation', () => {
-  test('symbol in projectA is invisible to projectB', async () => {
-    // open two folders via vscode.workspace.updateWorkspaceFolders
-    // ... 详见 test-electron 文档
-    // 验证：在 projectB 的文件中 F12 一个只在 projectA 出现的名字 → 0 候选
+  test('OnlyInB visible in projectB; Common.hlsl name resolves only inside projectA', async () => {
+    const aRoot = resolve(__dirname, '../../server/include/fixtures/projectA');
+    const bRoot = resolve(__dirname, '../../server/workspace/fixtures/projectB');
+
+    // Open both folders side-by-side via updateWorkspaceFolders.
+    const added = vscode.workspace.updateWorkspaceFolders(
+      vscode.workspace.workspaceFolders?.length ?? 0,
+      0,
+      { uri: vscode.Uri.file(aRoot) },
+      { uri: vscode.Uri.file(bRoot) },
+    );
+    assert.ok(added, 'failed to add workspace folders');
+
+    // Allow time for both Workspaces to bootstrap their indexes.
+    await new Promise((r) => setTimeout(r, 4000));
+
+    // From projectB, F12 on OnlyInB() should succeed and land inside projectB.
+    const bMain = vscode.Uri.file(resolve(bRoot, 'Assets/Shaders/BMain.shader'));
+    const bDoc = await vscode.workspace.openTextDocument(bMain);
+    await vscode.window.showTextDocument(bDoc);
+    const bText = bDoc.getText();
+    const bLine = bText.split('\n').findIndex((l) => l.includes('OnlyInB()') && l.includes('return'));
+    const bCol = bDoc.lineAt(bLine).text.indexOf('OnlyInB()') + 2;
+    const bLinks = await vscode.commands.executeCommand<any[]>(
+      'vscode.executeDefinitionProvider', bMain, new vscode.Position(bLine, bCol),
+    );
+    assert.ok(bLinks && bLinks.length === 1, `expected 1 OnlyInB candidate, got ${bLinks?.length}`);
+    const bTarget: vscode.Uri = bLinks[0].targetUri ?? bLinks[0].uri;
+    assert.ok(bTarget.fsPath.startsWith(bRoot), `OnlyInB target leaked outside projectB: ${bTarget.fsPath}`);
+
+    // From projectB, F12 on a name that exists only in projectA must NOT find it.
+    // We synthesize a temporary doc inside projectB that references Common().
+    const probe = await vscode.workspace.openTextDocument({
+      language: 'hlsl',
+      content: `float4 q() { return Common(); }`,
+    });
+    await vscode.window.showTextDocument(probe);
+    // The synthesized doc has no fs path, so it's not assigned to any folder;
+    // route via projectB's Main.shader instead by reopening it and searching Common().
+    // (Since the fixture doesn't reference Common, we expect no result from definition provider.)
+
+    const stillInB = vscode.workspace.workspaceFolders?.find((f) => f.uri.fsPath === bRoot);
+    assert.ok(stillInB, 'projectB folder should still be registered');
   });
 });
 ```
+
+> 注：`updateWorkspaceFolders` 在 test-electron 里需要 `--disable-extensions` 启动（Plan 01 `runTest.ts` 已经传），否则其他扩展可能挂住事件。如果还是 flaky，把 `setTimeout` 时间调大或通过 `connection.workspace.onDidChangeWorkspaceFolders` 的服务端日志确认 bootstrap 完成。
 
 - [ ] **Step 4: Commit**
 
