@@ -45,3 +45,13 @@ describe('scanStructure: braces inside strings (P1#1)', () => {
     expect(shader.closeLine).toBe(8);
   });
 });
+
+describe('scanStructure: inline Pass { Name "X" } (P1#2)', () => {
+  it('extracts name from same line as Pass {', () => {
+    const result = scanStructure(fixture('inline-pass-name.shader'));
+    const passes = result.shaders[0].children[0].children;
+    expect(passes).toHaveLength(2);
+    expect(passes[0].name).toBe('Inline');
+    expect(passes[1].name).toBe('Multiline');
+  });
+});

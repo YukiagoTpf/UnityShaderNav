@@ -5,6 +5,7 @@ const SHADER_RE   = /^\s*Shader\s+"([^"]*)"/;
 const SUBSHADER_RE = /^\s*SubShader\b/;
 const PASS_RE      = /^\s*Pass\b/;
 const PASS_NAME_RE = /^\s*Name\s+"([^"]*)"/;
+const INLINE_NAME_RE = /\bName\s+"([^"]*)"/;
 
 interface Frame {
   node: ShaderLabStructureNode;
@@ -38,6 +39,13 @@ export function scanStructure(text: string): StructureResult {
       open('subshader', i, undefined);
     } else if (PASS_RE.test(raw) && stack.length > 0 && stack[stack.length - 1].node.kind === 'subshader') {
       open('pass', i, undefined);
+      // Compact form `Pass { Name "X" }` puts the name on the same line as
+      // the Pass header; capture it now or PASS_NAME_RE (line-start only)
+      // would miss it.
+      const inlineName = INLINE_NAME_RE.exec(raw);
+      if (inlineName) {
+        stack[stack.length - 1].node.name = inlineName[1];
+      }
     } else {
       const nameMatch = PASS_NAME_RE.exec(raw);
       if (nameMatch && stack.length > 0 && stack[stack.length - 1].node.kind === 'pass') {
