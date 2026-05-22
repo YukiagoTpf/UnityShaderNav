@@ -9,6 +9,14 @@ describe('fileIndexer: pure .hlsl', () => {
     const idx = await indexFile('file:///t/x.hlsl', text);
     expect(idx.symbols.find((s) => s.name === 'add')).toBeDefined();
   });
+
+  it('records #include directives as references with context=include', async () => {
+    const text = `#include "Common.hlsl"\nfloat4 x() { return 0; }`;
+    const idx = await indexFile('file:///t/a.hlsl', text);
+    const includeRef = idx.references.find((r) => r.context === 'include');
+
+    expect(includeRef?.name).toBe('Common.hlsl');
+  });
 });
 
 describe('fileIndexer: .shader multi-pass', () => {

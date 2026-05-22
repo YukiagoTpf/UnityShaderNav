@@ -33,7 +33,7 @@ export interface FunctionSymbolEntry extends SymbolEntry {
   parameters: FunctionParameter[];
 }
 
-export type ReferenceContext = 'call' | 'type' | 'member' | 'pragma' | 'identifier';
+export type ReferenceContext = 'call' | 'type' | 'member' | 'pragma' | 'identifier' | 'include';
 
 export interface ReferenceEntry {
   name: string;
