@@ -485,6 +485,8 @@ git commit -m "feat(plan-04): textDocument/definition handler"
 - Modify: `server/src/server.ts`
 - Modify: `server/src/connection.ts`
 
+> Note: 当前 `connection.ts` 已在 plan01fix 中改成 lazy `getConnection()`，避免 vitest 模块加载期创建无 transport 的 LSP connection。Task 6 实施时保留该现实结构，只在 `createInitializeResult()` 增加 `definitionProvider: true`，并在 `server.ts` 使用 `getConnection()` 接线。
+
 - [ ] **Step 1: 修改 `connection.ts` 增加 `definitionProvider`**
 
 ```typescript

@@ -7,4 +7,9 @@ describe('LSP handshake', () => {
     expect(result.serverInfo?.name).toBe('UnityShaderNav Language Server');
     expect(result.capabilities.textDocumentSync).toBeDefined();
   });
+
+  it('advertises definitionProvider', () => {
+    const result = createInitializeResult();
+    expect(result.capabilities.definitionProvider).toBe(true);
+  });
 });

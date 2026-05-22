@@ -1,9 +1,10 @@
-import { TextDocuments } from 'vscode-languageserver/node';
-import { TextDocument } from 'vscode-languageserver-textdocument';
 import { getConnection, createInitializeResult } from './connection';
+import { registerDefinitionHandler } from './handlers/definition';
+import { registerDocuments } from './handlers/documents';
+import { IndexStore } from './index';
 
 const connection = getConnection();
-const documents = new TextDocuments(TextDocument);
+const store = new IndexStore();
 
 connection.onInitialize(() => createInitializeResult());
 
@@ -11,5 +12,7 @@ connection.onInitialized(() => {
   connection.console.log('[UnityShaderNav] server initialized');
 });
 
-documents.listen(connection);
+const documents = registerDocuments(connection, store);
+registerDefinitionHandler(connection, documents, store);
+
 connection.listen();
