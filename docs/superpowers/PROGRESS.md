@@ -8,8 +8,8 @@
 |---|---|---|---|---|
 | 01 | project-scaffolding | ✅ Done + plan01fix 应用 | — | F5 manual 待人工；vsix 打包路径已修正 |
 | 02 | shaderlab-block-parser | ✅ Done + plan02fix 应用 | — | sanitizer 接管字符串/注释；scanStructure 加 range 覆盖 |
-| 03 | hlsl-symbol-collector | ⏸ Blocked by R1 spike | — | tree-sitter-hlsl 节点名需要先验证 |
-| 04 | single-file-definition | ⏸ Planned | Case 1, 8 | |
+| 03 | hlsl-symbol-collector | ✅ Done（5 处偏离已记） | — | R1 spike 完成；cbuffer 走 fallback；createRequire 绕 vitest ESM 坑 |
+| 04 | single-file-definition | ⏸ Next | Case 1, 8 | Plan 03 已提供 FileIndex 底座 |
 | 05 | macro-pattern-recognizer | ⏸ Planned | Case 5, 6, 7 | |
 | 06 | include-resolver | ⏸ Planned | Case 4 | |
 | 07 | package-resolver-and-cross-file | ⏸ Planned | Case 2, 3, 9 | MVP 完成点 |
@@ -136,6 +136,47 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 - workspaces 顺序 / build chain / publisher / `.vscodeignore` 不动 ✓
 - 跨 plan signature 兼容性不动（plan02fix 不动 indexFile / resolveDefinition 等签名）✓
 
+## Plan 03 实施记录
+
+**Commits**：`bf90337..92616e1`（11 个 commit：10 Task + 1 R1 spike）
+
+| Task | 状态 | Commit |
+|---|---|---|
+| 1 shared types (SymbolEntry / FileIndex) | ✅ | `bf90337` |
+| 2 vendor tree-sitter-hlsl.wasm | ✅ | `41c6aa0` |
+| — R1 spike — calibrate node names | ✅ | `c5786a9` |
+| 3 parser singleton（createRequire 绕坑） | ✅ | `11219be` |
+| 4 node helpers | ✅ | `d07143d` |
+| 5 collector — functions + parameters | ✅ | `6433735` |
+| 6 collector — struct + cbuffer（fallback） | ✅ | `e00cf4f` |
+| 7 collector — locals + shadowing | ✅ | `43192c1` |
+| 8 collector — references（call/type/member） | ✅ | `56e33ab` |
+| 9 fileIndexer — .shader 多块拼接 | ✅ | `95d2e2e` |
+| 10 nested struct fixture | ✅ | `92616e1` |
+
+**R1 Spike 关键发现**（详见 plan markdown §R1 Spike Result 段，对应表 18 行）：
+
+| 项 | 实际情况 |
+|---|---|
+| 节点名猜对 | `function_definition` / `function_declarator` / `parameter_list` / `parameter_declaration` / `struct_specifier` / `field_declaration_list` / `field_declaration` / `field_identifier` / `call_expression` / `field_expression` / `type_identifier` / `compound_statement` / `declaration` / `init_declarator` |
+| 节点名猜错 | `function_declaration` / `cbuffer_declaration` / `init_declaration` / `local_variable_declaration` / `struct_declaration_list`（全不存在） |
+| 必须补识 | `primitive_type`（`void`/`float` 等内置类型走这个，不是 `type_identifier`） |
+| 最大坑 | **grammar 不识别 `cbuffer`**，把 `cbuffer Foo { ... };` 误析成 `function_definition` —— collector 用 `isCbufferShape()` 启发式识别 (`type.text === 'cbuffer'/'tbuffer'/'ConstantBuffer' && declarator.type === 'identifier'`) |
+
+**实施中的偏离（全部 plan markdown 内联 Note）**：
+1. **Task 2 WASM 入库**：上游 v0.2.0 release 无 wasm artifact，fetch 脚本 404 → Docker emcc fallback（clone + `tree-sitter build --wasm` 走 `emscripten/emsdk:3.1.64` 镜像）
+2. **Task 3 parser.ts**：web-tree-sitter 0.22 在 `Parser.init()` 内 `module.exports = Module` 重赋值，vite/vitest 的 ESM default import 拿不到后挂出的 `.Language` → 用 `createRequire(__filename)('web-tree-sitter')` lazy require + cache。如果将来升级到 0.23+ 需切回标准 import（已在 plan markdown Note 提醒）。
+3. **节点名校准**：见 R1 Spike Result 表，collector 代码段照真实节点名重写
+4. **cbuffer fallback**：grammar 不识别 cbuffer，collector 启发式识别
+5. **WASM 路径层数**：plan 注释说"从 `out/parser/hlsl` 上推 4 层"，实际 3 层就到 `server/`（plan 代码本身的 `'..','..','..'` 是对的，注释口径错；subagent 选择保留）
+
+**主 agent 验证结果**（2026-05-22）：
+- `npm run clean && npm run build`：3 个 workspace tsc + esbuild + copy-server 全过
+- `npm test`：mocha **2/2** + vitest **39/39**（baseline 27 → +12：parser 2 + collector 8 + fileIndexer 2）
+- 性能：collector + parser 8 个 case 共 28ms，fileIndexer 2 个 case 22ms，无规模问题
+- WASM 入库（4.1 MB）；nested struct case 显式断言 `Outer.inner.declaredType === 'Inner'` 和 `Make.returnType === 'Outer'`，Plan 11 chain lookup 所需元数据已就位
+- 集成 plan01fix/plan02fix 拓扑：测试在 `server/tests/parser/hlsl/`、shared types 经 `@unity-shader-nav/shared` 出口、indexFile 保留 `_table?: unknown` 槽位（B5 forward-compat）
+
 ## 进行中 TODO
 
 ### 🟡 Plan 01 follow-up（plan01fix 之后还剩的）
@@ -146,10 +187,7 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 
 ### 🔴 Plan 03 前置（必须先做）
 
-- **R1 spike — tree-sitter-hlsl 节点名验证**：Plan 03 假设的节点名（`function_definition` / `field_identifier` / etc.）是猜的，wasm 实际 `node-types.json` 里可能叫别的。开 Plan 03 前花 30 分钟：
-  1. `git clone https://github.com/tree-sitter-grammars/tree-sitter-hlsl && npx tree-sitter build --wasm`
-  2. 20 行 Node 脚本 parse 典型 HLSL，打 `tree.rootNode.toString()`
-  3. 拿真实节点名 patch 回 Plan 03 collector 代码
+- ~~**R1 spike — tree-sitter-hlsl 节点名验证**~~ ✅ 已完成（Plan 03 实施开头，commit `c5786a9`），校准表写进 plan markdown
 
 ### ⏸ 待手动验证
 
@@ -182,3 +220,4 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 - 2026-05-22：Plan 02 实施（commit `302756b..840c05c`，8 个 task commit，0 偏离）
 - 2026-05-22：plan01fix 实施（commit `6658479..ada540b`，1 个 plan doc commit + 5 个 task commit，源自用户写的 plan01review.md）
 - 2026-05-22：plan02fix 实施（commit `93f00ae..7d48312`，1 个 plan doc commit + 5 个 task commit，源自用户写的 plan02review.md；含 sanitizer 设计的中途修订）
+- 2026-05-22：Plan 03 实施 + R1 spike（commit `bf90337..92616e1`，10 个 task commit + 1 个 spike commit，5 处偏离全部 plan markdown 内联记录）
