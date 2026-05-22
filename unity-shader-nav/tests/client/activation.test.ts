@@ -1,10 +1,10 @@
 import * as assert from 'node:assert';
 import * as vscode from 'vscode';
 
-const EXT_NAME = 'unity-shader-nav';
+const EXT_ID = 'Yukiago.unity-shader-nav';
 
 function findExt(): vscode.Extension<unknown> | undefined {
-  return vscode.extensions.all.find((e) => e.packageJSON?.name === EXT_NAME);
+  return vscode.extensions.getExtension(EXT_ID);
 }
 
 async function waitFor(predicate: () => boolean, timeoutMs = 5000, stepMs = 50): Promise<boolean> {

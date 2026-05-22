@@ -3,6 +3,7 @@
   "displayName": "UnityShaderNav",
   "description": "Code navigation for Unity Shader files (ShaderLab + HLSL).",
   "version": "0.0.1",
+  "publisher": "Yukiago",
   "private": true,
   "engines": {
     "vscode": "^1.85.0"
