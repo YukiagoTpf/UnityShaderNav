@@ -293,16 +293,26 @@ cd server && npx vitest run --root . ../tests/server/handshake.test.ts
 
 - [ ] **Step 5: 写最小实现 `server/src/connection.ts`**
 
+> **Note:** `createConnection` 被包成 lazy getter，避免在 vitest 单元测试 import 时立刻去抓 stdin/IPC（unit test 上下文里没有 LSP transport 参数，会抛 `Connection input stream is not set`）。`server.ts` 第一次访问 `connection` 时才真正建连接。
+
 ```typescript
 import {
   createConnection,
   ProposedFeatures,
   TextDocumentSyncKind,
+  type Connection,
   type InitializeResult,
 } from 'vscode-languageserver/node';
 import { SERVER_NAME } from '@unity-shader-nav/shared';
 
-export const connection = createConnection(ProposedFeatures.all);
+let _connection: Connection | undefined;
+
+export function getConnection(): Connection {
+  if (!_connection) {
+    _connection = createConnection(ProposedFeatures.all);
+  }
+  return _connection;
+}
 
 export function createInitializeResult(): InitializeResult {
   return {
@@ -322,8 +332,9 @@ export function createInitializeResult(): InitializeResult {
 ```typescript
 import { TextDocuments } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
-import { connection, createInitializeResult } from './connection';
+import { getConnection, createInitializeResult } from './connection';
 
+const connection = getConnection();
 const documents = new TextDocuments(TextDocument);
 
 connection.onInitialize(() => createInitializeResult());
