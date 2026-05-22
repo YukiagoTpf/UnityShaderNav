@@ -6,7 +6,7 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "watch": "npm run watch --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present",
+    "test": "npm run build && tsc -p tests/tsconfig.json && node tests/out/runTest.js && npm run test --workspaces --if-present",
     "clean": "rm -rf client/out server/out shared/out"
   },
   "devDependencies": {

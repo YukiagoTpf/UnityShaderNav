@@ -1,0 +1,13 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "out",
+    "composite": false,
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "types": ["node", "mocha"]
+  },
+  "include": ["runTest.ts", "client/**/*.ts"],
+  "exclude": ["server/**/*", "out/**"]
+}

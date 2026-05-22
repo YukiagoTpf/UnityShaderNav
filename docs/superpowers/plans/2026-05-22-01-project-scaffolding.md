@@ -239,7 +239,7 @@ git commit -m "chore(plan-01): add shared package with protocol constants"
   "scripts": {
     "build": "tsc -p .",
     "watch": "tsc -p . -w",
-    "test": "vitest run"
+    "test": "vitest run --root .. tests/server"
   },
   "dependencies": {
     "@unity-shader-nav/shared": "0.0.1",
@@ -667,6 +667,8 @@ npm install -D -w unity-shader-nav @vscode/test-electron mocha @types/mocha
 
 - [ ] **Step 2: 写失败测试 `tests/client/activation.test.ts`**
 
+> **Note:** 由于 `client/package.json` 还没有声明 `publisher` 字段，`vscode.extensions.getExtension('unity-shader-nav')` 不会命中（VSCode 内部需要 `publisher.name` 形式的 id；development host 下会回退为 `undefined_publisher.unity-shader-nav`）。所以这里改成扫描 `vscode.extensions.all`，按 `packageJSON.name` 匹配。
+
 ```typescript
 import * as assert from 'node:assert';
 import * as vscode from 'vscode';
@@ -679,10 +681,12 @@ suite('UnityShaderNav activation', () => {
     });
     await vscode.window.showTextDocument(doc);
 
-    const ext = vscode.extensions.getExtension('unity-shader-nav');
+    const ext = vscode.extensions.all.find(
+      (e) => e.packageJSON?.name === 'unity-shader-nav',
+    );
     assert.ok(ext, 'extension manifest must be loaded');
-    await ext!.activate();
-    assert.strictEqual(ext!.isActive, true);
+    await ext.activate();
+    assert.strictEqual(ext.isActive, true);
   });
 });
 ```
@@ -691,17 +695,21 @@ suite('UnityShaderNav activation', () => {
 
 `launchArgs` 必须显式传 fixture workspace 目录，否则 test-electron 启动的 Extension Development Host 没有 workspace folder，Plan 04+ 的 `WorkspaceManager` 拿不到任何 folder，集成测试全返回 null。fixture 路径从 `USN_TEST_FIXTURE` 环境变量读，未设置时退化为 Plan 01 的 `empty-workspace`。
 
+> **Path note:** 编译产物在 `tests/out/runTest.js`，所以 `__dirname` = `tests/out`。monorepo root = `path.resolve(__dirname, '../..')`。
+
 ```typescript
 import * as path from 'node:path';
 import { runTests } from '@vscode/test-electron';
 
 async function main(): Promise<void> {
-  const extensionDevelopmentPath = path.resolve(__dirname, '../client');
+  // __dirname at runtime = unity-shader-nav/tests/out
+  const monorepoRoot = path.resolve(__dirname, '../..');
+  const extensionDevelopmentPath = path.resolve(monorepoRoot, 'client');
   const extensionTestsPath = path.resolve(__dirname, './client/suite');
 
   const fixtureRel = process.env.USN_TEST_FIXTURE
     ?? 'tests/fixtures/01-scaffolding/empty-workspace';
-  const workspaceFolder = path.resolve(__dirname, '..', fixtureRel);
+  const workspaceFolder = path.resolve(monorepoRoot, fixtureRel);
 
   await runTests({
     extensionDevelopmentPath,
