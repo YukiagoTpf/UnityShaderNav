@@ -1,0 +1,11 @@
+{
+  "name": "@unity-shader-nav/shared",
+  "version": "0.0.1",
+  "private": true,
+  "main": "out/protocol.js",
+  "types": "out/protocol.d.ts",
+  "scripts": {
+    "build": "tsc -p .",
+    "watch": "tsc -p . -w"
+  }
+}
