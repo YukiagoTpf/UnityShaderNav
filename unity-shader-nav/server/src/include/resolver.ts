@@ -68,14 +68,39 @@ export async function resolveInclude(
   fromFileUri: string,
   ctx: IncludeContext,
 ): Promise<ResolvedInclude | null> {
-  if (includePath.startsWith('Packages/') && ctx.packagePhysicalPaths === undefined) {
-    return null;
-  }
-
   let fromPath: string;
   try {
     fromPath = fileURLToPath(fromFileUri);
   } catch {
+    return null;
+  }
+
+  if (includePath.startsWith('Packages/')) {
+    const rest = includePath.substring('Packages/'.length);
+    const slash = rest.indexOf('/');
+    const packageName = slash < 0 ? rest : rest.substring(0, slash);
+    const subpath = slash < 0 ? '' : rest.substring(slash + 1);
+    const packageRoot = ctx.packagePhysicalPaths?.get(packageName);
+    if (!packageRoot) return null;
+
+    const candidate = subpath ? join(packageRoot, subpath) : packageRoot;
+    if (await existsCaseSensitive(candidate)) {
+      return {
+        absolutePath: candidate,
+        via: 'package',
+        caseInsensitive: false,
+      };
+    }
+
+    const caseInsensitive = await findIgnoreCase(candidate);
+    if (caseInsensitive) {
+      return {
+        absolutePath: caseInsensitive,
+        via: 'package',
+        caseInsensitive: true,
+      };
+    }
+
     return null;
   }
 

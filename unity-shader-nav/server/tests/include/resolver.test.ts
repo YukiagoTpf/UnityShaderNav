@@ -60,6 +60,27 @@ describe('resolveInclude: includeDirectories', () => {
   });
 });
 
+describe('resolveInclude: Packages/...', () => {
+  it('resolves via package physical path map', async () => {
+    const physicalPath = join(fixtureRoot, 'Packages', 'com.example.urp');
+    const includeCtx: IncludeContext = {
+      unityProjectRoot: fixtureRoot,
+      includeDirectories: [],
+      packagePhysicalPaths: new Map([['com.example.urp', physicalPath]]),
+    };
+    const fromUri = pathToFileURL(join(fixtureRoot, 'Assets/Shaders/Main.shader')).href;
+
+    const result = await resolveInclude(
+      'Packages/com.example.urp/ShaderLibrary/Core.hlsl',
+      fromUri,
+      includeCtx,
+    );
+
+    expect(result?.via).toBe('package');
+    expect(result?.absolutePath).toBe(join(physicalPath, 'ShaderLibrary', 'Core.hlsl'));
+  });
+});
+
 describe('resolveInclude: case-insensitive fallback', () => {
   it('returns the file via case-insensitive match with warning flag', async () => {
     const fromUri = pathToFileURL(join(caseRoot, 'Assets/Shaders/Main.hlsl')).href;
