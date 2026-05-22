@@ -623,6 +623,12 @@ git commit -m "test(plan-04): in-process F12 smoke"
 - Create: `tests/integration/client/fixtures/multi-pass-test.shader`
 - Create: `tests/integration/client/definition.test.ts`
 
+> Note: 当前 `tests/tsconfig.json` 只编译 `.ts` 到 `tests/out`，不会复制 fixture 文件。实际 `definition.test.ts` 从运行时 `tests/out/integration/client` 回指源码侧 `tests/integration/client/fixtures`，避免新增 fixture copy 流程。
+
+> Note: 当前 `tests/tsconfig.json` 的 include 只覆盖 `runTest.ts` 和 `client/**/*.ts`，不会编译本 Task 计划新增的 `tests/integration/client/definition.test.ts`。实际实施同步把 `integration/**/*.ts` 加入 include，确保 test-electron 会执行 F12 集成测。
+
+> Note: 当前 mocha suite 入口 `tests/client/suite/index.ts` 只 glob `tests/out/client/**/*.test.js`，即便编译了 `tests/out/integration/client/definition.test.js` 也不会执行。实际实施把 suite root 提升到 `tests/out`，让 plan 指定的 `tests/integration/client` 测试进入 test-electron。
+
 - [ ] **Step 1: fixture `test.hlsl`**
 
 ```hlsl
