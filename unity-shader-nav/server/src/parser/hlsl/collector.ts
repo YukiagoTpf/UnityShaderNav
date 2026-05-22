@@ -1,0 +1,329 @@
+import type Parser from 'web-tree-sitter';
+import type {
+  FileIndex,
+  FunctionParameter,
+  FunctionSymbolEntry,
+  Range,
+  ReferenceEntry,
+  SymbolEntry,
+} from '@unity-shader-nav/shared';
+import { rangeOf, textOf, walk } from './nodeHelpers';
+
+interface CollectorState {
+  uri: string;
+  /** Line offset to apply to all ranges (used when collecting HLSL block inside .shader). */
+  lineOffset: number;
+  symbols: SymbolEntry[];
+  references: ReferenceEntry[];
+  /**
+   * Node ids that the collector has consumed as a declaration site for a
+   * symbol (function name, struct name, parameter name, ...). The reference
+   * pass skips these so the declaration point isn't double-counted as a
+   * reference. tree-sitter SyntaxNode does not expose a stable id directly,
+   * so we key by startIndex + endIndex.
+   */
+  declarationSites: Set<string>;
+}
+
+function offsetRange(r: Range, delta: number): Range {
+  if (delta === 0) return r;
+  return {
+    start: { line: r.start.line + delta, character: r.start.character },
+    end:   { line: r.end.line   + delta, character: r.end.character   },
+  };
+}
+
+function siteKey(node: Parser.SyntaxNode): string {
+  return `${node.startIndex}:${node.endIndex}`;
+}
+
+function markDecl(st: CollectorState, node: Parser.SyntaxNode | null | undefined): void {
+  if (node) st.declarationSites.add(siteKey(node));
+}
+
+/**
+ * Extract the function-name identifier from a `function_definition` node.
+ * Path: function_definition.declarator (function_declarator).declarator (identifier).
+ * For grammar-mis-parsed cbuffer/tbuffer the declarator is itself an identifier.
+ */
+function functionNameNode(node: Parser.SyntaxNode): Parser.SyntaxNode | undefined {
+  const decl = node.childForFieldName('declarator');
+  if (!decl) return undefined;
+  if (decl.type === 'function_declarator') {
+    const inner = decl.childForFieldName('declarator');
+    return inner ?? undefined;
+  }
+  if (decl.type === 'identifier') return decl;
+  return undefined;
+}
+
+/** Collect parameters from a function_declarator. */
+function collectParameters(
+  fnDeclarator: Parser.SyntaxNode | null,
+  st: CollectorState,
+): FunctionParameter[] {
+  if (!fnDeclarator) return [];
+  const paramList = fnDeclarator.childForFieldName('parameters');
+  if (!paramList) return [];
+  const out: FunctionParameter[] = [];
+  for (let i = 0; i < paramList.namedChildCount; i++) {
+    const p = paramList.namedChild(i);
+    if (!p || p.type !== 'parameter_declaration') continue;
+    const typeNode = p.childForFieldName('type');
+    const nameNode = p.childForFieldName('declarator');
+    if (!nameNode) continue;
+    markDecl(st, nameNode);
+    if (typeNode) markDecl(st, typeNode);
+    out.push({
+      name: textOf(nameNode),
+      type: textOf(typeNode),
+      range: offsetRange(rangeOf(nameNode), st.lineOffset),
+    });
+  }
+  return out;
+}
+
+function isCbufferShape(node: Parser.SyntaxNode): boolean {
+  if (node.type !== 'function_definition') return false;
+  const typeNode = node.childForFieldName('type');
+  const declarator = node.childForFieldName('declarator');
+  if (!typeNode || !declarator) return false;
+  const t = textOf(typeNode);
+  // Grammar mis-parses `cbuffer/tbuffer Name { ... };` as a C function.
+  // Signature: type is a bare identifier 'cbuffer'/'tbuffer'/'ConstantBuffer',
+  // and the declarator is itself an identifier (not a function_declarator,
+  // which would imply parameters).
+  if (t !== 'cbuffer' && t !== 'tbuffer' && t !== 'ConstantBuffer') return false;
+  return declarator.type === 'identifier';
+}
+
+function collectCbufferShape(node: Parser.SyntaxNode, st: CollectorState): void {
+  const nameNode = node.childForFieldName('declarator');
+  if (!nameNode) return;
+  markDecl(st, nameNode);
+  st.symbols.push({
+    name: textOf(nameNode),
+    kind: 'cbuffer',
+    location: { uri: st.uri, range: offsetRange(rangeOf(nameNode), st.lineOffset) },
+  });
+  const body = node.childForFieldName('body');
+  if (!body) return;
+  for (let i = 0; i < body.namedChildCount; i++) {
+    const stmt = body.namedChild(i);
+    if (!stmt || stmt.type !== 'declaration') continue;
+    const typeNode = stmt.childForFieldName('type');
+    const declNode = stmt.childForFieldName('declarator');
+    if (!declNode) continue;
+    // declNode can be identifier (simple `float r;`) or init_declarator.
+    const idNode = declNode.type === 'identifier'
+      ? declNode
+      : declNode.childForFieldName('declarator');
+    if (!idNode) continue;
+    markDecl(st, idNode);
+    st.symbols.push({
+      name: textOf(idNode),
+      kind: 'variable',
+      declaredType: textOf(typeNode),
+      location: { uri: st.uri, range: offsetRange(rangeOf(idNode), st.lineOffset) },
+    });
+  }
+}
+
+function collectFunction(node: Parser.SyntaxNode, st: CollectorState): void {
+  if (isCbufferShape(node)) {
+    collectCbufferShape(node, st);
+    return;
+  }
+
+  const nameNode = functionNameNode(node);
+  if (!nameNode) return;
+  const typeNode = node.childForFieldName('type');
+  const fnDeclarator = node.childForFieldName('declarator');
+
+  markDecl(st, nameNode);
+  if (typeNode) markDecl(st, typeNode);
+
+  const parameters = collectParameters(
+    fnDeclarator?.type === 'function_declarator' ? fnDeclarator : null,
+    st,
+  );
+
+  const bodyNode = node.childForFieldName('body');
+  const scopeRange = bodyNode
+    ? offsetRange(rangeOf(bodyNode), st.lineOffset)
+    : undefined;
+
+  const fnName = textOf(nameNode);
+  const entry: FunctionSymbolEntry = {
+    name: fnName,
+    kind: 'function',
+    location: { uri: st.uri, range: offsetRange(rangeOf(nameNode), st.lineOffset) },
+    returnType: textOf(typeNode),
+    parameters,
+  };
+  if (scopeRange) entry.scopeRange = scopeRange;
+  st.symbols.push(entry);
+
+  for (const p of parameters) {
+    const paramEntry: SymbolEntry = {
+      name: p.name,
+      kind: 'parameter',
+      location: { uri: st.uri, range: p.range },
+      scope: fnName,
+      declaredType: p.type,
+    };
+    if (scopeRange) paramEntry.scopeRange = scopeRange;
+    st.symbols.push(paramEntry);
+  }
+
+  if (bodyNode && scopeRange) {
+    collectLocals(fnName, bodyNode, scopeRange, st);
+  }
+}
+
+/**
+ * Walk a function body looking for `declaration` nodes whose declarator
+ * yields an identifier. Handles both `float k = expr;` (init_declarator wrap)
+ * and `Foo bar;` (declarator is identifier). Also handles `for (int i = ...)`
+ * where the for_statement.initializer is a `declaration`.
+ */
+function collectLocals(
+  fnName: string,
+  bodyNode: Parser.SyntaxNode,
+  scopeRange: Range,
+  st: CollectorState,
+): void {
+  for (const n of walk(bodyNode)) {
+    if (n.type !== 'declaration') continue;
+    const typeNode = n.childForFieldName('type');
+    const declNode = n.childForFieldName('declarator');
+    if (!declNode) continue;
+    let idNode: Parser.SyntaxNode | undefined;
+    if (declNode.type === 'identifier') {
+      idNode = declNode;
+    } else if (declNode.type === 'init_declarator') {
+      const inner = declNode.childForFieldName('declarator');
+      if (inner && inner.type === 'identifier') idNode = inner;
+    }
+    if (!idNode) continue;
+    markDecl(st, idNode);
+    if (typeNode) markDecl(st, typeNode);
+    st.symbols.push({
+      name: textOf(idNode),
+      kind: 'localVariable',
+      location: { uri: st.uri, range: offsetRange(rangeOf(idNode), st.lineOffset) },
+      scope: fnName,
+      scopeRange,
+      declaredType: textOf(typeNode),
+    });
+  }
+}
+
+function collectStruct(node: Parser.SyntaxNode, st: CollectorState): void {
+  const nameNode = node.childForFieldName('name');
+  if (!nameNode) return;
+  markDecl(st, nameNode);
+  const structName = textOf(nameNode);
+
+  st.symbols.push({
+    name: structName,
+    kind: 'struct',
+    location: { uri: st.uri, range: offsetRange(rangeOf(nameNode), st.lineOffset) },
+  });
+
+  const body = node.childForFieldName('body');
+  if (!body) return;
+  for (let i = 0; i < body.namedChildCount; i++) {
+    const field = body.namedChild(i);
+    if (!field || field.type !== 'field_declaration') continue;
+    const typeNode = field.childForFieldName('type');
+    const fidNode = field.childForFieldName('declarator');
+    if (!fidNode) continue;
+    markDecl(st, fidNode);
+    if (typeNode) markDecl(st, typeNode);
+    st.symbols.push({
+      name: textOf(fidNode),
+      kind: 'structMember',
+      parentType: structName,
+      declaredType: textOf(typeNode),
+      location: { uri: st.uri, range: offsetRange(rangeOf(fidNode), st.lineOffset) },
+    });
+  }
+}
+
+function collectReferences(node: Parser.SyntaxNode, st: CollectorState): void {
+  if (node.type === 'call_expression') {
+    const callee = node.childForFieldName('function');
+    if (callee) {
+      let nameNode: Parser.SyntaxNode | null = null;
+      if (callee.type === 'identifier') {
+        nameNode = callee;
+      } else if (callee.type === 'field_expression') {
+        nameNode = callee.childForFieldName('field');
+      }
+      if (nameNode && !st.declarationSites.has(siteKey(nameNode))) {
+        st.references.push({
+          name: textOf(nameNode),
+          location: { uri: st.uri, range: offsetRange(rangeOf(nameNode), st.lineOffset) },
+          context: 'call',
+        });
+        // Mark so we don't also record it via the generic identifier branch.
+        st.declarationSites.add(siteKey(nameNode));
+      }
+    }
+  } else if (node.type === 'field_expression') {
+    const fid = node.childForFieldName('field');
+    if (fid && !st.declarationSites.has(siteKey(fid))) {
+      st.references.push({
+        name: textOf(fid),
+        location: { uri: st.uri, range: offsetRange(rangeOf(fid), st.lineOffset) },
+        context: 'member',
+      });
+      st.declarationSites.add(siteKey(fid));
+    }
+  } else if (node.type === 'type_identifier') {
+    if (!st.declarationSites.has(siteKey(node))) {
+      st.references.push({
+        name: textOf(node),
+        location: { uri: st.uri, range: offsetRange(rangeOf(node), st.lineOffset) },
+        context: 'type',
+      });
+    }
+  }
+}
+
+export function collect(
+  root: Parser.SyntaxNode,
+  _text: string,
+  uri: string,
+  lineOffset: number,
+): FileIndex {
+  const st: CollectorState = {
+    uri,
+    lineOffset,
+    symbols: [],
+    references: [],
+    declarationSites: new Set(),
+  };
+
+  // First pass — collect declarations. Walk depth-first; cbuffer-shaped
+  // function_definition nodes contain inner `declaration`s which we want to
+  // attribute to the cbuffer, so handle them inside collectFunction.
+  // We still walk the whole tree because struct definitions can be nested
+  // inside other declarations and locals must be reachable as well.
+  for (const node of walk(root)) {
+    if (node.type === 'function_definition') {
+      collectFunction(node, st);
+    } else if (node.type === 'struct_specifier') {
+      collectStruct(node, st);
+    }
+  }
+
+  // Second pass — references. We re-walk so we can consult declarationSites
+  // populated in pass 1.
+  for (const node of walk(root)) {
+    collectReferences(node, st);
+  }
+
+  return { uri, symbols: st.symbols, references: st.references };
+}
