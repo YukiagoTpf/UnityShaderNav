@@ -2,15 +2,16 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 实现 Spec §5.1 Q4 + §10 Case 10 的 chain lookup L1-L3：F12 在 `varname.member` 的 `member` 上时，先推导 `varname` 的声明类型（来自函数参数 / 局部变量 / 带初始化的声明 / 函数返回值），再到对应 struct 内查 `member`。L4（数组、嵌套字段、cbuffer 内 struct）留 P2。
+**Goal:** 实现 Spec §5.1 Q4 + §10 Case 10 的 chain lookup L1-L3a：F12 在 `varname.member` 的 `member` 上时，先推导 `varname` 的声明类型（来自函数参数 / 局部变量 / 带初始化的声明 / 函数返回值），再到对应 struct 内查 `member`。
+
+**L3b（"声明缺显式类型，从右侧 call 的返回值推导"）显式不在本计划范围内**：HLSL 没有 `auto`，所有变量声明都必须写类型，所以 `Outer o = Make();` 的 declaredType 在 collector 里已经是 `Outer`，走 L2 即可；唯一会触发 L3b 的场景是 collector 未能解析出类型时的兜底，这类残缺输入留 P2 处理。同时把 L4（数组、嵌套字段、cbuffer 内 struct）留 P2。
 
 **Architecture:**
 - Plan 03 已经在 `SymbolEntry.declaredType` / `FunctionSymbolEntry.returnType` 中保存了元数据；本计划只在 resolver 层增加 chain 推导。
 - `ChainLookup`：给定 `(fileIndex, globalIndex, varName, memberName, refPos)`，按下列顺序找 `varName` 的类型：
   1. **L1** 函数参数（同 scope）
-  2. **L2** 局部变量（同 scope，含 proximity）
+  2. **L2** 局部变量（同 scope，含 proximity）—— 覆盖 `Outer o = Make();` 这类显式声明
   3. **L3a** 文件级全局变量
-  4. **L3b** 带初始化的声明 `Outer o = Make();` → 看右侧是 call，再查函数 `Make` 的 `returnType`
 - 拿到类型 `T` 后：在 `globalIndex.lookup(T)` 找 `kind === 'struct'` 的条目，再在 `globalIndex.lookup(memberName)` 中筛选 `parentType === T`。
 
 **Tech Stack:** 既有。
@@ -153,11 +154,7 @@ function inferReceiverType(
   if (locals.length > 0) {
     let best = locals[0];
     for (const l of locals) if (l.location.range.start.line > best.location.range.start.line) best = l;
-    if (best.declaredType) {
-      // L3b: if the declared type isn't a known struct AND the local has init = call,
-      // fall through to function return type (we don't have call-site info here yet)
-      return best.declaredType;
-    }
+    if (best.declaredType) return best.declaredType;
   }
 
   // L3a: file-level globals
@@ -171,10 +168,10 @@ function inferReceiverType(
   const v = allGlobal.find((s) => s.kind === 'variable' && s.declaredType);
   if (v) return v.declaredType!;
 
-  // L3b second attempt: if receiver appears as a local with declaredType pointing
-  // to a function (i.e. the parser couldn't disambiguate "Make" vs type),
-  // we try to find a function with same name returning that type. Skipped for MVP.
-
+  // L3b (init-call return type) is intentionally out of scope: HLSL has no `auto`,
+  // every declaration carries an explicit type; the L2 branch already handles the
+  // canonical `Outer o = Make();` case via declaredType. Receivers without a known
+  // type return null and fall through to the default F12 path.
   return null;
 }
 
@@ -272,75 +269,7 @@ git commit -m "feat(plan-11): chain lookup L1-L3a"
 
 ---
 
-## Task 3: L3b — `Outer o = Make();` 类型来自函数返回值
-
-**Files:**
-- Modify: `server/src/parser/hlsl/collector.ts`
-- Modify: `tests/server/index/chainLookup.test.ts`
-
-**问题**：tree-sitter 对 `Outer o = Make();` 的 declaration 节点，`type` 字段会是 `Outer`，所以 declaredType 已经正确。L3b 的真正用例是 `auto x = Make();` 之类——HLSL 没有 auto，所以**L3b 实际场景退化为"如果右侧是 call，且 declaredType 仍是某个类型名，则保留"**。这个其实和 L2 行为相同——MVP 阶段 L3b 不需要额外代码。
-
-不过为了正确处理 `var x = Make()` 这种缺失类型的情况（如果存在），可以做：
-
-- [ ] **Step 1: 在 collector 中如果 declaration 没有显式 type，记录 `initCallTarget` 字段**
-
-```typescript
-// SymbolEntry 补一个可选字段
-initCallTarget?: string; // when declaredType is missing and init was a call
-```
-
-- [ ] **Step 2: 在 inferReceiverType 中**
-
-```typescript
-// 如果 local 的 declaredType 缺失但 initCallTarget 存在：
-if (best.declaredType === undefined && (best as any).initCallTarget) {
-  const target = (best as any).initCallTarget;
-  const fn = (global?.lookup(target) ?? []).find((s) => s.kind === 'function') as any;
-  if (fn?.returnType) return fn.returnType;
-}
-```
-
-- [ ] **Step 3: 测试**（模拟一个 `initCallTarget` 设定的 fixture）
-
-```typescript
-it('L3b: derives type from function return when declaration has no explicit type', () => {
-  const g = new GlobalSymbolIndex();
-  g.upsert({
-    uri: 'file:///lib.hlsl', references: [],
-    symbols: [
-      { name: 'Make', kind: 'function', returnType: 'Outer', parameters: [],
-        location: { uri:'file:///lib.hlsl', range:{start:{line:0,character:0},end:{line:0,character:4}} } } as any,
-      { name: 'Outer', kind: 'struct',
-        location: { uri:'file:///lib.hlsl', range:{start:{line:1,character:7},end:{line:1,character:12}} } },
-      { name: 'inner', kind: 'structMember', parentType: 'Outer',
-        location: { uri:'file:///lib.hlsl', range:{start:{line:2,character:10},end:{line:2,character:15}} } },
-    ],
-  });
-  const idx: FileIndex = {
-    uri: 'file:///use.hlsl', references: [],
-    symbols: [{
-      name: 'o', kind: 'localVariable', scope: 'f',
-      scopeRange: { start: { line: 0, character: 0 }, end: { line: 10, character: 0 } },
-      location: { uri: 'file:///use.hlsl', range:{start:{line:1,character:8},end:{line:1,character:9}} },
-      // intentionally no declaredType, but initCallTarget set
-      ...({ initCallTarget: 'Make' } as any),
-    }],
-  };
-  const r = resolveMember(idx, g, 'o', 'inner', { line: 5, character: 0 });
-  expect(r).toHaveLength(1);
-});
-```
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add server/src tests/server/index/chainLookup.test.ts
-git commit -m "feat(plan-11): chain lookup L3b via function returnType"
-```
-
----
-
-## Task 4: 接入 definition handler
+## Task 3: 接入 definition handler
 
 **Files:**
 - Modify: `server/src/handlers/definition.ts`
@@ -371,7 +300,7 @@ git commit -m "feat(plan-11): wire chain lookup into definition handler"
 
 ---
 
-## Task 5: 集成测
+## Task 4: 集成测
 
 **Files:**
 - Create: `tests/integration/client/chain-lookup.test.ts`
@@ -433,14 +362,14 @@ git commit -m "test(plan-11): chain lookup e2e"
 
 ## Acceptance
 
-1. ✅ 单测覆盖：L1 参数、L2 局部、L3a 全局、L3b 函数返回
+1. ✅ 单测覆盖：L1 参数、L2 局部（含 `Outer o = Make();` 这种显式类型）、L3a 全局
 2. ✅ Spec §10 **Case 10**：F12 在 struct 成员 `.positionWS` 上 → 跳到 struct 定义中该字段
-3. ✅ L4（数组、嵌套字段）**显式不支持**——`Outer.inner.field` 上 F12 走默认 fallback（无解）
+3. ✅ L3b（init-call 推导）+ L4（数组、嵌套字段）**显式不支持**——`Outer.inner.field` 上 F12 走默认 fallback（无解）
 
 ## Manual Verification
 
 1. F5 → 打开 chain fixture
 2. F12 在 `surface.positionWS` 的 `positionWS` → 跳到 Surface.hlsl 第 1 行 `positionWS`
-3. 复杂场景：把 receiver 改成 file-level 全局变量、改成 init-by-call，分别验证
+3. 复杂场景：把 receiver 改成 file-level 全局变量、改成 `Outer o = Make()` 这种 init-by-call（L2 已经处理 declaredType），分别验证
 
 完成后进入 Plan 12。
