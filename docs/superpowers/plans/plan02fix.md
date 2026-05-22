@@ -51,22 +51,18 @@ unity-shader-nav/
 
 - [ ] **Step 1: 写 sanitizer**
 
-设计：单趟扫描，状态机 4 态：`code` / `lineComment` / `blockComment` / `string`。输出与输入等长（用空格替换被屏蔽字符），这样列号在下游仍然有效（`scanStructure` 关心 `headerLine`，列号目前没人用，但保留等长便于将来 char-position 计算）。
+设计：单趟扫描，状态机 4 态：`code` / `lineComment` / `blockComment` / `string`。输出与输入等长（用空格替换被屏蔽字符），这样列号在下游仍然有效。
+
+**字符串内屏蔽策略**：只屏蔽**结构性字符** `{` `}`（让 brace 计数看不见 `"}"` 这种字面量），其他字符保留 —— 这样 `SHADER_RE = /^\s*Shader\s+"([^"]*)"/` 之类的正则在 sanitize 之后仍能从字符串里捕获 shader/pass 名字。两个 P1 / P2#1 需要的下游消费模式（regex 取 name + brace 计数）共用同一份 sanitized 输出，不需要双 pass。
 
 跨行 `/* */`：MVP 不跨行 —— 每行独立调 sanitize，块注释只在同行内被识别。这与 review 的"otherwise document"匹配。
 
 ```typescript
 // server/src/parser/shaderlab/sanitize.ts
-// Replace anything inside string literals (`"..."`), line comments (`// ...`),
-// and same-line block comments (`/* ... */`) with spaces. Output is the same
-// length as input so column-based positions stay valid. Multi-line block
-// comments are NOT carried across lines (intentional MVP limitation; document
-// in the JSDoc).
-
 const enum S { Code, Line, Block, Str }
 
 export function sanitizeLine(line: string): string {
-  let state = S.Code;
+  let state: S = S.Code;
   const out: string[] = new Array(line.length);
   for (let i = 0; i < line.length; i++) {
     const ch = line[i];
@@ -86,17 +82,15 @@ export function sanitizeLine(line: string): string {
         out[i] = ' ';
         break;
       case S.Str:
-        out[i] = ' '; // mask string content
         if (ch === '"') { out[i] = ch; state = S.Code; break; }
-        if (ch === '\\' && next !== undefined) { out[i + 1] = ' '; i++; break; } // skip escaped char
+        if (ch === '\\' && next !== undefined) { out[i] = ch; out[i + 1] = next; i++; break; }
+        out[i] = (ch === '{' || ch === '}') ? ' ' : ch;
         break;
     }
   }
   return out.join('');
 }
 ```
-
-> **Note**：字符串内容用空格屏蔽，但保留两端的 `"`，这样 `SHADER_RE = /^\s*Shader\s+"([^"]*)"/` 等正则仍能在 sanitized 行上匹配 shader name。等长输出是为了将来如果有 column-position 依赖时还能用。
 
 - [ ] **Step 2: 单测**
 

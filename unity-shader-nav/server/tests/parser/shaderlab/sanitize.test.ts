@@ -27,12 +27,16 @@ describe('sanitizeLine', () => {
     expect(out.replace(/\s+/g, ' ').trim()).toBe('Pass { }');
   });
 
-  it('masks string contents but preserves quote characters', () => {
+  it('preserves string contents but masks braces inside strings', () => {
+    // Strings stay readable so regexes like /Shader\s+"([^"]*)"/ still work.
     const out = sanitizeLine('Shader "Test/X" { Pass { } }');
-    expect(out.includes('Test/X')).toBe(false);
+    expect(out.includes('Test/X')).toBe(true);
     expect((out.match(/"/g) ?? []).length).toBe(2);
+    // But structural `}` inside a string is masked so brace counters
+    // don't drop depth on a `"}"` literal.
     const tricky = sanitizeLine('const s = "}";');
     expect(tricky.includes('}')).toBe(false);
+    expect(tricky.includes('s = "')).toBe(true);
   });
 
   it('does not carry block-comment state across lines (MVP limitation)', () => {
@@ -42,22 +46,23 @@ describe('sanitizeLine', () => {
     expect(next.includes('still code')).toBe(true);
   });
 
-  it('handles escaped quotes inside strings', () => {
-    // Input: "a\"b" Pass — the quoted span contains an escaped quote and
-    // must not prematurely end the string. After sanitization, the entire
-    // content between the outer quotes is masked.
-    const input = '"a\\"b" Pass';
-    const out = sanitizeLine(input);
-    expect(out).toHaveLength(input.length);
-    expect(out.endsWith(' Pass')).toBe(true);
-    // The character at index 1 (the 'a' inside the string) must be masked.
-    expect(out[1]).toBe(' ');
-    // The escaped backslash + quote at index 2-3 must be masked.
-    expect(out.slice(2, 4)).toBe('  ');
-    // The 'b' at index 4 must be masked.
-    expect(out[4]).toBe(' ');
-    // Outer quotes preserved.
-    expect(out[0]).toBe('"');
-    expect(out[5]).toBe('"');
+  it('handles escaped quotes inside strings without ending the string early', () => {
+    // \" inside a string is kept verbatim so the parser can still see the
+    // outer quote pair boundaries.
+    const out = sanitizeLine('Shader "a\\"b" { }');
+    expect(out).toHaveLength('Shader "a\\"b" { }'.length);
+    // String content visible (escape kept literal).
+    expect(out.includes('a\\"b')).toBe(true);
+    // Outer braces preserved (we're outside the string when we hit them).
+    expect(out.includes('{')).toBe(true);
+    expect(out.includes('}')).toBe(true);
+  });
+
+  it('masks braces inside strings even with surrounding code', () => {
+    const out = sanitizeLine('Pass { Name "left{right}end" }');
+    expect(out.includes('left right end')).toBe(true); // braces became spaces
+    // The outer Pass `{` and final `}` survive.
+    expect((out.match(/\{/g) ?? []).length).toBe(1);
+    expect((out.match(/\}/g) ?? []).length).toBe(1);
   });
 });

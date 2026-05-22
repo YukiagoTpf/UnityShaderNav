@@ -1,13 +1,10 @@
 import type { StructureResult, ShaderLabStructureNode, ShaderLabNodeKind } from '@unity-shader-nav/shared';
+import { sanitizeLine } from './sanitize';
 
 const SHADER_RE   = /^\s*Shader\s+"([^"]*)"/;
 const SUBSHADER_RE = /^\s*SubShader\b/;
 const PASS_RE      = /^\s*Pass\b/;
 const PASS_NAME_RE = /^\s*Name\s+"([^"]*)"/;
-
-function stripComment(line: string): string {
-  return line.replace(/\/\/.*$/, '');
-}
 
 interface Frame {
   node: ShaderLabStructureNode;
@@ -32,7 +29,7 @@ export function scanStructure(text: string): StructureResult {
   }
 
   for (let i = 0; i < lines.length; i++) {
-    const raw = stripComment(lines[i]);
+    const raw = sanitizeLine(lines[i]);
 
     const shaderMatch = SHADER_RE.exec(raw);
     if (shaderMatch && stack.length === 0) {

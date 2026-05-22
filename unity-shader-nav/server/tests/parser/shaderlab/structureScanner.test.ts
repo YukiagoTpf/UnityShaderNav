@@ -31,3 +31,17 @@ describe('scanStructure: multi-pass with names', () => {
     expect(passes.map((p) => p.name)).toEqual(['ForwardLit', 'ShadowCaster']);
   });
 });
+
+describe('scanStructure: braces inside strings (P1#1)', () => {
+  it('does not close pass/subshader/shader on `"}"` literal', () => {
+    const result = scanStructure(fixture('strings-with-braces.shader'));
+    expect(result.shaders).toHaveLength(1);
+    const shader = result.shaders[0];
+    const subshader = shader.children[0];
+    const pass = subshader.children[0];
+
+    expect(pass.closeLine).toBe(6);
+    expect(subshader.closeLine).toBe(7);
+    expect(shader.closeLine).toBe(8);
+  });
+});
