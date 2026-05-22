@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { scanBlocks } from '../../../../server/src/parser/shaderlab/blockScanner';
+import { scanStructure } from '../../../../server/src/parser/shaderlab/structureScanner';
 
 const fixture = (name: string): string =>
   readFileSync(join(__dirname, 'fixtures', name), 'utf8');
@@ -74,5 +75,21 @@ describe('scanBlocks: unterminated block', () => {
     expect(result.blocks).toHaveLength(1);
     expect(result.blocks[0].unterminated).toBe(true);
     expect(result.blocks[0].endLine).toBe(lines.length - 1);
+  });
+});
+
+describe('scan integration: blocks fall inside their owning Pass', () => {
+  it('every HLSLPROGRAM block sits inside some Pass node', () => {
+    const text = fixture('multi-pass.shader');
+    const blocks = scanBlocks(text).blocks;
+    const structure = scanStructure(text);
+    const passes = structure.shaders[0].children[0].children;
+
+    for (const block of blocks) {
+      const owner = passes.find(
+        (p) => p.headerLine <= block.startLine && block.endLine <= p.closeLine,
+      );
+      expect(owner, `block at line ${block.startLine} should be inside a Pass`).toBeDefined();
+    }
   });
 });
