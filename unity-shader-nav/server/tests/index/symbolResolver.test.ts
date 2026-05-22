@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { FileIndex, SymbolEntry } from '@unity-shader-nav/shared';
+import { GlobalSymbolIndex } from '../../src/index/globalIndex';
 import { resolveDefinition } from '../../src/index/symbolResolver';
 
 function sym(over: Partial<SymbolEntry> & Pick<SymbolEntry, 'name' | 'kind'>): SymbolEntry {
@@ -137,5 +138,31 @@ describe('resolveDefinition: parameter then global', () => {
 
     expect(result).toHaveLength(1);
     expect(result[0].targetRange.start.line).toBe(5);
+  });
+});
+
+describe('resolveDefinition: cross-file global fallback', () => {
+  it('falls back to GlobalSymbolIndex when not in current file', () => {
+    const idx: FileIndex = { uri: 'file:///a.hlsl', symbols: [], references: [] };
+    const global = new GlobalSymbolIndex();
+    global.upsert({
+      uri: 'file:///b.hlsl',
+      references: [],
+      symbols: [
+        {
+          name: 'Common',
+          kind: 'function',
+          location: {
+            uri: 'file:///b.hlsl',
+            range: { start: { line: 3, character: 7 }, end: { line: 3, character: 13 } },
+          },
+        },
+      ],
+    });
+
+    const result = resolveDefinition(idx, 'Common', { line: 0, character: 0 }, global);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].targetUri).toBe('file:///b.hlsl');
   });
 });

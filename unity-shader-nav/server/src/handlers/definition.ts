@@ -8,7 +8,7 @@ import type {
 import type { TextDocument } from 'vscode-languageserver-textdocument';
 import { pathToFileURL } from 'node:url';
 import { resolveInclude, type IncludeContext } from '../include';
-import { IndexStore, resolveDefinition, wordAt } from '../index';
+import { GlobalSymbolIndex, IndexStore, resolveDefinition, wordAt } from '../index';
 import { scanIncludes } from '../parser/include/lineScanner';
 
 export function registerDefinitionHandler(
@@ -17,6 +17,7 @@ export function registerDefinitionHandler(
   store: IndexStore,
   beforeResolve?: (uri: string) => Promise<void>,
   getIncludeContext?: () => IncludeContext,
+  getGlobalIndex?: () => GlobalSymbolIndex | null,
 ): void {
   connection.onDefinition(async (params: DefinitionParams): Promise<LocationLink[] | Location[] | null> => {
     const doc = documents.get(params.textDocument.uri);
@@ -64,7 +65,7 @@ export function registerDefinitionHandler(
     const word = wordAt(doc.getText(), params.position);
     if (!word) return null;
 
-    const links = resolveDefinition(idx, word.text, params.position);
+    const links = resolveDefinition(idx, word.text, params.position, getGlobalIndex?.() ?? null);
     if (links.length === 0) return null;
 
     return links.map((link) => ({

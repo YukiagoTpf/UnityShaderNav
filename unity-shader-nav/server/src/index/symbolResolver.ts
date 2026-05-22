@@ -1,4 +1,5 @@
 import type { FileIndex, Position, Range, SymbolEntry } from '@unity-shader-nav/shared';
+import type { GlobalSymbolIndex } from './globalIndex';
 
 export interface LocationLink {
   targetUri: string;
@@ -29,11 +30,9 @@ export function resolveDefinition(
   idx: FileIndex,
   name: string,
   refPos: Position,
-  _global?: unknown,
+  global?: GlobalSymbolIndex | null,
 ): LocationLink[] {
   const candidates = idx.symbols.filter((symbol) => symbol.name === name);
-  if (candidates.length === 0) return [];
-
   const scoped = candidates.filter(
     (symbol) =>
       (symbol.kind === 'parameter' || symbol.kind === 'localVariable') &&
@@ -57,7 +56,15 @@ export function resolveDefinition(
     return [asLink(best)];
   }
 
-  return candidates
-    .filter((symbol) => symbol.kind !== 'parameter' && symbol.kind !== 'localVariable')
-    .map(asLink);
+  const fileGlobals = candidates.filter(
+    (symbol) => symbol.kind !== 'parameter' && symbol.kind !== 'localVariable',
+  );
+  const otherGlobals = (global?.lookup(name) ?? []).filter(
+    (symbol) =>
+      symbol.location.uri !== idx.uri &&
+      symbol.kind !== 'parameter' &&
+      symbol.kind !== 'localVariable',
+  );
+
+  return [...fileGlobals, ...otherGlobals].map(asLink);
 }
