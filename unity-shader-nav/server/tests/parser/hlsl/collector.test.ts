@@ -78,6 +78,23 @@ describe('collector: shadowing', () => {
   });
 });
 
+describe('collector: nested struct metadata', () => {
+  it('records Outer.inner as structMember with declaredType=Inner', async () => {
+    const text = fixture('nested-struct.hlsl');
+    const tree = await parseHlsl(text);
+    const result = collect(tree.rootNode, text, 'file:///t/n.hlsl', 0);
+
+    const innerMember = result.symbols.find(
+      (s) => s.kind === 'structMember' && s.parentType === 'Outer' && s.name === 'inner',
+    );
+    expect(innerMember).toBeDefined();
+    expect(innerMember!.declaredType).toBe('Inner');
+
+    const makeFn = result.symbols.find((s) => s.kind === 'function' && s.name === 'Make') as any;
+    expect(makeFn.returnType).toBe('Outer');
+  });
+});
+
 describe('collector: references', () => {
   it('records function calls as references with context=call', async () => {
     const text = `
