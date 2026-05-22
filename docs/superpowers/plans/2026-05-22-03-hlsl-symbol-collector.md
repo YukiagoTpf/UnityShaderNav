@@ -181,6 +181,15 @@ node scripts/fetch-tree-sitter-hlsl.mjs
 
 > 若上游无 release artifact，则退化方案：克隆 `tree-sitter-grammars/tree-sitter-hlsl` 并 `npx tree-sitter build -w`。记录到 README。
 
+> **Note (Plan 03 实施)**：截至 tree-sitter-hlsl v0.2.0（2025-03-23 release），上游 GitHub release 只有 native `prebuilds/*/tree-sitter-hlsl.node`，**没有 .wasm artifact**。fetch 脚本会 404。实际入库走的退化路径：
+> 1. `git clone --depth=1 https://github.com/tree-sitter-grammars/tree-sitter-hlsl /tmp/tree-sitter-hlsl`
+> 2. 本机无 emcc，但有 Docker Desktop；先 `npm install --no-save tree-sitter-cli@^0.24`
+> 3. 启动 Docker daemon
+> 4. `node_modules/.bin/tree-sitter build --wasm`（CLI 自动 pull `emscripten/emsdk:3.1.64` 镜像并编译）
+> 5. 把生成的 `tree-sitter-hlsl.wasm`（~4.1 MB）拷到 `server/grammars/`
+>
+> wasm 入库后这一过程无需重跑。`scripts/fetch-tree-sitter-hlsl.mjs` 内联了上述步骤注释，便于将来上游发布 wasm 时切回快路径。
+
 - [ ] **Step 4: 让 wasm 入库**
 
 ```bash
