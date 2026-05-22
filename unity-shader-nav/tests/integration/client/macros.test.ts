@@ -6,6 +6,17 @@ function fixturePath(...segments: string[]): string {
   return path.resolve(__dirname, '../../../integration/client/fixtures', ...segments);
 }
 
+async function ensureWorkspaceFolder(folderPath: string): Promise<void> {
+  if (vscode.workspace.workspaceFolders?.some((folder) => folder.uri.fsPath === folderPath)) return;
+  const added = vscode.workspace.updateWorkspaceFolders(
+    vscode.workspace.workspaceFolders?.length ?? 0,
+    0,
+    { uri: vscode.Uri.file(folderPath) },
+  );
+  if (!added) return;
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+}
+
 async function waitForDefinitions(
   uri: vscode.Uri,
   position: vscode.Position,
@@ -31,6 +42,7 @@ function targetRange(link: vscode.LocationLink | vscode.Location): vscode.Range 
 
 suite('F12 on macro-declared variable', () => {
   test('jumps from _MainTex usage to TEXTURE2D declaration', async () => {
+    await ensureWorkspaceFolder(fixturePath());
     const uri = vscode.Uri.file(fixturePath('macros', 'main.hlsl'));
     const doc = await vscode.workspace.openTextDocument(uri);
     await vscode.window.showTextDocument(doc);

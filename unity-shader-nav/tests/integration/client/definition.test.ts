@@ -6,6 +6,17 @@ function fixturePath(...segments: string[]): string {
   return path.resolve(__dirname, '../../../integration/client/fixtures', ...segments);
 }
 
+async function ensureWorkspaceFolder(folderPath: string): Promise<void> {
+  if (vscode.workspace.workspaceFolders?.some((folder) => folder.uri.fsPath === folderPath)) return;
+  const added = vscode.workspace.updateWorkspaceFolders(
+    vscode.workspace.workspaceFolders?.length ?? 0,
+    0,
+    { uri: vscode.Uri.file(folderPath) },
+  );
+  if (!added) return;
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+}
+
 async function waitForDefinitions(
   uri: vscode.Uri,
   position: vscode.Position,
@@ -31,6 +42,7 @@ function targetRange(link: vscode.LocationLink | vscode.Location): vscode.Range 
 
 suite('F12 single-file', () => {
   test('jumps from call to declaration in .hlsl', async () => {
+    await ensureWorkspaceFolder(fixturePath());
     const uri = vscode.Uri.file(fixturePath('single-file', 'test.hlsl'));
     const doc = await vscode.workspace.openTextDocument(uri);
     await vscode.window.showTextDocument(doc);
@@ -46,6 +58,7 @@ suite('F12 single-file', () => {
   });
 
   test('jumps from parameter usage to parameter declaration in .hlsl', async () => {
+    await ensureWorkspaceFolder(fixturePath());
     const uri = vscode.Uri.file(fixturePath('single-file', 'test.hlsl'));
     const doc = await vscode.workspace.openTextDocument(uri);
     await vscode.window.showTextDocument(doc);
@@ -62,6 +75,7 @@ suite('F12 single-file', () => {
   });
 
   test('multi-pass .shader returns 2 candidates for vert', async () => {
+    await ensureWorkspaceFolder(fixturePath());
     const uri = vscode.Uri.file(fixturePath('multi-pass-test.shader'));
     const doc = await vscode.workspace.openTextDocument(uri);
     await vscode.window.showTextDocument(doc);

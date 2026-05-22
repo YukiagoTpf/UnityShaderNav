@@ -14,6 +14,7 @@ const documents = registerDocuments(connection, manager);
 
 connection.onInitialized(async () => {
   const settings = await loadSettings(connection);
+  manager.configure(settings, connection);
   const folders = await connection.workspace.getWorkspaceFolders() ?? [];
   for (const folder of folders) {
     await manager.addFolder(folder.uri, settings, connection);
@@ -32,6 +33,7 @@ connection.onInitialized(async () => {
 });
 
 onSettingsChanged(connection, async (settings) => {
+  manager.configure(settings, connection);
   for (const workspace of manager.list()) {
     workspace.settings = settings;
     workspace.table = new MacroPatternTable(settings.declarationMacros);

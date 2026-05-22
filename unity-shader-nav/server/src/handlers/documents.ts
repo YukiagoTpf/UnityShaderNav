@@ -13,7 +13,7 @@ export function registerDocuments(
 
   const reindex = async (doc: TextDocument): Promise<void> => {
     latestVersions.set(doc.uri, doc.version);
-    const workspace = manager.workspaceFor(doc.uri);
+    const workspace = await manager.workspaceForOrCreateFile(doc.uri);
     if (!workspace) return;
     await workspace.reindex(doc.uri, doc.getText(), () =>
       liveUris.has(doc.uri) && latestVersions.get(doc.uri) === doc.version,

@@ -48,6 +48,9 @@ describe('registerDefinitionHandler', () => {
       workspaceFor(requestedUri: string) {
         return requestedUri === uri ? workspace : undefined;
       },
+      async workspaceForOrCreateFile(requestedUri: string) {
+        return this.workspaceFor(requestedUri);
+      },
     } as never;
 
     registerDefinitionHandler(connection, documents, manager);

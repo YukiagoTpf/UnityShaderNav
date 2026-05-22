@@ -1,7 +1,8 @@
-import { isAbsolute, relative } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { dirname, isAbsolute, relative } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { Connection } from 'vscode-languageserver/node';
 import type { ExtensionSettings } from '@unity-shader-nav/shared';
+import { detectUnityRoot } from './detectUnityRoot';
 import { Workspace } from './workspace';
 
 function containsPath(root: string, candidate: string): boolean {
@@ -11,6 +12,13 @@ function containsPath(root: string, candidate: string): boolean {
 
 export class WorkspaceManager {
   private readonly byFolder = new Map<string, Workspace>();
+  private settings: ExtensionSettings | undefined;
+  private connection: Connection | undefined;
+
+  configure(settings: ExtensionSettings, connection: Connection): void {
+    this.settings = settings;
+    this.connection = connection;
+  }
 
   list(): Workspace[] {
     return [...this.byFolder.values()];
@@ -45,6 +53,26 @@ export class WorkspaceManager {
     const workspace = new Workspace(folderUri, settings);
     this.byFolder.set(folderUri, workspace);
     await workspace.bootstrap(connection, globalStorageDir);
+  }
+
+  async workspaceForOrCreateFile(fileUri: string): Promise<Workspace | undefined> {
+    const existing = this.workspaceFor(fileUri);
+    if (existing) return existing;
+    if (!this.settings || !this.connection) return undefined;
+
+    let filePath: string;
+    try {
+      filePath = fileURLToPath(fileUri);
+    } catch {
+      return undefined;
+    }
+
+    const unityRoot = await detectUnityRoot(dirname(filePath));
+    const folderPath = unityRoot ?? dirname(filePath);
+    const folderUri = pathToFileURL(folderPath).href;
+
+    await this.addFolder(folderUri, this.settings, this.connection);
+    return this.workspaceFor(fileUri);
   }
 
   removeFolder(folderUri: string): void {

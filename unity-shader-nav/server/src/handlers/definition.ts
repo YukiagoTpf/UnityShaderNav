@@ -21,7 +21,7 @@ export function registerDefinitionHandler(
     const doc = documents.get(params.textDocument.uri);
     if (!doc) return null;
 
-    const workspace = manager.workspaceFor(params.textDocument.uri);
+    const workspace = await manager.workspaceForOrCreateFile(params.textDocument.uri);
     if (!workspace) return null;
 
     const lineText = doc.getText().split(/\r?\n/)[params.position.line] ?? '';

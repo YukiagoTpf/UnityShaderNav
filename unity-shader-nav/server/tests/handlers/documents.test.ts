@@ -74,6 +74,9 @@ describe('registerDocuments', () => {
       workspaceFor(uri: string) {
         return uri === 'file:///t/doc.hlsl' ? workspace : undefined;
       },
+      async workspaceForOrCreateFile(uri: string) {
+        return this.workspaceFor(uri);
+      },
     } as never;
 
     registerDocuments(harness.connection, manager);
@@ -98,6 +101,9 @@ describe('registerDocuments', () => {
     const calls: string[] = [];
     const manager = {
       workspaceFor() {
+        return undefined;
+      },
+      async workspaceForOrCreateFile() {
         return undefined;
       },
     } as never;
@@ -136,6 +142,9 @@ describe('registerDocuments', () => {
     const manager = {
       workspaceFor(uri: string) {
         return uri === 'file:///t/closed.hlsl' ? workspace : undefined;
+      },
+      async workspaceForOrCreateFile(uri: string) {
+        return this.workspaceFor(uri);
       },
     } as never;
 

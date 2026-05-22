@@ -10,6 +10,17 @@ function targetUri(link: vscode.LocationLink | vscode.Location): vscode.Uri {
   return (link as vscode.LocationLink).targetUri ?? (link as vscode.Location).uri;
 }
 
+async function ensureWorkspaceFolder(folderPath: string): Promise<void> {
+  if (vscode.workspace.workspaceFolders?.some((folder) => folder.uri.fsPath === folderPath)) return;
+  const added = vscode.workspace.updateWorkspaceFolders(
+    vscode.workspace.workspaceFolders?.length ?? 0,
+    0,
+    { uri: vscode.Uri.file(folderPath) },
+  );
+  if (!added) return;
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+}
+
 async function waitForDefinitions(
   uri: vscode.Uri,
   position: vscode.Position,
@@ -31,6 +42,7 @@ async function waitForDefinitions(
 suite('F12 on #include', () => {
   test('opens Common.hlsl', async () => {
     const root = fixtureRoot();
+    await ensureWorkspaceFolder(root);
     const uri = vscode.Uri.file(path.join(root, 'Assets/Shaders/Main.shader'));
     const doc = await vscode.workspace.openTextDocument(uri);
     await vscode.window.showTextDocument(doc);
