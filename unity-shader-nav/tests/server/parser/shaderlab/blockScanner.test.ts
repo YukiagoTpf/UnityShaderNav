@@ -39,3 +39,20 @@ describe('scanBlocks: HLSLINCLUDE + Pass', () => {
     expect(result.blocks.every((b) => !b.unterminated)).toBe(true);
   });
 });
+
+describe('scanBlocks: CG legacy', () => {
+  it('matches CGPROGRAM with ENDCG', () => {
+    const result = scanBlocks(fixture('cg-legacy.shader'));
+    expect(result.blocks).toHaveLength(1);
+    expect(result.blocks[0].kind).toBe('CGPROGRAM');
+    expect(result.blocks[0].unterminated).toBe(false);
+  });
+});
+
+describe('scanBlocks: comments do not trigger', () => {
+  it('ignores HLSLPROGRAM/ENDHLSL inside line comments', () => {
+    const result = scanBlocks(fixture('mixed-comments.shader'));
+    expect(result.blocks).toHaveLength(1);
+    expect(result.blocks[0].unterminated).toBe(false);
+  });
+});
