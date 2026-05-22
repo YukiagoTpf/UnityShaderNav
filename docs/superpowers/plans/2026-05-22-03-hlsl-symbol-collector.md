@@ -205,6 +205,50 @@ git commit -m "chore(plan-03): vendor tree-sitter-hlsl.wasm"
 
 ---
 
+## R1 Spike Result — tree-sitter-hlsl 节点名校准
+
+在 Task 2 之后跑 `scripts/probe-hlsl.mjs`（9 个典型 HLSL 片段，dump `tree.rootNode.toString()`），得出以下校准表。**collector 代码段（Task 5/6/7/8 内联示例）按此表修订**。
+
+| Plan 原假设 | 实测节点名 | 备注 |
+|---|---|---|
+| `function_definition` | `function_definition` | ✅ |
+| `function_declaration` | — | ❌ 不存在；HLSL 函数声明/定义都走 `function_definition` |
+| `function_declarator` | `function_declarator` | ✅ 嵌套在 `function_definition.declarator` 字段下 |
+| `parameter_list` | `parameter_list` | ✅ 在 `function_declarator.parameters` 字段 |
+| `parameter_declaration` | `parameter_declaration` | ✅ `declarator` 字段直接是 `identifier` |
+| `parameter` | — | ❌ 不存在 |
+| `struct_specifier` | `struct_specifier` | ✅ `name` / `body` 字段 |
+| `struct_declaration` | — | ❌ 用 `struct_specifier` |
+| `field_declaration_list` | `field_declaration_list` | ✅ |
+| `struct_declaration_list` | — | ❌ |
+| `field_declaration` | `field_declaration` | ✅ `type` / `declarator` 字段；`declarator` 是 `field_identifier` |
+| `field_identifier` | `field_identifier` | ✅ |
+| `cbuffer_declaration` | — | ❌ 关键：grammar 不识别 cbuffer。`cbuffer Foo { ... }` 被解析为 `function_definition`，其中 `type=type_identifier("cbuffer")`、`declarator=identifier("Foo")`（注意是 identifier，**不是** `function_declarator`），`body=compound_statement(declaration*)`。collector 用启发式识别：`function_definition.type.text === 'cbuffer' && declarator.type === 'identifier'` |
+| `constant_buffer_declaration` | — | ❌ 同上 |
+| `call_expression` | `call_expression` | ✅ 用 `function` 字段拿被调对象 |
+| `field_expression` | `field_expression` | ✅ 用 `field` 字段拿成员名 |
+| `type_identifier` | `type_identifier` | ✅ 自定义类型 |
+| `primitive_type` | `primitive_type` | ➕ 内置类型如 `void` / `float` 走这个；collector 的"返回类型/字段类型"取值必须同时接受这两种 |
+| `identifier` | `identifier` | ✅ |
+| `compound_statement` | `compound_statement` | ✅ 函数体 |
+| `declaration` | `declaration` | ✅ 局部 / cbuffer 内变量声明；`declarator` 可能是 `init_declarator` 或 `identifier` |
+| `init_declaration` | — | ❌ 不存在 |
+| `local_variable_declaration` | — | ❌ 局部声明就是 `declaration` |
+| `init_declarator` | `init_declarator` | ✅ 用 `declarator` 字段拿变量名 |
+| `variable_declarator` | — | ❌ |
+
+**关键发现**：
+
+1. **cbuffer 误判**：上游 grammar（基于 tree-sitter-c）不识别 HLSL 关键字 `cbuffer`，把 `cbuffer Foo { ... };` 当 C 函数定义解析。tail 的 `;` 变成 `expression_statement`。collector 走 fallback：当 `function_definition.type` 的 text 是 `cbuffer`/`tbuffer`/`ConstantBuffer` 且 declarator 是普通 identifier 时，按 cbuffer 处理。
+2. **函数名/参数名访问路径**：必须用 `childForFieldName('declarator')` / `childForFieldName('parameters')` / `childForFieldName('type')`，而不是猜的 `namedChild(0)` / `descendantsOfType` 第一个。
+3. **return type / field type 节点种类**：要同时识 `type_identifier`、`primitive_type`，不能只 trust `type_identifier`。
+4. **field_declaration.declarator** 直接是 `field_identifier`，不需要再下钻找 identifier。
+5. **没有 function_declaration**：plan 里所有 `|| node.type === 'function_declaration'` / `|| node.type === 'init_declaration'` / `|| node.type === 'variable_declarator'` 等 OR 分支删掉。
+
+下文 Task 5/6/7/8 的代码段已按此校准修订（见对应 Note）。
+
+---
+
 ## Task 3: parser 适配层
 
 **Files:**
