@@ -819,8 +819,10 @@ console.log('bundle done');
 
 - [ ] **Step 2: 装 esbuild**
 
+> **Note:** `unity-shader-nav-monorepo` 是 root package（不是 workspace 子包），用 `-w` 会报 `No workspaces found`。直接装到 root devDeps：
+
 ```bash
-npm install -D -w unity-shader-nav-monorepo esbuild
+npm install -D esbuild
 ```
 
 - [ ] **Step 3: 写 `.vscodeignore`**

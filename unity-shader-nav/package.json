@@ -2,7 +2,11 @@
   "name": "unity-shader-nav-monorepo",
   "private": true,
   "version": "0.0.1",
-  "workspaces": ["client", "server", "shared"],
+  "workspaces": [
+    "client",
+    "server",
+    "shared"
+  ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "watch": "npm run watch --workspaces --if-present",
@@ -10,8 +14,9 @@
     "clean": "rm -rf client/out server/out shared/out"
   },
   "devDependencies": {
-    "typescript": "^5.4.0",
-    "@types/node": "^18.19.0"
+    "@types/node": "^18.19.0",
+    "esbuild": "^0.28.0",
+    "typescript": "^5.4.0"
   },
   "engines": {
     "node": ">=18.0.0"

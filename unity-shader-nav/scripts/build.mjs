@@ -1,0 +1,15 @@
+import { build } from 'esbuild';
+
+const common = {
+  bundle: true,
+  platform: 'node',
+  target: 'node18',
+  external: ['vscode'],
+  sourcemap: true,
+  format: 'cjs',
+};
+
+await build({ ...common, entryPoints: ['client/src/extension.ts'], outfile: 'client/out/extension.js' });
+await build({ ...common, entryPoints: ['server/src/server.ts'],    outfile: 'server/out/server.js'    });
+
+console.log('bundle done');
