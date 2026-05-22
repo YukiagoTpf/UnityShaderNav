@@ -8,7 +8,7 @@
 |---|---|---|---|---|
 | 01 | project-scaffolding | ✅ Done + plan01fix 应用 | — | F5 manual 待人工；vsix 打包路径已修正 |
 | 02 | shaderlab-block-parser | ✅ Done + plan02fix 应用 | — | sanitizer 接管字符串/注释；scanStructure 加 range 覆盖 |
-| 03 | hlsl-symbol-collector | ✅ Done（5 处偏离已记） | — | R1 spike 完成；cbuffer 走 fallback；createRequire 绕 vitest ESM 坑 |
+| 03 | hlsl-symbol-collector | ✅ Done + review fixes applied | — | R1 spike 完成；cbuffer 走 fallback；type refs / top-level globals covered |
 | 04 | single-file-definition | ✅ Done + review fixes applied | Case 1, 8 | 单文件 F12 已接入 LSP；含参数 F12、多候选、proximity |
 | 05 | macro-pattern-recognizer | ✅ Done + review fixes applied | Case 5, 6, 7 | macro declarations + pragma refs；custom setting reindex covered |
 | 06 | include-resolver | ⏸ Planned | Case 4 | |
@@ -177,6 +177,17 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 - WASM 入库（4.1 MB）；nested struct case 显式断言 `Outer.inner.declaredType === 'Inner'` 和 `Make.returnType === 'Outer'`，Plan 11 chain lookup 所需元数据已就位
 - 集成 plan01fix/plan02fix 拓扑：测试在 `server/tests/parser/hlsl/`、shared types 经 `@unity-shader-nav/shared` 出口、indexFile 保留 `_table?: unknown` 槽位（B5 forward-compat）
 
+**Review / fix（补录）**：
+- `b4519cf fix(plan-03): address hlsl collector review findings` 已修复 `plan03review.md` 的 3 项：generic identifier refs、copied-server WASM runtime path、多/数组 declarator。
+- `docs/superpowers/plans/plan03fix.md` 已记录上述修复；`plan03review.md` 当前仍是未跟踪文件，若要保留 source review 需单独入库。
+
+**Phase 01-05 full review follow-up（2026-05-23）**：
+- `docs/superpowers/plans/phase01-05review.md` 落库，复核 `plan03review.md` 旧 finding 已不再成立。
+- 新修复：custom type usages 现在产生 `context='type'` references；top-level ordinary HLSL globals 现在进入 `kind='variable'` symbols。
+- 新修复：client build 在 copy-server 后运行 esbuild bundle，`client/out/server/server.js` 不再外部依赖 private workspace/shared 或 LSP server packages；`web-tree-sitter` 作为动态加载的 runtime dependency 声明在 client package。
+- 验证：`npm test` PASS，test-electron **9/9**，server vitest **19 files / 76 tests**。
+- Deferred：`#pragma` reference scanner 仍未处理跨行 `/* ... */` 注释；Plan 13 Find References 前应和 sentinel noise 一并处理。
+
 ## Plan 04 实施记录
 
 **Commits**：`02cd114..c9de2ec`（8 个 Task 各一 commit）+ review/fix commits `9b71ab8`, `43aa703` + independent review/doc fix `bb3ff01`, `b7800ec`。
@@ -274,6 +285,8 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 
 - **Plan 02 Manual driver**（可选）：plan §Manual Verification 给的 `node /tmp/verify-plan02.mjs <fixture>` 驱动脚本未跑 —— 12 个单测已覆盖所有 fixture 路径，跑驱动只是冗余可视化，可跳过
 
+- **VSIX 手动打包/安装验证**：Phase 01-05 full review 已补 bundle runtime-closure 测试，但尚未实际执行 `vsce package` + 安装后的 GUI smoke。
+
 ### ⏳ 已展望的风险（来自 REVIEW，未排进 Blocker）
 
 - **R6/R7/R8**：性能并发模型 — cold start 串行 `fs.stat()`、persist 全量重写、`fullScan()` 无 bounded concurrency。Plan 07/08/09 前要补 concurrency model 段落
@@ -298,3 +311,4 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 - 2026-05-22：Plan 03 实施 + R1 spike（commit `bf90337..92616e1`，10 个 task commit + 1 个 spike commit，5 处偏离全部 plan markdown 内联记录）
 - 2026-05-22：Plan 04 实施 + review/fix（commit `02cd114..b7800ec`，8 个 task commit + 2 个 fix commit + 独立 review/doc fix，6 处偏离全部 plan markdown 内联记录）
 - 2026-05-22：Plan 05 实施 + review/fix（commit `86176b6..ee26cd4`，9 个 task commit + review doc + fix commit，Case 5/6/7 覆盖；2 处偏离 plan markdown 内联记录）
+- 2026-05-23：Phase 01-05 full review + fixes（`phase01-05review.md`；修 packaged runtime closure、Plan 03 type refs、top-level globals；`npm test` 9/9 + 76/76）
