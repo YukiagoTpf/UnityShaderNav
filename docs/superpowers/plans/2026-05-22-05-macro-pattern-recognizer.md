@@ -670,6 +670,8 @@ git add server/src server/tests/macros/integration.test.ts
 git commit -m "feat(plan-05): wire macro recognition into collector + fileIndexer"
 ```
 
+> Note (implementation): `npx vitest run` from the monorepo root also discovers VSCode mocha/test-electron files under `tests/` and compiled `tests/out/`, which fail outside the VSCode test harness (`vscode` module / mocha `suite` globals). Use the server workspace vitest command (`npm run test -w @unity-shader-nav/server`) for this task's unit verification.
+
 ---
 
 ## Task 8: 用户配置 pipeline (`unityShaderNav.declarationMacros`)

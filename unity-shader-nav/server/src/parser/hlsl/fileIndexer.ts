@@ -1,8 +1,10 @@
 import { extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { FileIndex } from '@unity-shader-nav/shared';
+import type { FileIndex, ReferenceEntry } from '@unity-shader-nav/shared';
+import type { MacroPatternTable } from '../../macros';
 import { parseHlsl } from './parser';
 import { collect } from './collector';
+import { matchPragmaLine } from '../../macros/matcher';
 import { scanBlocks } from '../shaderlab/blockScanner';
 
 const HLSL_EXTS = new Set(['.hlsl', '.cginc', '.hlslinc', '.compute']);
@@ -15,21 +17,49 @@ function extOf(uri: string): string {
   }
 }
 
-/**
- * @param table  Reserved for Plan 05 (MacroPatternTable). Plan 03 ignores it;
- *               Plan 05 will fill in macro-driven symbol/pragma recognition.
- *               Declared optional here so Plan 05 doesn't change the signature
- *               (B5 防护).
- */
+function scanPragmas(
+  blockText: string,
+  lineOffset: number,
+  table: MacroPatternTable,
+  uri: string,
+): ReferenceEntry[] {
+  const refs: ReferenceEntry[] = [];
+  const lines = blockText.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const match = matchPragmaLine(lines[i], i, table);
+    if (!match) continue;
+    refs.push({
+      name: match.capturedName,
+      context: 'pragma',
+      location: {
+        uri,
+        range: {
+          start: {
+            line: match.nameRange.start.line + lineOffset,
+            character: match.nameRange.start.character,
+          },
+          end: {
+            line: match.nameRange.end.line + lineOffset,
+            character: match.nameRange.end.character,
+          },
+        },
+      },
+    });
+  }
+  return refs;
+}
+
 export async function indexFile(
   uri: string,
   text: string,
-  _table?: unknown,
+  table?: MacroPatternTable,
 ): Promise<FileIndex> {
   const ext = extOf(uri);
   if (HLSL_EXTS.has(ext)) {
     const tree = await parseHlsl(text);
-    return collect(tree.rootNode, text, uri, 0);
+    const idx = collect(tree.rootNode, text, uri, 0, table);
+    if (table) idx.references.push(...scanPragmas(text, 0, table, uri));
+    return idx;
   }
 
   if (ext === '.shader') {
@@ -42,9 +72,12 @@ export async function indexFile(
         .slice(block.contentStartLine, block.contentEndLine + 1)
         .join('\n');
       const tree = await parseHlsl(blockText);
-      const part = collect(tree.rootNode, blockText, uri, block.contentStartLine);
+      const part = collect(tree.rootNode, blockText, uri, block.contentStartLine, table);
       merged.symbols.push(...part.symbols);
       merged.references.push(...part.references);
+      if (table) {
+        merged.references.push(...scanPragmas(blockText, block.contentStartLine, table, uri));
+      }
     }
     return merged;
   }

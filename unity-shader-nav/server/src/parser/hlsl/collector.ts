@@ -8,6 +8,8 @@ import type {
   SymbolEntry,
 } from '@unity-shader-nav/shared';
 import { rangeOf, textOf, walk } from './nodeHelpers';
+import type { MacroPatternTable } from '../../macros';
+import { matchDeclarationCall } from '../../macros/matcher';
 
 interface CollectorState {
   uri: string;
@@ -39,6 +41,16 @@ function siteKey(node: Parser.SyntaxNode): string {
 
 function markDecl(st: CollectorState, node: Parser.SyntaxNode | null | undefined): void {
   if (node) st.declarationSites.add(siteKey(node));
+}
+
+function markNamedDescendants(st: CollectorState, node: Parser.SyntaxNode): void {
+  if (node.type === 'identifier' || node.type === 'type_identifier') {
+    markDecl(st, node);
+  }
+  for (let i = 0; i < node.namedChildCount; i++) {
+    const child = node.namedChild(i);
+    if (child) markNamedDescendants(st, child);
+  }
 }
 
 function declaratorNameNode(node: Parser.SyntaxNode | null | undefined): Parser.SyntaxNode | undefined {
@@ -255,6 +267,22 @@ function collectStruct(node: Parser.SyntaxNode, st: CollectorState): void {
   }
 }
 
+function collectMacroDeclaration(
+  node: Parser.SyntaxNode,
+  st: CollectorState,
+  table: MacroPatternTable | undefined,
+): void {
+  if (!table || node.type !== 'call_expression') return;
+  const match = matchDeclarationCall(node, table);
+  if (!match) return;
+  markNamedDescendants(st, node);
+  st.symbols.push({
+    name: match.capturedName,
+    kind: match.symbolKind,
+    location: { uri: st.uri, range: offsetRange(match.nameRange, st.lineOffset) },
+  });
+}
+
 function collectReferences(node: Parser.SyntaxNode, st: CollectorState): void {
   if (node.type === 'call_expression') {
     const callee = node.childForFieldName('function');
@@ -309,6 +337,7 @@ export function collect(
   _text: string,
   uri: string,
   lineOffset: number,
+  table?: MacroPatternTable,
 ): FileIndex {
   const st: CollectorState = {
     uri,
@@ -328,6 +357,8 @@ export function collect(
       collectFunction(node, st);
     } else if (node.type === 'struct_specifier') {
       collectStruct(node, st);
+    } else if (node.type === 'call_expression') {
+      collectMacroDeclaration(node, st, table);
     }
   }
 
