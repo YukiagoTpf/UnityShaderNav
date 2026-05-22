@@ -12,6 +12,7 @@ Source review: `docs/superpowers/plans/plan04review.md`
 Red/green evidence:
 - Initial focused run failed because the expected parameter start column was guessed as 20 while the collector correctly reports 19.
 - After correcting the test to the real source range, focused vitest passed.
+- Final test-electron verification caught that the `.hlsl` fixture's `v` usage cursor was placed on `*` instead of `v`. The test now places the cursor on character 33 and asserts the parameter declaration starts at character 21.
 
 ### P2: Duplicate and stale document indexing
 

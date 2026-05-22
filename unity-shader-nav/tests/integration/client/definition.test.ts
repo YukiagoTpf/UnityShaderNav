@@ -52,13 +52,13 @@ suite('F12 single-file', () => {
 
     const links = await waitForDefinitions(
       uri,
-      new vscode.Position(0, 35),
+      new vscode.Position(0, 33),
       (result) => (result?.length ?? 0) === 1,
     );
 
     assert.ok(links && links.length === 1, 'expected one parameter definition');
     assert.strictEqual(targetRange(links[0]).start.line, 0);
-    assert.strictEqual(targetRange(links[0]).start.character, 19);
+    assert.strictEqual(targetRange(links[0]).start.character, 21);
   });
 
   test('multi-pass .shader returns 2 candidates for vert', async () => {
