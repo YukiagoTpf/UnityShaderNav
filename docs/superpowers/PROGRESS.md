@@ -6,7 +6,7 @@
 
 | # | Plan | 状态 | Spec §10 验收 | 备注 |
 |---|---|---|---|---|
-| 01 | project-scaffolding | ✅ Done（5 处偏离已记） | — | F5 manual 待人工 |
+| 01 | project-scaffolding | ✅ Done + plan01fix 应用 | — | F5 manual 待人工；vsix 打包路径已修正 |
 | 02 | shaderlab-block-parser | ✅ Done（0 偏离） | — | |
 | 03 | hlsl-symbol-collector | ⏸ Blocked by R1 spike | — | tree-sitter-hlsl 节点名需要先验证 |
 | 04 | single-file-definition | ⏸ Planned | Case 1, 8 | |
@@ -79,12 +79,36 @@
 - `tests/server/parser/shaderlab/{blockScanner,structureScanner,blockScanner.perf}.test.ts`
 - `tests/server/parser/shaderlab/fixtures/{single-pass,multi-pass,hlslinclude-with-passes,cg-legacy,mixed-comments,nested-braces,unterminated-block}.shader`
 
+> **Note (plan01fix Task 4 之后)**：以上 `tests/server/parser/...` 路径已迁移到 `server/tests/parser/...`，且 commit 范围 `302756b..840c05c` 的实际文件位置因为 `git mv` 已经更新（不影响这些 commit 的 SHA）。
+
+## Plan 01 Fix 实施记录
+
+源自 `docs/superpowers/plans/plan01review.md`（用户写的 P1/P2/P3 review）+ 本 PROGRESS.md 之前 follow-up 重叠项。**Commits**：`6658479..ada540b`（plan doc + 5 个 Task commit）。
+
+| Task | 修的问题 | 状态 | Commit |
+|---|---|---|---|
+| 0 | plan01fix.md + plan01review.md 入库 | ✅ | `6658479` |
+| 1 | P1: bundle server 进 client/out（VSIX 打包） | ✅ | `82a2044` |
+| 2 | P2-A: 删 ext.activate()，改 poll；加 manifest 静态校验 | ✅ | `3833553` |
+| 3 | P2-B: 添加 publisher="Yukiago"，切回 canonical id | ✅ | `1b72dc9` |
+| 4 | P2-C: tests/server → server/tests + 同步 13 个 plan 路径 | ✅ | `789adb9` |
+| 5 | P3: rm -rf → rimraf，clean 顺手扫 tsbuildinfo | ✅ | `ada540b` |
+
+**主 agent 验证结果**（2026-05-22）：
+- `npm run clean && npm run build && npm test` 端到端 PASS
+- `client/out/server/server.js` 存在（VSIX 安装路径就绪）
+- vitest 12/12（4 test files：handshake + blockScanner + structureScanner + perf）
+- mocha 2/2（manifest 静态校验 + onLanguage:shaderlab 事件触发观察）
+- activation 测试现在真测 `activationEvents` 配置 —— 之前是手动 `ext.activate()` 假阳性
+- server 的 vitest cwd 落在 server workspace，不会再扫到 Plan 03+ 的 in-flight 失败
+- `npm run clean` 在 Win cmd / Git Bash 都可用，并清掉 `*.tsbuildinfo` 避免 stale incremental cache
+
 ## 进行中 TODO
 
-### 🟡 Plan 01 follow-up（不阻塞 Plan 02，但要在 Plan 13 publish 前清掉）
+### 🟡 Plan 01 follow-up（plan01fix 之后还剩的）
 
-- **client/package.json 加 `publisher` 字段**：当前 activation 测试用 `extensions.all.find(packageJSON.name === ...)` workaround，marketplace 发布前必须补 publisher 才能用 canonical `getExtension('publisher.name')`，VSCode 部分 API（command routing, extension dependency）也走 `publisher.name` 形式 ID
-- **`vitest --root ..` 跨 workspace 扫描**：现在只有 server 一处 vitest 不会撞，但 Plan 02+ 在 server 加 `tests/server/parser/` 类 spec 时，从 server workspace 跑 vitest 会扫到整个 monorepo。建议在 Plan 02 把 server-side tests 内联到 `server/tests/`
+- ~~**client/package.json 加 `publisher` 字段**~~ ✅ 已修复（plan01fix Task 3）
+- ~~**`vitest --root ..` 跨 workspace 扫描**~~ ✅ 已修复（plan01fix Task 4）
 - **`.vscode-test/` 体积**：test-electron 会下载 ~200MB 完整 VSCode（已 gitignore）。CI 上每次冷启动需要 cache key 或预下载
 
 ### 🔴 Plan 03 前置（必须先做）
@@ -123,3 +147,4 @@
 - 2026-05-22：Plan 01 实施（commit `657ec18..d76c4a8`，7 个 task commit）
 - 2026-05-22：CLAUDE.md + PROGRESS.md 落库（commit `618d456`）
 - 2026-05-22：Plan 02 实施（commit `302756b..840c05c`，8 个 task commit，0 偏离）
+- 2026-05-22：plan01fix 实施（commit `6658479..ada540b`，1 个 plan doc commit + 5 个 task commit，源自用户写的 plan01review.md）
