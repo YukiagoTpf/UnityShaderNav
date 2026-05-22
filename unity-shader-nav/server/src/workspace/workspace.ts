@@ -103,8 +103,9 @@ export class Workspace {
     }
   }
 
-  async reindex(uri: string, text: string): Promise<void> {
+  async reindex(uri: string, text: string, shouldStore: () => boolean = () => true): Promise<void> {
     const idx = await indexFile(uri, text, this.table);
+    if (!shouldStore()) return;
     this.store.set(uri, idx);
     this.global.upsert(idx);
   }

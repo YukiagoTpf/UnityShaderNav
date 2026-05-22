@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import type { Connection } from 'vscode-languageserver/node';
-import { IndexStore } from '../../src/index';
 import { registerDocuments } from '../../src/handlers/documents';
 
 type OpenHandler = (event: {
@@ -60,11 +59,24 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 }
 
 describe('registerDocuments', () => {
-  it('indexes opened documents and removes closed documents', async () => {
-    const store = new IndexStore();
+  it('routes opened documents to their owning workspace and removes closed documents', async () => {
     const harness = createConnectionHarness();
+    const calls: string[] = [];
+    const workspace = {
+      async reindex(uri: string) {
+        calls.push(`reindex:${uri}`);
+      },
+      drop(uri: string) {
+        calls.push(`drop:${uri}`);
+      },
+    };
+    const manager = {
+      workspaceFor(uri: string) {
+        return uri === 'file:///t/doc.hlsl' ? workspace : undefined;
+      },
+    } as never;
 
-    registerDocuments(harness.connection, store);
+    registerDocuments(harness.connection, manager);
     harness.open({
       textDocument: {
         uri: 'file:///t/doc.hlsl',
@@ -74,38 +86,60 @@ describe('registerDocuments', () => {
       },
     });
 
-    await waitFor(() => (store.get('file:///t/doc.hlsl')?.symbols.length ?? 0) > 0);
+    await waitFor(() => calls.includes('reindex:file:///t/doc.hlsl'));
 
     harness.close({ textDocument: { uri: 'file:///t/doc.hlsl' } });
 
-    expect(store.get('file:///t/doc.hlsl')).toBeUndefined();
+    expect(calls).toContain('drop:file:///t/doc.hlsl');
   });
 
-  it('indexes an opened document once', async () => {
-    const store = new IndexStore();
+  it('does not route documents outside known workspaces', async () => {
     const harness = createConnectionHarness();
+    const calls: string[] = [];
+    const manager = {
+      workspaceFor() {
+        return undefined;
+      },
+    } as never;
 
-    registerDocuments(harness.connection, store);
+    registerDocuments(harness.connection, manager);
     harness.open({
       textDocument: {
-        uri: 'file:///t/once.hlsl',
+        uri: 'file:///outside/once.hlsl',
         languageId: 'hlsl',
         version: 1,
         text: 'float4 helper(float4 v) { return v; }',
       },
     });
 
-    await waitFor(() => harness.logs.length > 0);
     await new Promise((resolve) => setTimeout(resolve, 50));
 
-    expect(harness.logs).toHaveLength(1);
+    expect(calls).toEqual([]);
   });
 
   it('does not restore an index after the document closes during indexing', async () => {
-    const store = new IndexStore();
     const harness = createConnectionHarness();
+    const calls: string[] = [];
+    let allowReindex!: () => void;
+    const reindexStarted = new Promise<void>((resolve) => {
+      allowReindex = resolve;
+    });
+    const workspace = {
+      async reindex(uri: string, _text: string, shouldStore: () => boolean) {
+        await reindexStarted;
+        if (shouldStore()) calls.push(`reindex:${uri}`);
+      },
+      drop(uri: string) {
+        calls.push(`drop:${uri}`);
+      },
+    };
+    const manager = {
+      workspaceFor(uri: string) {
+        return uri === 'file:///t/closed.hlsl' ? workspace : undefined;
+      },
+    } as never;
 
-    registerDocuments(harness.connection, store);
+    registerDocuments(harness.connection, manager);
     harness.open({
       textDocument: {
         uri: 'file:///t/closed.hlsl',
@@ -115,9 +149,10 @@ describe('registerDocuments', () => {
       },
     });
     harness.close({ textDocument: { uri: 'file:///t/closed.hlsl' } });
+    allowReindex();
 
     await new Promise((resolve) => setTimeout(resolve, 100));
 
-    expect(store.get('file:///t/closed.hlsl')).toBeUndefined();
+    expect(calls).toEqual(['drop:file:///t/closed.hlsl']);
   });
 });

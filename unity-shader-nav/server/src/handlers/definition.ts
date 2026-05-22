@@ -7,34 +7,33 @@ import type {
 } from 'vscode-languageserver/node';
 import type { TextDocument } from 'vscode-languageserver-textdocument';
 import { pathToFileURL } from 'node:url';
-import { resolveInclude, type IncludeContext } from '../include';
-import { GlobalSymbolIndex, IndexStore, resolveDefinition, wordAt } from '../index';
+import { resolveInclude } from '../include';
+import { resolveDefinition, wordAt } from '../index';
 import { scanIncludes } from '../parser/include/lineScanner';
+import type { WorkspaceManager } from '../workspace';
 
 export function registerDefinitionHandler(
   connection: Connection,
   documents: TextDocuments<TextDocument>,
-  store: IndexStore,
-  beforeResolve?: (uri: string) => Promise<void>,
-  getIncludeContext?: () => IncludeContext,
-  getGlobalIndex?: () => GlobalSymbolIndex | null,
+  manager: WorkspaceManager,
 ): void {
   connection.onDefinition(async (params: DefinitionParams): Promise<LocationLink[] | Location[] | null> => {
     const doc = documents.get(params.textDocument.uri);
     if (!doc) return null;
 
-    await beforeResolve?.(params.textDocument.uri);
+    const workspace = manager.workspaceFor(params.textDocument.uri);
+    if (!workspace) return null;
 
     const lineText = doc.getText().split(/\r?\n/)[params.position.line] ?? '';
     const include = scanIncludes(lineText)[0];
-    if (include && getIncludeContext) {
+    if (include) {
       const start = include.pathRange.start.character;
       const end = include.pathRange.end.character;
       if (params.position.character >= start && params.position.character <= end) {
         const resolved = await resolveInclude(
           include.path,
           params.textDocument.uri,
-          getIncludeContext(),
+          workspace.includeCtx,
         );
         if (!resolved) return null;
         if (resolved.caseInsensitive) {
@@ -59,13 +58,13 @@ export function registerDefinitionHandler(
       }
     }
 
-    const idx = store.get(params.textDocument.uri);
+    const idx = workspace.store.get(params.textDocument.uri);
     if (!idx) return null;
 
     const word = wordAt(doc.getText(), params.position);
     if (!word) return null;
 
-    const links = resolveDefinition(idx, word.text, params.position, getGlobalIndex?.() ?? null);
+    const links = resolveDefinition(idx, word.text, params.position, workspace.global);
     if (links.length === 0) return null;
 
     return links.map((link) => ({

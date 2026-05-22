@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { Connection, DefinitionParams } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
-import { IndexStore } from '../../src/index';
+import { GlobalSymbolIndex, IndexStore } from '../../src/index';
 import { registerDefinitionHandler } from '../../src/handlers/definition';
 import type { IncludeContext } from '../../src/include';
 
@@ -40,13 +40,21 @@ describe('registerDefinitionHandler: include definitions', () => {
       },
     } as never;
     const includeCtx: IncludeContext = { unityProjectRoot: root, includeDirectories: [] };
+    const workspace = {
+      includeCtx,
+      store: new IndexStore(),
+      global: new GlobalSymbolIndex(),
+    };
+    const manager = {
+      workspaceFor(requestedUri: string) {
+        return requestedUri === uri ? workspace : undefined;
+      },
+    } as never;
 
     registerDefinitionHandler(
       connection,
       documents,
-      new IndexStore(),
-      undefined,
-      () => includeCtx,
+      manager,
     );
 
     const result = await handler?.({

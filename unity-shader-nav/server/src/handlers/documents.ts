@@ -1,14 +1,11 @@
 import type { Connection } from 'vscode-languageserver/node';
 import { TextDocuments } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
-import { IndexStore } from '../index';
-import { indexFile } from '../parser/hlsl';
-import type { MacroPatternTable } from '../macros';
+import type { WorkspaceManager } from '../workspace';
 
 export function registerDocuments(
   connection: Connection,
-  store: IndexStore,
-  getMacroTable?: () => MacroPatternTable | undefined,
+  manager: WorkspaceManager,
 ): TextDocuments<TextDocument> {
   const documents = new TextDocuments(TextDocument);
   const liveUris = new Set<string>();
@@ -16,16 +13,16 @@ export function registerDocuments(
 
   const reindex = async (doc: TextDocument): Promise<void> => {
     latestVersions.set(doc.uri, doc.version);
-    const idx = await indexFile(doc.uri, doc.getText(), getMacroTable?.());
-    if (!liveUris.has(doc.uri) || latestVersions.get(doc.uri) !== doc.version) return;
-    store.set(doc.uri, idx);
-    connection.console.log(
-      `[index] ${doc.uri} -> ${idx.symbols.length} symbols, ${idx.references.length} refs`,
+    const workspace = manager.workspaceFor(doc.uri);
+    if (!workspace) return;
+    await workspace.reindex(doc.uri, doc.getText(), () =>
+      liveUris.has(doc.uri) && latestVersions.get(doc.uri) === doc.version,
     );
   };
 
   documents.onDidOpen((event) => {
     liveUris.add(event.document.uri);
+    void reindex(event.document);
   });
   documents.onDidChangeContent((event) => {
     void reindex(event.document);
@@ -33,7 +30,7 @@ export function registerDocuments(
   documents.onDidClose((event) => {
     liveUris.delete(event.document.uri);
     latestVersions.delete(event.document.uri);
-    store.delete(event.document.uri);
+    manager.workspaceFor(event.document.uri)?.drop(event.document.uri);
   });
 
   documents.listen(connection);

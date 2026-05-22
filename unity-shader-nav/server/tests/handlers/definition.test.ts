@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Connection, DefinitionParams } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import type { FileIndex } from '@unity-shader-nav/shared';
-import { IndexStore } from '../../src/index';
+import { GlobalSymbolIndex, IndexStore } from '../../src/index';
 import { registerDefinitionHandler } from '../../src/handlers/definition';
 
 describe('registerDefinitionHandler', () => {
@@ -38,10 +38,19 @@ describe('registerDefinitionHandler', () => {
       ],
       references: [],
     };
-    const store = new IndexStore();
-    store.set(uri, idx);
+    const workspace = {
+      includeCtx: { unityProjectRoot: undefined, includeDirectories: [] },
+      store: new IndexStore(),
+      global: new GlobalSymbolIndex(),
+    };
+    workspace.store.set(uri, idx);
+    const manager = {
+      workspaceFor(requestedUri: string) {
+        return requestedUri === uri ? workspace : undefined;
+      },
+    } as never;
 
-    registerDefinitionHandler(connection, documents, store);
+    registerDefinitionHandler(connection, documents, manager);
 
     const result = await handler?.({
       textDocument: { uri },
