@@ -30,7 +30,7 @@ export function registerDocuments(
   documents.onDidClose((event) => {
     liveUris.delete(event.document.uri);
     latestVersions.delete(event.document.uri);
-    manager.workspaceFor(event.document.uri)?.drop(event.document.uri);
+    manager.workspaceFor(event.document.uri)?.closeDocument(event.document.uri);
   });
 
   documents.listen(connection);

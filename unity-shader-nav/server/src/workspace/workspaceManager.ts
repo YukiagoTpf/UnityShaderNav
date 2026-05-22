@@ -29,7 +29,9 @@ export class WorkspaceManager {
   }
 
   private sendModeNotification(): void {
-    this.connection?.sendNotification('unityShaderNav/mode', { mode: this.mode() });
+    if (typeof this.connection?.sendNotification === 'function') {
+      this.connection.sendNotification('unityShaderNav/mode', { mode: this.mode() });
+    }
   }
 
   workspaceFor(fileUri: string): Workspace | undefined {
@@ -58,9 +60,11 @@ export class WorkspaceManager {
     globalStorageDir?: string,
   ): Promise<void> {
     if (this.byFolder.has(folderUri)) return;
-    const workspace = new Workspace(folderUri, settings);
+    const currentSettings = this.settings ?? settings;
+    const currentConnection = this.connection ?? connection;
+    const workspace = new Workspace(folderUri, currentSettings);
     this.byFolder.set(folderUri, workspace);
-    await workspace.bootstrap(connection, globalStorageDir);
+    await workspace.bootstrap(currentConnection, globalStorageDir);
     this.sendModeNotification();
   }
 

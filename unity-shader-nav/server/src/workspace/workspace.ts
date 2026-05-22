@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { Connection } from 'vscode-languageserver/node';
-import type { ExtensionSettings } from '@unity-shader-nav/shared';
+import type { ExtensionSettings, FileIndex } from '@unity-shader-nav/shared';
 import { PackageResolver } from '../packages';
 import type { IncludeContext } from '../include';
 import { GlobalSymbolIndex, IndexStore } from '../index';
@@ -17,6 +17,7 @@ export class Workspace {
   includeCtx: IncludeContext;
   readonly store = new IndexStore();
   readonly global = new GlobalSymbolIndex();
+  private readonly diskIndexes = new Map<string, FileIndex>();
   table: MacroPatternTable;
   settings: ExtensionSettings;
 
@@ -36,7 +37,8 @@ export class Workspace {
 
   async bootstrap(connection: Connection, _globalStorageDir?: string): Promise<void> {
     const folderPath = fileURLToPath(this.folderUri);
-    this.unityRoot = (await detectUnityRoot(folderPath)) ?? undefined;
+    const configuredRoot = this.settings.projectRoot.trim();
+    this.unityRoot = configuredRoot || (await detectUnityRoot(folderPath)) || undefined;
 
     if (!this.unityRoot) {
       this.packageResolver = undefined;
@@ -63,6 +65,7 @@ export class Workspace {
     try {
       const text = await fs.readFile(absPath, 'utf8');
       const idx = await indexFile(uri, text, this.table);
+      this.diskIndexes.set(uri, idx);
       this.store.set(uri, idx);
       this.global.upsert(idx);
       connection?.console.log(`[index] ${uri} -> ${idx.symbols.length} symbols, ${idx.references.length} refs`);
@@ -110,7 +113,19 @@ export class Workspace {
     this.global.upsert(idx);
   }
 
+  closeDocument(uri: string): void {
+    const diskIndex = this.diskIndexes.get(uri);
+    if (diskIndex) {
+      this.store.set(uri, diskIndex);
+      this.global.upsert(diskIndex);
+      return;
+    }
+
+    this.drop(uri);
+  }
+
   drop(uri: string): void {
+    this.diskIndexes.delete(uri);
     this.store.delete(uri);
     this.global.delete(uri);
   }

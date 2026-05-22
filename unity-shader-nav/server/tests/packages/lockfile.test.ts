@@ -43,12 +43,12 @@ describe('resolvePackagePhysicalPath', () => {
     )).toBe(join(projectRoot, 'Library', 'PackageCache', 'com.unity.render-pipelines.universal@abc123'));
   });
 
-  it('registry without hash returns null', () => {
+  it('registry without hash falls back to Library/PackageCache/<name>@<version>', () => {
     expect(resolvePackagePhysicalPath(
       'com.unity.foo',
       { version: '1.0.0', source: 'registry' },
       projectRoot,
-    )).toBeNull();
+    )).toBe(join(projectRoot, 'Library', 'PackageCache', 'com.unity.foo@1.0.0'));
   });
 
   it('git with hash maps to Library/PackageCache/<name>@<hash>', () => {

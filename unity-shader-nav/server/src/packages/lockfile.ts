@@ -45,10 +45,16 @@ export function resolvePackagePhysicalPath(
     return isAbsolute(raw) ? raw : resolve(join(projectRoot, 'Packages'), raw);
   }
 
-  if (source === 'registry' || source === 'git') {
+  if (source === 'registry') {
+    const cacheKey = entry.hash || entry.version;
+    if (!cacheKey) return null;
+    return join(projectRoot, 'Library', 'PackageCache', `${name}@${cacheKey}`);
+  }
+
+  if (source === 'git') {
     if (!entry.hash) return null;
-    if (source === 'git' && /\?path=/.test(entry.version)) return null;
-    if (source === 'git' && entry.version.startsWith('git+ssh://')) return null;
+    if (/\?path=/.test(entry.version)) return null;
+    if (entry.version.startsWith('git+ssh://')) return null;
     return join(projectRoot, 'Library', 'PackageCache', `${name}@${entry.hash}`);
   }
 

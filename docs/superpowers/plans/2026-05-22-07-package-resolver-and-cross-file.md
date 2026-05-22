@@ -204,7 +204,11 @@ describe('resolvePackagePhysicalPath', () => {
     expect(resolvePackagePhysicalPath('com.unity.foo',
       { version: '1.0.0', source: 'registry' }, projectRoot)).toBeNull();
   });
+```
 
+> Note: Plan 07 review found this was too strict for real Unity registry packages: `packages-lock.json` entries commonly have `source: "registry"` + `version` but no `hash`. Actual implementation now keeps the existing `<name>@<hash>` mapping when `hash` exists, and falls back to `Library/PackageCache/<name>@<version>` for registry entries without `hash`. Git packages are unchanged: git without `hash`, `git+ssh://`, and `?path=` still return `null`.
+
+```typescript
   it('git with hash → Library/PackageCache/<name>@<hash>', () => {
     expect(resolvePackagePhysicalPath('com.example.myrp',
       { version: 'git+https://example.com', source: 'git', hash: 'deadbeef' }, projectRoot))

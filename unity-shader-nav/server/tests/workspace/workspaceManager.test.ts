@@ -56,4 +56,18 @@ describe('WorkspaceManager: multi-root', () => {
 
     expect(manager.mode()).toBe('ready');
   });
+
+  it('uses the latest configured settings when adding a folder after configuration changes', async () => {
+    const projectA = resolve(__dirname, '../include/fixtures/projectA');
+    const standaloneFolder = await mkdtemp(join(tmpdir(), 'usn-latest-settings-'));
+    const manager = new WorkspaceManager();
+
+    manager.configure(DEFAULT_SETTINGS, fakeConnection);
+    manager.configure({ ...DEFAULT_SETTINGS, projectRoot: projectA }, fakeConnection);
+    await manager.addFolder(pathToFileURL(standaloneFolder).href, DEFAULT_SETTINGS, fakeConnection);
+
+    const workspace = manager.list()[0];
+    expect(workspace.unityRoot).toBe(projectA);
+    expect(workspace.global.lookup('Common').length).toBeGreaterThanOrEqual(1);
+  });
 });

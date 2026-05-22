@@ -59,15 +59,15 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 }
 
 describe('registerDocuments', () => {
-  it('routes opened documents to their owning workspace and removes closed documents', async () => {
+  it('routes opened documents to their owning workspace and closes live overlays', async () => {
     const harness = createConnectionHarness();
     const calls: string[] = [];
     const workspace = {
       async reindex(uri: string) {
         calls.push(`reindex:${uri}`);
       },
-      drop(uri: string) {
-        calls.push(`drop:${uri}`);
+      closeDocument(uri: string) {
+        calls.push(`close:${uri}`);
       },
     };
     const manager = {
@@ -93,7 +93,7 @@ describe('registerDocuments', () => {
 
     harness.close({ textDocument: { uri: 'file:///t/doc.hlsl' } });
 
-    expect(calls).toContain('drop:file:///t/doc.hlsl');
+    expect(calls).toContain('close:file:///t/doc.hlsl');
   });
 
   it('does not route documents outside known workspaces', async () => {
@@ -135,8 +135,8 @@ describe('registerDocuments', () => {
         await reindexStarted;
         if (shouldStore()) calls.push(`reindex:${uri}`);
       },
-      drop(uri: string) {
-        calls.push(`drop:${uri}`);
+      closeDocument(uri: string) {
+        calls.push(`close:${uri}`);
       },
     };
     const manager = {
@@ -162,6 +162,6 @@ describe('registerDocuments', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 100));
 
-    expect(calls).toEqual(['drop:file:///t/closed.hlsl']);
+    expect(calls).toEqual(['close:file:///t/closed.hlsl']);
   });
 });
