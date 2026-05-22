@@ -10,7 +10,7 @@
 | 02 | shaderlab-block-parser | ✅ Done + plan02fix 应用 | — | sanitizer 接管字符串/注释；scanStructure 加 range 覆盖 |
 | 03 | hlsl-symbol-collector | ✅ Done（5 处偏离已记） | — | R1 spike 完成；cbuffer 走 fallback；createRequire 绕 vitest ESM 坑 |
 | 04 | single-file-definition | ✅ Done + review fixes applied | Case 1, 8 | 单文件 F12 已接入 LSP；含参数 F12、多候选、proximity |
-| 05 | macro-pattern-recognizer | ⏸ Next | Case 5, 6, 7 | |
+| 05 | macro-pattern-recognizer | ✅ Done + review fixes applied | Case 5, 6, 7 | macro declarations + pragma refs；custom setting reindex covered |
 | 06 | include-resolver | ⏸ Planned | Case 4 | |
 | 07 | package-resolver-and-cross-file | ⏸ Planned | Case 2, 3, 9 | MVP 完成点 |
 | 08 | index-lifecycle | ⏸ P1 | — | |
@@ -215,6 +215,43 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 - server vitest **14 files / 58 tests passed**
 - Acceptance：Case 1 .shader multi-pass function F12 ✓；Case 8 parameter identifier F12 ✓；multi-candidate links ✓；proximity tie-break ✓
 
+## Plan 05 实施记录
+
+**Commits**：`86176b6..6946b2a`（9 个 Task 各一 commit）+ review/fix commits `58797dc`, `ee26cd4`。
+
+| Task | 状态 | Commit |
+|---|---|---|
+| 1 shared settings 类型 | ✅ | `86176b6` |
+| 2 模式语法 & 解析器 | ✅ | `759afa1` |
+| 3 内置模式表 | ✅ | `383af71` |
+| 4 MacroPatternTable | ✅ | `6d5ad30` |
+| 5 matcher — call_expression → declaration | ✅ | `b59f7d4` |
+| 6 matcher — `#pragma` reference patterns | ✅ | `63f99a9` |
+| 7 接入 collector + fileIndexer | ✅（偏离 1） | `1591beb` |
+| 8 用户配置 pipeline | ✅ | `f24d8d2` |
+| 9 test-electron macro F12 | ✅ | `6946b2a` |
+
+**Review / fix**：
+- `docs/superpowers/plans/plan05review.md` 落库：发现 settings 动态同步、坏用户 pattern 隔离、CG legacy 非 call declaration、Case 7 F12 覆盖等问题
+- `docs/superpowers/plans/plan05fix.md` 落库：修复 config sync + custom macro reindex、坏 user macro skip、`.compute` pragma kernel F12 覆盖；CG legacy 非 call declaration 明确 deferred
+- `58797dc docs(plans): record plan 05 code review`
+- `ee26cd4 fix(plan-05): address macro recognizer review findings`
+
+**Plan 与现实偏离（已在 plan markdown 内联 Note）**：
+1. Task 7：plan 原 focused command `npx vitest run` 从 monorepo root 会扫到 VSCode mocha/test-electron 文件；实际使用 `npm run test -w @unity-shader-nav/server` 做 server vitest 范围验证
+2. Fix：`sampler2D $name` / `fixed4 $name` CG legacy declaration 不塞进 call/pragma matcher，已 deferred 到后续非 call declaration support
+
+**主 agent 验证结果**（2026-05-22）：
+- `npm run build`：3 个 workspace tsc + copy-server 全过
+- `npm run test -w @unity-shader-nav/server`：server vitest **19 files / 74 tests passed**
+- `npm test`：test-electron **8/8** + server vitest **74/74** 全过
+- Acceptance：Case 5 macro-declared `_MainTex` F12 ✓；Case 6 `#pragma vertex vert` index/ref path ✓；Case 7 `.compute #pragma kernel CSMain` in-process F12 ✓；custom `unityShaderNav.declarationMacros` 动态更新并 reindex 已打开文件 ✓
+
+**遗留风险**：
+- CG legacy `sampler2D $name` / `fixed4 $name` 是普通 HLSL declaration，不属于 Plan 05 call/pragma matcher；后续做非 call declaration support 时补
+- `CBUFFER_END` / instancing buffer start/end 等 unmatched macro sentinel 目前仍可能作为 references 噪声进入索引，Plan 13 Find References 前建议加 ignored macro/sentinel 策略
+- 当前 settings table 是全局实例；fix 为单 workspace 验收增加了 definition 前 scoped refresh。多 root/per-folder settings 需要 Plan 08/09 生命周期设计时统一配置缓存粒度
+
 ## 进行中 TODO
 
 ### 🟡 Plan 01 follow-up（plan01fix 之后还剩的）
@@ -246,8 +283,8 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 
 ## 下一步
 
-1. 进入 **Plan 05: macro-pattern-recognizer**，把 `#pragma vertex vert` 等 Unity macro/pattern 识别接入 FileIndex。
-2. Plan 05 完成后接 Plan 06 include resolver，再进入 Plan 07 cross-file MVP。
+1. 进入 **Plan 06: include-resolver**，补 `#include` 解析与 Case 4。
+2. Plan 06 完成后进入 Plan 07 package resolver + cross-file MVP。
 
 ## 历史回放（review 修订）
 
@@ -260,3 +297,4 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 - 2026-05-22：plan02fix 实施（commit `93f00ae..7d48312`，1 个 plan doc commit + 5 个 task commit，源自用户写的 plan02review.md；含 sanitizer 设计的中途修订）
 - 2026-05-22：Plan 03 实施 + R1 spike（commit `bf90337..92616e1`，10 个 task commit + 1 个 spike commit，5 处偏离全部 plan markdown 内联记录）
 - 2026-05-22：Plan 04 实施 + review/fix（commit `02cd114..b7800ec`，8 个 task commit + 2 个 fix commit + 独立 review/doc fix，6 处偏离全部 plan markdown 内联记录）
+- 2026-05-22：Plan 05 实施 + review/fix（commit `86176b6..ee26cd4`，9 个 task commit + review doc + fix commit，Case 5/6/7 覆盖；2 处偏离 plan markdown 内联记录）
