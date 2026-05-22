@@ -44,6 +44,8 @@ server/tests/macros/
     └── pragmas.shader             # #pragma vertex / fragment / kernel
 ```
 
+> Note: Review fix 2026-05-23 defers `sampler2D $name` / `fixed4 $name` CG legacy declaration recognition. Plan 05's matcher is intentionally call/pragma-pattern based; those legacy declarations need non-call declaration-pattern support that should be designed with the normal HLSL declaration collector instead of forced into `MacroPatternTable`.
+
 修改：
 - `server/src/parser/hlsl/collector.ts` — call_expression 分支注入 macro pattern lookup
 - `server/src/parser/hlsl/fileIndexer.ts` — 在每个块的原始文本上做 pragma 行扫描

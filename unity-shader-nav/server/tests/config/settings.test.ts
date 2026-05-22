@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Connection } from 'vscode-languageserver/node';
 import { DEFAULT_SETTINGS } from '@unity-shader-nav/shared';
-import { loadSettings } from '../../src/config/settings';
+import { loadSettings, onSettingsChanged } from '../../src/config/settings';
 
 function connectionWithConfiguration(value: unknown): Connection {
   return {
@@ -35,5 +35,37 @@ describe('loadSettings', () => {
     ]);
     expect(settings.excludePatterns).toEqual(DEFAULT_SETTINGS.excludePatterns);
     expect(settings.findReferences.includePackages).toBe(false);
+  });
+});
+
+describe('onSettingsChanged', () => {
+  it('uses the pushed unityShaderNav settings section from didChangeConfiguration', async () => {
+    let handler: ((params: unknown) => Promise<void>) | undefined;
+    const connection = {
+      onDidChangeConfiguration: (registered: (params: unknown) => Promise<void>) => {
+        handler = registered;
+      },
+      workspace: {
+        getConfiguration: async () => DEFAULT_SETTINGS,
+      },
+    } as unknown as Connection;
+
+    let got = DEFAULT_SETTINGS;
+    onSettingsChanged(connection, (settings) => {
+      got = settings;
+    });
+
+    await handler!({
+      settings: {
+        unityShaderNav: {
+          declarationMacros: [{ pattern: 'MY_TEX2D($name)', kind: 'variable' }],
+          findReferences: {},
+        },
+      },
+    });
+
+    expect(got.declarationMacros).toEqual([
+      { pattern: 'MY_TEX2D($name)', kind: 'variable' },
+    ]);
   });
 });

@@ -48,4 +48,71 @@ suite('F12 on macro-declared variable', () => {
     assert.ok(links && links.length >= 1, 'expected at least one definition');
     assert.strictEqual(targetRange(links[0]).start.line, 0);
   });
+
+  test('reindexes an already-open file when declarationMacros changes', async () => {
+    const folder = vscode.workspace.workspaceFolders?.[0];
+    assert.ok(folder, 'expected integration test workspace folder');
+
+    const uri = vscode.Uri.joinPath(folder.uri, 'custom-macro-settings.hlsl');
+    const config = vscode.workspace.getConfiguration('unityShaderNav', folder.uri);
+    const text = [
+      'MY_TEX2D(_CustomTex);',
+      'float4 main() { return _CustomTex.Sample(sampler_CustomTex, float2(0, 0)); }',
+    ].join('\n');
+
+    try {
+      await config.update('declarationMacros', [], vscode.ConfigurationTarget.Workspace);
+      await vscode.workspace.fs.writeFile(uri, Buffer.from(text, 'utf8'));
+
+      const doc = await vscode.workspace.openTextDocument(uri);
+      await vscode.window.showTextDocument(doc);
+      assert.strictEqual(doc.languageId, 'hlsl', 'test document should be handled by the HLSL language client');
+
+      const usageCol = doc.lineAt(1).text.indexOf('_CustomTex');
+      assert.ok(usageCol >= 0, 'expected _CustomTex usage in test document');
+      const position = new vscode.Position(1, usageCol + 3);
+
+      const before = await vscode.commands.executeCommand<Array<vscode.LocationLink | vscode.Location>>(
+        'vscode.executeDefinitionProvider',
+        uri,
+        position,
+      );
+      assert.strictEqual(before?.length ?? 0, 0, 'custom macro should not resolve before setting update');
+
+      let sawConfigEvent = false;
+      const disposable = vscode.workspace.onDidChangeConfiguration((event) => {
+        sawConfigEvent = sawConfigEvent || event.affectsConfiguration('unityShaderNav.declarationMacros');
+      });
+      await config.update(
+        'declarationMacros',
+        [{ pattern: 'MY_TEX2D($name)', kind: 'variable' }],
+        vscode.ConfigurationTarget.Workspace,
+      );
+      disposable.dispose();
+      assert.strictEqual(sawConfigEvent, true, 'VSCode should emit declarationMacros configuration changes');
+      assert.deepStrictEqual(
+        vscode.workspace.getConfiguration('unityShaderNav', folder.uri).get('declarationMacros'),
+        [{ pattern: 'MY_TEX2D($name)', kind: 'variable' }],
+        'updated declarationMacros should be visible from workspace configuration',
+      );
+
+      const links = await waitForDefinitions(
+        uri,
+        position,
+        (result) => (result?.length ?? 0) >= 1 && targetRange(result![0]).start.line === 0,
+      );
+
+      assert.ok(links && links.length >= 1, 'expected definition after declarationMacros update');
+      assert.strictEqual(targetRange(links[0]).start.line, 0);
+    } finally {
+      await config.update('declarationMacros', undefined, vscode.ConfigurationTarget.Workspace);
+      await vscode.workspace.fs.delete(uri, { useTrash: false }).then(undefined, () => undefined);
+      await vscode.workspace.fs
+        .delete(vscode.Uri.joinPath(folder.uri, '.vscode', 'settings.json'), { useTrash: false })
+        .then(undefined, () => undefined);
+      await vscode.workspace.fs
+        .delete(vscode.Uri.joinPath(folder.uri, '.vscode'), { useTrash: false })
+        .then(undefined, () => undefined);
+    }
+  });
 });

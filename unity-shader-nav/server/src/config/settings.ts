@@ -5,18 +5,36 @@ type PartialSettings = Partial<Omit<ExtensionSettings, 'findReferences'>> & {
   findReferences?: Partial<ExtensionSettings['findReferences']>;
 };
 
-export async function loadSettings(connection: Connection): Promise<ExtensionSettings> {
+function mergeSettings(rawValue: unknown): ExtensionSettings {
+  const raw = (rawValue ?? {}) as PartialSettings;
+  return {
+    ...DEFAULT_SETTINGS,
+    ...raw,
+    findReferences: {
+      ...DEFAULT_SETTINGS.findReferences,
+      ...(raw.findReferences ?? {}),
+    },
+  };
+}
+
+function settingsFromDidChange(params: unknown): ExtensionSettings | undefined {
+  const settings = (params as { settings?: unknown } | undefined)?.settings;
+  if (settings === undefined || settings === null) return undefined;
+
+  const section = (settings as { unityShaderNav?: unknown }).unityShaderNav ?? settings;
+  return mergeSettings(section);
+}
+
+export async function loadSettings(
+  connection: Connection,
+  scopeUri?: string,
+): Promise<ExtensionSettings> {
   try {
-    const got = await connection.workspace.getConfiguration({ section: 'unityShaderNav' });
-    const raw = (got ?? {}) as PartialSettings;
-    return {
-      ...DEFAULT_SETTINGS,
-      ...raw,
-      findReferences: {
-        ...DEFAULT_SETTINGS.findReferences,
-        ...(raw.findReferences ?? {}),
-      },
-    };
+    const got = await connection.workspace.getConfiguration({
+      section: 'unityShaderNav',
+      scopeUri,
+    });
+    return mergeSettings(got);
   } catch {
     return DEFAULT_SETTINGS;
   }
@@ -26,8 +44,8 @@ export function onSettingsChanged(
   connection: Connection,
   onChange: (settings: ExtensionSettings) => void | Promise<void>,
 ): void {
-  connection.onDidChangeConfiguration(async () => {
-    const settings = await loadSettings(connection);
+  connection.onDidChangeConfiguration(async (params) => {
+    const settings = settingsFromDidChange(params) ?? await loadSettings(connection);
     await onChange(settings);
   });
 }

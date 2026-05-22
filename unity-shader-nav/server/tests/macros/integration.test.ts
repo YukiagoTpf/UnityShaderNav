@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { indexFile } from '../../src/parser/hlsl';
 import { MacroPatternTable } from '../../src/macros';
+import { wordAt } from '../../src/index/wordAt';
+import { resolveDefinition } from '../../src/index/symbolResolver';
 
 const fixture = (name: string) => readFileSync(join(__dirname, 'fixtures', name), 'utf8');
 
@@ -47,5 +49,24 @@ describe('integration: macros end-to-end', () => {
     const idx = await indexFile('file:///t/main.compute', text, new MacroPatternTable());
     const kernelRef = idx.references.find((r) => r.name === 'CSMain' && r.context === 'pragma');
     expect(kernelRef).toBeDefined();
+  });
+
+  it('resolves F12 from #pragma kernel CSMain to the CSMain function in .compute files', async () => {
+    const uri = 'file:///t/main.compute';
+    const text = [
+      '#pragma kernel CSMain',
+      '[numthreads(8, 8, 1)]',
+      'void CSMain(uint3 id : SV_DispatchThreadID) {}',
+    ].join('\n');
+
+    const idx = await indexFile(uri, text, new MacroPatternTable());
+    const pos = { line: 0, character: 17 };
+    const word = wordAt(text, pos);
+    expect(word?.text).toBe('CSMain');
+
+    const links = resolveDefinition(idx, word!.text, pos);
+    expect(links).toHaveLength(1);
+    expect(links[0].targetUri).toBe(uri);
+    expect(links[0].targetRange.start.line).toBe(2);
   });
 });

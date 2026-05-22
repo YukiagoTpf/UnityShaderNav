@@ -20,10 +20,14 @@ async function reindexOpenDocuments(): Promise<void> {
   }
 }
 
-connection.onInitialized(async () => {
-  const settings = await loadSettings(connection);
+async function refreshSettings(scopeUri?: string): Promise<void> {
+  const settings = await loadSettings(connection, scopeUri);
   table = new MacroPatternTable(settings.declarationMacros);
   await reindexOpenDocuments();
+}
+
+connection.onInitialized(async () => {
+  await refreshSettings();
   connection.console.log('[UnityShaderNav] server initialized');
 });
 
@@ -32,6 +36,6 @@ onSettingsChanged(connection, async (settings) => {
   await reindexOpenDocuments();
 });
 
-registerDefinitionHandler(connection, documents, store);
+registerDefinitionHandler(connection, documents, store, refreshSettings);
 
 connection.listen();

@@ -24,7 +24,7 @@ export class MacroPatternTable {
       this.addRef(m.pattern);
     }
     for (const u of userMacros) {
-      this.addDecl(u.pattern, u.kind);
+      this.addUserDecl(u.pattern, u.kind);
     }
   }
 
@@ -40,6 +40,17 @@ export class MacroPatternTable {
     const arr = this.refByHead.get(compiled.head) ?? [];
     arr.push({ pattern: compiled });
     this.refByHead.set(compiled.head, arr);
+  }
+
+  private addUserDecl(pattern: string, kind: 'variable' | 'cbuffer'): void {
+    try {
+      this.addDecl(pattern, kind);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      console.warn(
+        `Skipping invalid unityShaderNav.declarationMacros entry "${pattern}": ${reason}`,
+      );
+    }
   }
 
   findDecl(head: string): CompiledDeclaration[] {

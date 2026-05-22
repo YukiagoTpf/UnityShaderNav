@@ -12,10 +12,13 @@ export function registerDefinitionHandler(
   connection: Connection,
   documents: TextDocuments<TextDocument>,
   store: IndexStore,
+  beforeResolve?: (uri: string) => Promise<void>,
 ): void {
-  connection.onDefinition((params: DefinitionParams): LocationLink[] | Location[] | null => {
+  connection.onDefinition(async (params: DefinitionParams): Promise<LocationLink[] | Location[] | null> => {
     const doc = documents.get(params.textDocument.uri);
     if (!doc) return null;
+
+    await beforeResolve?.(params.textDocument.uri);
 
     const idx = store.get(params.textDocument.uri);
     if (!idx) return null;

@@ -6,10 +6,10 @@ import { IndexStore } from '../../src/index';
 import { registerDefinitionHandler } from '../../src/handlers/definition';
 
 describe('registerDefinitionHandler', () => {
-  it('returns location links for the identifier under the cursor', () => {
-    let handler: ((params: DefinitionParams) => unknown) | undefined;
+  it('returns location links for the identifier under the cursor', async () => {
+    let handler: ((params: DefinitionParams) => Promise<unknown>) | undefined;
     const connection = {
-      onDefinition(fn: (params: DefinitionParams) => unknown) {
+      onDefinition(fn: (params: DefinitionParams) => Promise<unknown>) {
         handler = fn;
         return { dispose() {} };
       },
@@ -43,7 +43,7 @@ describe('registerDefinitionHandler', () => {
 
     registerDefinitionHandler(connection, documents, store);
 
-    const result = handler?.({
+    const result = await handler?.({
       textDocument: { uri },
       position: { line: 1, character: 25 },
     });
