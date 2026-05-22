@@ -77,3 +77,26 @@ describe('collector: shadowing', () => {
     expect(is[0].location.range.start.line).toBeLessThan(is[1].location.range.start.line);
   });
 });
+
+describe('collector: references', () => {
+  it('records function calls as references with context=call', async () => {
+    const text = `
+      float4 add(float4 a, float4 b) { return a + b; }
+      float4 main() { return add(float4(0,0,0,1), float4(1,1,1,1)); }
+    `;
+    const tree = await parseHlsl(text);
+    const result = collect(tree.rootNode, text, 'file:///t/refs.hlsl', 0);
+
+    const refs = result.references.filter((r) => r.name === 'add');
+    expect(refs).toHaveLength(1);
+    expect(refs[0].context).toBe('call');
+  });
+
+  it('records member accesses with context=member', async () => {
+    const text = `void f(Varyings v) { float2 x = v.uv; }`;
+    const tree = await parseHlsl(text);
+    const result = collect(tree.rootNode, text, 'file:///t/m.hlsl', 0);
+    const uv = result.references.filter((r) => r.name === 'uv' && r.context === 'member');
+    expect(uv).toHaveLength(1);
+  });
+});
