@@ -64,6 +64,16 @@ describe('collector: locals & params', () => {
     expect(locals.every((l) => l.scope === 'compute')).toBe(true);
     expect(locals[0].scopeRange).toBeDefined();
   });
+
+  it('collects all local declarators and normalizes array declarator names', async () => {
+    const text = `float4 f(float4 a) { float x = 1, y = 2; float3 arr[2]; return a; }`;
+    const tree = await parseHlsl(text);
+    const result = collect(tree.rootNode, text, 'file:///t/multi-locals.hlsl', 0);
+
+    const locals = result.symbols.filter((s) => s.kind === 'localVariable');
+    expect(locals.map((l) => l.name).sort()).toEqual(['arr', 'x', 'y']);
+    expect(locals.find((l) => l.name === 'arr')!.declaredType).toBe('float3');
+  });
 });
 
 describe('collector: shadowing', () => {
@@ -115,5 +125,36 @@ describe('collector: references', () => {
     const result = collect(tree.rootNode, text, 'file:///t/m.hlsl', 0);
     const uv = result.references.filter((r) => r.name === 'uv' && r.context === 'member');
     expect(uv).toHaveLength(1);
+  });
+
+  it('records ordinary identifier use sites without counting declarations', async () => {
+    const text = `float4 f(float4 a, float4 b) { float4 c = a + b; return c; }`;
+    const tree = await parseHlsl(text);
+    const result = collect(tree.rootNode, text, 'file:///t/ids.hlsl', 0);
+
+    const ids = result.references.filter((r) => r.context === 'identifier');
+    expect(ids.map((r) => r.name).sort()).toEqual(['a', 'b', 'c']);
+    expect(ids.filter((r) => r.name === 'f')).toHaveLength(0);
+  });
+});
+
+describe('collector: declarator variants', () => {
+  it('collects all struct members and normalizes struct array member names', async () => {
+    const text = `struct S { float a, b; float4 pos[2]; };`;
+    const tree = await parseHlsl(text);
+    const result = collect(tree.rootNode, text, 'file:///t/struct-declarators.hlsl', 0);
+
+    const members = result.symbols.filter((s) => s.kind === 'structMember');
+    expect(members.map((m) => m.name).sort()).toEqual(['a', 'b', 'pos']);
+    expect(members.find((m) => m.name === 'pos')!.declaredType).toBe('float4');
+  });
+
+  it('collects all cbuffer declarators', async () => {
+    const text = `cbuffer C { float _A, _B; }`;
+    const tree = await parseHlsl(text);
+    const result = collect(tree.rootNode, text, 'file:///t/cbuffer-declarators.hlsl', 0);
+
+    const variables = result.symbols.filter((s) => s.kind === 'variable');
+    expect(variables.map((v) => v.name).sort()).toEqual(['_A', '_B']);
   });
 });

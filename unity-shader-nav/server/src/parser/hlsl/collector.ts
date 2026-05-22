@@ -41,6 +41,17 @@ function markDecl(st: CollectorState, node: Parser.SyntaxNode | null | undefined
   if (node) st.declarationSites.add(siteKey(node));
 }
 
+function declaratorNameNode(node: Parser.SyntaxNode | null | undefined): Parser.SyntaxNode | undefined {
+  if (!node) return undefined;
+  if (node.type === 'identifier' || node.type === 'field_identifier') return node;
+  const inner = node.childForFieldName('declarator');
+  return declaratorNameNode(inner);
+}
+
+function declaratorNodes(node: Parser.SyntaxNode): Parser.SyntaxNode[] {
+  return node.childrenForFieldName('declarator');
+}
+
 /**
  * Extract the function-name identifier from a `function_definition` node.
  * Path: function_definition.declarator (function_declarator).declarator (identifier).
@@ -70,7 +81,7 @@ function collectParameters(
     const p = paramList.namedChild(i);
     if (!p || p.type !== 'parameter_declaration') continue;
     const typeNode = p.childForFieldName('type');
-    const nameNode = p.childForFieldName('declarator');
+    const nameNode = declaratorNameNode(p.childForFieldName('declarator'));
     if (!nameNode) continue;
     markDecl(st, nameNode);
     if (typeNode) markDecl(st, typeNode);
@@ -112,20 +123,17 @@ function collectCbufferShape(node: Parser.SyntaxNode, st: CollectorState): void 
     const stmt = body.namedChild(i);
     if (!stmt || stmt.type !== 'declaration') continue;
     const typeNode = stmt.childForFieldName('type');
-    const declNode = stmt.childForFieldName('declarator');
-    if (!declNode) continue;
-    // declNode can be identifier (simple `float r;`) or init_declarator.
-    const idNode = declNode.type === 'identifier'
-      ? declNode
-      : declNode.childForFieldName('declarator');
-    if (!idNode) continue;
-    markDecl(st, idNode);
-    st.symbols.push({
-      name: textOf(idNode),
-      kind: 'variable',
-      declaredType: textOf(typeNode),
-      location: { uri: st.uri, range: offsetRange(rangeOf(idNode), st.lineOffset) },
-    });
+    for (const declNode of declaratorNodes(stmt)) {
+      const idNode = declaratorNameNode(declNode);
+      if (!idNode) continue;
+      markDecl(st, idNode);
+      st.symbols.push({
+        name: textOf(idNode),
+        kind: 'variable',
+        declaredType: textOf(typeNode),
+        location: { uri: st.uri, range: offsetRange(rangeOf(idNode), st.lineOffset) },
+      });
+    }
   }
 }
 
@@ -196,26 +204,20 @@ function collectLocals(
   for (const n of walk(bodyNode)) {
     if (n.type !== 'declaration') continue;
     const typeNode = n.childForFieldName('type');
-    const declNode = n.childForFieldName('declarator');
-    if (!declNode) continue;
-    let idNode: Parser.SyntaxNode | undefined;
-    if (declNode.type === 'identifier') {
-      idNode = declNode;
-    } else if (declNode.type === 'init_declarator') {
-      const inner = declNode.childForFieldName('declarator');
-      if (inner && inner.type === 'identifier') idNode = inner;
-    }
-    if (!idNode) continue;
-    markDecl(st, idNode);
     if (typeNode) markDecl(st, typeNode);
-    st.symbols.push({
-      name: textOf(idNode),
-      kind: 'localVariable',
-      location: { uri: st.uri, range: offsetRange(rangeOf(idNode), st.lineOffset) },
-      scope: fnName,
-      scopeRange,
-      declaredType: textOf(typeNode),
-    });
+    for (const declNode of declaratorNodes(n)) {
+      const idNode = declaratorNameNode(declNode);
+      if (!idNode) continue;
+      markDecl(st, idNode);
+      st.symbols.push({
+        name: textOf(idNode),
+        kind: 'localVariable',
+        location: { uri: st.uri, range: offsetRange(rangeOf(idNode), st.lineOffset) },
+        scope: fnName,
+        scopeRange,
+        declaredType: textOf(typeNode),
+      });
+    }
   }
 }
 
@@ -237,17 +239,19 @@ function collectStruct(node: Parser.SyntaxNode, st: CollectorState): void {
     const field = body.namedChild(i);
     if (!field || field.type !== 'field_declaration') continue;
     const typeNode = field.childForFieldName('type');
-    const fidNode = field.childForFieldName('declarator');
-    if (!fidNode) continue;
-    markDecl(st, fidNode);
     if (typeNode) markDecl(st, typeNode);
-    st.symbols.push({
-      name: textOf(fidNode),
-      kind: 'structMember',
-      parentType: structName,
-      declaredType: textOf(typeNode),
-      location: { uri: st.uri, range: offsetRange(rangeOf(fidNode), st.lineOffset) },
-    });
+    for (const declNode of declaratorNodes(field)) {
+      const fidNode = declaratorNameNode(declNode);
+      if (!fidNode) continue;
+      markDecl(st, fidNode);
+      st.symbols.push({
+        name: textOf(fidNode),
+        kind: 'structMember',
+        parentType: structName,
+        declaredType: textOf(typeNode),
+        location: { uri: st.uri, range: offsetRange(rangeOf(fidNode), st.lineOffset) },
+      });
+    }
   }
 }
 
@@ -287,6 +291,14 @@ function collectReferences(node: Parser.SyntaxNode, st: CollectorState): void {
         name: textOf(node),
         location: { uri: st.uri, range: offsetRange(rangeOf(node), st.lineOffset) },
         context: 'type',
+      });
+    }
+  } else if (node.type === 'identifier') {
+    if (!st.declarationSites.has(siteKey(node))) {
+      st.references.push({
+        name: textOf(node),
+        location: { uri: st.uri, range: offsetRange(rangeOf(node), st.lineOffset) },
+        context: 'identifier',
       });
     }
   }
