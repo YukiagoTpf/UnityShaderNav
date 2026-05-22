@@ -11,8 +11,10 @@ export async function activate(context: ExtensionContext): Promise<void> {
   context.subscriptions.push({ dispose: () => statusBar?.dispose() });
 
   client = createLanguageClient(context);
+  client.onNotification('unityShaderNav/mode', ({ mode }: { mode: 'standalone' | 'ready' }) => {
+    statusBar?.set(mode);
+  });
   await client.start();
-  statusBar.set('ready');
 }
 
 export async function deactivate(): Promise<void> {

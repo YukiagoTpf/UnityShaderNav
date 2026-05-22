@@ -46,4 +46,14 @@ describe('WorkspaceManager: multi-root', () => {
     expect(workspaceA?.global.lookup('OnlyInB')).toEqual([]);
     expect(workspaceB?.global.lookup('Common')).toEqual([]);
   });
+
+  it('reports ready when any workspace is a Unity project', async () => {
+    const projectA = resolve(__dirname, '../include/fixtures/projectA');
+    const manager = new WorkspaceManager();
+
+    expect(manager.mode()).toBe('standalone');
+    await manager.addFolder(pathToFileURL(projectA).href, DEFAULT_SETTINGS, fakeConnection);
+
+    expect(manager.mode()).toBe('ready');
+  });
 });

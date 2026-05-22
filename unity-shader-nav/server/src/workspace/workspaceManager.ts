@@ -24,6 +24,14 @@ export class WorkspaceManager {
     return [...this.byFolder.values()];
   }
 
+  mode(): 'standalone' | 'ready' {
+    return this.list().some((workspace) => !workspace.isStandalone()) ? 'ready' : 'standalone';
+  }
+
+  private sendModeNotification(): void {
+    this.connection?.sendNotification('unityShaderNav/mode', { mode: this.mode() });
+  }
+
   workspaceFor(fileUri: string): Workspace | undefined {
     try {
       const filePath = fileURLToPath(fileUri);
@@ -53,6 +61,7 @@ export class WorkspaceManager {
     const workspace = new Workspace(folderUri, settings);
     this.byFolder.set(folderUri, workspace);
     await workspace.bootstrap(connection, globalStorageDir);
+    this.sendModeNotification();
   }
 
   async workspaceForOrCreateFile(fileUri: string): Promise<Workspace | undefined> {
@@ -77,5 +86,6 @@ export class WorkspaceManager {
 
   removeFolder(folderUri: string): void {
     this.byFolder.delete(folderUri);
+    this.sendModeNotification();
   }
 }

@@ -19,6 +19,7 @@ connection.onInitialized(async () => {
   for (const folder of folders) {
     await manager.addFolder(folder.uri, settings, connection);
   }
+  connection.sendNotification('unityShaderNav/mode', { mode: manager.mode() });
 
   connection.workspace.onDidChangeWorkspaceFolders((event) => {
     for (const removed of event.removed) manager.removeFolder(removed.uri);
