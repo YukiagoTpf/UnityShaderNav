@@ -52,3 +52,28 @@ describe('collector: cbuffer', () => {
     expect(vars.sort()).toEqual(['_Color', '_MainTex_ST', '_Roughness']);
   });
 });
+
+describe('collector: locals & params', () => {
+  it('collects locals with scope = function name and scopeRange spanning body', async () => {
+    const text = fixture('locals-and-params.hlsl');
+    const tree = await parseHlsl(text);
+    const result = collect(tree.rootNode, text, 'file:///t/loc.hlsl', 0);
+
+    const locals = result.symbols.filter((s) => s.kind === 'localVariable');
+    expect(locals.map((l) => l.name).sort()).toEqual(['result', 'scale']);
+    expect(locals.every((l) => l.scope === 'compute')).toBe(true);
+    expect(locals[0].scopeRange).toBeDefined();
+  });
+});
+
+describe('collector: shadowing', () => {
+  it('keeps both i declarations as separate SymbolEntry', async () => {
+    const text = fixture('shadowing-loop.hlsl');
+    const tree = await parseHlsl(text);
+    const result = collect(tree.rootNode, text, 'file:///t/shadow.hlsl', 0);
+
+    const is = result.symbols.filter((s) => s.kind === 'localVariable' && s.name === 'i');
+    expect(is).toHaveLength(2);
+    expect(is[0].location.range.start.line).toBeLessThan(is[1].location.range.start.line);
+  });
+});
