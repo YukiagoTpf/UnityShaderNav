@@ -179,7 +179,7 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 
 ## Plan 04 实施记录
 
-**Commits**：`02cd114..c9de2ec`（8 个 Task 各一 commit）+ review/fix commits `9b71ab8`, `43aa703`。
+**Commits**：`02cd114..c9de2ec`（8 个 Task 各一 commit）+ review/fix commits `9b71ab8`, `43aa703` + independent review/doc fix `bb3ff01`, `b7800ec`。
 
 | Task | 状态 | Commit |
 |---|---|---|
@@ -197,6 +197,9 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 - `docs/superpowers/plans/plan04fix.md` 落库：补 Case 8 in-process + test-electron 覆盖；document sync 改为 change-content 单路索引，并用 live uri + version guard 防 stale async set
 - `9b71ab8 fix(plan-04): address definition review findings`
 - `43aa703 fix(plan-04): correct parameter F12 integration cursor`
+- 独立 code-review subagent 复核 `b4519cf..c18ad49` 后无 blocking implementation finding，仅记录 P3 plan replay 问题：Task 8 focused command `npm test -w unity-shader-nav -- --grep "F12 single-file"` 不可复跑
+- `bb3ff01 docs(plans): record plan 04 code review`
+- `b7800ec docs(plans): fix plan 04 focused verification command`
 
 **Plan 与现实偏离（全部 plan markdown 内联 Note）**：
 1. Task 1：计划实现片段会在 whitespace 上向左吸附 identifier，但测试要求 whitespace/symbol 返回 `null`；实际以测试语义为准
@@ -204,6 +207,7 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 3. Task 8：fixture 不会复制到 `tests/out`，integration test 从运行时 out 目录回指源码 fixture
 4. Task 8：`tests/tsconfig.json` 原 include 不含 `integration/**/*.ts`，已加入
 5. Task 8：mocha suite 原只 glob `tests/out/client`，已提升到 `tests/out` 以执行 integration 测试
+6. Task 8：原 focused command 指向无 `test` script 的 client workspace；plan markdown 已加 Note，验收命令改为 monorepo root `npm test`
 
 **主 agent 验证结果**（2026-05-22）：
 - `npm test`：端到端 PASS
@@ -255,4 +259,4 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 - 2026-05-22：plan01fix 实施（commit `6658479..ada540b`，1 个 plan doc commit + 5 个 task commit，源自用户写的 plan01review.md）
 - 2026-05-22：plan02fix 实施（commit `93f00ae..7d48312`，1 个 plan doc commit + 5 个 task commit，源自用户写的 plan02review.md；含 sanitizer 设计的中途修订）
 - 2026-05-22：Plan 03 实施 + R1 spike（commit `bf90337..92616e1`，10 个 task commit + 1 个 spike commit，5 处偏离全部 plan markdown 内联记录）
-- 2026-05-22：Plan 04 实施 + review/fix（commit `02cd114..43aa703`，8 个 task commit + 2 个 fix commit，5 处偏离全部 plan markdown 内联记录）
+- 2026-05-22：Plan 04 实施 + review/fix（commit `02cd114..b7800ec`，8 个 task commit + 2 个 fix commit + 独立 review/doc fix，6 处偏离全部 plan markdown 内联记录）
