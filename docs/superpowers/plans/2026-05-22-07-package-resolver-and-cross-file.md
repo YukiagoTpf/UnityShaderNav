@@ -93,7 +93,7 @@ tests/integration/client/
 - Create: `server/tests/packages/lockfile.test.ts`
 - Create: `server/tests/packages/fixtures/packages-lock-samples/*.json`
 
-- [ ] **Step 1: fixture `embedded.json`**
+- [x] **Step 1: fixture `embedded.json`**
 
 ```json
 {
@@ -114,7 +114,7 @@ tests/integration/client/
 }
 ```
 
-- [ ] **Step 2: fixture `registry.json`**
+- [x] **Step 2: fixture `registry.json`**
 
 ```json
 {
@@ -131,7 +131,7 @@ tests/integration/client/
 }
 ```
 
-- [ ] **Step 3: fixture `git.json`**
+- [x] **Step 3: fixture `git.json`**
 
 ```json
 {
@@ -147,7 +147,7 @@ tests/integration/client/
 }
 ```
 
-- [ ] **Step 4: fixture `local.json`**
+- [x] **Step 4: fixture `local.json`**
 
 ```json
 {
@@ -162,7 +162,7 @@ tests/integration/client/
 }
 ```
 
-- [ ] **Step 5: 测试**
+- [x] **Step 5: 测试**
 
 ```typescript
 import { describe, it, expect } from 'vitest';
@@ -251,7 +251,7 @@ describe('resolvePackagePhysicalPath', () => {
 });
 ```
 
-- [ ] **Step 6: 实现**
+- [x] **Step 6: 实现**
 
 返回 `string | null`。`null` = "MVP 不索引此包"。调用方（`PackageResolver.load`）跳过该条目并 console.warn 一次。
 
@@ -326,7 +326,7 @@ export function resolvePackagePhysicalPath(
 }
 ```
 
-- [ ] **Step 7: 跑测 + Commit**
+- [x] **Step 7: 跑测 + Commit**
 
 ```bash
 npx vitest run server/tests/packages/lockfile.test.ts
@@ -343,7 +343,7 @@ git commit -m "feat(plan-07): packages-lock.json parser + physical path resolver
 - Create: `server/src/packages/index.ts`
 - Create: `server/tests/packages/packageResolver.test.ts`
 
-- [ ] **Step 1: 测试**
+- [x] **Step 1: 测试**
 
 ```typescript
 import { describe, it, expect } from 'vitest';
@@ -407,7 +407,7 @@ describe('PackageResolver', () => {
 });
 ```
 
-- [ ] **Step 2: 实现**
+- [x] **Step 2: 实现**
 
 ```typescript
 import { promises as fs } from 'node:fs';
@@ -468,14 +468,14 @@ export class PackageResolver {
 }
 ```
 
-- [ ] **Step 3: index**
+- [x] **Step 3: index**
 
 ```typescript
 export { PackageResolver } from './packageResolver';
 export { parsePackagesLock, resolvePackagePhysicalPath } from './lockfile';
 ```
 
-- [ ] **Step 4: 跑测 + Commit**
+- [x] **Step 4: 跑测 + Commit**
 
 ```bash
 npx vitest run server/tests/packages/packageResolver.test.ts
@@ -491,7 +491,7 @@ git commit -m "feat(plan-07): PackageResolver from packages-lock.json"
 - Modify: `server/src/include/resolver.ts`
 - Modify: `server/tests/include/resolver.test.ts`
 
-- [ ] **Step 1: 修改 resolver**
+- [x] **Step 1: 修改 resolver**
 
 ```typescript
 // 在 buildContext + IncludeContext 中已经预留 packagePhysicalPaths: Map<string, string>
@@ -518,7 +518,7 @@ if (includePath.startsWith('Packages/')) {
 }
 ```
 
-- [ ] **Step 2: 测试**
+- [x] **Step 2: 测试**
 
 ```typescript
 describe('resolveInclude: Packages/...', () => {
@@ -539,14 +539,14 @@ describe('resolveInclude: Packages/...', () => {
 });
 ```
 
-- [ ] **Step 3: 补 fixture：在 `server/tests/include/fixtures/projectA/Packages/com.example.urp/ShaderLibrary/Core.hlsl` 写空文件**
+- [x] **Step 3: 补 fixture：在 `server/tests/include/fixtures/projectA/Packages/com.example.urp/ShaderLibrary/Core.hlsl` 写空文件**
 
 ```bash
 mkdir -p server/tests/include/fixtures/projectA/Packages/com.example.urp/ShaderLibrary
 echo 'float Core() { return 0; }' > server/tests/include/fixtures/projectA/Packages/com.example.urp/ShaderLibrary/Core.hlsl
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add server/src/include/resolver.ts server/tests/include
@@ -562,7 +562,7 @@ git commit -m "feat(plan-07): resolve Packages/* via PackageResolver map"
 - Create: `server/tests/index/globalIndex.test.ts`
 - Modify: `server/src/index/index.ts`
 
-- [ ] **Step 1: 测试**
+- [x] **Step 1: 测试**
 
 ```typescript
 import { describe, it, expect } from 'vitest';
@@ -605,7 +605,7 @@ describe('GlobalSymbolIndex', () => {
 });
 ```
 
-- [ ] **Step 2: 实现**
+- [x] **Step 2: 实现**
 
 ```typescript
 import type { FileIndex, SymbolEntry } from '@unity-shader-nav/shared';
@@ -647,7 +647,7 @@ export class GlobalSymbolIndex {
 }
 ```
 
-- [ ] **Step 3: 跑测 + Commit**
+- [x] **Step 3: 跑测 + Commit**
 
 ```bash
 npx vitest run server/tests/index/globalIndex.test.ts
@@ -663,7 +663,7 @@ git commit -m "feat(plan-07): cross-file GlobalSymbolIndex"
 - Modify: `server/src/index/symbolResolver.ts`
 - Modify: `server/tests/index/symbolResolver.test.ts`
 
-- [ ] **Step 1: 修改签名 — 把 Plan 04 预留的 `_global` 槽填上**
+- [x] **Step 1: 修改签名 — 把 Plan 04 预留的 `_global` 槽填上**
 
 Plan 04 已经把 `_global` 作为最后一个可选参数预留出来（B5 防护）。本计划把它收紧成正式参数：
 
@@ -703,7 +703,7 @@ const combined = [...fileGlobals, ...otherGlobals];
 return combined.map(asLink);
 ```
 
-- [ ] **Step 2: 测试**
+- [x] **Step 2: 测试**
 
 ```typescript
 it('falls back to GlobalSymbolIndex when not in current file', () => {
@@ -723,13 +723,13 @@ it('falls back to GlobalSymbolIndex when not in current file', () => {
 });
 ```
 
-- [ ] **Step 3: 修改 definition handler 接收 global，调用新签名**
+- [x] **Step 3: 修改 definition handler 接收 global，调用新签名**
 
 ```typescript
 const links = resolveDefinition(idx, word.text, params.position, getGlobalIndex(params.textDocument.uri));
 ```
 
-- [ ] **Step 4: 跑测 + Commit**
+- [x] **Step 4: 跑测 + Commit**
 
 ```bash
 git add server/src/index/symbolResolver.ts server/src/handlers/definition.ts server/tests/index/symbolResolver.test.ts
@@ -744,9 +744,9 @@ git commit -m "feat(plan-07): cross-file symbol resolution"
 - Create: `server/src/workspace/walkFiles.ts`
 - Create: `server/tests/workspace/walkFiles.test.ts`
 
-- [ ] **Step 1: 决策**：用原生 `fs.readdir(..., { withFileTypes: true })` + 手写 excludePatterns（minimatch 风格简化版）。不引入 `glob` 依赖以减小 vsix 体积。
+- [x] **Step 1: 决策**：用原生 `fs.readdir(..., { withFileTypes: true })` + 手写 excludePatterns（minimatch 风格简化版）。不引入 `glob` 依赖以减小 vsix 体积。
 
-- [ ] **Step 2: 实现**
+- [x] **Step 2: 实现**
 
 ```typescript
 import { promises as fs } from 'node:fs';
@@ -794,7 +794,7 @@ export async function walkFiles(
 }
 ```
 
-- [ ] **Step 3: 测试**
+- [x] **Step 3: 测试**
 
 ```typescript
 import { describe, it, expect } from 'vitest';
@@ -817,7 +817,7 @@ describe('walkFiles', () => {
 });
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add server/src/workspace/walkFiles.ts server/tests/workspace/walkFiles.test.ts
@@ -832,7 +832,7 @@ git commit -m "feat(plan-07): walkFiles with excludePatterns"
 - Create: `server/src/workspace/workspace.ts`
 - Create: `server/tests/workspace/workspace.test.ts`
 
-- [ ] **Step 1: 实现**
+- [x] **Step 1: 实现**
 
 ```typescript
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -948,7 +948,7 @@ export class Workspace {
 }
 ```
 
-- [ ] **Step 2: 测试（in-process）**
+- [x] **Step 2: 测试（in-process）**
 
 ```typescript
 import { describe, it, expect } from 'vitest';
@@ -987,7 +987,7 @@ describe('Workspace.bootstrap', () => {
 }
 ```
 
-- [ ] **Step 3: 跑测 + Commit**
+- [x] **Step 3: 跑测 + Commit**
 
 ```bash
 git add server/src/workspace/workspace.ts server/tests/workspace/workspace.test.ts server/tests/include/fixtures/projectA/Packages/packages-lock.json
@@ -1003,7 +1003,7 @@ git commit -m "feat(plan-07): Workspace with full scan + global index"
 - Create: `server/tests/workspace/workspaceManager.test.ts`
 - Modify: `server/src/workspace/index.ts`
 
-- [ ] **Step 1: 实现**
+- [x] **Step 1: 实现**
 
 ```typescript
 import { Workspace } from './workspace';
@@ -1044,7 +1044,7 @@ export class WorkspaceManager {
 }
 ```
 
-- [ ] **Step 2: 测试**
+- [x] **Step 2: 测试**
 
 ```typescript
 import { describe, it, expect } from 'vitest';
@@ -1071,7 +1071,7 @@ describe('WorkspaceManager: multi-root', () => {
 
 > projectB 用一个临时目录即可，本测试主要验证 routing 不串。
 
-- [ ] **Step 3: 更新 workspace/index.ts 出口**
+- [x] **Step 3: 更新 workspace/index.ts 出口**
 
 ```typescript
 export { Workspace } from './workspace';
@@ -1080,7 +1080,7 @@ export { detectUnityRoot } from './detectUnityRoot';
 export { walkFiles } from './walkFiles';
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add server/src/workspace server/tests/workspace
@@ -1096,7 +1096,7 @@ git commit -m "feat(plan-07): WorkspaceManager multi-root isolation"
 - Modify: `server/src/handlers/documents.ts`
 - Modify: `server/src/handlers/definition.ts`
 
-- [ ] **Step 1: 重构 documents handler，按 uri 路由到 Workspace**
+- [x] **Step 1: 重构 documents handler，按 uri 路由到 Workspace**
 
 > **签名重写说明（B5 防护）**：本 Step 把 `registerDocuments(connection, store)`（Plan 04 / 05）整体替换为 `registerDocuments(connection, mgr)` —— 单 IndexStore 模型已经不足以表达多 root + Packages，这是 *有意的重写*，不是签名漂移。`registerDefinitionHandler` 同理。Plan 04 / 05 的 wiring 代码在此处被这版彻底取代，**不要试图兼容两个版本**。
 
@@ -1127,7 +1127,7 @@ export function registerDocuments(connection: Connection, mgr: WorkspaceManager)
 }
 ```
 
-- [ ] **Step 2: definition handler 用 WorkspaceManager**
+- [x] **Step 2: definition handler 用 WorkspaceManager**
 
 ```typescript
 export function registerDefinitionHandler(
@@ -1155,7 +1155,7 @@ export function registerDefinitionHandler(
 }
 ```
 
-- [ ] **Step 3: server.ts**
+- [x] **Step 3: server.ts**
 
 ```typescript
 import { connection, createInitializeResult } from './connection';
@@ -1196,13 +1196,15 @@ registerDefinitionHandler(connection, documents, mgr);
 connection.listen();
 ```
 
-- [ ] **Step 4: build + Commit**
+- [x] **Step 4: build + Commit**
 
 ```bash
 npm run build
 git add server/src
 git commit -m "feat(plan-07): rewire server to WorkspaceManager (multi-root)"
 ```
+
+> Note: test-electron 的既有集成测试会从空 workspace 打开仓库内 fixture 文件，`updateWorkspaceFolders()` 在同一 suite 内追加多个外部 fixture 时偶发返回 `false`。实际实现因此在 `WorkspaceManager` 增加 `workspaceForOrCreateFile()`：当打开的文件不属于任何已注册 workspace folder 时，按文件路径 lazy 创建一个 Unity root（若能 autodetect）或 standalone 文件夹 workspace。这样保留 Plan 04/05/06 的"打开单文件/外部 fixture 也能导航"行为，同时不改变多 root 已注册 folder 的最长前缀隔离规则。
 
 ---
 
@@ -1213,7 +1215,7 @@ git commit -m "feat(plan-07): rewire server to WorkspaceManager (multi-root)"
 - Create: `tests/integration/client/multiroot.test.ts`
 - Augment fixtures：在 projectA 的 Main.shader 里调用 `Common()` 和 `Core()`
 
-- [ ] **Step 1: 改 Main.shader 加调用**
+- [x] **Step 1: 改 Main.shader 加调用**
 
 ```hlsl
 Shader "T/Inc" {
@@ -1227,7 +1229,7 @@ Shader "T/Inc" {
 }
 ```
 
-- [ ] **Step 2: 跨文件跳转测试**
+- [x] **Step 2: 跨文件跳转测试**
 
 ```typescript
 suite('F12 cross-file', () => {
@@ -1280,7 +1282,7 @@ suite('F12 cross-file', () => {
 });
 ```
 
-- [ ] **Step 3: 多 root 测试**
+- [x] **Step 3: 多 root 测试**
 
 需要一个独立的第二 fixture `projectB`，结构与 projectA 平行但**符号名互不重叠**，用于验证 multi-root 路由不串。
 
@@ -1370,7 +1372,7 @@ suite('Multi-root isolation', () => {
 
 > 注：`updateWorkspaceFolders` 在 test-electron 里需要 `--disable-extensions` 启动（Plan 01 `runTest.ts` 已经传），否则其他扩展可能挂住事件。如果还是 flaky，把 `setTimeout` 时间调大或通过 `connection.workspace.onDidChangeWorkspaceFolders` 的服务端日志确认 bootstrap 完成。
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add tests/integration/client
@@ -1386,7 +1388,7 @@ git commit -m "test(plan-07): cross-file F12 + multi-root isolation"
 - Modify: `client/src/statusBar.ts`
 - Modify: `server/src/server.ts` — initialized 阶段把 mode 推送给客户端
 
-- [ ] **Step 1: 服务端定义自定义通知**
+- [x] **Step 1: 服务端定义自定义通知**
 
 ```typescript
 // server/src/server.ts
@@ -1397,7 +1399,7 @@ connection.onInitialized(async () => {
 });
 ```
 
-- [ ] **Step 2: 客户端订阅**
+- [x] **Step 2: 客户端订阅**
 
 ```typescript
 // client/src/client.ts 或 extension.ts
@@ -1406,7 +1408,7 @@ client.onNotification('unityShaderNav/mode', ({ mode }: { mode: 'standalone' | '
 });
 ```
 
-- [ ] **Step 3: 手动验证 + Commit**
+- [x] **Step 3: 手动验证 + Commit**
 
 ```bash
 git add client/src server/src

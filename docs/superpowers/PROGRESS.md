@@ -12,7 +12,7 @@
 | 04 | single-file-definition | ✅ Done + review fixes applied | Case 1, 8 | 单文件 F12 已接入 LSP；含参数 F12、多候选、proximity |
 | 05 | macro-pattern-recognizer | ✅ Done + review fixes applied | Case 5, 6, 7 | macro declarations + pragma refs；custom setting reindex covered |
 | 06 | include-resolver | ✅ Done + review fix applied | Case 4 | include path F12 + refs；case fallback；block comment false positive fixed |
-| 07 | package-resolver-and-cross-file | ⏸ Planned | Case 2, 3, 9 | MVP 完成点 |
+| 07 | package-resolver-and-cross-file | ✅ Done + review fixes applied | Case 2, 3, 9 | MVP 完成 |
 | 08 | index-lifecycle | ⏸ P1 | — | |
 | 09 | cache-persistence | ⏸ P1 | — | |
 | 10 | document-symbols | ⏸ P1 | Case 12 | |
@@ -299,6 +299,43 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 **Deferred**：
 - `server/src/include/circularGuard.ts` 仍未创建。review 判定不属于 Plan 06 必需项；Plan 08 增量索引处理 include graph 时再落地。
 
+## Plan 07 实施记录
+
+**Commits**：`7dffab7..5b22b34`（11 个 Task 各一 commit）+ review/fix commits `ab4449d`, `310a83b`。
+
+| Task | 状态 | Commit |
+|---|---|---|
+| 1 lockfile parser | ✅（偏离 1） | `7dffab7` |
+| 2 PackageResolver | ✅ | `baccd4e` |
+| 3 Packages include resolver 分支 | ✅ | `f5eb4bb` |
+| 4 GlobalSymbolIndex | ✅ | `48ed3d9` |
+| 5 symbolResolver 全局 fallback | ✅ | `9ca70ad` |
+| 6 walkFiles | ✅ | `92ae941` |
+| 7 Workspace full scan + global index | ✅ | `b61e831` |
+| 8 WorkspaceManager multi-root | ✅ | `0874012` |
+| 9 server rewiring to WorkspaceManager | ✅（偏离 2） | `7e23abc` |
+| 10 cross-file + multi-root integration | ✅ | `206f3a5` |
+| 11 ready/standalone status mode | ✅ | `5b22b34` |
+
+**Review / fix**：
+- `docs/superpowers/plans/plan07review.md` 落库：发现 registry lockfile 无 hash、关闭文档删除 full-scan index、`settings.projectRoot` 被忽略、配置变更后新增 workspace 用旧 settings。
+- `docs/superpowers/plans/plan07fix.md` 落库：registry 无 hash fallback 到 `<name>@<version>`；full-scan disk index 与 live overlay 分离；`settings.projectRoot` 优先；WorkspaceManager 新增 folder 使用最新 settings。
+- `ab4449d docs(plans): record plan 07 code review`
+- `310a83b fix(plan-07): address package resolver review findings`
+
+**Plan 与现实偏离（已在 plan markdown 内联 Note）**：
+1. Registry package lock entries without `hash` are common in real Unity projects. Original plan treated these as unsupported; implementation now falls back to `Library/PackageCache/<name>@<version>` while keeping git strict (`hash` required, `git+ssh://` / `?path=` still unsupported).
+2. Existing test-electron suites open fixture files outside the initial empty workspace, and `updateWorkspaceFolders()` can refuse later additions in the same suite. Implementation adds `WorkspaceManager.workspaceForOrCreateFile()` to lazy-create a Unity/standalone workspace for opened files not owned by any registered root, preserving single-file and external-fixture navigation while keeping multi-root longest-prefix isolation.
+
+**主 agent 验证结果（2026-05-23）**：
+- `npm test`：全量端到端 PASS
+- test-electron **13/13**：activation/package layout + single-file F12 + macro F12/config reindex + include F12 + cross-file Common/Core + multi-root isolation
+- server vitest **29 files / 118 tests** PASS
+- Acceptance：Case 2 same-project cross-file `Common()` F12 ✓；Case 3 `Packages/com.example.urp/.../Core()` F12 ✓；Case 9 projectB `OnlyInB()` 不串到 projectA `Common()` ✓；status bar mode notification ready/standalone ✓
+
+**Deferred**：
+- `Workspace.fullScan()` 当前通过 `GlobalSymbolIndex.upsert()` 避免同 URI 重复，但配置变更后若 excludePatterns 收紧，不会主动删除此前已扫描但现在被排除的旧文件。Plan 08 index lifecycle 设计中处理 store/global 清理与增量删除。
+
 ## 进行中 TODO
 
 ### 🟡 Plan 01 follow-up（plan01fix 之后还剩的）
@@ -325,15 +362,15 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 
 ### ⏳ 已展望的风险（来自 REVIEW，未排进 Blocker）
 
-- **R6/R7/R8**：性能并发模型 — cold start 串行 `fs.stat()`、persist 全量重写、`fullScan()` 无 bounded concurrency。Plan 07/08/09 前要补 concurrency model 段落
+- **R6/R7/R8**：性能并发模型 — cold start 串行 `fs.stat()`、persist 全量重写、`fullScan()` 无 bounded concurrency。Plan 08/09 前要补 concurrency model 段落
 - **R3**：Plan 10 buildDocumentSymbols 嵌套算法 fiddly，TDD 时小心
 - ~~**R5**：Plan 06 `existsCaseSensitive` 在 macOS 上语义反了；macOS CI 会爆~~ ✅ Plan 06 实现用逐段 `readdir` 校验真实大小写，并通过显式 ignore-case fallback 返回磁盘真实路径
 - **P3**：Plan 08 `this.store.clear?.()` 用 optional chaining 兜底，但 `IndexStore.clear()` 没正式定义 — Plan 07/08 落地时补
 
 ## 下一步
 
-1. 进入 **Plan 07: package-resolver-and-cross-file**，补 Packages 解析与跨文件 MVP（Case 2, 3, 9）。
-2. Plan 07 前同步检查 include graph / package resolver 与 Plan 08/09 生命周期设计的接口边界。
+1. 进入 **Plan 08: index-lifecycle**，补文件变更触发增量/重建、进度条与挂起处理。
+2. Plan 08 前重点确认 full-scan 清理、include graph/circular guard、PackageResolver reload、workspace folder/settings 变化的生命周期边界。
 
 ## 历史回放（review 修订）
 
@@ -349,3 +386,4 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 - 2026-05-22：Plan 05 实施 + review/fix（commit `86176b6..ee26cd4`，9 个 task commit + review doc + fix commit，Case 5/6/7 覆盖；2 处偏离 plan markdown 内联记录）
 - 2026-05-23：Phase 01-05 full review + fixes（`phase01-05review.md`；修 packaged runtime closure、Plan 03 type refs、top-level globals；`npm test` 9/9 + 76/76）
 - 2026-05-23：Plan 06 实施 + review/fix（commit `d154078..5375c40`，10 个 task commit + review doc + fix commit，Case 4 覆盖；2 处偏离 plan markdown 内联记录）
+- 2026-05-23：Plan 07 实施 + review/fix（commit `7dffab7..310a83b`，11 个 task commit + review doc + fix commit，Case 2/3/9 覆盖；2 处偏离 plan markdown 内联记录；MVP 完成）
