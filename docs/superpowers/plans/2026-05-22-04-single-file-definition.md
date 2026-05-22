@@ -733,8 +733,10 @@ suite('F12 single-file', () => {
 
 - [ ] **Step 4: 跑测试**
 
+> Note: 原计划这里写的是 `npm test -w unity-shader-nav -- --grep "F12 single-file"`，但 `unity-shader-nav` workspace 是 VSCode client 包且没有 `test` script，当前仓库无法按该命令回放。Task 8 的可复现验收命令是从 `unity-shader-nav/` monorepo root 运行 `npm test`；该命令会编译并执行 test-electron，其中包含 `F12 single-file` suite。
+
 ```bash
-npm test -w unity-shader-nav -- --grep "F12 single-file"
+npm test
 ```
 
 预期：PASS。

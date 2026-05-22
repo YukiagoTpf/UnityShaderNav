@@ -24,3 +24,12 @@ Red/green evidence:
 Red/green evidence:
 - Focused test run first failed with duplicate logs and stale store resurrection.
 - After the guard change, `npx vitest run server/tests/handlers/documents.test.ts server/tests/index/integration.test.ts` passed: 2 files / 5 tests.
+
+### P3: Reproducible Plan04 Task 8 verification command
+
+- Verified the independent review finding: `npm test -w unity-shader-nav -- --grep "F12 single-file"` is stale because the `unity-shader-nav` workspace is the VSCode client package and has no `test` script.
+- Updated `docs/superpowers/plans/2026-05-22-04-single-file-definition.md` Task 8 Step 4 to preserve the deviation as a `> Note:` and use the reproducible root `npm test` command.
+
+Verification:
+- `npm test -w unity-shader-nav -- --grep "F12 single-file"` fails as documented with `Missing script: "test"`.
+- `npm test` passes and executes the Electron `F12 single-file` suite.
