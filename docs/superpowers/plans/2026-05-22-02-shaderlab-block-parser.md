@@ -17,12 +17,14 @@
 新建：
 
 ```
+shared/src/
+└── structure.ts              # ShaderLabBlock / ShaderLabStructureNode 跨进程共享类型
+
 unity-shader-nav/server/src/parser/
 ├── shaderlab/
 │   ├── blockScanner.ts        # 状态机核心：行 → token → 状态转移
 │   ├── structureScanner.ts    # Shader/SubShader/Pass 顶层结构识别
-│   ├── types.ts               # ShaderLabBlock / ShaderLabStructure 类型
-│   └── index.ts               # 公开 API 出口
+│   └── index.ts               # 公开 API 出口（types 从 shared 取）
 └── (parser/ 目录在本计划首次创建)
 
 unity-shader-nav/tests/server/parser/shaderlab/
@@ -44,14 +46,18 @@ unity-shader-nav/tests/server/parser/shaderlab/
 
 ---
 
-## Task 1: 类型定义
+## Task 1: 类型定义（放在 shared）
+
+ShaderLab 结构需要在多个进程间共享（Plan 10 的 `FileIndex.structure` 会序列化到客户端 / 缓存），所以本计划起把类型放到 `shared/src/structure.ts`，Plan 10 直接复用，**不要**再造 `ShaderLabStructureLite` 变体。
 
 **Files:**
-- Create: `server/src/parser/shaderlab/types.ts`
+- Create: `shared/src/structure.ts`
+- Modify: `shared/src/protocol.ts`（追加 `export * from './structure';`）
 
 - [ ] **Step 1: 写类型文件**
 
 ```typescript
+// shared/src/structure.ts
 export type BlockKind = 'HLSLPROGRAM' | 'CGPROGRAM' | 'HLSLINCLUDE' | 'CGINCLUDE';
 
 export interface ShaderLabBlock {
@@ -90,19 +96,25 @@ export interface StructureResult {
 }
 ```
 
-- [ ] **Step 2: build 通过**
+- [ ] **Step 2: 在 `shared/src/protocol.ts` 追加 re-export**
+
+```typescript
+export * from './structure';
+```
+
+- [ ] **Step 3: build 通过**
 
 ```bash
-npm run build -w @unity-shader-nav/server
+npm run build -w @unity-shader-nav/shared
 ```
 
 预期：无错误。
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add server/src/parser/shaderlab/types.ts
-git commit -m "feat(plan-02): shaderlab parser types"
+git add shared/src/structure.ts shared/src/protocol.ts
+git commit -m "feat(plan-02): shaderlab parser types in shared"
 ```
 
 ---
@@ -174,7 +186,7 @@ npx vitest run tests/server/parser/shaderlab/blockScanner.test.ts
 - [ ] **Step 4: 写最小实现 `blockScanner.ts`**
 
 ```typescript
-import type { BlockKind, ScanResult, ShaderLabBlock } from './types';
+import type { BlockKind, ScanResult, ShaderLabBlock } from '@unity-shader-nav/shared';
 
 const START_DIRECTIVES: Record<string, BlockKind> = {
   HLSLPROGRAM: 'HLSLPROGRAM',
@@ -245,9 +257,10 @@ export function scanBlocks(text: string): ScanResult {
 - [ ] **Step 5: 写 `index.ts` 出口**
 
 ```typescript
-export * from './types';
 export { scanBlocks } from './blockScanner';
 ```
+
+> Types 不在此 re-export；调用方直接 `import { ShaderLabBlock } from '@unity-shader-nav/shared'`。
 
 - [ ] **Step 6: 跑过**
 
@@ -571,7 +584,7 @@ npx vitest run tests/server/parser/shaderlab/structureScanner.test.ts
 - [ ] **Step 3: 写 `structureScanner.ts`**
 
 ```typescript
-import type { StructureResult, ShaderLabStructureNode, ShaderLabNodeKind } from './types';
+import type { StructureResult, ShaderLabStructureNode, ShaderLabNodeKind } from '@unity-shader-nav/shared';
 
 const SHADER_RE   = /^\s*Shader\s+"([^"]*)"/;
 const SUBSHADER_RE = /^\s*SubShader\b/;
@@ -644,7 +657,6 @@ export function scanStructure(text: string): StructureResult {
 - [ ] **Step 4: 更新 `index.ts`**
 
 ```typescript
-export * from './types';
 export { scanBlocks } from './blockScanner';
 export { scanStructure } from './structureScanner';
 ```
@@ -765,7 +777,7 @@ git commit -m "test(plan-02): perf smoke for blockScanner"
 
 1. ✅ `npm test -w @unity-shader-nav/server` 全部通过；至少 7 个测试 case
 2. ✅ 所有 fixture 文件均存在
-3. ✅ `server/src/parser/shaderlab/index.ts` 导出 `scanBlocks`、`scanStructure`、所有类型
+3. ✅ `server/src/parser/shaderlab/index.ts` 导出 `scanBlocks`、`scanStructure`；类型从 `@unity-shader-nav/shared` 导出
 4. ✅ 性能 smoke：1000 个 HLSL 块文本扫描 < 50ms
 
 对应 Spec §10：无直接 acceptance case（基础设施层）；但 Plan 04 / Plan 10 会依赖本计划输出。
