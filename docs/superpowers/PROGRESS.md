@@ -1,6 +1,6 @@
 # UnityShaderNav 实施进度
 
-更新于：2026-05-22。**第一次读这个文件的 agent** 请先看 [CLAUDE.md](../../CLAUDE.md) 了解执行纪律。
+更新于：2026-05-23。**第一次读这个文件的 agent** 请先看 [CLAUDE.md](../../CLAUDE.md) 了解执行纪律。
 
 ## 13 个 Plan 状态总览
 
@@ -11,7 +11,7 @@
 | 03 | hlsl-symbol-collector | ✅ Done + review fixes applied | — | R1 spike 完成；cbuffer 走 fallback；type refs / top-level globals covered |
 | 04 | single-file-definition | ✅ Done + review fixes applied | Case 1, 8 | 单文件 F12 已接入 LSP；含参数 F12、多候选、proximity |
 | 05 | macro-pattern-recognizer | ✅ Done + review fixes applied | Case 5, 6, 7 | macro declarations + pragma refs；custom setting reindex covered |
-| 06 | include-resolver | ⏸ Planned | Case 4 | |
+| 06 | include-resolver | ✅ Done + review fix applied | Case 4 | include path F12 + refs；case fallback；block comment false positive fixed |
 | 07 | package-resolver-and-cross-file | ⏸ Planned | Case 2, 3, 9 | MVP 完成点 |
 | 08 | index-lifecycle | ⏸ P1 | — | |
 | 09 | cache-persistence | ⏸ P1 | — | |
@@ -263,6 +263,42 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 - `CBUFFER_END` / instancing buffer start/end 等 unmatched macro sentinel 目前仍可能作为 references 噪声进入索引，Plan 13 Find References 前建议加 ignored macro/sentinel 策略
 - 当前 settings table 是全局实例；fix 为单 workspace 验收增加了 definition 前 scoped refresh。多 root/per-folder settings 需要 Plan 08/09 生命周期设计时统一配置缓存粒度
 
+## Plan 06 实施记录
+
+**Commits**：`d154078..11ce08d`（10 个 Task 各一 commit）+ review/fix commits `750f181`, `5375c40`。
+
+| Task | 状态 | Commit |
+|---|---|---|
+| 1 lineScanner 扫描 `#include` + range | ✅ | `d154078` |
+| 2 include resolver 类型 | ✅（偏离 1） | `39e115b` |
+| 3 fixture Unity 项目 | ✅ | `f2c1116` |
+| 4 resolver 相对路径优先 | ✅ | `57207dc` |
+| 5 Assets fallback + includeDirectories | ✅ | `9169531` |
+| 6 大小写 fallback + warning flag | ✅ | `c204500` |
+| 7 Unity project root 自动检测 | ✅ | `83af65b` |
+| 8 include reference 入库 | ✅ | `998dfed` |
+| 9 definition handler include path F12 | ✅ | `2ab92f7` |
+| 10 test-electron include F12 | ✅（偏离 2） | `11ce08d` |
+
+**Review / fix**：
+- `docs/superpowers/plans/plan06review.md` 落库：code-review subagent 复核无 P1/P2；P3 为 block comment 内 `#include` false positive
+- `docs/superpowers/plans/plan06fix.md` 落库：`scanIncludes()` 加 block-comment awareness，保留 pathRange character 稳定性；新增回归测试
+- `750f181 docs(plans): record plan 06 code review`
+- `5375c40 fix(plan-06): ignore block-commented includes`
+
+**Plan 与现实偏离（已在 plan markdown 内联 Note）**：
+1. Task 2：原片段在 `index.ts` 导出尚未存在的 `./resolver`，会让中间提交 TypeScript 断裂；实际先只导出 types，Task 4 创建 resolver 后再补导出
+2. Task 10：集成测试编译后运行在 `tests/out/integration/client`，fixture 回指路径实际为 `../../../../server/tests/include/fixtures/projectA`
+
+**主 agent 验证结果**（2026-05-23）：
+- `npm run test -w @unity-shader-nav/server -- --run tests/parser/include/lineScanner.test.ts`：scanner focused **3/3** PASS
+- `npm run build`：3 个 workspace tsc + copy-server + bundle 全过
+- `npm test`：全量端到端 PASS（test-electron **10/10** + server vitest **90/90**）
+- Acceptance：Case 4 `#include "Common.hlsl"` F12 ✓；relative / Assets / includeDirectories priority ✓；`Packages/...` Plan 07 前返回 null ✓；case-insensitive fallback returns real path + warning flag ✓；include refs use `context='include'` ✓；block-commented include false positive fixed ✓
+
+**Deferred**：
+- `server/src/include/circularGuard.ts` 仍未创建。review 判定不属于 Plan 06 必需项；Plan 08 增量索引处理 include graph 时再落地。
+
 ## 进行中 TODO
 
 ### 🟡 Plan 01 follow-up（plan01fix 之后还剩的）
@@ -291,13 +327,13 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 
 - **R6/R7/R8**：性能并发模型 — cold start 串行 `fs.stat()`、persist 全量重写、`fullScan()` 无 bounded concurrency。Plan 07/08/09 前要补 concurrency model 段落
 - **R3**：Plan 10 buildDocumentSymbols 嵌套算法 fiddly，TDD 时小心
-- **R5**：Plan 06 `existsCaseSensitive` 在 macOS 上语义反了；macOS CI 会爆
+- ~~**R5**：Plan 06 `existsCaseSensitive` 在 macOS 上语义反了；macOS CI 会爆~~ ✅ Plan 06 实现用逐段 `readdir` 校验真实大小写，并通过显式 ignore-case fallback 返回磁盘真实路径
 - **P3**：Plan 08 `this.store.clear?.()` 用 optional chaining 兜底，但 `IndexStore.clear()` 没正式定义 — Plan 07/08 落地时补
 
 ## 下一步
 
-1. 进入 **Plan 06: include-resolver**，补 `#include` 解析与 Case 4。
-2. Plan 06 完成后进入 Plan 07 package resolver + cross-file MVP。
+1. 进入 **Plan 07: package-resolver-and-cross-file**，补 Packages 解析与跨文件 MVP（Case 2, 3, 9）。
+2. Plan 07 前同步检查 include graph / package resolver 与 Plan 08/09 生命周期设计的接口边界。
 
 ## 历史回放（review 修订）
 
@@ -312,3 +348,4 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 - 2026-05-22：Plan 04 实施 + review/fix（commit `02cd114..b7800ec`，8 个 task commit + 2 个 fix commit + 独立 review/doc fix，6 处偏离全部 plan markdown 内联记录）
 - 2026-05-22：Plan 05 实施 + review/fix（commit `86176b6..ee26cd4`，9 个 task commit + review doc + fix commit，Case 5/6/7 覆盖；2 处偏离 plan markdown 内联记录）
 - 2026-05-23：Phase 01-05 full review + fixes（`phase01-05review.md`；修 packaged runtime closure、Plan 03 type refs、top-level globals；`npm test` 9/9 + 76/76）
+- 2026-05-23：Plan 06 实施 + review/fix（commit `d154078..5375c40`，10 个 task commit + review doc + fix commit，Case 4 覆盖；2 处偏离 plan markdown 内联记录）
