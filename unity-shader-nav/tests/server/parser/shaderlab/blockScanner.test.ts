@@ -21,3 +21,21 @@ describe('scanBlocks: single-pass', () => {
     expect(b.unterminated).toBe(false);
   });
 });
+
+describe('scanBlocks: multi-pass', () => {
+  it('finds 2 HLSLPROGRAM blocks', () => {
+    const result = scanBlocks(fixture('multi-pass.shader'));
+    expect(result.blocks).toHaveLength(2);
+    expect(result.blocks[0].kind).toBe('HLSLPROGRAM');
+    expect(result.blocks[1].kind).toBe('HLSLPROGRAM');
+    expect(result.blocks[0].startLine).toBeLessThan(result.blocks[1].startLine);
+  });
+});
+
+describe('scanBlocks: HLSLINCLUDE + Pass', () => {
+  it('emits HLSLINCLUDE first then HLSLPROGRAM', () => {
+    const result = scanBlocks(fixture('hlslinclude-with-passes.shader'));
+    expect(result.blocks.map((b) => b.kind)).toEqual(['HLSLINCLUDE', 'HLSLPROGRAM']);
+    expect(result.blocks.every((b) => !b.unterminated)).toBe(true);
+  });
+});
