@@ -5,6 +5,7 @@ import { resolveInclude } from '../../src/include/resolver';
 import type { IncludeContext } from '../../src/include/types';
 
 const fixtureRoot = pathResolve(__dirname, 'fixtures/projectA');
+const caseRoot = pathResolve(__dirname, 'fixtures/caseSensitivity');
 
 function ctx(): IncludeContext {
   return { unityProjectRoot: fixtureRoot, includeDirectories: [] };
@@ -56,5 +57,17 @@ describe('resolveInclude: includeDirectories', () => {
     const result = await resolveInclude('does/not/exist.hlsl', fromUri, ctx());
 
     expect(result).toBeNull();
+  });
+});
+
+describe('resolveInclude: case-insensitive fallback', () => {
+  it('returns the file via case-insensitive match with warning flag', async () => {
+    const fromUri = pathToFileURL(join(caseRoot, 'Assets/Shaders/Main.hlsl')).href;
+    const includeCtx: IncludeContext = { unityProjectRoot: caseRoot, includeDirectories: [] };
+    const result = await resolveInclude('Helper.hlsl', fromUri, includeCtx);
+
+    expect(result).not.toBeNull();
+    expect(result?.caseInsensitive).toBe(true);
+    expect(result?.absolutePath.endsWith(join('Assets', 'Shaders', 'helper.hlsl'))).toBe(true);
   });
 });

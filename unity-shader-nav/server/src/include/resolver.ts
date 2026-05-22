@@ -46,6 +46,23 @@ async function existsCaseSensitive(path: string): Promise<boolean> {
   return true;
 }
 
+async function findIgnoreCase(path: string): Promise<string | null> {
+  const { root, parts } = pathSegments(pathResolve(path));
+  let acc = root;
+  for (const part of parts) {
+    let entries: string[];
+    try {
+      entries = await fs.readdir(acc);
+    } catch {
+      return null;
+    }
+    const hit = entries.find((entry) => entry.toLowerCase() === part.toLowerCase());
+    if (!hit) return null;
+    acc = join(acc, hit);
+  }
+  return acc;
+}
+
 export async function resolveInclude(
   includePath: string,
   fromFileUri: string,
@@ -89,9 +106,10 @@ export async function resolveInclude(
   }
 
   for (const candidate of candidates) {
-    if (await exists(candidate.path)) {
+    const found = await findIgnoreCase(candidate.path);
+    if (found) {
       return {
-        absolutePath: candidate.path,
+        absolutePath: found,
         via: candidate.via,
         caseInsensitive: true,
       };
