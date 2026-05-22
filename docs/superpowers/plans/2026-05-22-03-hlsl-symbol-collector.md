@@ -286,6 +286,8 @@ describe('parseHlsl', () => {
 
 - [ ] **Step 4: 写 `parser.ts`**
 
+> **Note (Plan 03 实施)**：web-tree-sitter 0.22 在 `Parser.init()` resolve 期间执行 `module.exports = Module` —— 这是 emscripten 风格的"init 之后才挂出实际 API"的副作用。在 vite/vitest 下，静态 `import Parser from 'web-tree-sitter'` 拿到的 default 绑定 **不会**反映这次 `module.exports` 重新赋值，结果 `Parser.Language` 永远是 `undefined`。把 plan 给的 import 形式改成 `createRequire` lazy require + 把 require 结果 cache 到本地变量上，从该变量上读 `.init`/`.Language`/`.new`。下面是实际入库的写法。
+
 ```typescript
 import { join } from 'node:path';
 import Parser from 'web-tree-sitter';

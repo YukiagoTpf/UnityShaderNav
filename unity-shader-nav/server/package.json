@@ -11,7 +11,8 @@
   "dependencies": {
     "@unity-shader-nav/shared": "0.0.1",
     "vscode-languageserver": "^9.0.1",
-    "vscode-languageserver-textdocument": "^1.0.11"
+    "vscode-languageserver-textdocument": "^1.0.11",
+    "web-tree-sitter": "^0.22.6"
   },
   "devDependencies": {
     "vitest": "^1.6.0"
