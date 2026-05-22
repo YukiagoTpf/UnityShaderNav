@@ -1080,6 +1080,8 @@ git commit -m "test(plan-03): nested struct metadata for L2 chain lookup"
 
 ## Acceptance
 
+> Note: Phase 01-05 full review (2026-05-23) tightened the Plan 03 collector contract after implementation. Custom type uses in return/parameter/local declarations must be emitted as `context='type'` references, while the struct declaration itself remains excluded. Ordinary top-level HLSL variable declarations such as `float4 _Color;` and `Surface gSurface;` must also be emitted as `kind='variable'` symbols for later global and chain lookup plans.
+
 1. ✅ `npm test -w @unity-shader-nav/server` 全过；测试覆盖：函数、struct、cbuffer、参数、局部变量、shadowing、引用、`.shader` 拼接、嵌套 struct
 2. ✅ `FileIndex` 字段完整（含 `declaredType`、`returnType`、`parameters`），为 chain lookup（Plan 11）提供原始数据
 3. ✅ `server/grammars/tree-sitter-hlsl.wasm` 入库

@@ -53,6 +53,19 @@ describe('collector: cbuffer', () => {
   });
 });
 
+describe('collector: global variables', () => {
+  it('collects top-level ordinary variable declarations', async () => {
+    const text = `float4 _Color; struct Surface { float3 positionWS; }; Surface gSurface;`;
+    const tree = await parseHlsl(text);
+    const result = collect(tree.rootNode, text, 'file:///test/globals.hlsl', 0);
+
+    const vars = result.symbols.filter((s) => s.kind === 'variable');
+    expect(vars.map((v) => v.name).sort()).toEqual(['_Color', 'gSurface']);
+    expect(vars.find((v) => v.name === '_Color')!.declaredType).toBe('float4');
+    expect(vars.find((v) => v.name === 'gSurface')!.declaredType).toBe('Surface');
+  });
+});
+
 describe('collector: locals & params', () => {
   it('collects locals with scope = function name and scopeRange spanning body', async () => {
     const text = fixture('locals-and-params.hlsl');
@@ -135,6 +148,16 @@ describe('collector: references', () => {
     const ids = result.references.filter((r) => r.context === 'identifier');
     expect(ids.map((r) => r.name).sort()).toEqual(['a', 'b', 'c']);
     expect(ids.filter((r) => r.name === 'f')).toHaveLength(0);
+  });
+
+  it('records custom type uses in declarations without counting the type declaration', async () => {
+    const text = `struct S { float x; }; S Make(S a) { S b; return a; }`;
+    const tree = await parseHlsl(text);
+    const result = collect(tree.rootNode, text, 'file:///t/type-refs.hlsl', 0);
+
+    const refs = result.references.filter((r) => r.name === 'S' && r.context === 'type');
+    expect(refs).toHaveLength(3);
+    expect(refs.map((r) => r.location.range.start.character)).toEqual([23, 30, 37]);
   });
 });
 

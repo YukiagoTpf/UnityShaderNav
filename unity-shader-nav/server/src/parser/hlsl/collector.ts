@@ -64,6 +64,12 @@ function declaratorNodes(node: Parser.SyntaxNode): Parser.SyntaxNode[] {
   return node.childrenForFieldName('declarator');
 }
 
+function isFunctionDeclarator(node: Parser.SyntaxNode | null | undefined): boolean {
+  if (!node) return false;
+  if (node.type === 'function_declarator') return true;
+  return isFunctionDeclarator(node.childForFieldName('declarator'));
+}
+
 /**
  * Extract the function-name identifier from a `function_definition` node.
  * Path: function_definition.declarator (function_declarator).declarator (identifier).
@@ -96,7 +102,6 @@ function collectParameters(
     const nameNode = declaratorNameNode(p.childForFieldName('declarator'));
     if (!nameNode) continue;
     markDecl(st, nameNode);
-    if (typeNode) markDecl(st, typeNode);
     out.push({
       name: textOf(nameNode),
       type: textOf(typeNode),
@@ -149,6 +154,23 @@ function collectCbufferShape(node: Parser.SyntaxNode, st: CollectorState): void 
   }
 }
 
+function collectGlobalDeclaration(node: Parser.SyntaxNode, st: CollectorState): void {
+  if (node.parent?.type !== 'translation_unit') return;
+  const typeNode = node.childForFieldName('type');
+  for (const declNode of declaratorNodes(node)) {
+    if (isFunctionDeclarator(declNode)) continue;
+    const idNode = declaratorNameNode(declNode);
+    if (!idNode) continue;
+    markDecl(st, idNode);
+    st.symbols.push({
+      name: textOf(idNode),
+      kind: 'variable',
+      declaredType: textOf(typeNode),
+      location: { uri: st.uri, range: offsetRange(rangeOf(idNode), st.lineOffset) },
+    });
+  }
+}
+
 function collectFunction(node: Parser.SyntaxNode, st: CollectorState): void {
   if (isCbufferShape(node)) {
     collectCbufferShape(node, st);
@@ -161,8 +183,6 @@ function collectFunction(node: Parser.SyntaxNode, st: CollectorState): void {
   const fnDeclarator = node.childForFieldName('declarator');
 
   markDecl(st, nameNode);
-  if (typeNode) markDecl(st, typeNode);
-
   const parameters = collectParameters(
     fnDeclarator?.type === 'function_declarator' ? fnDeclarator : null,
     st,
@@ -216,7 +236,6 @@ function collectLocals(
   for (const n of walk(bodyNode)) {
     if (n.type !== 'declaration') continue;
     const typeNode = n.childForFieldName('type');
-    if (typeNode) markDecl(st, typeNode);
     for (const declNode of declaratorNodes(n)) {
       const idNode = declaratorNameNode(declNode);
       if (!idNode) continue;
@@ -251,7 +270,6 @@ function collectStruct(node: Parser.SyntaxNode, st: CollectorState): void {
     const field = body.namedChild(i);
     if (!field || field.type !== 'field_declaration') continue;
     const typeNode = field.childForFieldName('type');
-    if (typeNode) markDecl(st, typeNode);
     for (const declNode of declaratorNodes(field)) {
       const fidNode = declaratorNameNode(declNode);
       if (!fidNode) continue;
@@ -357,6 +375,8 @@ export function collect(
       collectFunction(node, st);
     } else if (node.type === 'struct_specifier') {
       collectStruct(node, st);
+    } else if (node.type === 'declaration') {
+      collectGlobalDeclaration(node, st);
     } else if (node.type === 'call_expression') {
       collectMacroDeclaration(node, st, table);
     }
