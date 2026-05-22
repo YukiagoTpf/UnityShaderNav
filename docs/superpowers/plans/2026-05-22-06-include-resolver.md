@@ -805,6 +805,8 @@ suite('F12 on #include', () => {
 });
 ```
 
+> Note: 集成测试编译后运行在 `tests/out/integration/client`，实际 fixture 回指路径需要是 `../../../../server/tests/include/fixtures/projectA`，而不是计划片段里的 `../../server/include/fixtures/projectA`。
+
 - [ ] **Step 2: 跑测 + Commit**
 
 ```bash
