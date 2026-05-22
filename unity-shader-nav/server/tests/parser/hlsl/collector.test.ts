@@ -22,3 +22,33 @@ describe('collector: functions', () => {
     expect((add as any).parameters.map((p: any) => p.type)).toEqual(['float4', 'float4']);
   });
 });
+
+describe('collector: struct', () => {
+  it('collects struct name and its members with parentType + declaredType', async () => {
+    const text = fixture('structs.hlsl');
+    const tree = await parseHlsl(text);
+    const result = collect(tree.rootNode, text, 'file:///test/structs.hlsl', 0);
+
+    const structs = result.symbols.filter((s) => s.kind === 'struct').map((s) => s.name);
+    expect(structs.sort()).toEqual(['Attributes', 'Varyings']);
+
+    const members = result.symbols.filter((s) => s.kind === 'structMember');
+    const attMembers = members.filter((m) => m.parentType === 'Attributes');
+    expect(attMembers.map((m) => m.name).sort()).toEqual(['normalOS', 'positionOS', 'uv']);
+    expect(attMembers.find((m) => m.name === 'positionOS')!.declaredType).toBe('float4');
+  });
+});
+
+describe('collector: cbuffer', () => {
+  it('collects cbuffer as both cbuffer and its globals', async () => {
+    const text = fixture('cbuffer.hlsl');
+    const tree = await parseHlsl(text);
+    const result = collect(tree.rootNode, text, 'file:///test/cbuffer.hlsl', 0);
+
+    const cbufs = result.symbols.filter((s) => s.kind === 'cbuffer').map((s) => s.name);
+    expect(cbufs).toEqual(['UnityPerMaterial']);
+
+    const vars = result.symbols.filter((s) => s.kind === 'variable').map((v) => v.name);
+    expect(vars.sort()).toEqual(['_Color', '_MainTex_ST', '_Roughness']);
+  });
+});
