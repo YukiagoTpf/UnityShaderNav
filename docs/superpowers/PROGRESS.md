@@ -9,8 +9,8 @@
 | 01 | project-scaffolding | ✅ Done + plan01fix 应用 | — | F5 manual 待人工；vsix 打包路径已修正 |
 | 02 | shaderlab-block-parser | ✅ Done + plan02fix 应用 | — | sanitizer 接管字符串/注释；scanStructure 加 range 覆盖 |
 | 03 | hlsl-symbol-collector | ✅ Done（5 处偏离已记） | — | R1 spike 完成；cbuffer 走 fallback；createRequire 绕 vitest ESM 坑 |
-| 04 | single-file-definition | ⏸ Next | Case 1, 8 | Plan 03 已提供 FileIndex 底座 |
-| 05 | macro-pattern-recognizer | ⏸ Planned | Case 5, 6, 7 | |
+| 04 | single-file-definition | ✅ Done + review fixes applied | Case 1, 8 | 单文件 F12 已接入 LSP；含参数 F12、多候选、proximity |
+| 05 | macro-pattern-recognizer | ⏸ Next | Case 5, 6, 7 | |
 | 06 | include-resolver | ⏸ Planned | Case 4 | |
 | 07 | package-resolver-and-cross-file | ⏸ Planned | Case 2, 3, 9 | MVP 完成点 |
 | 08 | index-lifecycle | ⏸ P1 | — | |
@@ -177,6 +177,40 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 - WASM 入库（4.1 MB）；nested struct case 显式断言 `Outer.inner.declaredType === 'Inner'` 和 `Make.returnType === 'Outer'`，Plan 11 chain lookup 所需元数据已就位
 - 集成 plan01fix/plan02fix 拓扑：测试在 `server/tests/parser/hlsl/`、shared types 经 `@unity-shader-nav/shared` 出口、indexFile 保留 `_table?: unknown` 槽位（B5 forward-compat）
 
+## Plan 04 实施记录
+
+**Commits**：`02cd114..c9de2ec`（8 个 Task 各一 commit）+ review/fix commits `9b71ab8`, `43aa703`。
+
+| Task | 状态 | Commit |
+|---|---|---|
+| 1 wordAt helper | ✅（偏离 1） | `02cd114` |
+| 2 IndexStore | ✅（TDD 补测试） | `a882f4e` |
+| 3 symbolResolver + proximity | ✅ | `2e1f5d8` |
+| 4 TextDocuments -> IndexStore | ✅ | `b4f7e19` |
+| 5 definition handler | ✅ | `fa6035d` |
+| 6 server wiring + capability | ✅（偏离 2） | `7f9bdd5` |
+| 7 in-process F12 smoke | ✅ | `4bc9542` |
+| 8 test-electron F12 | ✅（偏离 3/4/5） | `c9de2ec` |
+
+**Review / fix**：
+- `docs/superpowers/plans/plan04review.md` 落库：发现 Case 8 端到端覆盖缺口、document open duplicate/stale index 风险
+- `docs/superpowers/plans/plan04fix.md` 落库：补 Case 8 in-process + test-electron 覆盖；document sync 改为 change-content 单路索引，并用 live uri + version guard 防 stale async set
+- `9b71ab8 fix(plan-04): address definition review findings`
+- `43aa703 fix(plan-04): correct parameter F12 integration cursor`
+
+**Plan 与现实偏离（全部 plan markdown 内联 Note）**：
+1. Task 1：计划实现片段会在 whitespace 上向左吸附 identifier，但测试要求 whitespace/symbol 返回 `null`；实际以测试语义为准
+2. Task 6：保留 plan01fix 的 lazy `getConnection()`，没有回退到 eager `createConnection`
+3. Task 8：fixture 不会复制到 `tests/out`，integration test 从运行时 out 目录回指源码 fixture
+4. Task 8：`tests/tsconfig.json` 原 include 不含 `integration/**/*.ts`，已加入
+5. Task 8：mocha suite 原只 glob `tests/out/client`，已提升到 `tests/out` 以执行 integration 测试
+
+**主 agent 验证结果**（2026-05-22）：
+- `npm test`：端到端 PASS
+- test-electron **6/6**：packaged server layout 1 + activation 2 + F12 single-file 3（.hlsl call、.hlsl parameter、multi-pass .shader 2 candidates）
+- server vitest **14 files / 58 tests passed**
+- Acceptance：Case 1 .shader multi-pass function F12 ✓；Case 8 parameter identifier F12 ✓；multi-candidate links ✓；proximity tie-break ✓
+
 ## 进行中 TODO
 
 ### 🟡 Plan 01 follow-up（plan01fix 之后还剩的）
@@ -208,8 +242,8 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 
 ## 下一步
 
-1. **R1 spike 紧迫**：Plan 03 完全依赖 tree-sitter-hlsl 的真实节点名。Plan 02 已完成、不依赖 tree-sitter，所以下一步必须做 R1 spike 才能进 Plan 03。
-2. Plan 03 完成后接 Plan 04（首次 F12 端到端，覆盖 Spec §10 Case 1/8）。
+1. 进入 **Plan 05: macro-pattern-recognizer**，把 `#pragma vertex vert` 等 Unity macro/pattern 识别接入 FileIndex。
+2. Plan 05 完成后接 Plan 06 include resolver，再进入 Plan 07 cross-file MVP。
 
 ## 历史回放（review 修订）
 
@@ -221,3 +255,4 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 - 2026-05-22：plan01fix 实施（commit `6658479..ada540b`，1 个 plan doc commit + 5 个 task commit，源自用户写的 plan01review.md）
 - 2026-05-22：plan02fix 实施（commit `93f00ae..7d48312`，1 个 plan doc commit + 5 个 task commit，源自用户写的 plan02review.md；含 sanitizer 设计的中途修订）
 - 2026-05-22：Plan 03 实施 + R1 spike（commit `bf90337..92616e1`，10 个 task commit + 1 个 spike commit，5 处偏离全部 plan markdown 内联记录）
+- 2026-05-22：Plan 04 实施 + review/fix（commit `02cd114..43aa703`，8 个 task commit + 2 个 fix commit，5 处偏离全部 plan markdown 内联记录）
