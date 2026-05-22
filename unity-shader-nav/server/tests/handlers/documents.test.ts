@@ -12,12 +12,14 @@ function createConnectionHarness(): {
   connection: Connection;
   open: OpenHandler;
   close: CloseHandler;
+  logs: string[];
 } {
   let open: OpenHandler | undefined;
   let close: CloseHandler | undefined;
+  const logs: string[] = [];
   const disposable = { dispose() {} };
   const connection = {
-    console: { log() {} },
+    console: { log(message: string) { logs.push(message); } },
     onDidOpenTextDocument(handler: OpenHandler) {
       open = handler;
       return disposable;
@@ -44,6 +46,7 @@ function createConnectionHarness(): {
     connection,
     open: (event) => open?.(event),
     close: (event) => close?.(event),
+    logs,
   };
 }
 
@@ -76,5 +79,45 @@ describe('registerDocuments', () => {
     harness.close({ textDocument: { uri: 'file:///t/doc.hlsl' } });
 
     expect(store.get('file:///t/doc.hlsl')).toBeUndefined();
+  });
+
+  it('indexes an opened document once', async () => {
+    const store = new IndexStore();
+    const harness = createConnectionHarness();
+
+    registerDocuments(harness.connection, store);
+    harness.open({
+      textDocument: {
+        uri: 'file:///t/once.hlsl',
+        languageId: 'hlsl',
+        version: 1,
+        text: 'float4 helper(float4 v) { return v; }',
+      },
+    });
+
+    await waitFor(() => harness.logs.length > 0);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(harness.logs).toHaveLength(1);
+  });
+
+  it('does not restore an index after the document closes during indexing', async () => {
+    const store = new IndexStore();
+    const harness = createConnectionHarness();
+
+    registerDocuments(harness.connection, store);
+    harness.open({
+      textDocument: {
+        uri: 'file:///t/closed.hlsl',
+        languageId: 'hlsl',
+        version: 1,
+        text: 'float4 helper(float4 v) { return v; }',
+      },
+    });
+    harness.close({ textDocument: { uri: 'file:///t/closed.hlsl' } });
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(store.get('file:///t/closed.hlsl')).toBeUndefined();
   });
 });

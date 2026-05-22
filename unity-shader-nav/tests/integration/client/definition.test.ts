@@ -45,6 +45,22 @@ suite('F12 single-file', () => {
     assert.strictEqual(targetRange(links[0]).start.line, 0);
   });
 
+  test('jumps from parameter usage to parameter declaration in .hlsl', async () => {
+    const uri = vscode.Uri.file(fixturePath('single-file', 'test.hlsl'));
+    const doc = await vscode.workspace.openTextDocument(uri);
+    await vscode.window.showTextDocument(doc);
+
+    const links = await waitForDefinitions(
+      uri,
+      new vscode.Position(0, 35),
+      (result) => (result?.length ?? 0) === 1,
+    );
+
+    assert.ok(links && links.length === 1, 'expected one parameter definition');
+    assert.strictEqual(targetRange(links[0]).start.line, 0);
+    assert.strictEqual(targetRange(links[0]).start.character, 19);
+  });
+
   test('multi-pass .shader returns 2 candidates for vert', async () => {
     const uri = vscode.Uri.file(fixturePath('multi-pass-test.shader'));
     const doc = await vscode.workspace.openTextDocument(uri);
