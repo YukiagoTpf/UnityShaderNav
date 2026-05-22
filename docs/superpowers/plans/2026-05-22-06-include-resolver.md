@@ -188,6 +188,8 @@ export * from './types';
 export { resolveInclude } from './resolver';
 ```
 
+> Note: Task 2 的原片段会导出尚未创建的 `./resolver`，导致中间提交无法通过 TypeScript 构建。实际实现先只导出 types，等 Task 4 创建 `resolver.ts` 后再补 `resolveInclude` 导出。
+
 - [ ] **Step 3: Commit**
 
 ```bash
