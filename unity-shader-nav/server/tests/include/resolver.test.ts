@@ -26,3 +26,35 @@ describe('resolveInclude: relative path wins', () => {
     expect(result?.absolutePath).toBe(join(fixtureRoot, 'Assets/Shaders/Inner/Lighting.hlsl'));
   });
 });
+
+describe('resolveInclude: Assets fallback', () => {
+  it('falls back to projectRoot/Assets when not relative', async () => {
+    const fromUri = pathToFileURL(join(fixtureRoot, 'Assets/Shaders/Main.shader')).href;
+    const result = await resolveInclude('CustomCG/MyHelper.hlsl', fromUri, ctx());
+
+    expect(result?.via).toBe('assets');
+    expect(result?.absolutePath.endsWith(join('Assets', 'CustomCG', 'MyHelper.hlsl'))).toBe(true);
+  });
+});
+
+describe('resolveInclude: includeDirectories', () => {
+  it('finds via user-configured directory', async () => {
+    const extra = join(fixtureRoot, 'Assets/CustomCG');
+    const includeCtx: IncludeContext = {
+      unityProjectRoot: undefined,
+      includeDirectories: [extra],
+    };
+    const fromUri = pathToFileURL(join(fixtureRoot, 'Assets/Shaders/Main.shader')).href;
+    const result = await resolveInclude('MyHelper.hlsl', fromUri, includeCtx);
+
+    expect(result?.via).toBe('includeDirectories');
+    expect(result?.absolutePath.endsWith('MyHelper.hlsl')).toBe(true);
+  });
+
+  it('returns null when nothing matches', async () => {
+    const fromUri = pathToFileURL(join(fixtureRoot, 'Assets/Shaders/Main.shader')).href;
+    const result = await resolveInclude('does/not/exist.hlsl', fromUri, ctx());
+
+    expect(result).toBeNull();
+  });
+});
