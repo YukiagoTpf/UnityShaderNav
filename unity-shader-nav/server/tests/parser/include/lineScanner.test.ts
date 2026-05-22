@@ -26,4 +26,19 @@ describe('scanIncludes', () => {
     const text = '// #include "fake.hlsl"\nvoid f() {}';
     expect(scanIncludes(text)).toHaveLength(0);
   });
+
+  it('ignores include in multi-line block comment', () => {
+    const text = [
+      '#include "Real.hlsl"',
+      '/*',
+      '#include "Fake.hlsl"',
+      '*/',
+      '#include "AlsoReal.hlsl"',
+    ].join('\n');
+
+    expect(scanIncludes(text).map((directive) => directive.path)).toEqual([
+      'Real.hlsl',
+      'AlsoReal.hlsl',
+    ]);
+  });
 });
