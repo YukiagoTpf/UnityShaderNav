@@ -912,7 +912,17 @@ function extOf(uri: string): string {
   }
 }
 
-export async function indexFile(uri: string, text: string): Promise<FileIndex> {
+/**
+ * @param table  Reserved for Plan 05 (MacroPatternTable). Plan 03 ignores it;
+ *               Plan 05 will fill in macro-driven symbol/pragma recognition.
+ *               Declared optional here so Plan 05 doesn't change the signature
+ *               (B5 防护).
+ */
+export async function indexFile(
+  uri: string,
+  text: string,
+  table?: unknown,
+): Promise<FileIndex> {
   const ext = extOf(uri);
   if (HLSL_EXTS.has(ext)) {
     const tree = await parseHlsl(text);
