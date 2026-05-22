@@ -9,6 +9,8 @@
 - `SymbolResolver`：在给定 uri + position 的情况下，先做 `getWordAtPosition`，再按"参数/局部 → 文件全局符号"的顺序查找，应用 proximity tie-break，返回 `LocationLink[]`。
 - LSP `textDocument/definition` handler：纯协议适配，无业务逻辑。
 
+> **签名演进约定（B5 防护）**：本计划首次引入的 `resolveDefinition` / `indexFile` / `registerDocuments` 把后续 plan 会扩展的参数（macro table、global index）声明为可选，本计划不使用，但参数位已就位 —— 这样 Plan 05 / 07 / 09 接入新依赖时不会再改签名。`registerDocuments` 在 Plan 07 重构为 WorkspaceManager 路由，是有意为之的重写而不是签名漂移；那里会再次显式说明。
+
 **Tech Stack:** Plan 01/02/03 之上；新增 `vscode-languageserver-textdocument` 的 `TextDocuments` 用法（增量同步）。
 
 **Dependencies:** Plan 01, 02, 03。
@@ -319,6 +321,11 @@ export function resolveDefinition(
   idx: FileIndex,
   name: string,
   refPos: Position,
+  // The following two params are reserved for forward compatibility; Plan 04
+  // never uses them. Plan 07 wires global cross-file fallback through `global`;
+  // Plan 13 may add a config flag. Keep param positions stable so Plan 07 can
+  // extend behavior without changing the signature.
+  _global?: unknown,
 ): LocationLink[] {
   const candidates = idx.symbols.filter((s) => s.name === name);
   if (candidates.length === 0) return [];
@@ -626,7 +633,30 @@ float4 main() {
 
 - [ ] **Step 2: fixture `multi-pass-test.shader`**
 
-复用 Plan 02 的 multi-pass 模板，确保 `vert` 在两个 Pass 中各一份。
+复用 Plan 02 的 multi-pass 模板。注意：Plan 04 阶段还没有 macro pattern recognizer（在 Plan 05），所以**不能**依赖 `#pragma vertex vert` 来产生引用。fixture 在每个 Pass 块里多加一行 `vert();` 调用，这样 collector 把它当作 call_expression reference 收进 FileIndex，下面的测试就能在调用位置上 F12。
+
+```hlsl
+Shader "Test/MultiPassDefn" {
+  SubShader {
+    Pass {
+      Name "ForwardLit"
+      HLSLPROGRAM
+      void vert() {}
+      void main_forward() { vert(); }
+      ENDHLSL
+    }
+    Pass {
+      Name "ShadowCaster"
+      HLSLPROGRAM
+      void vert() {}
+      void main_shadow() { vert(); }
+      ENDHLSL
+    }
+  }
+}
+```
+
+记录 `vert();` 调用点的行（启动测试前先 `cat -n` 确认）：约第 6 行和第 12 行（0-based）。
 
 - [ ] **Step 3: 测试**
 
@@ -663,15 +693,33 @@ suite('F12 single-file', () => {
     await vscode.window.showTextDocument(doc);
     await new Promise((r) => setTimeout(r, 800));
 
-    // Need to know the line/column of a `vert` reference; embed a #pragma vertex vert
-    // For MVP without macro pattern recognizer (plan 05), use a real call site:
-    // Add `float4 main() { vert(); }` so we can find a `vert` identifier in code.
-    // ... 详见 fixture 设计
+    const text = doc.getText();
+    const lines = text.split(/\r?\n/);
+
+    // Find the first `vert();` call site (inside ForwardLit pass).
+    const callLine = lines.findIndex((l, idx) =>
+      idx > 0 && lines[idx - 1].includes('main_forward()') === false && l.includes('vert();'),
+    );
+    assert.ok(callLine >= 0, 'expected a vert() call site in fixture');
+    const callCol = lines[callLine].indexOf('vert();') + 1; // inside the word "vert"
+
+    const links = await vscode.commands.executeCommand<vscode.LocationLink[] | vscode.Location[]>(
+      'vscode.executeDefinitionProvider', uri, new vscode.Position(callLine, callCol),
+    );
+    assert.ok(links, 'definition provider returned null');
+    // Each Pass has its own `void vert() {}` declaration → multi-candidate Peek (ADR-0001)
+    assert.strictEqual(links.length, 2, `expected 2 vert candidates, got ${links.length}`);
+
+    // Both candidates point at the same .shader uri, at different lines.
+    const linesOut = links.map((l) =>
+      ((l as vscode.LocationLink).targetRange ?? (l as any).range).start.line,
+    );
+    assert.notStrictEqual(linesOut[0], linesOut[1]);
   });
 });
 ```
 
-> 注：跨 plan 的 fixture 设计要避免依赖 Plan 05 还没实现的 pragma 识别——本 plan 的 multi-pass case 改为"在某个块内出现 `vert(...)` 调用"作为引用点。
+> 这里 `multi-pass .shader` 用例不依赖 Plan 05；Plan 05 完成后会另开一个 case 测试 `#pragma vertex vert` 的引用。
 
 - [ ] **Step 4: 跑测试**
 
