@@ -47,8 +47,12 @@ unity-shader-nav/
 │   └── src/
 │       └── protocol.ts                   # 占位的 extension-specific 协议
 ├── tests/
+│   ├── tsconfig.json                    # 编译 tests/ 自身（Mocha runner + runTest 引导）
+│   ├── runTest.ts                       # @vscode/test-electron 引导入口（含 launchArgs）
 │   ├── client/
-│   │   └── activation.test.ts            # @vscode/test-electron 集成测
+│   │   ├── activation.test.ts            # @vscode/test-electron 集成测
+│   │   └── suite/
+│   │       └── index.ts                  # Mocha runner（test-electron 进程内执行）
 │   ├── server/
 │   │   └── handshake.test.ts             # vitest 单元测
 │   └── fixtures/
@@ -674,6 +678,8 @@ suite('UnityShaderNav activation', () => {
 
 - [ ] **Step 3: 写 `tests/runTest.ts`（test-electron 引导）**
 
+`launchArgs` 必须显式传 fixture workspace 目录，否则 test-electron 启动的 Extension Development Host 没有 workspace folder，Plan 04+ 的 `WorkspaceManager` 拿不到任何 folder，集成测试全返回 null。fixture 路径从 `USN_TEST_FIXTURE` 环境变量读，未设置时退化为 Plan 01 的 `empty-workspace`。
+
 ```typescript
 import * as path from 'node:path';
 import { runTests } from '@vscode/test-electron';
@@ -682,7 +688,15 @@ async function main(): Promise<void> {
   const extensionDevelopmentPath = path.resolve(__dirname, '../client');
   const extensionTestsPath = path.resolve(__dirname, './client/suite');
 
-  await runTests({ extensionDevelopmentPath, extensionTestsPath });
+  const fixtureRel = process.env.USN_TEST_FIXTURE
+    ?? 'tests/fixtures/01-scaffolding/empty-workspace';
+  const workspaceFolder = path.resolve(__dirname, '..', fixtureRel);
+
+  await runTests({
+    extensionDevelopmentPath,
+    extensionTestsPath,
+    launchArgs: [workspaceFolder, '--disable-extensions'],
+  });
 }
 
 main().catch((err) => {
@@ -690,6 +704,8 @@ main().catch((err) => {
   process.exit(1);
 });
 ```
+
+> **后续 plan 注意**：Plan 04 / 05 / 06 / 07 / 10 / 11 / 13 的集成测试 npm script 必须设置 `USN_TEST_FIXTURE=<本 plan 的 fixture 目录>` 后再调 `node tests/out/runTest.js`，否则 test-electron 启在错误的 workspace 下。
 
 - [ ] **Step 4: 写 `tests/client/suite/index.ts`（Mocha runner）**
 
@@ -709,25 +725,45 @@ export async function run(): Promise<void> {
 }
 ```
 
-- [ ] **Step 5: 跑测试**
+- [ ] **Step 5: 写 `tests/tsconfig.json`**
+
+tests/ 不属于任何 workspace 子包，要单独有一份 tsconfig，把 `tests/*.ts`、`tests/client/**/*.ts` 编译到 `tests/out/`。注意打开 `composite: false` 避免与 client/server 的 project references 冲突。
+
+```json
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "out",
+    "composite": false,
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "types": ["node", "mocha"]
+  },
+  "include": ["runTest.ts", "client/**/*.ts"],
+  "exclude": ["server/**/*", "out/**"]
+}
+```
+
+- [ ] **Step 6: 跑测试**
 
 ```bash
 npm run build -w unity-shader-nav
-npx tsc -p tests/tsconfig.json   # 编译 tests/
-node tests/runTest.js
+npx tsc -p tests/tsconfig.json   # 编译 tests/ → tests/out/
+node tests/out/runTest.js
 ```
 
 预期：测试启动 Electron，激活扩展，PASS。第一次跑会下载 VSCode test binary。
 
-- [ ] **Step 6: 把 `npm test` 接入顶层**
+- [ ] **Step 7: 把 `npm test` 接入顶层**
 
 修改顶层 `package.json` 的 `scripts.test`：
 
 ```json
-"test": "npm run build && node tests/runTest.js && npm run test --workspaces --if-present"
+"test": "npm run build && tsc -p tests/tsconfig.json && node tests/out/runTest.js && npm run test --workspaces --if-present"
 ```
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add unity-shader-nav/tests
