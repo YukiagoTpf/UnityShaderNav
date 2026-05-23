@@ -14,6 +14,13 @@ export type OpenDocumentsProvider = () => Iterable<OpenDocumentSnapshot>;
 
 type RebuildSuspender = Pick<RequestSuspender, 'suspend' | 'release'>;
 
+function settingsAffectIndex(previous: ExtensionSettings, next: ExtensionSettings): boolean {
+  return previous.projectRoot !== next.projectRoot
+    || JSON.stringify(previous.includeDirectories) !== JSON.stringify(next.includeDirectories)
+    || JSON.stringify(previous.excludePatterns) !== JSON.stringify(next.excludePatterns)
+    || JSON.stringify(previous.declarationMacros) !== JSON.stringify(next.declarationMacros);
+}
+
 async function reindexOpenDocuments(
   manager: WorkspaceManager,
   getOpenDocuments: OpenDocumentsProvider,
@@ -70,17 +77,34 @@ export async function applyScopedSettingsAndRebuild(
   getOpenDocuments: OpenDocumentsProvider,
   suspender?: RebuildSuspender,
 ): Promise<void> {
-  await rebuildWorkspacesWithOpenDocuments(
-    connection,
-    manager,
-    getOpenDocuments,
-    suspender,
-    async (workspace) => {
-      const settings = await settingsForWorkspace(workspace.folderUri);
+  const updates = await Promise.all(manager.list().map(async (workspace) => {
+    const settings = await settingsForWorkspace(workspace.folderUri);
+    return {
+      workspace,
+      settings,
+      rebuild: settingsAffectIndex(workspace.settings, settings),
+    };
+  }));
+
+  if (!updates.some((update) => update.rebuild)) {
+    for (const { workspace, settings } of updates) {
       workspace.settings = settings;
       workspace.table = new MacroPatternTable(settings.declarationMacros);
-    },
-  );
+    }
+    return;
+  }
+
+  suspender?.suspend();
+  try {
+    for (const { workspace, settings, rebuild } of updates) {
+      workspace.settings = settings;
+      workspace.table = new MacroPatternTable(settings.declarationMacros);
+      if (rebuild) await workspace.rebuild(connection);
+    }
+    await reindexOpenDocuments(manager, getOpenDocuments);
+  } finally {
+    suspender?.release();
+  }
 }
 
 export { reindexOpenDocuments };

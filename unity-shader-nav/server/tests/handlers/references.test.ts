@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Connection, Location, ReferenceParams } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
-import type { FileIndex } from '@unity-shader-nav/shared';
+import { DEFAULT_SETTINGS, type FileIndex } from '@unity-shader-nav/shared';
 import { GlobalReferenceIndex, GlobalSymbolIndex } from '../../src/index';
 import { registerReferencesHandler } from '../../src/handlers/references';
 import { RequestSuspender } from '../../src/lifecycle/requestSuspender';
@@ -74,6 +74,7 @@ describe('registerReferencesHandler', () => {
       }],
     };
     const workspace = {
+      settings: DEFAULT_SETTINGS,
       global: new GlobalSymbolIndex(),
       globalRefs: new GlobalReferenceIndex(),
       isInPackages(requestedUri: string) {
@@ -94,7 +95,7 @@ describe('registerReferencesHandler', () => {
       },
     } as never;
 
-    registerReferencesHandler(connection, documents, manager, () => false);
+    registerReferencesHandler(connection, documents, manager);
 
     const result = await handler()({
       textDocument: { uri },
@@ -114,6 +115,10 @@ describe('registerReferencesHandler', () => {
     const packageUri = 'file:///project/Packages/com.example.render/Core.hlsl';
     const doc = TextDocument.create(uri, 'hlsl', 1, 'float4 main() { return helper(); }');
     const workspace = {
+      settings: {
+        ...DEFAULT_SETTINGS,
+        findReferences: { includePackages: true },
+      },
       global: new GlobalSymbolIndex(),
       globalRefs: new GlobalReferenceIndex(),
       isInPackages(requestedUri: string) {
@@ -140,7 +145,54 @@ describe('registerReferencesHandler', () => {
       },
     } as never;
 
-    registerReferencesHandler(connection, documents, manager, () => true);
+    registerReferencesHandler(connection, documents, manager);
+
+    const result = await handler()({
+      textDocument: { uri },
+      position: { line: 0, character: 25 },
+      context: { includeDeclaration: false },
+    });
+
+    expect(result).toEqual([{ uri: packageUri, range: packageRefRange }]);
+  });
+
+  it('uses the resolved workspace settings when filtering package references', async () => {
+    const { connection, handler } = captureReferencesHandler();
+    const uri = 'file:///project-a/Assets/Use.hlsl';
+    const packageUri = 'file:///project-a/Packages/com.example.render/Core.hlsl';
+    const doc = TextDocument.create(uri, 'hlsl', 1, 'float4 main() { return helper(); }');
+    const workspace = {
+      settings: {
+        ...DEFAULT_SETTINGS,
+        findReferences: { includePackages: true },
+      },
+      global: new GlobalSymbolIndex(),
+      globalRefs: new GlobalReferenceIndex(),
+      isInPackages(requestedUri: string) {
+        return requestedUri === packageUri;
+      },
+    };
+    workspace.globalRefs.upsert({
+      uri: packageUri,
+      symbols: [],
+      references: [{
+        name: 'helper',
+        context: 'call',
+        location: { uri: packageUri, range: packageRefRange },
+      }],
+    });
+    const documents = {
+      get(requestedUri: string) {
+        return requestedUri === uri ? doc : undefined;
+      },
+    } as never;
+    const manager = {
+      async workspaceForOrCreateFile() {
+        return workspace;
+      },
+    } as never;
+
+    registerReferencesHandler(connection, documents, manager);
 
     const result = await handler()({
       textDocument: { uri },
@@ -157,6 +209,7 @@ describe('registerReferencesHandler', () => {
     const packageUri = 'file:///project/Packages/com.example.render/Core.hlsl';
     const doc = TextDocument.create(uri, 'hlsl', 1, 'float4 main() { return helper(); }');
     const workspace = {
+      settings: DEFAULT_SETTINGS,
       global: new GlobalSymbolIndex(),
       globalRefs: new GlobalReferenceIndex(),
       isInPackages(requestedUri: string) {
@@ -192,7 +245,7 @@ describe('registerReferencesHandler', () => {
       },
     } as never;
 
-    registerReferencesHandler(connection, documents, manager, () => false);
+    registerReferencesHandler(connection, documents, manager);
 
     const result = await handler()({
       textDocument: { uri },
@@ -215,6 +268,7 @@ describe('registerReferencesHandler', () => {
     const manager = {
       async workspaceForOrCreateFile() {
         return {
+          settings: DEFAULT_SETTINGS,
           global: new GlobalSymbolIndex(),
           globalRefs: new GlobalReferenceIndex(),
           isInPackages: () => false,
@@ -224,7 +278,7 @@ describe('registerReferencesHandler', () => {
     const suspender = new RequestSuspender({ timeoutMs: 1000 });
     suspender.suspend();
 
-    registerReferencesHandler(connection, documents, manager, () => false, suspender);
+    registerReferencesHandler(connection, documents, manager, suspender);
 
     const promise = handler()({
       textDocument: { uri },

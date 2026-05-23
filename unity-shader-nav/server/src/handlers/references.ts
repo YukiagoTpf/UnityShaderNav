@@ -13,7 +13,6 @@ export function registerReferencesHandler(
   connection: Connection,
   documents: TextDocuments<TextDocument>,
   manager: WorkspaceManager,
-  getIncludePackages: () => boolean,
   suspender?: Pick<RequestSuspender, 'run'>,
 ): void {
   connection.onReferences(async (params: ReferenceParams): Promise<Location[] | null> => {
@@ -27,7 +26,7 @@ export function registerReferencesHandler(
       const word = wordAt(document.getText(), params.position);
       if (!word) return null;
 
-      const includePackages = getIncludePackages();
+      const includePackages = workspace.settings.findReferences.includePackages;
       const symbolsAsReferences = params.context.includeDeclaration
         ? workspace.global
           .lookup(word.text)

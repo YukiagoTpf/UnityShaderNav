@@ -8,13 +8,11 @@ import { registerFileWatchers } from './lifecycle/fileWatcher';
 import { applyScopedSettingsAndRebuild, reindexOpenDocuments } from './lifecycle/rebuild';
 import { RequestSuspender } from './lifecycle/requestSuspender';
 import { WorkspaceManager } from './workspace';
-import { DEFAULT_SETTINGS, type ExtensionSettings } from '@unity-shader-nav/shared';
 
 const connection = getConnection();
 const manager = new WorkspaceManager();
 const suspender = new RequestSuspender({ timeoutMs: 5000 });
 let globalStorageDir: string | undefined;
-let settingsRef: ExtensionSettings = DEFAULT_SETTINGS;
 
 connection.onInitialize((params) => {
   const options = params.initializationOptions as { globalStorageDir?: unknown } | undefined;
@@ -32,7 +30,6 @@ connection.onInitialized(async () => {
   suspender.suspend();
   try {
     const settings = await loadSettings(connection);
-    settingsRef = settings;
     manager.configure(settings, connection, globalStorageDir);
     const folders = await connection.workspace.getWorkspaceFolders() ?? [];
     for (const folder of folders) {
@@ -67,7 +64,6 @@ connection.onInitialized(async () => {
 });
 
 onSettingsChanged(connection, async (settings) => {
-  settingsRef = settings;
   manager.configure(settings, connection, globalStorageDir);
   await applyScopedSettingsAndRebuild(
     connection,
@@ -84,7 +80,6 @@ registerReferencesHandler(
   connection,
   documents,
   manager,
-  () => settingsRef.findReferences.includePackages,
   suspender,
 );
 registerFileWatchers(connection, manager, suspender, openDocuments);

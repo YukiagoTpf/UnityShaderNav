@@ -82,46 +82,48 @@ suite('Find References', () => {
     const position = positionOf(doc, 'SharedRef');
     const config = vscode.workspace.getConfiguration('unityShaderNav');
 
-    await config.update(
-      'findReferences.includePackages',
-      false,
-      vscode.ConfigurationTarget.Workspace,
-    );
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    try {
+      await config.update(
+        'findReferences.includePackages',
+        false,
+        vscode.ConfigurationTarget.Workspace,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    const userOnly = await waitForReferences(
-      uri,
-      position,
-      (result) =>
-        !!result &&
-        result.some((ref) => ref.uri.fsPath.endsWith(path.join('Assets', 'Shaders', 'UserCalls.hlsl'))) &&
-        !result.some((ref) => ref.uri.fsPath.includes(`${path.sep}Packages${path.sep}`)),
-    );
-    const userOnlyPaths = userOnly?.map((ref) => ref.uri.fsPath).join(', ') ?? '<none>';
-    assert.ok(userOnly, `expected user-only references, got ${userOnlyPaths}`);
+      const userOnly = await waitForReferences(
+        uri,
+        position,
+        (result) =>
+          !!result &&
+          result.some((ref) => ref.uri.fsPath.endsWith(path.join('Assets', 'Shaders', 'UserCalls.hlsl'))) &&
+          !result.some((ref) => ref.uri.fsPath.includes(`${path.sep}Packages${path.sep}`)),
+      );
+      const userOnlyPaths = userOnly?.map((ref) => ref.uri.fsPath).join(', ') ?? '<none>';
+      assert.ok(userOnly, `expected user-only references, got ${userOnlyPaths}`);
 
-    await config.update(
-      'findReferences.includePackages',
-      true,
-      vscode.ConfigurationTarget.Workspace,
-    );
-    await new Promise((resolve) => setTimeout(resolve, 1200));
+      await config.update(
+        'findReferences.includePackages',
+        true,
+        vscode.ConfigurationTarget.Workspace,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 1200));
 
-    const withPackages = await waitForReferences(
-      uri,
-      position,
-      (result) =>
-        !!result &&
-        result.some((ref) => ref.uri.fsPath.endsWith(path.join('Assets', 'Shaders', 'UserCalls.hlsl'))) &&
-        result.some((ref) => ref.uri.fsPath.endsWith(path.join('Packages', 'com.example.refs', 'ShaderLibrary', 'PackageCalls.hlsl'))),
-    );
-    const withPackagePaths = withPackages?.map((ref) => ref.uri.fsPath).join(', ') ?? '<none>';
-    assert.ok(withPackages, `expected package reference after enabling setting, got ${withPackagePaths}`);
-
-    await config.update(
-      'findReferences.includePackages',
-      false,
-      vscode.ConfigurationTarget.Workspace,
-    );
+      const withPackages = await waitForReferences(
+        uri,
+        position,
+        (result) =>
+          !!result &&
+          result.some((ref) => ref.uri.fsPath.endsWith(path.join('Assets', 'Shaders', 'UserCalls.hlsl'))) &&
+          result.some((ref) => ref.uri.fsPath.endsWith(path.join('Packages', 'com.example.refs', 'ShaderLibrary', 'PackageCalls.hlsl'))),
+      );
+      const withPackagePaths = withPackages?.map((ref) => ref.uri.fsPath).join(', ') ?? '<none>';
+      assert.ok(withPackages, `expected package reference after enabling setting, got ${withPackagePaths}`);
+    } finally {
+      await config.update(
+        'findReferences.includePackages',
+        false,
+        vscode.ConfigurationTarget.Workspace,
+      );
+    }
   });
 });
