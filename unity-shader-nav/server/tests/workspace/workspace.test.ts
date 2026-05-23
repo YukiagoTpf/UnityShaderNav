@@ -41,21 +41,23 @@ describe('Workspace.bootstrap', () => {
     await writeFile(join(root, 'Packages', 'packages-lock.json'), '{"dependencies":{}}');
     await writeFile(join(root, 'Assets', 'Shaders', 'Cached.hlsl'), 'float4 CachedSymbol() { return 0; }');
 
-    const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
-    await ws1.bootstrap(fakeConnection);
+    try {
+      const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      await ws1.bootstrap(fakeConnection);
 
-    const cachePath = join(root, 'Library', 'UnityShaderNavCache', 'index.json');
-    const manifest = JSON.parse(await readFile(cachePath, 'utf8'));
-    expect(manifest.files.length).toBeGreaterThanOrEqual(1);
+      const cachePath = join(root, 'Library', 'UnityShaderNavCache', 'index.json');
+      const manifest = JSON.parse(await readFile(cachePath, 'utf8'));
+      expect(manifest.files.length).toBeGreaterThanOrEqual(1);
 
-    const fullScan = vi.spyOn(Workspace.prototype, 'fullScan');
-    const ws2 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
-    await ws2.bootstrap(fakeConnection);
+      const fullScan = vi.spyOn(Workspace.prototype, 'fullScan');
+      const ws2 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      await ws2.bootstrap(fakeConnection);
 
-    expect(fullScan).not.toHaveBeenCalled();
-    expect(ws2.global.lookup('CachedSymbol').length).toBeGreaterThanOrEqual(1);
-
-    await rm(root, { recursive: true, force: true });
+      expect(fullScan).not.toHaveBeenCalled();
+      expect(ws2.global.lookup('CachedSymbol').length).toBeGreaterThanOrEqual(1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it('restores the full-scan index when a scanned file is opened and closed', async () => {

@@ -125,6 +125,9 @@ dist
 # Stores VSCode versions used for testing VSCode extensions
 .vscode-test
 
+# Unity generated project state and Plan 09 cache fixtures
+**/Library/
+
 # pnpm
 .pnpm-store
 
