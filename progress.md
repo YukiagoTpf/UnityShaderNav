@@ -1,0 +1,28 @@
+# Plan 06 Include Resolver Progress
+
+- Started Plan 06 on 2026-05-23.
+- Loaded relevant skills: `using-superpowers`, `planning-with-files`, `test-driven-development`, `requesting-code-review`, `receiving-code-review`, `subagent-driven-development`, and `verification-before-completion`.
+- Read `docs/superpowers/PROGRESS.md` first as required by project instructions.
+- Read Plan 06 from `docs/superpowers/plans/2026-05-22-06-include-resolver.md`.
+- Checked git status. Preserving pre-existing untracked files: `AGENTS.md`, `docs/superpowers/plans/plan03review.md`, `task_plan.md`, `findings.md`, `progress.md`.
+- Task 1 committed: `d154078 feat(plan-06): scan #include directives with path ranges`.
+- Task 2 committed: `39e115b feat(plan-06): include resolver types`; plan note added because exporting a missing resolver would break the intermediate TS build.
+- Task 3 committed: `f2c1116 test(plan-06): include resolver fixture project`.
+- Task 4 committed: `57207dc feat(plan-06): include resolver relative-path search`.
+- Task 5 committed: `9169531 test(plan-06): resolver Assets fallback + includeDirectories`.
+- Task 6 committed: `c204500 feat(plan-06): case-insensitive fallback with warning flag`.
+- Task 7 committed: `83af65b feat(plan-06): Unity project root autodetect`.
+- Task 8 committed: `998dfed feat(plan-06): record #include directives as references`; server-only tsc needed shared build first because shared package types are consumed from `out/`.
+- Task 9 committed: `2ab92f7 feat(plan-06): F12 on #include opens target file`.
+- Task 10 committed: `11ce08d test(plan-06): e2e F12 on #include directive`; `npm test` passed with test-electron 10/10 and server vitest 23 files / 89 tests.
+- Code-review subagent `019e50b8-2653-7ca0-b86f-0122f3016e35` reported no P1/P2 and one P3: `scanIncludes()` should ignore block-commented includes.
+- Wrote `docs/superpowers/plans/plan06review.md`.
+- Committed review doc: `750f181 docs(plans): record plan 06 code review`.
+- Spawned fix subagent `019e50be-44b3-7043-8c32-20a4d7b12438` to fix block-commented include false positives.
+- Fix subagent changed only `lineScanner.ts` and `lineScanner.test.ts`; RED/GREEN reported on focused scanner test.
+- Main-agent diff review found the change scoped correctly.
+- Main-agent verification: focused scanner test passed (3/3), and `npm run build` passed.
+- Wrote `docs/superpowers/plans/plan06fix.md`.
+- Committed fix: `5375c40 fix(plan-06): ignore block-commented includes`.
+- Updated `docs/superpowers/PROGRESS.md` with Plan 06 completion, review/fix records, deferred circularGuard note, and next step Plan 07.
+- Final full verification: `npm test` passed with test-electron 10/10 and server vitest 23 files / 90 tests.
