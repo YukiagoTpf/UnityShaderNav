@@ -48,7 +48,7 @@ server/tests/index/fixtures/chain/
 - Modify: `server/src/index/wordAt.ts`
 - Modify: `server/tests/index/wordAt.test.ts`
 
-- [ ] **Step 1: 增 API**
+- [x] **Step 1: 增 API**
 
 ```typescript
 export interface MemberAccess {
@@ -85,7 +85,7 @@ export function memberAccessAt(text: string, pos: Position): MemberAccess | null
 }
 ```
 
-- [ ] **Step 2: 测试**
+- [x] **Step 2: 测试**
 
 ```typescript
 import { memberAccessAt } from '../../src/index/wordAt';
@@ -104,7 +104,7 @@ describe('memberAccessAt', () => {
 });
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add server/src/index/wordAt.ts server/tests/index/wordAt.test.ts
@@ -119,7 +119,7 @@ git commit -m "feat(plan-11): memberAccessAt parser"
 - Create: `server/src/index/chainLookup.ts`
 - Create: `server/tests/index/chainLookup.test.ts`
 
-- [ ] **Step 1: 实现 + tests 同步**
+- [x] **Step 1: 实现 + tests 同步**
 
 ```typescript
 import type { FileIndex, Position, Range, SymbolEntry } from '@unity-shader-nav/shared';
@@ -201,7 +201,7 @@ export function resolveMember(
 }
 ```
 
-- [ ] **Step 2: 测试**
+- [x] **Step 2: 测试**
 
 ```typescript
 import { describe, it, expect } from 'vitest';
@@ -259,7 +259,7 @@ describe('resolveMember: L3a global', () => {
 });
 ```
 
-- [ ] **Step 3: 跑测 + Commit**
+- [x] **Step 3: 跑测 + Commit**
 
 ```bash
 npx vitest run server/tests/index/chainLookup.test.ts
@@ -274,7 +274,7 @@ git commit -m "feat(plan-11): chain lookup L1-L3a"
 **Files:**
 - Modify: `server/src/handlers/definition.ts`
 
-- [ ] **Step 1: 在 handler 中先尝试 member access**
+- [x] **Step 1: 在 handler 中先尝试 member access**
 
 ```typescript
 import { memberAccessAt } from '../index/wordAt';
@@ -291,7 +291,7 @@ if (ma?.receiver) {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add server/src/handlers/definition.ts
@@ -307,7 +307,7 @@ git commit -m "feat(plan-11): wire chain lookup into definition handler"
 - Create: `tests/integration/client/fixtures/chain/Surface.hlsl`
 - Create: `tests/integration/client/fixtures/chain/Use.hlsl`
 
-- [ ] **Step 1: fixture**
+- [x] **Step 1: fixture**
 
 `Surface.hlsl`:
 ```hlsl
@@ -325,7 +325,7 @@ float3 PickPos(Surface surface) {
 }
 ```
 
-- [ ] **Step 2: 测试**
+- [x] **Step 2: 测试**
 
 ```typescript
 suite('Chain lookup', () => {
@@ -350,7 +350,9 @@ suite('Chain lookup', () => {
 });
 ```
 
-- [ ] **Step 3: Commit**
+> Note: The integration fixture is in the standalone test workspace, where bootstrap does not full-scan sibling files. The actual test opens `Surface.hlsl` before `Use.hlsl` so both live documents are indexed before requesting `surface.positionWS` definitions. This preserves the plan's chain lookup assertion without relying on Unity-project full scan behavior.
+
+- [x] **Step 3: Commit**
 
 ```bash
 npm test
