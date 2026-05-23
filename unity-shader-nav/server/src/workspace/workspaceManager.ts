@@ -38,9 +38,12 @@ export class WorkspaceManager {
   // Operational paths that read or mutate workspace state should use this.
   async readyList(): Promise<Workspace[]> {
     const records = [...this.byFolder.values()];
-    await Promise.all(records.map((record) => record.ready));
+    const settled = await Promise.allSettled(records.map((record) => record.ready));
     return records
-      .filter((record) => this.byFolder.get(record.workspace.folderUri) === record)
+      .filter((record, index) =>
+        settled[index].status === 'fulfilled'
+        && this.byFolder.get(record.workspace.folderUri) === record,
+      )
       .map((record) => record.workspace);
   }
 
@@ -89,6 +92,16 @@ export class WorkspaceManager {
     return this.byFolder.get(record.workspace.folderUri) === record
       ? record.workspace
       : undefined;
+  }
+
+  async readyWorkspaceFor(fileUri: string): Promise<Workspace | undefined> {
+    const record = this.recordFor(fileUri);
+    if (!record) return undefined;
+    try {
+      return await this.workspaceFromReadyRecord(record);
+    } catch {
+      return undefined;
+    }
   }
 
   async addFolder(

@@ -188,6 +188,29 @@ describe('WorkspaceManager: multi-root', () => {
     expect(workspaceA).toBe(workspaceB);
   });
 
+  it('filters failed bootstrap records from ready workspace lists', async () => {
+    const failedFolder = await mkdtemp(join(tmpdir(), 'usn-ready-failed-'));
+    const failed = deferred();
+    const manager = new WorkspaceManager();
+    const bootstrap = vi
+      .spyOn(Workspace.prototype, 'bootstrap')
+      .mockReturnValueOnce(failed.promise);
+
+    const addFolder = manager.addFolder(
+      pathToFileURL(failedFolder).href,
+      DEFAULT_SETTINGS,
+      fakeConnection,
+    );
+    await flushPromises();
+    const readyList = manager.readyList();
+
+    failed.reject(new Error('bootstrap failed'));
+
+    await expect(addFolder).rejects.toThrow('bootstrap failed');
+    await expect(readyList).resolves.toEqual([]);
+    expect(bootstrap).toHaveBeenCalledTimes(1);
+  });
+
   it('uses scoped settings when lazily creating a workspace for a file', async () => {
     const projectA = resolve(__dirname, '../include/fixtures/projectA');
     const looseFolder = await mkdtemp(join(tmpdir(), 'usn-lazy-scoped-'));

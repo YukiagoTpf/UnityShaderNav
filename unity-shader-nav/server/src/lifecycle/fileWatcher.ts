@@ -38,7 +38,7 @@ export function registerFileWatchers(
 
     const groups = new Map<Workspace, FileEvent[]>();
     for (const event of batch) {
-      const workspace = manager.workspaceFor(event.uri);
+      const workspace = await manager.readyWorkspaceFor(event.uri);
       if (!workspace) continue;
       const events = groups.get(workspace) ?? [];
       events.push(event);
