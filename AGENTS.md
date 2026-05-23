@@ -4,7 +4,7 @@
 
 ## 执行纪律
 
-- **执行完一个 Task 就提交一个 commit。** 不要把多个 Task 合并到一个 commit，不要 amend 已 push 的提交。Plan 文档里每个 Task 末尾都显式给了 commit message，照抄即可。
+- **执行完一个 Task 就提交一个 commit。** 不要把多个 Task 合并到一个 commit，不要 amend 已 push 的提交。commit message 要描述实际修改内容，不要写 Task/Step 编号或步骤信息。
 - **遇到 Plan 与现实有偏差**：先用 `Edit` 在 plan 文档里加 `> Note:` 说明偏离原因，再继续；不要静默偏离。
 - **不要 `--no-verify` / `--force-with-lease` / `git reset --hard`** 等绕路操作。失败先诊断，修了再开新 commit。
 - 提交信息沿用 conventional commits：`feat(plan-XX):` / `fix(plan-XX):` / `test(plan-XX):` / `chore(plan-XX):` / `docs(plans):` 等。
@@ -19,7 +19,6 @@
 ## 已知坑
 
 - **路径渲染幻觉**：harness 在显示 tool 输出（Read / Grep / Bash stdout）时，会把字面 `Project` 替换成 `Project` 给你看，实际文件内容仍是 `Project`。判断是真污染还是显示幻觉，用 `od -c` 或 `cat | hexdump` 看 raw bytes。仓库现已无实际污染。
-- **Windows 沙箱**：`/codex:review`、`codex-companion task` 等 Codex 工具在本机 sandbox 下所有 PowerShell 命令都 `exit -1`，目前没法用 Codex 做独立 review。需要时用 `! codex resume <session-id>` 跑原生 CLI（沙箱策略更宽）或直接派 general-purpose subagent。
 
 ## 项目入口
 
