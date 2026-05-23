@@ -29,10 +29,13 @@ export function registerReferencesHandler(
 
       const includePackages = getIncludePackages();
       const symbolsAsReferences = params.context.includeDeclaration
-        ? workspace.global.lookup(word.text).map((symbol) => ({
-          uri: symbol.location.uri,
-          range: symbol.location.range,
-        }))
+        ? workspace.global
+          .lookup(word.text)
+          .filter((symbol) => includePackages || !workspace.isInPackages(symbol.location.uri))
+          .map((symbol) => ({
+            uri: symbol.location.uri,
+            range: symbol.location.range,
+          }))
         : [];
 
       const references = workspace.globalRefs

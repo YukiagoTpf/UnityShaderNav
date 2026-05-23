@@ -151,6 +151,58 @@ describe('registerReferencesHandler', () => {
     expect(result).toEqual([{ uri: packageUri, range: packageRefRange }]);
   });
 
+  it('excludes package declarations when includeDeclaration is true but Packages are disabled', async () => {
+    const { connection, handler } = captureReferencesHandler();
+    const uri = 'file:///project/Assets/Use.hlsl';
+    const packageUri = 'file:///project/Packages/com.example.render/Core.hlsl';
+    const doc = TextDocument.create(uri, 'hlsl', 1, 'float4 main() { return helper(); }');
+    const workspace = {
+      global: new GlobalSymbolIndex(),
+      globalRefs: new GlobalReferenceIndex(),
+      isInPackages(requestedUri: string) {
+        return requestedUri === packageUri;
+      },
+    };
+    workspace.global.upsert({
+      uri: packageUri,
+      references: [],
+      symbols: [{
+        name: 'helper',
+        kind: 'function',
+        location: { uri: packageUri, range: defRange },
+      }],
+    });
+    workspace.globalRefs.upsert({
+      uri,
+      symbols: [],
+      references: [{
+        name: 'helper',
+        context: 'call',
+        location: { uri, range: userRefRange },
+      }],
+    });
+    const documents = {
+      get(requestedUri: string) {
+        return requestedUri === uri ? doc : undefined;
+      },
+    } as never;
+    const manager = {
+      async workspaceForOrCreateFile() {
+        return workspace;
+      },
+    } as never;
+
+    registerReferencesHandler(connection, documents, manager, () => false);
+
+    const result = await handler()({
+      textDocument: { uri },
+      position: { line: 0, character: 25 },
+      context: { includeDeclaration: true },
+    });
+
+    expect(result).toEqual([{ uri, range: userRefRange }]);
+  });
+
   it('waits for RequestSuspender release before resolving references', async () => {
     const { connection, handler } = captureReferencesHandler();
     const uri = 'file:///project/Assets/Use.hlsl';
