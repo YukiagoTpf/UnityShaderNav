@@ -60,6 +60,7 @@ function expectedScopedLocations(index: FileIndex, name: string, scopeRange: Ran
   const references = index.references.filter(
     (reference) =>
       reference.name === name &&
+      reference.context === 'identifier' &&
       contains(scopeRange, reference.location.range.start.line, reference.location.range.start.character),
   );
 
@@ -391,6 +392,105 @@ describe('registerReferencesHandler', () => {
     });
 
     expect(result).toEqual(expectedScopedLocations(index, 'uv', firstParameter.scopeRange));
+  });
+
+  it('filters parameter references from the parameter declaration position', async () => {
+    const { connection, handler } = captureReferencesHandler();
+    const uri = 'file:///project/Assets/ScopedParameterDeclaration.hlsl';
+    const text = [
+      'float2 TransformA(float2 uv) {',
+      '  return uv;',
+      '}',
+      'float2 TransformB(float2 uv) {',
+      '  return uv;',
+      '}',
+    ].join('\n');
+    const doc = TextDocument.create(uri, 'hlsl', 1, text);
+    const index = await indexFile(uri, text);
+    const store = new IndexStore();
+    store.set(uri, index);
+    const workspace = {
+      settings: DEFAULT_SETTINGS,
+      store,
+      global: new GlobalSymbolIndex(),
+      globalRefs: new GlobalReferenceIndex(),
+      isInPackages: () => false,
+    };
+    workspace.global.upsert(index);
+    workspace.globalRefs.upsert(index);
+    const documents = {
+      get(requestedUri: string) {
+        return requestedUri === uri ? doc : undefined;
+      },
+    } as never;
+    const manager = {
+      async workspaceForOrCreateFile() {
+        return workspace;
+      },
+    } as never;
+    const firstParameter = index.symbols.find(
+      (symbol) => symbol.name === 'uv' && symbol.kind === 'parameter' && symbol.scope === 'TransformA',
+    );
+    if (!firstParameter?.scopeRange) throw new Error('missing TransformA.uv scope range');
+
+    registerReferencesHandler(connection, documents, manager);
+
+    const result = await handler()({
+      textDocument: { uri },
+      position: { line: 0, character: 25 },
+      context: { includeDeclaration: true },
+    });
+
+    expect(result).toEqual(expectedScopedLocations(index, 'uv', firstParameter.scopeRange));
+  });
+
+  it('does not include member references that share a local variable name', async () => {
+    const { connection, handler } = captureReferencesHandler();
+    const uri = 'file:///project/Assets/ScopedMemberNoise.hlsl';
+    const text = [
+      'struct Surface { float i; };',
+      'void Use(Surface s) {',
+      '  float i = 0;',
+      '  s.i = i;',
+      '}',
+    ].join('\n');
+    const doc = TextDocument.create(uri, 'hlsl', 1, text);
+    const index = await indexFile(uri, text);
+    const store = new IndexStore();
+    store.set(uri, index);
+    const workspace = {
+      settings: DEFAULT_SETTINGS,
+      store,
+      global: new GlobalSymbolIndex(),
+      globalRefs: new GlobalReferenceIndex(),
+      isInPackages: () => false,
+    };
+    workspace.global.upsert(index);
+    workspace.globalRefs.upsert(index);
+    const documents = {
+      get(requestedUri: string) {
+        return requestedUri === uri ? doc : undefined;
+      },
+    } as never;
+    const manager = {
+      async workspaceForOrCreateFile() {
+        return workspace;
+      },
+    } as never;
+    const local = index.symbols.find(
+      (symbol) => symbol.name === 'i' && symbol.kind === 'localVariable',
+    );
+    if (!local?.scopeRange) throw new Error('missing local i scope range');
+
+    registerReferencesHandler(connection, documents, manager);
+
+    const result = await handler()({
+      textDocument: { uri },
+      position: { line: 2, character: 8 },
+      context: { includeDeclaration: true },
+    });
+
+    expect(result).toEqual(expectedScopedLocations(index, 'i', local.scopeRange));
   });
 
   it('waits for RequestSuspender release before resolving references', async () => {

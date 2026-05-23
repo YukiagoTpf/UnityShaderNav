@@ -81,6 +81,7 @@ export function registerReferencesHandler(
         .filter((reference) => includePackages || !workspace.isInPackages(reference.location.uri))
         .filter((reference) => {
           if (scopedTargets.length === 0) return true;
+          if (reference.context !== 'identifier') return false;
 
           const candidateIndex = workspace.store?.get(reference.location.uri);
           if (!candidateIndex) return false;

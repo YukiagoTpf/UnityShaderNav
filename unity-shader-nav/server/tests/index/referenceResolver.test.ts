@@ -119,6 +119,41 @@ describe('resolveReferenceTargets', () => {
     ]);
   });
 
+  it('targets a parameter when the cursor is on its declaration outside the body scope', () => {
+    const scopeRange = scope(0, 29, 2, 1);
+    const text = [
+      'float2 Transform(float2 uv) {',
+      '  return uv;',
+      '}',
+    ].join('\n');
+    const idx: FileIndex = {
+      uri,
+      references: [],
+      symbols: [
+        sym({
+          name: 'uv',
+          kind: 'parameter',
+          scope: 'Transform',
+          scopeRange,
+          declaredType: 'float2',
+          location: { uri, range: range(0, 25, 27) },
+        }),
+      ],
+    };
+
+    const targets = resolveReferenceTargets(idx, text, { line: 0, character: 25 });
+
+    expect(targets).toEqual([
+      {
+        name: 'uv',
+        kind: 'parameter',
+        uri,
+        range: range(0, 25, 27),
+        scopeRange,
+      },
+    ]);
+  });
+
   it('targets a global function used by a call reference', () => {
     const text = 'float4 Main() { return Helper(); }';
     const idx: FileIndex = {
