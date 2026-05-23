@@ -76,6 +76,50 @@ describe('resolveReferenceTargets', () => {
     ]);
   });
 
+  it('targets the nearest preceding local when same-name locals share a function scope', () => {
+    const functionScope = scope(0, 0, 6, 1);
+    const text = [
+      'float Main() {',
+      '  float i = 1;',
+      '  i = i + 1;',
+      '  float i = 4;',
+      '  return i;',
+      '}',
+    ].join('\n');
+    const idx: FileIndex = {
+      uri,
+      references: [],
+      symbols: [
+        sym({
+          name: 'i',
+          kind: 'localVariable',
+          scope: 'Main',
+          scopeRange: functionScope,
+          location: { uri, range: range(1, 8, 9) },
+        }),
+        sym({
+          name: 'i',
+          kind: 'localVariable',
+          scope: 'Main',
+          scopeRange: functionScope,
+          location: { uri, range: range(3, 8, 9) },
+        }),
+      ],
+    };
+
+    const targets = resolveReferenceTargets(idx, text, { line: 2, character: 2 });
+
+    expect(targets).toEqual([
+      {
+        name: 'i',
+        kind: 'localVariable',
+        uri,
+        range: range(1, 8, 9),
+        scopeRange: functionScope,
+      },
+    ]);
+  });
+
   it('targets a parameter with its scope range for same-scope filtering', () => {
     const scopeRange = scope(0, 0, 3, 1);
     const text = [

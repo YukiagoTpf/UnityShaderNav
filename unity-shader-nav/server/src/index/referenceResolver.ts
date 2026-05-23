@@ -59,15 +59,6 @@ export function resolveReferenceTargetsForName(
   );
   if (exactDeclarations.length > 0) return exactDeclarations.map(toReferenceTarget);
 
-  const scopedDeclarations = index.symbols.filter(
-    (symbol) =>
-      symbol.name === name &&
-      (symbol.kind === 'parameter' || symbol.kind === 'localVariable') &&
-      symbol.scopeRange &&
-      containsPosition(symbol.scopeRange, position),
-  );
-  if (scopedDeclarations.length > 0) return scopedDeclarations.map(toReferenceTarget);
-
   return resolveDefinitionSymbols(index, name, position, global).map(toReferenceTarget);
 }
 
