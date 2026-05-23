@@ -40,7 +40,7 @@ tests/integration/client/find-references.test.ts
 - Create: `server/src/index/globalReferences.ts`
 - Create: `server/tests/index/globalReferences.test.ts`
 
-- [ ] **Step 1: 实现 + 测试**
+- [x] **Step 1: 实现 + 测试**
 
 ```typescript
 import type { FileIndex, ReferenceEntry } from '@unity-shader-nav/shared';
@@ -110,7 +110,7 @@ describe('GlobalReferenceIndex', () => {
 });
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add server/src/index/globalReferences.ts server/tests/index/globalReferences.test.ts
@@ -124,7 +124,7 @@ git commit -m "feat(plan-13): GlobalReferenceIndex"
 **Files:**
 - Modify: `server/src/workspace/workspace.ts`
 
-- [ ] **Step 1: 加字段**
+- [x] **Step 1: 加字段**
 
 ```typescript
 import { GlobalReferenceIndex } from '../index/globalReferences';
@@ -154,7 +154,9 @@ drop(uri) {
 
 > 同样修改 bootstrapFromCache 中的 `this.global.upsert(idx)` 旁边加 `this.globalRefs.upsert(idx)`。
 
-- [ ] **Step 2: 判断 reference 是否属于 Packages**
+- [x] **Step 2: 判断 reference 是否属于 Packages**
+
+> Note: 实施时沿用 `Workspace.isWithinPath()` 做 normalized path containment，而不是字符串拼接 `path + '/'`。原因是仓库在 Windows 下运行，file URL 转换后的路径使用平台分隔符并且大小写语义需要跟既有 include/package resolver 保持一致。
 
 ```typescript
 isInPackages(uri: string): boolean {
@@ -184,6 +186,8 @@ git commit -m "feat(plan-13): Workspace tracks GlobalReferenceIndex"
 - Create: `server/src/handlers/references.ts`
 - Modify: `server/src/connection.ts`
 - Modify: `server/src/server.ts`
+
+> Note: 当前实现已在 Plan 10 之后把 request handlers 统一接入 `RequestSuspender` 和 `WorkspaceManager.workspaceForOrCreateFile()`，以支持冷启动/重建挂起和 standalone lazy workspace。Task 3 实施时 references handler 按这个现有生命周期实现为 async handler，而不是照原示例使用同步 `workspaceFor()`。
 
 - [ ] **Step 1: handler**
 

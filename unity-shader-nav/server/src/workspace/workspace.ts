@@ -14,7 +14,7 @@ import { CacheManager, CacheStore, chooseCacheDir } from '../cache';
 import { buildFingerprint } from '../cache/fingerprint';
 import { PackageResolver } from '../packages';
 import type { IncludeContext } from '../include';
-import { GlobalSymbolIndex, IndexStore } from '../index';
+import { GlobalReferenceIndex, GlobalSymbolIndex, IndexStore } from '../index';
 import { MacroPatternTable } from '../macros';
 import { indexFile } from '../parser/hlsl';
 import { detectUnityRoot } from './detectUnityRoot';
@@ -32,6 +32,7 @@ export class Workspace {
   includeCtx: IncludeContext;
   readonly store = new IndexStore();
   readonly global = new GlobalSymbolIndex();
+  readonly globalRefs = new GlobalReferenceIndex();
   private readonly diskIndexes = new Map<string, FileIndex>();
   private cache: CacheManager | undefined;
   private fingerprint: CacheFingerprint | undefined;
@@ -140,6 +141,7 @@ export class Workspace {
           this.diskIndexes.set(cachedFile.uri, cachedFile.index);
           this.store.set(cachedFile.uri, cachedFile.index);
           this.global.upsert(cachedFile.index);
+          this.globalRefs.upsert(cachedFile.index);
         } else {
           refreshQueue.push(cachedFile.uri);
         }
@@ -196,6 +198,21 @@ export class Workspace {
     return process.platform === 'win32' ? absPath.toLowerCase() : absPath;
   }
 
+  isInPackages(uri: string): boolean {
+    if (!this.packageResolver) return false;
+
+    let filePath: string;
+    try {
+      filePath = fileURLToPath(uri);
+    } catch {
+      return false;
+    }
+
+    return this.packageResolver
+      .allPaths()
+      .some(({ path }) => this.isWithinPath(filePath, path));
+  }
+
   private async indexMissingDiskFiles(connection: Connection): Promise<void> {
     if (!this.unityRoot) return;
 
@@ -226,6 +243,7 @@ export class Workspace {
       this.diskIndexes.set(uri, idx);
       this.store.set(uri, idx);
       this.global.upsert(idx);
+      this.globalRefs.upsert(idx);
       connection?.console.log(`[index] ${uri} -> ${idx.symbols.length} symbols, ${idx.references.length} refs`);
     } catch {
       // Ignore unreadable or unparsable files during background indexing.
@@ -272,6 +290,7 @@ export class Workspace {
     }
     this.store.set(uri, idx);
     this.global.upsert(idx);
+    this.globalRefs.upsert(idx);
   }
 
   private async refreshStandaloneDiskIndex(
@@ -310,6 +329,7 @@ export class Workspace {
   async rebuild(connection: Connection): Promise<void> {
     this.store.clear();
     this.global.clear();
+    this.globalRefs.clear();
     this.diskIndexes.clear();
     await this.bootstrap(connection, this.globalStorageDir);
   }
@@ -341,6 +361,7 @@ export class Workspace {
     if (diskIndex) {
       this.store.set(uri, diskIndex);
       this.global.upsert(diskIndex);
+      this.globalRefs.upsert(diskIndex);
       return;
     }
 
@@ -351,5 +372,6 @@ export class Workspace {
     this.diskIndexes.delete(uri);
     this.store.delete(uri);
     this.global.delete(uri);
+    this.globalRefs.delete(uri);
   }
 }
