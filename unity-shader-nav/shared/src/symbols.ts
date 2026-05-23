@@ -1,3 +1,5 @@
+import type { StructureResult } from './structure';
+
 export type SymbolKind =
   | 'function'
   | 'variable'
@@ -45,4 +47,6 @@ export interface FileIndex {
   uri: string;
   symbols: SymbolEntry[];
   references: ReferenceEntry[];
+  /** Only populated for .shader files. */
+  structure?: StructureResult;
 }

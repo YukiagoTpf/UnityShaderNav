@@ -7,6 +7,7 @@ import { collect } from './collector';
 import { matchPragmaLine } from '../../macros/matcher';
 import { scanIncludes } from '../include/lineScanner';
 import { scanBlocks } from '../shaderlab/blockScanner';
+import { scanStructure } from '../shaderlab/structureScanner';
 
 const HLSL_EXTS = new Set(['.hlsl', '.cginc', '.hlslinc', '.compute']);
 
@@ -106,6 +107,7 @@ export async function indexFile(
         merged.references.push(...scanPragmas(blockText, block.contentStartLine, table, uri));
       }
     }
+    merged.structure = scanStructure(text);
     return merged;
   }
 

@@ -33,4 +33,15 @@ describe('fileIndexer: .shader multi-pass', () => {
     expect(verts[0].location.range.start.line).toBeGreaterThan(3);
     expect(verts[1].location.range.start.line).toBeGreaterThan(verts[0].location.range.start.line);
   });
+
+  it('attaches ShaderLab structure for .shader files', async () => {
+    const text = readFileSync(
+      join(__dirname, '../shaderlab/fixtures/multi-pass.shader'),
+      'utf8',
+    );
+    const idx = await indexFile('file:///t/x.shader', text);
+
+    expect(idx.structure?.shaders).toBeDefined();
+    expect(idx.structure?.shaders[0]?.children[0]?.children.length).toBeGreaterThan(0);
+  });
 });
