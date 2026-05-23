@@ -30,10 +30,12 @@ export class WorkspaceManager {
     this.settingsResolver = settingsResolver;
   }
 
+  // Raw snapshot: may include workspaces whose bootstrap is still in flight.
   list(): Workspace[] {
     return [...this.byFolder.values()].map((record) => record.workspace);
   }
 
+  // Operational paths that read or mutate workspace state should use this.
   async readyList(): Promise<Workspace[]> {
     const records = [...this.byFolder.values()];
     await Promise.all(records.map((record) => record.ready));

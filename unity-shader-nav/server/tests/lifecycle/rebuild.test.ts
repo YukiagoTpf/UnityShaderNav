@@ -23,6 +23,21 @@ const fakeConnection = {
   },
 } as never;
 
+function deferred<T = void>(): {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+} {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
+async function flushPromises(times = 5): Promise<void> {
+  for (let i = 0; i < times; i++) await Promise.resolve();
+}
+
 describe('rebuildWorkspacesWithOpenDocuments', () => {
   it('restores open document overlays before releasing suspended requests', async () => {
     const calls: string[] = [];
@@ -59,6 +74,49 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
       'reindex:float4 LiveOnly() { return 0; }',
       'release',
     ]);
+  });
+
+  it('waits for ready workspaces before rebuilding', async () => {
+    const calls: string[] = [];
+    const ready = deferred();
+    const workspace = {
+      rebuild: vi.fn(async () => {
+        calls.push('rebuild');
+      }),
+    };
+    const manager = {
+      list: () => [workspace],
+      readyList: vi.fn(async () => {
+        calls.push('readyList');
+        await ready.promise;
+        calls.push('ready');
+        return [workspace];
+      }),
+      workspaceForOrCreateFile: vi.fn(async () => ({
+        reindex: vi.fn(async () => {}),
+      })),
+    };
+    const suspender = {
+      suspend: vi.fn(() => calls.push('suspend')),
+      release: vi.fn(() => calls.push('release')),
+    };
+
+    const rebuild = rebuildWorkspacesWithOpenDocuments(
+      fakeConnection,
+      manager as never,
+      () => [],
+      suspender,
+    );
+    await flushPromises();
+
+    expect(calls).toEqual(['suspend', 'readyList']);
+    expect(workspace.rebuild).not.toHaveBeenCalled();
+    expect(suspender.release).not.toHaveBeenCalled();
+
+    ready.resolve();
+    await rebuild;
+
+    expect(calls).toEqual(['suspend', 'readyList', 'ready', 'rebuild', 'release']);
   });
 
   it('settings rebuild clears symbols excluded by the new settings', async () => {
