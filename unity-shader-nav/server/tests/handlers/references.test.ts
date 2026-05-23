@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { join, resolve as pathResolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { Connection, Location, ReferenceParams } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { DEFAULT_SETTINGS, type FileIndex, type Range } from '@unity-shader-nav/shared';
@@ -6,6 +8,8 @@ import { GlobalReferenceIndex, GlobalSymbolIndex, IndexStore } from '../../src/i
 import { registerReferencesHandler } from '../../src/handlers/references';
 import { RequestSuspender } from '../../src/lifecycle/requestSuspender';
 import { indexFile } from '../../src/parser/hlsl/fileIndexer';
+
+const includeFixtureRoot = pathResolve(__dirname, '../include/fixtures/projectA');
 
 function captureReferencesHandler(): {
   connection: Connection;
@@ -816,6 +820,59 @@ describe('registerReferencesHandler', () => {
     expect(result).toEqual([
       { uri, range: macroSymbol.location.range },
       { uri, range: macroCall.location.range },
+    ]);
+  });
+
+  it('returns include references that resolve to the same file across path spellings', async () => {
+    const { connection, handler } = captureReferencesHandler();
+    const filePath = join(includeFixtureRoot, 'Assets/Shaders/IncludeRefs.hlsl');
+    const uri = pathToFileURL(filePath).href;
+    const text = [
+      '#include "Common.hlsl"',
+      '#include "../Shaders/Common.hlsl"',
+      '#include "Packages/com.example.assets/Shaders/Common.hlsl"',
+      '#include "Inner/Lighting.hlsl"',
+    ].join('\n');
+    const doc = TextDocument.create(uri, 'hlsl', 1, text);
+    const index = await indexFile(uri, text);
+    const store = new IndexStore();
+    store.set(uri, index);
+    const workspace = {
+      settings: DEFAULT_SETTINGS,
+      includeCtx: {
+        unityProjectRoot: includeFixtureRoot,
+        includeDirectories: [],
+        packagePhysicalPaths: new Map([['com.example.assets', join(includeFixtureRoot, 'Assets')]]),
+      },
+      store,
+      global: new GlobalSymbolIndex(),
+      globalRefs: new GlobalReferenceIndex(),
+      isInPackages: () => false,
+    };
+    workspace.globalRefs.upsert(index);
+    const documents = {
+      get(requestedUri: string) {
+        return requestedUri === uri ? doc : undefined;
+      },
+    } as never;
+    const manager = {
+      async workspaceForOrCreateFile() {
+        return workspace;
+      },
+    } as never;
+
+    registerReferencesHandler(connection, documents, manager);
+
+    const result = await handler()({
+      textDocument: { uri },
+      position: { line: 0, character: 12 },
+      context: { includeDeclaration: false },
+    });
+
+    expect(result).toEqual([
+      { uri, range: index.references[0].location.range },
+      { uri, range: index.references[1].location.range },
+      { uri, range: index.references[2].location.range },
     ]);
   });
 

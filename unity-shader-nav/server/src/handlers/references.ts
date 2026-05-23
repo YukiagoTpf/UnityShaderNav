@@ -5,6 +5,7 @@ import type {
   TextDocuments,
 } from 'vscode-languageserver/node';
 import type { TextDocument } from 'vscode-languageserver-textdocument';
+import { pathToFileURL } from 'node:url';
 import type {
   FileIndex,
   Range,
@@ -19,7 +20,9 @@ import {
   wordAt,
   type ReferenceTarget,
 } from '../index';
+import { resolveInclude } from '../include';
 import type { RequestSuspender } from '../lifecycle/requestSuspender';
+import { scanIncludes } from '../parser/include/lineScanner';
 import type { WorkspaceManager } from '../workspace';
 
 function samePosition(a: Range['start'], b: Range['start']): boolean {
@@ -35,6 +38,12 @@ function containsPosition(range: Range, position: Range['start']): boolean {
   if (position.line === range.start.line && position.character < range.start.character) return false;
   if (position.line === range.end.line && position.character > range.end.character) return false;
   return true;
+}
+
+function includePathContainsPosition(range: Range, position: Range['start']): boolean {
+  return position.line === range.start.line
+    && position.character >= range.start.character
+    && position.character <= range.end.character;
 }
 
 function sameTarget(a: ReferenceTarget, b: ReferenceTarget): boolean {
@@ -144,12 +153,54 @@ export function registerReferencesHandler(
       const workspace = await manager.workspaceForOrCreateFile(params.textDocument.uri);
       if (!workspace) return null;
 
-      const word = wordAt(document.getText(), params.position);
+      const fullText = document.getText();
+      const include = scanIncludes(fullText).find((candidate) =>
+        includePathContainsPosition(candidate.pathRange, params.position),
+      );
+      if (include) {
+        const resolved = await resolveInclude(
+          include.path,
+          params.textDocument.uri,
+          workspace.includeCtx,
+        );
+        if (!resolved) return null;
+
+        const targetUri = pathToFileURL(resolved.absolutePath).href;
+        const includePackages = workspace.settings.findReferences.includePackages;
+        const locations: Location[] = [];
+
+        for (const uri of workspace.store.uris()) {
+          const index = workspace.store.get(uri);
+          if (!index) continue;
+
+          for (const reference of index.references) {
+            if (reference.context !== 'include') continue;
+            if (!includePackages && workspace.isInPackages(reference.location.uri)) continue;
+
+            const candidate = await resolveInclude(
+              reference.name,
+              reference.location.uri,
+              workspace.includeCtx,
+            );
+            if (!candidate) continue;
+            if (pathToFileURL(candidate.absolutePath).href !== targetUri) continue;
+
+            locations.push({
+              uri: reference.location.uri,
+              range: reference.location.range,
+            });
+          }
+        }
+
+        return uniqueLocations(locations);
+      }
+
+      const word = wordAt(fullText, params.position);
       if (!word) return null;
 
       const idx = workspace.store?.get(params.textDocument.uri);
       const targets = idx
-        ? resolveReferenceTargets(idx, document.getText(), params.position, workspace.global)
+        ? resolveReferenceTargets(idx, fullText, params.position, workspace.global)
         : [];
       const scopedTargets = targets.filter(isScopedTarget);
       const memberTargets = targets.filter(isMemberTarget);
