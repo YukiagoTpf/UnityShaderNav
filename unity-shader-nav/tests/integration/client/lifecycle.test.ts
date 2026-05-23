@@ -21,7 +21,7 @@ async function ensureWorkspaceFolder(folderPath: string): Promise<void> {
     0,
     { uri: vscode.Uri.file(folderPath) },
   );
-  if (!added) return;
+  assert.ok(added, `expected workspace folder to be added: ${folderPath}`);
   await new Promise((resolve) => setTimeout(resolve, 1500));
 }
 
@@ -64,9 +64,6 @@ suite('Lifecycle: edit triggers reindex', () => {
       const mainUri = vscode.Uri.file(path.join(root, 'Assets', 'Shaders', 'Main.shader'));
       const before = await fs.readFile(commonPath, 'utf8');
 
-      await fs.writeFile(commonPath, `${before}\nfloat4 NewlyAdded() { return 1; }\n`);
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
       const mainDoc = await vscode.workspace.openTextDocument(mainUri);
       await vscode.window.showTextDocument(mainDoc);
       const endLine = mainDoc.getText().split(/\r?\n/).findIndex((line) => line.trim() === 'ENDHLSL');
@@ -77,6 +74,16 @@ suite('Lifecycle: edit triggers reindex', () => {
       edit.insert(mainUri, new vscode.Position(endLine, 0), inserted);
       assert.ok(await vscode.workspace.applyEdit(edit), 'expected Main.shader edit to apply');
       await new Promise((resolve) => setTimeout(resolve, 800));
+
+      const unresolved = await vscode.commands.executeCommand<Array<vscode.LocationLink | vscode.Location>>(
+        'vscode.executeDefinitionProvider',
+        mainUri,
+        new vscode.Position(endLine, inserted.indexOf('NewlyAdded') + 2),
+      );
+      assert.equal(unresolved?.length ?? 0, 0, 'NewlyAdded should not resolve before external file change');
+
+      await fs.writeFile(commonPath, `${before}\nfloat4 NewlyAdded() { return 1; }\n`);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
 
       const links = await waitForDefinitions(
         mainUri,

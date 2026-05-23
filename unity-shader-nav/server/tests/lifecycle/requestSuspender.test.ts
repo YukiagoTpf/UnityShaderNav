@@ -30,6 +30,33 @@ describe('RequestSuspender', () => {
     }
   });
 
+  it('keeps requests suspended until overlapping releases complete', async () => {
+    vi.useFakeTimers();
+    try {
+      const suspender = new RequestSuspender({ timeoutMs: 1000 });
+      suspender.suspend();
+      suspender.suspend();
+      const work = vi.fn(async () => 'done');
+
+      const promise = suspender.run(work);
+      let settled = false;
+      void promise.then(() => {
+        settled = true;
+      });
+
+      await Promise.resolve();
+      suspender.release();
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      expect(work).not.toHaveBeenCalled();
+
+      suspender.release();
+      await expect(promise).resolves.toBe('done');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('times out and returns null after timeoutMs', async () => {
     vi.useFakeTimers();
     try {

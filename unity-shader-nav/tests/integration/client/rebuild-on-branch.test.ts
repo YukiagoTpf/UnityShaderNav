@@ -21,7 +21,7 @@ async function ensureWorkspaceFolder(folderPath: string): Promise<void> {
     0,
     { uri: vscode.Uri.file(folderPath) },
   );
-  if (!added) return;
+  assert.ok(added, `expected workspace folder to be added: ${folderPath}`);
   await new Promise((resolve) => setTimeout(resolve, 1500));
 }
 
@@ -55,8 +55,22 @@ async function waitForDefinitions(
   return latest;
 }
 
+async function waitForNoDefinitions(uri: vscode.Uri, position: vscode.Position): Promise<boolean> {
+  const deadline = Date.now() + 6000;
+  while (Date.now() < deadline) {
+    const links = await vscode.commands.executeCommand<Array<vscode.LocationLink | vscode.Location>>(
+      'vscode.executeDefinitionProvider',
+      uri,
+      position,
+    );
+    if ((links?.length ?? 0) === 0) return true;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return false;
+}
+
 suite('Rebuild on branch switch', () => {
-  test('touching .git/HEAD keeps cross-file index usable after rebuild', async () => {
+  test('touching .git/HEAD picks up new disk state after rebuild', async () => {
     const root = await makeProjectCopy();
     try {
       const gitDir = path.join(root, '.git');
@@ -70,15 +84,37 @@ suite('Rebuild on branch switch', () => {
       await vscode.window.showTextDocument(doc);
       const line = doc.getText().split(/\r?\n/).findIndex((text) => text.includes('return Common()'));
       assert.ok(line >= 0, 'expected Common() call in fixture');
-      const position = new vscode.Position(line, doc.lineAt(line).text.indexOf('Common()') + 2);
 
+      const edit = new vscode.WorkspaceEdit();
+      const inserted = '    float4 _branch = BranchOnly();\n';
+      edit.insert(mainUri, new vscode.Position(line, 0), inserted);
+      assert.ok(await vscode.workspace.applyEdit(edit), 'expected Main.shader edit to apply');
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      const branchPosition = new vscode.Position(line, inserted.indexOf('BranchOnly') + 2);
+      const commonPosition = new vscode.Position(line + 1, doc.lineAt(line + 1).text.indexOf('Common()') + 2);
+      const beforeBranch = await vscode.commands.executeCommand<Array<vscode.LocationLink | vscode.Location>>(
+        'vscode.executeDefinitionProvider',
+        mainUri,
+        branchPosition,
+      );
+      assert.equal(beforeBranch?.length ?? 0, 0, 'BranchOnly should not resolve before rebuild reads new disk state');
+
+      await fs.writeFile(
+        path.join(root, 'Assets', 'Shaders', 'Common.hlsl'),
+        'float4 BranchOnly() { return 1; }\n',
+      );
       await fs.writeFile(headPath, 'ref: refs/heads/feature\n');
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 3000));
 
-      const links = await waitForDefinitions(mainUri, position);
+      const links = await waitForDefinitions(mainUri, branchPosition);
 
-      assert.ok(links && links.length >= 1, 'expected Common definition after .git/HEAD change');
+      assert.ok(links && links.length >= 1, 'expected BranchOnly definition after .git/HEAD rebuild');
       assert.ok(targetUri(links[0]).fsPath.endsWith(path.join('Assets', 'Shaders', 'Common.hlsl')));
+
+      assert.ok(
+        await waitForNoDefinitions(mainUri, commonPosition),
+        'Common should not resolve after rebuild removed it from disk',
+      );
     } finally {
       await removeWorkspaceFolder(root);
       await fs.rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });

@@ -1,22 +1,25 @@
 export class RequestSuspender {
-  private suspended = false;
+  private suspendDepth = 0;
   private waiters: Array<() => void> = [];
 
   constructor(private readonly options: { timeoutMs: number }) {}
 
   suspend(): void {
-    this.suspended = true;
+    this.suspendDepth++;
   }
 
   release(): void {
-    this.suspended = false;
+    if (this.suspendDepth === 0) return;
+    this.suspendDepth--;
+    if (this.suspendDepth > 0) return;
+
     const waiters = this.waiters;
     this.waiters = [];
     for (const waiter of waiters) waiter();
   }
 
   async run<T>(work: () => Promise<T>): Promise<T | null> {
-    if (!this.suspended) return work();
+    if (this.suspendDepth === 0) return work();
 
     return new Promise<T | null>((resolve) => {
       let settled = false;

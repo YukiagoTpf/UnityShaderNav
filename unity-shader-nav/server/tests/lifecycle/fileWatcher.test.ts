@@ -135,7 +135,7 @@ describe('registerFileWatchers', () => {
       registerFileWatchers(connection as never, manager as never, suspender);
       handler?.({ uri: 'file:///projectA/.git/HEAD', type: 'changed' });
       vi.advanceTimersByTime(501);
-      for (let i = 0; i < 5; i++) await Promise.resolve();
+      for (let i = 0; i < 10; i++) await Promise.resolve();
 
       expect(suspender.suspend).toHaveBeenCalledTimes(1);
       expect(workspace.rebuild).toHaveBeenCalledTimes(1);
@@ -146,6 +146,54 @@ describe('registerFileWatchers', () => {
       expect(suspender.release.mock.invocationCallOrder[0]).toBeGreaterThan(
         workspace.rebuild.mock.invocationCallOrder[0],
       );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('restores open documents before releasing a rebuild suspension', async () => {
+    vi.useFakeTimers();
+    try {
+      let handler: ((event: FileEvent) => void) | undefined;
+      const calls: string[] = [];
+      const workspace = {
+        folderUri: 'file:///projectA',
+        applyChanges: vi.fn(async () => {}),
+        rebuild: vi.fn(async () => {
+          calls.push('rebuild');
+        }),
+      };
+      const manager = {
+        workspaceFor: vi.fn(() => workspace),
+        workspaceForOrCreateFile: vi.fn(async () => ({
+          reindex: vi.fn(async () => {
+            calls.push('reindex-open-doc');
+          }),
+        })),
+        list: vi.fn(() => [workspace]),
+      };
+      const connection = {
+        console: { log: vi.fn() },
+        onNotification: vi.fn((_name: string, callback: (event: FileEvent) => void) => {
+          handler = callback;
+        }),
+      };
+      const suspender = {
+        suspend: vi.fn(() => calls.push('suspend')),
+        release: vi.fn(() => calls.push('release')),
+      };
+
+      registerFileWatchers(
+        connection as never,
+        manager as never,
+        suspender,
+        () => [{ uri: 'file:///projectA/Assets/Shaders/Main.shader', getText: () => 'float4 LiveOnly();' }],
+      );
+      handler?.({ uri: 'file:///projectA/.git/HEAD', type: 'changed' });
+      vi.advanceTimersByTime(501);
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+
+      expect(calls).toEqual(['suspend', 'rebuild', 'reindex-open-doc', 'release']);
     } finally {
       vi.useRealTimers();
     }

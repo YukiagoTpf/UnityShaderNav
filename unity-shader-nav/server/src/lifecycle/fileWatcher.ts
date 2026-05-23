@@ -1,5 +1,6 @@
 import type { Connection } from 'vscode-languageserver/node';
 import { Debouncer } from './debouncer';
+import { rebuildWorkspacesWithOpenDocuments, type OpenDocumentsProvider } from './rebuild';
 import type { RequestSuspender } from './requestSuspender';
 import type { FileEvent, Workspace } from '../workspace/workspace';
 import type { WorkspaceManager } from '../workspace/workspaceManager';
@@ -14,6 +15,7 @@ export function registerFileWatchers(
   connection: Connection,
   manager: WorkspaceManager,
   suspender?: Pick<RequestSuspender, 'suspend' | 'release'>,
+  getOpenDocuments: OpenDocumentsProvider = () => [],
 ): void {
   const debouncer = new Debouncer<FileEvent>(
     { windowMs: 500, threshold: 20 },
@@ -26,14 +28,7 @@ export function registerFileWatchers(
     const rebuild = thresholdExceeded || batch.some((event) => isRebuildTrigger(event.uri));
     if (rebuild) {
       connection.console.log('[UnityShaderNav] [rebuild] file lifecycle event triggered full workspace rebuild');
-      suspender?.suspend();
-      try {
-        for (const workspace of manager.list()) {
-          await workspace.rebuild(connection);
-        }
-      } finally {
-        suspender?.release();
-      }
+      await rebuildWorkspacesWithOpenDocuments(connection, manager, getOpenDocuments, suspender);
       return;
     }
 
