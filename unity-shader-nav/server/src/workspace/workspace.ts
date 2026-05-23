@@ -80,7 +80,7 @@ export class Workspace {
 
     await this.configureCache(folderPath, _globalStorageDir);
     const manifest = await this.cache?.load(this.fingerprint);
-    if (manifest) {
+    if (manifest && this.matchesWorkspace(manifest)) {
       await this.bootstrapFromCache(connection, manifest);
       return;
     }
@@ -112,6 +112,11 @@ export class Workspace {
       join(folderPath, 'server', 'grammars', 'tree-sitter-hlsl.wasm'),
     ];
     return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0];
+  }
+
+  private matchesWorkspace(manifest: CacheManifest): boolean {
+    return manifest.workspaceFolderUri === this.folderUri
+      && manifest.unityProjectRoot === (this.unityRoot ?? null);
   }
 
   private async bootstrapFromCache(

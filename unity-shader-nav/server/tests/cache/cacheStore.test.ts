@@ -90,4 +90,27 @@ describe('CacheStore', () => {
 
     await rm(dir, { recursive: true, force: true });
   });
+
+  it('supports concurrent saves without sharing a tmp file', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'usn-cache-concurrent-'));
+    const store = new CacheStore(dir);
+    const fingerprint: CacheFingerprint = {
+      grammarVersion: 'g',
+      settingsHash: 's',
+      macroTableHash: 'm',
+    };
+
+    await Promise.all(Array.from({ length: 8 }, (_, index) => store.save({
+      version: CACHE_VERSION,
+      workspaceFolderUri: `file:///x-${index}`,
+      unityProjectRoot: '/x',
+      createdAt: index,
+      fingerprint,
+      files: [],
+    })));
+
+    expect(await store.load(fingerprint)).not.toBeNull();
+
+    await rm(dir, { recursive: true, force: true });
+  });
 });

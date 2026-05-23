@@ -8,6 +8,8 @@ import {
 import { fingerprintsEqual } from './fingerprint';
 
 export class CacheStore {
+  private static readonly saveQueues = new Map<string, Promise<void>>();
+
   constructor(private readonly dir: string) {}
 
   private get path(): string {
@@ -39,9 +41,26 @@ export class CacheStore {
   }
 
   async save(manifest: CacheManifest): Promise<void> {
+    const previous = CacheStore.saveQueues.get(this.path) ?? Promise.resolve();
+    const current = previous.then(
+      () => this.writeManifest(manifest),
+      () => this.writeManifest(manifest),
+    );
+    CacheStore.saveQueues.set(this.path, current);
+    try {
+      await current;
+    } finally {
+      if (CacheStore.saveQueues.get(this.path) === current) {
+        CacheStore.saveQueues.delete(this.path);
+      }
+    }
+  }
+
+  private async writeManifest(manifest: CacheManifest): Promise<void> {
     await fs.mkdir(this.dir, { recursive: true });
-    const tmpPath = `${this.path}.tmp`;
+    const tmpPath = `${this.path}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`;
     await fs.writeFile(tmpPath, JSON.stringify(manifest), 'utf8');
+    await fs.rm(this.path, { force: true });
     await fs.rename(tmpPath, this.path);
   }
 
