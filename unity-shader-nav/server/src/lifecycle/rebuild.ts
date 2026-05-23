@@ -40,7 +40,7 @@ export async function rebuildWorkspacesWithOpenDocuments(
 ): Promise<void> {
   suspender?.suspend();
   try {
-    for (const workspace of manager.list()) {
+    for (const workspace of await manager.readyList()) {
       await beforeRebuild?.(workspace);
       await workspace.rebuild(connection);
     }
@@ -77,7 +77,8 @@ export async function applyScopedSettingsAndRebuild(
   getOpenDocuments: OpenDocumentsProvider,
   suspender?: RebuildSuspender,
 ): Promise<void> {
-  const updates = await Promise.all(manager.list().map(async (workspace) => {
+  const workspaces = await manager.readyList();
+  const updates = await Promise.all(workspaces.map(async (workspace) => {
     const settings = await settingsForWorkspace(workspace.folderUri);
     return {
       workspace,

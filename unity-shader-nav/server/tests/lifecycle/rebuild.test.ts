@@ -38,6 +38,7 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
     };
     const manager = {
       list: () => [workspace],
+      readyList: async () => [workspace],
       workspaceForOrCreateFile: vi.fn(async () => liveWorkspace),
     };
     const suspender = {
@@ -131,6 +132,7 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
     };
     const manager = {
       list: () => [workspace],
+      readyList: async () => [workspace],
       workspaceForOrCreateFile: vi.fn(async () => ({
         reindex: vi.fn(async () => {}),
       })),

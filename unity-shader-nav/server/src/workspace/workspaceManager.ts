@@ -8,8 +8,13 @@ import { Workspace } from './workspace';
 
 type SettingsResolver = (scopeUri: string) => ExtensionSettings | Promise<ExtensionSettings>;
 
+interface WorkspaceRecord {
+  workspace: Workspace;
+  ready: Promise<void>;
+}
+
 export class WorkspaceManager {
-  private readonly byFolder = new Map<string, Workspace>();
+  private readonly byFolder = new Map<string, WorkspaceRecord>();
   private settings: ExtensionSettings | undefined;
   private connection: Connection | undefined;
   private globalStorageDir: string | undefined;
@@ -26,11 +31,20 @@ export class WorkspaceManager {
   }
 
   list(): Workspace[] {
-    return [...this.byFolder.values()];
+    return [...this.byFolder.values()].map((record) => record.workspace);
+  }
+
+  async readyList(): Promise<Workspace[]> {
+    const records = [...this.byFolder.values()];
+    await Promise.all(records.map((record) => record.ready));
+    return records
+      .filter((record) => this.byFolder.get(record.workspace.folderUri) === record)
+      .map((record) => record.workspace);
   }
 
   async persistAll(): Promise<void> {
-    await Promise.all(this.list().map((workspace) => workspace.persist()));
+    const workspaces = await this.readyList();
+    await Promise.all(workspaces.map((workspace) => workspace.persist()));
   }
 
   mode(): 'standalone' | 'ready' {
@@ -48,7 +62,7 @@ export class WorkspaceManager {
       const filePath = fileURLToPath(fileUri);
       let best: { workspace: Workspace; length: number } | undefined;
 
-      for (const workspace of this.byFolder.values()) {
+      for (const { workspace } of this.byFolder.values()) {
         const folderPath = fileURLToPath(workspace.folderUri);
         if (!containsPath(folderPath, filePath)) continue;
         if (!best || folderPath.length > best.length) {
@@ -62,24 +76,54 @@ export class WorkspaceManager {
     }
   }
 
+  private recordFor(fileUri: string): WorkspaceRecord | undefined {
+    const workspace = this.workspaceFor(fileUri);
+    if (!workspace) return undefined;
+    return this.byFolder.get(workspace.folderUri);
+  }
+
+  private async workspaceFromReadyRecord(record: WorkspaceRecord): Promise<Workspace | undefined> {
+    await record.ready;
+    return this.byFolder.get(record.workspace.folderUri) === record
+      ? record.workspace
+      : undefined;
+  }
+
   async addFolder(
     folderUri: string,
     settings: ExtensionSettings,
     connection: Connection,
     globalStorageDir?: string,
   ): Promise<void> {
-    if (this.byFolder.has(folderUri)) return;
+    const existing = this.byFolder.get(folderUri);
+    if (existing) {
+      await existing.ready;
+      return;
+    }
+
     const currentConnection = this.connection ?? connection;
     const currentGlobalStorageDir = globalStorageDir ?? this.globalStorageDir;
     const workspace = new Workspace(folderUri, settings);
-    this.byFolder.set(folderUri, workspace);
-    await workspace.bootstrap(currentConnection, currentGlobalStorageDir);
-    this.sendModeNotification();
+    const record: WorkspaceRecord = { workspace, ready: Promise.resolve() };
+    this.byFolder.set(folderUri, record);
+    record.ready = Promise.resolve()
+      .then(() => workspace.bootstrap(currentConnection, currentGlobalStorageDir))
+      .then(() => {
+        this.sendModeNotification();
+      })
+      .catch((error: unknown) => {
+        const current = this.byFolder.get(folderUri);
+        if (current === record) this.byFolder.delete(folderUri);
+        throw error;
+      });
+    await record.ready;
   }
 
   async workspaceForOrCreateFile(fileUri: string): Promise<Workspace | undefined> {
-    const existing = this.workspaceFor(fileUri);
-    if (existing) return existing;
+    const existing = this.recordFor(fileUri);
+    if (existing) {
+      return this.workspaceFromReadyRecord(existing);
+    }
     if (!this.settings || !this.connection) return undefined;
 
     let filePath: string;
@@ -98,7 +142,9 @@ export class WorkspaceManager {
     if (!settings) return undefined;
 
     await this.addFolder(folderUri, settings, this.connection);
-    return this.workspaceFor(fileUri);
+    const created = this.recordFor(fileUri);
+    if (!created) return undefined;
+    return this.workspaceFromReadyRecord(created);
   }
 
   removeFolder(folderUri: string): void {
