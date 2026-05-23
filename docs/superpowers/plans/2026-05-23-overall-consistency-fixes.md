@@ -115,6 +115,8 @@ Acceptance commands for this phase:
 
 **Priority:** P2 recommended.
 
+> Note: Follow-up review found that staging README only inside the root `package:vsix` wrapper does not cover direct `vsce package` runs from `client/`. The fix must make the client `vscode:prepublish` path prepare the extension root too, so the standard VSCE release path includes `extension/README.md`.
+
 **Files:**
 - Modify: `unity-shader-nav/scripts/package-vsix.mjs` or `unity-shader-nav/scripts/build.mjs`
 - Modify: `unity-shader-nav/client/package.json`

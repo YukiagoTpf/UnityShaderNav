@@ -67,6 +67,11 @@ try {
   }
 
   await assertFreshBuildOutputs(monorepoRoot);
+  if (args.prepareExtensionRoot) {
+    await stageReadme();
+    console.log('[package-vsix] staged README.md for VSCE packaging');
+    process.exit(0);
+  }
   if (args.checkOutput) process.exit(0);
 
   const vsixPath = await packageVsix();
@@ -252,11 +257,18 @@ function findEndOfCentralDirectory(buffer) {
 }
 
 function parseArgs(rawArgs) {
-  const parsed = { checkOutput: false, monorepoRoot: undefined, verifyVsix: undefined };
+  const parsed = {
+    checkOutput: false,
+    monorepoRoot: undefined,
+    prepareExtensionRoot: false,
+    verifyVsix: undefined,
+  };
   for (let i = 0; i < rawArgs.length; i++) {
     const arg = rawArgs[i];
     if (arg === '--check-output') {
       parsed.checkOutput = true;
+    } else if (arg === '--prepare-extension-root') {
+      parsed.prepareExtensionRoot = true;
     } else if (arg === '--monorepo-root') {
       parsed.monorepoRoot = rawArgs[++i];
     } else if (arg === '--verify-vsix') {

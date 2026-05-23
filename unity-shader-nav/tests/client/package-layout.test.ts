@@ -166,6 +166,38 @@ suite('packaged server layout', () => {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }
   });
+
+  test('direct VSCE package from client includes the extension README', () => {
+    const root = monorepoRoot();
+    const clientRoot = path.resolve(root, 'client');
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'unity-shader-nav-direct-vsce-'));
+    const vsixPath = path.join(tempRoot, 'direct.vsix');
+    try {
+      const npx = npxInvocation();
+      const packageResult = spawnSync(
+        npx.command,
+        [...npx.argsPrefix, '--no-install', 'vsce', 'package', '--no-dependencies', '--no-yarn', '--out', vsixPath],
+        { cwd: clientRoot, encoding: 'utf8' },
+      );
+
+      assert.strictEqual(
+        packageResult.status,
+        0,
+        packageResult.error?.message || packageResult.stderr || packageResult.stdout,
+      );
+
+      const verifyResult = spawnSync(
+        process.execPath,
+        [path.resolve(root, 'scripts/package-vsix.mjs'), '--verify-vsix', vsixPath],
+        { encoding: 'utf8' },
+      );
+
+      assert.strictEqual(verifyResult.status, 0, verifyResult.stderr);
+    } finally {
+      fs.rmSync(path.resolve(clientRoot, 'README.md'), { force: true });
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
 });
 
 function zipWithCentralDirectoryEntries(entries: string[]): Buffer {
@@ -186,4 +218,14 @@ function zipWithCentralDirectoryEntries(entries: string[]): Buffer {
   endOfCentralDirectory.writeUInt32LE(centralDirectory.length, 12);
   endOfCentralDirectory.writeUInt32LE(0, 16);
   return Buffer.concat([centralDirectory, endOfCentralDirectory]);
+}
+
+function npxInvocation(): { command: string; argsPrefix: string[] } {
+  if (process.platform === 'win32') {
+    return {
+      command: process.env.ComSpec ?? 'cmd.exe',
+      argsPrefix: ['/d', '/s', '/c', 'npx.cmd'],
+    };
+  }
+  return { command: 'npx', argsPrefix: [] };
 }

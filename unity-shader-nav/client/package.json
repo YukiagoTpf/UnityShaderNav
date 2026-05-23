@@ -5,6 +5,11 @@
   "version": "0.0.1",
   "publisher": "Yukiago",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/YukiagoTpf/UnityShaderNav.git",
+    "directory": "unity-shader-nav/client"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -91,7 +96,7 @@
   "scripts": {
     "build": "tsc -p . && node ../scripts/copy-server.mjs && node ../scripts/build.mjs",
     "watch": "tsc -p . -w",
-    "vscode:prepublish": "node ../scripts/package-vsix.mjs --check-output"
+    "vscode:prepublish": "node ../scripts/package-vsix.mjs --prepare-extension-root"
   },
   "dependencies": {
     "@unity-shader-nav/shared": "0.0.1",
