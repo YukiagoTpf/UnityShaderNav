@@ -1,0 +1,110 @@
+import { describe, expect, it, vi } from 'vitest';
+import { registerFileWatchers } from '../../src/lifecycle/fileWatcher';
+import type { FileEvent } from '../../src/workspace/workspace';
+
+describe('registerFileWatchers', () => {
+  it('applies ordinary file changes incrementally after debounce', async () => {
+    vi.useFakeTimers();
+    try {
+      let handler: ((event: FileEvent) => void) | undefined;
+      const workspace = {
+        folderUri: 'file:///projectA',
+        applyChanges: vi.fn(async () => {}),
+        rebuild: vi.fn(async () => {}),
+      };
+      const manager = {
+        workspaceFor: vi.fn(() => workspace),
+        list: vi.fn(() => [workspace]),
+      };
+      const connection = {
+        console: { log: vi.fn() },
+        onNotification: vi.fn((name: string, callback: (event: FileEvent) => void) => {
+          expect(name).toBe('unityShaderNav/fileChange');
+          handler = callback;
+        }),
+      };
+
+      registerFileWatchers(connection as never, manager as never);
+      handler?.({ uri: 'file:///projectA/Assets/Shaders/Common.hlsl', type: 'changed' });
+      vi.advanceTimersByTime(501);
+      await Promise.resolve();
+
+      expect(workspace.applyChanges).toHaveBeenCalledWith(
+        [{ uri: 'file:///projectA/Assets/Shaders/Common.hlsl', type: 'changed' }],
+        connection,
+      );
+      expect(workspace.rebuild).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('rebuilds all workspaces when the debounced batch exceeds threshold', async () => {
+    vi.useFakeTimers();
+    try {
+      let handler: ((event: FileEvent) => void) | undefined;
+      const workspace = {
+        folderUri: 'file:///projectA',
+        applyChanges: vi.fn(async () => {}),
+        rebuild: vi.fn(async () => {}),
+      };
+      const manager = {
+        workspaceFor: vi.fn(() => workspace),
+        list: vi.fn(() => [workspace]),
+      };
+      const connection = {
+        console: { log: vi.fn() },
+        onNotification: vi.fn((_name: string, callback: (event: FileEvent) => void) => {
+          handler = callback;
+        }),
+      };
+
+      registerFileWatchers(connection as never, manager as never);
+      for (let i = 0; i < 21; i++) {
+        handler?.({ uri: `file:///projectA/Assets/Shaders/${i}.hlsl`, type: 'changed' });
+      }
+      vi.advanceTimersByTime(501);
+      await Promise.resolve();
+
+      expect(workspace.rebuild).toHaveBeenCalledWith(connection);
+      expect(workspace.applyChanges).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('rebuilds all workspaces when git HEAD or packages-lock changes', async () => {
+    vi.useFakeTimers();
+    try {
+      let handler: ((event: FileEvent) => void) | undefined;
+      const workspace = {
+        folderUri: 'file:///projectA',
+        applyChanges: vi.fn(async () => {}),
+        rebuild: vi.fn(async () => {}),
+      };
+      const manager = {
+        workspaceFor: vi.fn(() => workspace),
+        list: vi.fn(() => [workspace]),
+      };
+      const connection = {
+        console: { log: vi.fn() },
+        onNotification: vi.fn((_name: string, callback: (event: FileEvent) => void) => {
+          handler = callback;
+        }),
+      };
+
+      registerFileWatchers(connection as never, manager as never);
+      handler?.({ uri: 'file:///projectA/.git/HEAD', type: 'changed' });
+      vi.advanceTimersByTime(501);
+      await Promise.resolve();
+      handler?.({ uri: 'file:///projectA/Packages/packages-lock.json', type: 'changed' });
+      vi.advanceTimersByTime(501);
+      await Promise.resolve();
+
+      expect(workspace.rebuild).toHaveBeenCalledTimes(2);
+      expect(workspace.applyChanges).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

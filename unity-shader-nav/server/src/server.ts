@@ -2,6 +2,7 @@ import { getConnection, createInitializeResult } from './connection';
 import { loadSettings, onSettingsChanged } from './config';
 import { registerDefinitionHandler } from './handlers/definition';
 import { registerDocuments } from './handlers/documents';
+import { registerFileWatchers } from './lifecycle/fileWatcher';
 import { MacroPatternTable } from './macros';
 import { WorkspaceManager } from './workspace';
 
@@ -46,5 +47,6 @@ onSettingsChanged(connection, async (settings) => {
 });
 
 registerDefinitionHandler(connection, documents, manager);
+registerFileWatchers(connection, manager);
 
 connection.listen();
