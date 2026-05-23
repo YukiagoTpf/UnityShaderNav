@@ -80,13 +80,13 @@ function toLink(symbol: SymbolEntry): LocationLink {
   };
 }
 
-export function resolveMember(
+export function resolveMemberSymbols(
   index: FileIndex,
   global: GlobalSymbolIndex | null | undefined,
   receiver: string,
   member: string,
   refPos: Position,
-): LocationLink[] {
+): SymbolEntry[] {
   const receiverType = inferReceiverType(index, global, receiver, refPos);
   if (!receiverType) return [];
 
@@ -113,5 +113,15 @@ export function resolveMember(
     return true;
   });
 
-  return unique.map(toLink);
+  return unique;
+}
+
+export function resolveMember(
+  index: FileIndex,
+  global: GlobalSymbolIndex | null | undefined,
+  receiver: string,
+  member: string,
+  refPos: Position,
+): LocationLink[] {
+  return resolveMemberSymbols(index, global, receiver, member, refPos).map(toLink);
 }

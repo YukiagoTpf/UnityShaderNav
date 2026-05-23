@@ -26,12 +26,12 @@ function asLink(symbol: SymbolEntry): LocationLink {
   };
 }
 
-export function resolveDefinition(
+export function resolveDefinitionSymbols(
   idx: FileIndex,
   name: string,
   refPos: Position,
   global?: GlobalSymbolIndex | null,
-): LocationLink[] {
+): SymbolEntry[] {
   const candidates = idx.symbols.filter((symbol) => symbol.name === name);
   const scoped = candidates.filter(
     (symbol) =>
@@ -53,7 +53,7 @@ export function resolveDefinition(
         best = symbol;
       }
     }
-    return [asLink(best)];
+    return [best];
   }
 
   const fileGlobals = candidates.filter(
@@ -66,5 +66,14 @@ export function resolveDefinition(
       symbol.kind !== 'localVariable',
   );
 
-  return [...fileGlobals, ...otherGlobals].map(asLink);
+  return [...fileGlobals, ...otherGlobals];
+}
+
+export function resolveDefinition(
+  idx: FileIndex,
+  name: string,
+  refPos: Position,
+  global?: GlobalSymbolIndex | null,
+): LocationLink[] {
+  return resolveDefinitionSymbols(idx, name, refPos, global).map(asLink);
 }

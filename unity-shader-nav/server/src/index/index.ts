@@ -1,8 +1,10 @@
 export { IndexStore } from './indexStore';
 export { GlobalSymbolIndex } from './globalIndex';
 export { GlobalReferenceIndex } from './globalReferences';
-export { resolveMember } from './chainLookup';
-export { resolveDefinition } from './symbolResolver';
+export { resolveMember, resolveMemberSymbols } from './chainLookup';
+export { resolveDefinition, resolveDefinitionSymbols } from './symbolResolver';
+export { resolveReferenceTargets } from './referenceResolver';
 export { memberAccessAt, wordAt } from './wordAt';
+export type { ReferenceTarget } from './referenceResolver';
 export type { LocationLink } from './symbolResolver';
 export type { MemberAccess, WordAt } from './wordAt';
