@@ -1,4 +1,11 @@
-import type { FileIndex, Position, Range, SymbolEntry, SymbolKind } from '@unity-shader-nav/shared';
+import type {
+  FileIndex,
+  Position,
+  Range,
+  ReferenceEntry,
+  SymbolEntry,
+  SymbolKind,
+} from '@unity-shader-nav/shared';
 import type { GlobalSymbolIndex } from './globalIndex';
 import { resolveMemberSymbols } from './chainLookup';
 import { resolveDefinitionSymbols } from './symbolResolver';
@@ -73,4 +80,20 @@ export function resolveReferenceTargets(
   if (!word) return [];
 
   return resolveReferenceTargetsForName(index, word.text, position, global);
+}
+
+export function resolveReferenceTargetsForMemberReference(
+  index: FileIndex,
+  reference: ReferenceEntry,
+  global?: GlobalSymbolIndex | null,
+): ReferenceTarget[] {
+  if (reference.context !== 'member' || !reference.receiver) return [];
+
+  return resolveMemberSymbols(
+    index,
+    global,
+    reference.receiver,
+    reference.name,
+    reference.location.range.start,
+  ).map(toReferenceTarget);
 }

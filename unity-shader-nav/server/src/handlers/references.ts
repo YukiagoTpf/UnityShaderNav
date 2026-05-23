@@ -9,6 +9,7 @@ import type { Range } from '@unity-shader-nav/shared';
 import {
   resolveReferenceTargets,
   resolveReferenceTargetsForName,
+  resolveReferenceTargetsForMemberReference,
   wordAt,
   type ReferenceTarget,
 } from '../index';
@@ -29,6 +30,31 @@ function sameTarget(a: ReferenceTarget, b: ReferenceTarget): boolean {
 
 function isScopedTarget(target: ReferenceTarget): boolean {
   return (target.kind === 'localVariable' || target.kind === 'parameter') && !!target.scopeRange;
+}
+
+function isMemberTarget(target: ReferenceTarget): boolean {
+  return target.kind === 'structMember' && !!target.parentType;
+}
+
+function locationKey(location: Location): string {
+  const range = location.range;
+  return [
+    location.uri,
+    range.start.line,
+    range.start.character,
+    range.end.line,
+    range.end.character,
+  ].join(':');
+}
+
+function uniqueLocations(locations: Location[]): Location[] {
+  const seen = new Set<string>();
+  return locations.filter((location) => {
+    const key = locationKey(location);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 export function registerReferencesHandler(
@@ -53,6 +79,8 @@ export function registerReferencesHandler(
         ? resolveReferenceTargets(idx, document.getText(), params.position, workspace.global)
         : [];
       const scopedTargets = targets.filter(isScopedTarget);
+      const memberTargets = targets.filter(isMemberTarget);
+      const narrowedTargets = [...scopedTargets, ...memberTargets];
       const queryName = targets[0]?.name ?? word.text;
       const includePackages = workspace.settings.findReferences.includePackages;
       const symbolsAsReferences = params.context.includeDeclaration
@@ -60,8 +88,8 @@ export function registerReferencesHandler(
           .lookup(queryName)
           .filter((symbol) => includePackages || !workspace.isInPackages(symbol.location.uri))
           .filter((symbol) => (
-            scopedTargets.length === 0
-            || scopedTargets.some((target) => sameTarget(target, {
+            narrowedTargets.length === 0
+            || narrowedTargets.some((target) => sameTarget(target, {
               name: symbol.name,
               kind: symbol.kind,
               uri: symbol.location.uri,
@@ -80,20 +108,24 @@ export function registerReferencesHandler(
         .lookup(queryName)
         .filter((reference) => includePackages || !workspace.isInPackages(reference.location.uri))
         .filter((reference) => {
-          if (scopedTargets.length === 0) return true;
-          if (reference.context !== 'identifier') return false;
+          if (narrowedTargets.length === 0) return true;
 
           const candidateIndex = workspace.store?.get(reference.location.uri);
           if (!candidateIndex) return false;
 
-          const candidateTargets = resolveReferenceTargetsForName(
-            candidateIndex,
-            reference.name,
-            reference.location.range.start,
-            workspace.global,
-          );
+          const candidateTargets = reference.context === 'member'
+            ? resolveReferenceTargetsForMemberReference(candidateIndex, reference, workspace.global)
+            : reference.context === 'identifier'
+              ? resolveReferenceTargetsForName(
+                candidateIndex,
+                reference.name,
+                reference.location.range.start,
+                workspace.global,
+              )
+              : [];
+
           return candidateTargets.some((candidate) =>
-            scopedTargets.some((target) => sameTarget(candidate, target)),
+            narrowedTargets.some((target) => sameTarget(candidate, target)),
           );
         })
         .map((reference) => ({
@@ -101,7 +133,7 @@ export function registerReferencesHandler(
           range: reference.location.range,
         }));
 
-      return [...symbolsAsReferences, ...references];
+      return uniqueLocations([...symbolsAsReferences, ...references]);
     };
 
     return suspender ? suspender.run(resolveRequest) : resolveRequest();

@@ -140,6 +140,16 @@ describe('collector: references', () => {
     expect(uv).toHaveLength(1);
   });
 
+  it('records the receiver identifier for member references', async () => {
+    const text = `void f(Varyings v) { float2 x = v.uv; }`;
+    const tree = await parseHlsl(text);
+    const result = collect(tree.rootNode, text, 'file:///t/member-receiver.hlsl', 0);
+
+    const uv = result.references.find((r) => r.name === 'uv' && r.context === 'member');
+
+    expect(uv).toMatchObject({ receiver: 'v' });
+  });
+
   it('records ordinary identifier use sites without counting declarations', async () => {
     const text = `float4 f(float4 a, float4 b) { float4 c = a + b; return c; }`;
     const tree = await parseHlsl(text);

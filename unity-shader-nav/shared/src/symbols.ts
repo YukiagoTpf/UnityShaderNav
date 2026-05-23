@@ -41,6 +41,7 @@ export interface ReferenceEntry {
   name: string;
   location: { uri: string; range: Range };
   context: ReferenceContext;
+  receiver?: string;
 }
 
 export interface FileIndex {
