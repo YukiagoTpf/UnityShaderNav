@@ -1,14 +1,10 @@
-import { dirname, isAbsolute, relative } from 'node:path';
+import { dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { Connection } from 'vscode-languageserver/node';
 import type { ExtensionSettings } from '@unity-shader-nav/shared';
 import { detectUnityRoot } from './detectUnityRoot';
+import { containsPath } from './pathUtils';
 import { Workspace } from './workspace';
-
-function containsPath(root: string, candidate: string): boolean {
-  const rel = relative(root, candidate);
-  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
-}
 
 type SettingsResolver = (scopeUri: string) => ExtensionSettings | Promise<ExtensionSettings>;
 

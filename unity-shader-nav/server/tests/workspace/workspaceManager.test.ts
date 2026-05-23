@@ -33,6 +33,17 @@ async function makeProjectB(): Promise<string> {
 }
 
 describe('WorkspaceManager: multi-root', () => {
+  it.runIf(process.platform === 'win32')('routes files when the URI casing differs on Windows', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-case-route-'));
+    const manager = new WorkspaceManager();
+    vi.spyOn(Workspace.prototype, 'bootstrap').mockResolvedValue(undefined);
+
+    await manager.addFolder(pathToFileURL(root).href, DEFAULT_SETTINGS, fakeConnection);
+
+    const upperCasedFile = pathToFileURL(join(root.toUpperCase(), 'Assets', 'Shaders', 'Main.shader')).href;
+    expect(manager.workspaceFor(upperCasedFile)?.folderUri).toBe(pathToFileURL(root).href);
+  });
+
   it('routes files to their owning workspace and keeps indexes isolated', async () => {
     const projectA = resolve(__dirname, '../include/fixtures/projectA');
     const projectB = await makeProjectB();

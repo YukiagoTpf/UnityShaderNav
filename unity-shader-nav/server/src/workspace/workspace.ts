@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import { existsSync } from 'node:fs';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { Connection } from 'vscode-languageserver/node';
 import type {
@@ -18,6 +18,7 @@ import { GlobalReferenceIndex, GlobalSymbolIndex, IndexStore } from '../index';
 import { MacroPatternTable } from '../macros';
 import { indexFile } from '../parser/hlsl';
 import { detectUnityRoot } from './detectUnityRoot';
+import { containsPath } from './pathUtils';
 import { walkFiles } from './walkFiles';
 
 export interface FileEvent {
@@ -176,7 +177,7 @@ export class Workspace {
     }
 
     const currentPackageRoots = this.packageResolver.allPaths().map(({ path }) => path);
-    if (currentPackageRoots.some((root) => this.isWithinPath(filePath, root))) {
+    if (currentPackageRoots.some((root) => containsPath(root, filePath))) {
       return true;
     }
 
@@ -184,18 +185,7 @@ export class Workspace {
       join(this.unityRoot, 'Packages'),
       join(this.unityRoot, 'Library', 'PackageCache'),
     ];
-    return !packageAreas.some((root) => this.isWithinPath(filePath, root));
-  }
-
-  private isWithinPath(candidate: string, root: string): boolean {
-    const normalizedRoot = this.normalizePathForComparison(resolve(root));
-    const normalizedCandidate = this.normalizePathForComparison(resolve(candidate));
-    const rel = relative(normalizedRoot, normalizedCandidate);
-    return rel === '' || (!!rel && !rel.startsWith('..') && !isAbsolute(rel));
-  }
-
-  private normalizePathForComparison(absPath: string): string {
-    return process.platform === 'win32' ? absPath.toLowerCase() : absPath;
+    return !packageAreas.some((root) => containsPath(root, filePath));
   }
 
   isInPackages(uri: string): boolean {
@@ -210,7 +200,7 @@ export class Workspace {
 
     return this.packageResolver
       .allPaths()
-      .some(({ path }) => this.isWithinPath(filePath, path));
+      .some(({ path }) => containsPath(path, filePath));
   }
 
   private async indexMissingDiskFiles(connection: Connection): Promise<void> {
