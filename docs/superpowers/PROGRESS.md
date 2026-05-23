@@ -16,7 +16,7 @@
 | 08 | index-lifecycle | ✅ Done + review fixes applied | — | watcher debounce/rebuild + live overlay suspension covered |
 | 09 | cache-persistence | ✅ Done + review fixes applied | — | P3 cross-process atomic cache write hardening deferred |
 | 10 | document-symbols | ✅ Done + review fixes applied | Case 12 | Outline / Document Symbols；cache version bumped |
-| 11 | chain-lookup | ⏸ P1 | Case 10 | L3b 已标 P2（B4 修订） |
+| 11 | chain-lookup | ✅ Done + review/fix checked | Case 10 | L1/L2/L3a 完成；L3b/L4 仍 P2 |
 | 12 | macro-definitions | ⏸ P1 | Case 11 | |
 | 13 | find-references | ⏸ P1 | Case 13, 14 | |
 
@@ -451,6 +451,42 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 - cold start / rebuild / standalone lazy workspace 期间 documentSymbol request 通过 `RequestSuspender` 与 `workspaceForOrCreateFile()` 处理 ✓
 - Plan 09 warm cache 因 `CACHE_VERSION = 2` 失效重建，避免旧 `FileIndex` 缺 `structure` 导致 Outline 扁平化 ✓
 
+## Plan 11 实施记录
+
+**Commits**：`458a0ed..2f9c9c3`（4 个 Task commit + review/fix docs）。
+
+| Task | 状态 | Commit |
+|---|---|---|
+| 1 memberAccessAt parser | ✅ | `458a0ed` |
+| 2 chainLookup L1/L2/L3a | ✅ | `3896461` |
+| 3 definition handler 接入 | ✅ | `b8e9ad4` |
+| 4 test-electron chain lookup | ✅（偏离 1） | `b19a946` |
+
+**Review / fix**：
+- `docs/superpowers/plans/plan11review.md` 落库：code-review subagent 无 P1/P2，也无明确 P3 defect。
+- `docs/superpowers/plans/plan11fix.md` 落库：fix subagent 复核无需代码修复；仅修 review/fix 文档 whitespace。
+- `1973641 docs(plans): record plan 11 code review`
+- `f1250d3 docs(plans): fix plan 11 review whitespace`
+- `5417219 docs(plans): record plan 11 fix review`
+- `2f9c9c3 docs(plans): fix plan 11 fix whitespace`
+
+**Plan 与现实偏离（已在 plan markdown 内联 Note）**：
+1. Task 4：chain 集成 fixture 位于 standalone test workspace，bootstrap 不会 full-scan sibling files；实际测试先打开 `Surface.hlsl` 再打开 `Use.hlsl`，确保两个 live documents 都进入索引后再请求 `surface.positionWS` 定义。
+
+**主 agent 验证结果（2026-05-23）**：
+- `git diff --check 1b562be7405d9ae9f62b9861b4857106479d6a14..HEAD`：PASS。
+- focused regression：`npm run test -w @unity-shader-nav/server -- --run tests/index/chainLookup.test.ts tests/index/wordAt.test.ts tests/handlers/definition.test.ts tests/handlers/definition-include.test.ts tests/handlers/documentSymbol.test.ts`：**5 files / 17 tests** PASS。
+- `npm test`：build 阶段 PASS；Electron 阶段首轮命中既有 temp-workspace race（`rebuild-on-branch` / `lifecycle`），非 Plan 11 用例。
+- `node tests/out/runTest.js` rerun：test-electron **18/18** PASS，含 Chain lookup `F12 on struct member jumps to member declaration`。
+- `npm run test --workspaces --if-present`：server vitest **41 files / 178 tests** PASS。
+
+**Acceptance**：
+- L1 参数 receiver：`surface.positionWS` 通过 `Surface surface` 跳到 `Surface.positionWS` ✓
+- L2 局部 receiver：同 scope proximity 选择最近 `Surface surface`，覆盖 `Outer o = Make();` 这类显式类型声明 ✓
+- L3a 全局 receiver：file-level/global variable 的 `declaredType` 可解析成员 ✓
+- Spec §10 Case 10：test-electron 覆盖 `.positionWS` F12 到 struct member ✓
+- L3b（缺显式类型从 RHS call 推导）和 L4（数组、嵌套字段、cbuffer 内 struct）仍显式不支持，留 P2 ✓
+
 ## Phase 05-10 Full Review（2026-05-23）
 
 **Review doc**：`docs/superpowers/plans/phase05-10review.md`
@@ -506,7 +542,7 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 
 ## 下一步
 
-1. 进入 **Plan 11: chain-lookup**，实现链式成员/类型 lookup。
+1. 进入 **Plan 12: macro-definitions**，实现宏使用 F12 到 `#define`。
 2. Plan 09 follow-up：如需支持多 VSCode 窗口同时打开同一 Unity 项目，再补跨进程 cache manifest 写入锁或更强 atomic replace。
 
 ## 历史回放（review 修订）
@@ -528,3 +564,4 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 - 2026-05-23：Plan 09 实施 + review/fix（commit `56134a9..2e54737`，8 个 task commit + review/fix docs；cache manifest/fingerprint、Unity `Library/UnityShaderNavCache`、standalone globalStorage fallback、warm restore refresh、shutdown persist 覆盖；1 处偏离 plan markdown 内联记录；P3 跨进程 cache write hardening deferred）
 - 2026-05-23：Plan 10 实施 + review/fix（commit `fbed2f7..293c955`，4 个 task commit + review/fix docs；Document Symbols / Outline 覆盖 Case 12；cache version bump；0 处偏离）
 - 2026-05-23：Phase 05-10 full review + fixes（`phase05-10review.md`；修 include F12 注释语义、scoped settings/lazy workspace、standalone unsaved cache、Document Symbols 首次请求竞态、cache persist best-effort）
+- 2026-05-23：Plan 11 实施 + review/fix（commit `458a0ed..2f9c9c3`，4 个 task commit + review/fix docs；chain lookup L1/L2/L3a，Case 10 覆盖；1 处集成测偏离 plan markdown 内联记录）
