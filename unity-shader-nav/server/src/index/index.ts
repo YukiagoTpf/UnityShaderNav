@@ -1,5 +1,6 @@
 export { IndexStore } from './indexStore';
 export { GlobalSymbolIndex } from './globalIndex';
+export { GlobalReferenceIndex } from './globalReferences';
 export { resolveMember } from './chainLookup';
 export { resolveDefinition } from './symbolResolver';
 export { memberAccessAt, wordAt } from './wordAt';
