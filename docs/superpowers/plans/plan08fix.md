@@ -10,6 +10,7 @@ Branch: `plan08-index-lifecycle`
 - P2 meta watcher events: `client/src/watcher.ts` now forwards create, change, and delete for both `**/.git/HEAD` and `**/Packages/packages-lock.json`.
 - P2 integration tests: Plan 08 workspace-folder helpers now assert `updateWorkspaceFolders()` success. The lifecycle test proves `NewlyAdded` is not visible before the external `Common.hlsl` write, then becomes visible through watcher indexing. The branch smoke now changes disk state to `BranchOnly`, touches `.git/HEAD`, and checks the new symbol appears while stale `Common` disappears.
 - P3 RequestSuspender overlap: `RequestSuspender` now uses a ref-counted suspension depth. Waiters run only after the final matching release. Added overlapping suspend/release coverage.
+- Main-agent follow-up: incremental watcher batches now reindex open documents after disk `applyChanges()`, so a file watcher event for an open unsaved document cannot leave the live overlay replaced by disk content.
 
 ## Verification
 
@@ -18,3 +19,4 @@ Branch: `plan08-index-lifecycle`
 - `npm run build` - PASS.
 - `npx tsc -p tests/tsconfig.json` - PASS.
 - `node tests/out/runTest.js` - PASS by exit code 0; captured run ended with `15 passing`. The test-electron log still includes noisy VSCode workspace-folder validation messages for previously deleted temp directories.
+- Follow-up focused check: `npm run test -w @unity-shader-nav/server -- --run tests/lifecycle/fileWatcher.test.ts` - PASS, 6 tests.

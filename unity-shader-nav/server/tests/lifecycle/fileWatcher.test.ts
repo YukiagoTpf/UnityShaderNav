@@ -198,4 +198,48 @@ describe('registerFileWatchers', () => {
       vi.useRealTimers();
     }
   });
+
+  it('restores open document overlays after incremental file changes', async () => {
+    vi.useFakeTimers();
+    try {
+      let handler: ((event: FileEvent) => void) | undefined;
+      const calls: string[] = [];
+      const workspace = {
+        folderUri: 'file:///projectA',
+        applyChanges: vi.fn(async () => {
+          calls.push('applyChanges');
+        }),
+        rebuild: vi.fn(async () => {}),
+      };
+      const manager = {
+        workspaceFor: vi.fn(() => workspace),
+        workspaceForOrCreateFile: vi.fn(async () => ({
+          reindex: vi.fn(async () => {
+            calls.push('reindex-open-doc');
+          }),
+        })),
+        list: vi.fn(() => [workspace]),
+      };
+      const connection = {
+        console: { log: vi.fn() },
+        onNotification: vi.fn((_name: string, callback: (event: FileEvent) => void) => {
+          handler = callback;
+        }),
+      };
+
+      registerFileWatchers(
+        connection as never,
+        manager as never,
+        undefined,
+        () => [{ uri: 'file:///projectA/Assets/Shaders/Main.shader', getText: () => 'float4 LiveOnly();' }],
+      );
+      handler?.({ uri: 'file:///projectA/Assets/Shaders/Main.shader', type: 'changed' });
+      vi.advanceTimersByTime(501);
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+
+      expect(calls).toEqual(['applyChanges', 'reindex-open-doc']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

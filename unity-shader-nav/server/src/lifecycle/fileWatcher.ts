@@ -1,6 +1,10 @@
 import type { Connection } from 'vscode-languageserver/node';
 import { Debouncer } from './debouncer';
-import { rebuildWorkspacesWithOpenDocuments, type OpenDocumentsProvider } from './rebuild';
+import {
+  rebuildWorkspacesWithOpenDocuments,
+  reindexOpenDocuments,
+  type OpenDocumentsProvider,
+} from './rebuild';
 import type { RequestSuspender } from './requestSuspender';
 import type { FileEvent, Workspace } from '../workspace/workspace';
 import type { WorkspaceManager } from '../workspace/workspaceManager';
@@ -44,6 +48,7 @@ export function registerFileWatchers(
     for (const [workspace, events] of groups) {
       await workspace.applyChanges(events, connection);
     }
+    await reindexOpenDocuments(manager, getOpenDocuments);
   }
 
   connection.onNotification(WATCHER_NOTIFICATION, (event: FileEvent) => {
