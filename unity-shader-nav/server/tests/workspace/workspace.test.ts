@@ -84,6 +84,29 @@ describe('Workspace.bootstrap', () => {
     }
   });
 
+  it('does not persist unsaved standalone overlays as disk cache', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-standalone-unsaved-cache-'));
+    const globalStorageDir = await mkdtemp(join(tmpdir(), 'usn-global-storage-'));
+    const shaderPath = join(root, 'Loose.hlsl');
+    const shaderUri = pathToFileURL(shaderPath).href;
+    await writeFile(shaderPath, 'float4 SavedOnly() { return 0; }');
+
+    try {
+      const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      await ws1.bootstrap(fakeConnection, globalStorageDir);
+      await ws1.reindex(shaderUri, 'float4 UnsavedOnly() { return 0; }');
+      await ws1.persist();
+
+      const ws2 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      await ws2.bootstrap(fakeConnection, globalStorageDir);
+
+      expect(ws2.global.lookup('UnsavedOnly')).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(globalStorageDir, { recursive: true, force: true });
+    }
+  });
+
   it('does not restore cached package files no longer covered by packages-lock', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-package-cache-filter-'));
     await mkdir(join(root, 'Assets', 'Shaders'), { recursive: true });

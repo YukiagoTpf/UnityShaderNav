@@ -134,8 +134,7 @@ describe('registerFileWatchers', () => {
 
       registerFileWatchers(connection as never, manager as never, suspender);
       handler?.({ uri: 'file:///projectA/.git/HEAD', type: 'changed' });
-      vi.advanceTimersByTime(501);
-      for (let i = 0; i < 10; i++) await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(501);
 
       expect(suspender.suspend).toHaveBeenCalledTimes(1);
       expect(workspace.rebuild).toHaveBeenCalledTimes(1);
@@ -190,8 +189,7 @@ describe('registerFileWatchers', () => {
         () => [{ uri: 'file:///projectA/Assets/Shaders/Main.shader', getText: () => 'float4 LiveOnly();' }],
       );
       handler?.({ uri: 'file:///projectA/.git/HEAD', type: 'changed' });
-      vi.advanceTimersByTime(501);
-      for (let i = 0; i < 10; i++) await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(501);
 
       expect(calls).toEqual(['suspend', 'rebuild', 'reindex-open-doc', 'release']);
     } finally {

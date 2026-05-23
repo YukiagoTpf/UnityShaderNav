@@ -451,6 +451,28 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 - cold start / rebuild / standalone lazy workspace 期间 documentSymbol request 通过 `RequestSuspender` 与 `workspaceForOrCreateFile()` 处理 ✓
 - Plan 09 warm cache 因 `CACHE_VERSION = 2` 失效重建，避免旧 `FileIndex` 缺 `structure` 导致 Outline 扁平化 ✓
 
+## Phase 05-10 Full Review（2026-05-23）
+
+**Review doc**：`docs/superpowers/plans/phase05-10review.md`
+
+**Subagents**：
+- Lagrange `019e53ba-6293-7ab2-93df-e4dd4778db3e`：Plan 05-07，无 P1，2 个 P2。
+- Faraday `019e53ba-a00d-7fb0-a9a4-e450b54057ac`：Plan 08-10，无 P1，2 个 P2。
+- Hume `019e53c6-f9bf-79f2-add5-befd6d6608ce`：Plan 08-10 timeboxed 复核，2 个 P1 + 1 个 P2。
+
+**修复内容**：
+- include F12 改为全文件 scan，和 `scanIncludes()` 的 block-comment 状态一致；注释块内 include 不再跳转。
+- workspace settings 改为 per-folder/per-file scoped load；`projectRoot` 不再在 multi-root 间串根；lazy workspace 也走 scoped resolver。
+- standalone cache 不再把未保存 live buffer 当作 disk cache 持久化；cache save failure 改 best-effort，不影响 in-memory index。
+- Document Symbols 在 store miss 且文档已打开时 on-demand reindex，避免初次 Outline 请求竞态返回 null。
+
+**Focused verification**：
+- `npm run build` PASS。
+- server focused regression **46/46** PASS（include/settings/cache/documentSymbol/package/docSymbol/cache core）。
+- standalone/cache/documentSymbol focused **19/19** PASS。
+- fileWatcher focused **6/6** PASS（async fake timer flush 修正）。
+- `npm test` 端到端 PASS（build + test-electron + workspace vitest）。
+
 ## 进行中 TODO
 
 ### 🟡 Plan 01 follow-up（plan01fix 之后还剩的）
@@ -505,3 +527,4 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 - 2026-05-23：Plan 08 实施 + review/fix（commit `a99bb7c..15a1091`，8 个 task commit + review doc + fix commits；文件 watcher debounce/rebuild、settings cleanup、open document overlay、request suspension 覆盖；4 处偏离 plan markdown 内联记录）
 - 2026-05-23：Plan 09 实施 + review/fix（commit `56134a9..2e54737`，8 个 task commit + review/fix docs；cache manifest/fingerprint、Unity `Library/UnityShaderNavCache`、standalone globalStorage fallback、warm restore refresh、shutdown persist 覆盖；1 处偏离 plan markdown 内联记录；P3 跨进程 cache write hardening deferred）
 - 2026-05-23：Plan 10 实施 + review/fix（commit `fbed2f7..293c955`，4 个 task commit + review/fix docs；Document Symbols / Outline 覆盖 Case 12；cache version bump；0 处偏离）
+- 2026-05-23：Phase 05-10 full review + fixes（`phase05-10review.md`；修 include F12 注释语义、scoped settings/lazy workspace、standalone unsaved cache、Document Symbols 首次请求竞态、cache persist best-effort）

@@ -4,7 +4,7 @@ import { registerDefinitionHandler } from './handlers/definition';
 import { registerDocumentSymbolHandler } from './handlers/documentSymbol';
 import { registerDocuments } from './handlers/documents';
 import { registerFileWatchers } from './lifecycle/fileWatcher';
-import { applySettingsAndRebuild, reindexOpenDocuments } from './lifecycle/rebuild';
+import { applyScopedSettingsAndRebuild, reindexOpenDocuments } from './lifecycle/rebuild';
 import { RequestSuspender } from './lifecycle/requestSuspender';
 import { WorkspaceManager } from './workspace';
 
@@ -23,6 +23,7 @@ connection.onInitialize((params) => {
 
 const documents = registerDocuments(connection, manager);
 const openDocuments = () => documents.all();
+manager.configureSettingsResolver((scopeUri) => loadSettings(connection, scopeUri));
 
 connection.onInitialized(async () => {
   suspender.suspend();
@@ -31,7 +32,12 @@ connection.onInitialized(async () => {
     manager.configure(settings, connection, globalStorageDir);
     const folders = await connection.workspace.getWorkspaceFolders() ?? [];
     for (const folder of folders) {
-      await manager.addFolder(folder.uri, settings, connection, globalStorageDir);
+      await manager.addFolder(
+        folder.uri,
+        await loadSettings(connection, folder.uri),
+        connection,
+        globalStorageDir,
+      );
     }
     await reindexOpenDocuments(manager, openDocuments);
     connection.sendNotification('unityShaderNav/mode', { mode: manager.mode() });
@@ -40,7 +46,12 @@ connection.onInitialized(async () => {
       for (const removed of event.removed) manager.removeFolder(removed.uri);
       void (async () => {
         for (const added of event.added) {
-          await manager.addFolder(added.uri, settings, connection, globalStorageDir);
+          await manager.addFolder(
+            added.uri,
+            await loadSettings(connection, added.uri),
+            connection,
+            globalStorageDir,
+          );
         }
       })();
     });
@@ -52,7 +63,14 @@ connection.onInitialized(async () => {
 });
 
 onSettingsChanged(connection, async (settings) => {
-  await applySettingsAndRebuild(connection, manager, settings, openDocuments, suspender);
+  manager.configure(settings, connection, globalStorageDir);
+  await applyScopedSettingsAndRebuild(
+    connection,
+    manager,
+    (folderUri) => loadSettings(connection, folderUri),
+    openDocuments,
+    suspender,
+  );
 });
 
 registerDefinitionHandler(connection, documents, manager, suspender);

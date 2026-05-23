@@ -71,4 +71,56 @@ describe('registerDefinitionHandler: include definitions', () => {
     );
     expect(warnings).toEqual([]);
   });
+
+  it('does not resolve include paths inside multi-line block comments', async () => {
+    let handler: ((params: DefinitionParams) => Promise<unknown>) | undefined;
+    const connection = {
+      console: {
+        warn() {},
+      },
+      onDefinition(fn: (params: DefinitionParams) => Promise<unknown>) {
+        handler = fn;
+        return { dispose() {} };
+      },
+    } as unknown as Connection;
+    const filePath = join(root, 'Assets/Shaders/Main.shader');
+    const uri = pathToFileURL(filePath).href;
+    const text = [
+      'Shader "T/Inc" {',
+      '  HLSLPROGRAM',
+      '  /*',
+      '  #include "Common.hlsl"',
+      '  */',
+      '  ENDHLSL',
+      '}',
+    ].join('\n');
+    const doc = TextDocument.create(uri, 'shaderlab', 1, text);
+    const documents = {
+      get(requestedUri: string) {
+        return requestedUri === uri ? doc : undefined;
+      },
+    } as never;
+    const workspace = {
+      includeCtx: { unityProjectRoot: root, includeDirectories: [] },
+      store: new IndexStore(),
+      global: new GlobalSymbolIndex(),
+    };
+    const manager = {
+      workspaceFor(requestedUri: string) {
+        return requestedUri === uri ? workspace : undefined;
+      },
+      async workspaceForOrCreateFile(requestedUri: string) {
+        return this.workspaceFor(requestedUri);
+      },
+    } as never;
+
+    registerDefinitionHandler(connection, documents, manager);
+
+    const result = await handler?.({
+      textDocument: { uri },
+      position: { line: 3, character: 14 },
+    });
+
+    expect(result).toBeNull();
+  });
 });

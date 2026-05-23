@@ -268,10 +268,26 @@ export class Workspace {
     const idx = await indexFile(uri, text, this.table);
     if (!shouldStore()) return;
     if (this.isStandalone()) {
-      this.diskIndexes.set(uri, idx);
+      await this.refreshStandaloneDiskIndex(uri, text, idx);
     }
     this.store.set(uri, idx);
     this.global.upsert(idx);
+  }
+
+  private async refreshStandaloneDiskIndex(
+    uri: string,
+    liveText: string,
+    liveIndex: FileIndex,
+  ): Promise<void> {
+    try {
+      const diskText = await fs.readFile(fileURLToPath(uri), 'utf8');
+      const diskIndex = diskText === liveText
+        ? liveIndex
+        : await indexFile(uri, diskText, this.table);
+      this.diskIndexes.set(uri, diskIndex);
+    } catch {
+      this.diskIndexes.delete(uri);
+    }
   }
 
   async applyChanges(events: FileEvent[], connection: Connection): Promise<void> {
@@ -313,7 +329,11 @@ export class Workspace {
       this.fingerprint,
       records,
     );
-    await this.cache.save(manifest);
+    try {
+      await this.cache.save(manifest);
+    } catch {
+      // Cache persistence is best-effort; indexing results remain usable without it.
+    }
   }
 
   closeDocument(uri: string): void {

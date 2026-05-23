@@ -10,16 +10,23 @@ function containsPath(root: string, candidate: string): boolean {
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
 }
 
+type SettingsResolver = (scopeUri: string) => ExtensionSettings | Promise<ExtensionSettings>;
+
 export class WorkspaceManager {
   private readonly byFolder = new Map<string, Workspace>();
   private settings: ExtensionSettings | undefined;
   private connection: Connection | undefined;
   private globalStorageDir: string | undefined;
+  private settingsResolver: SettingsResolver | undefined;
 
   configure(settings: ExtensionSettings, connection: Connection, globalStorageDir?: string): void {
     this.settings = settings;
     this.connection = connection;
     if (globalStorageDir !== undefined) this.globalStorageDir = globalStorageDir;
+  }
+
+  configureSettingsResolver(settingsResolver: SettingsResolver): void {
+    this.settingsResolver = settingsResolver;
   }
 
   list(): Workspace[] {
@@ -66,10 +73,9 @@ export class WorkspaceManager {
     globalStorageDir?: string,
   ): Promise<void> {
     if (this.byFolder.has(folderUri)) return;
-    const currentSettings = this.settings ?? settings;
     const currentConnection = this.connection ?? connection;
     const currentGlobalStorageDir = globalStorageDir ?? this.globalStorageDir;
-    const workspace = new Workspace(folderUri, currentSettings);
+    const workspace = new Workspace(folderUri, settings);
     this.byFolder.set(folderUri, workspace);
     await workspace.bootstrap(currentConnection, currentGlobalStorageDir);
     this.sendModeNotification();
@@ -90,8 +96,12 @@ export class WorkspaceManager {
     const unityRoot = await detectUnityRoot(dirname(filePath));
     const folderPath = unityRoot ?? dirname(filePath);
     const folderUri = pathToFileURL(folderPath).href;
+    const settings = this.settingsResolver
+      ? await this.settingsResolver(fileUri)
+      : this.settings;
+    if (!settings) return undefined;
 
-    await this.addFolder(folderUri, this.settings, this.connection);
+    await this.addFolder(folderUri, settings, this.connection);
     return this.workspaceFor(fileUri);
   }
 

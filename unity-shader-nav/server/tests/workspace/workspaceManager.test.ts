@@ -62,14 +62,17 @@ describe('WorkspaceManager: multi-root', () => {
     expect(manager.mode()).toBe('ready');
   });
 
-  it('uses the latest configured settings when adding a folder after configuration changes', async () => {
+  it('uses the settings passed for a newly added folder', async () => {
     const projectA = resolve(__dirname, '../include/fixtures/projectA');
     const standaloneFolder = await mkdtemp(join(tmpdir(), 'usn-latest-settings-'));
     const manager = new WorkspaceManager();
 
     manager.configure(DEFAULT_SETTINGS, fakeConnection);
-    manager.configure({ ...DEFAULT_SETTINGS, projectRoot: projectA }, fakeConnection);
-    await manager.addFolder(pathToFileURL(standaloneFolder).href, DEFAULT_SETTINGS, fakeConnection);
+    await manager.addFolder(
+      pathToFileURL(standaloneFolder).href,
+      { ...DEFAULT_SETTINGS, projectRoot: projectA },
+      fakeConnection,
+    );
 
     const workspace = manager.list()[0];
     expect(workspace.unityRoot).toBe(projectA);
@@ -87,6 +90,31 @@ describe('WorkspaceManager: multi-root', () => {
     await manager.addFolder(pathToFileURL(standaloneFolder).href, DEFAULT_SETTINGS, fakeConnection);
 
     expect(bootstrap).toHaveBeenCalledWith(fakeConnection, '/global-storage');
+  });
+
+  it('uses scoped settings when lazily creating a workspace for a file', async () => {
+    const projectA = resolve(__dirname, '../include/fixtures/projectA');
+    const looseFolder = await mkdtemp(join(tmpdir(), 'usn-lazy-scoped-'));
+    const looseFile = join(looseFolder, 'Loose.hlsl');
+    await writeFile(looseFile, 'MY_TEX2D(_LazyTex)');
+    const manager = new WorkspaceManager();
+
+    manager.configure(DEFAULT_SETTINGS, fakeConnection);
+    manager.configureSettingsResolver(async (uri) => uri.startsWith(pathToFileURL(looseFolder).href)
+      ? {
+          ...DEFAULT_SETTINGS,
+          projectRoot: projectA,
+          declarationMacros: [{ pattern: 'MY_TEX2D($name)', kind: 'variable' }],
+        }
+      : DEFAULT_SETTINGS);
+
+    const workspace = await manager.workspaceForOrCreateFile(pathToFileURL(looseFile).href);
+    await workspace?.reindex(pathToFileURL(looseFile).href, 'MY_TEX2D(_LazyTex)');
+
+    expect(workspace?.unityRoot).toBe(projectA);
+    expect(workspace?.store.get(pathToFileURL(looseFile).href)?.symbols).toMatchObject([
+      { name: '_LazyTex', kind: 'variable' },
+    ]);
   });
 
   it('persists all managed workspaces', async () => {

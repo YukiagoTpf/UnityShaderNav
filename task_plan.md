@@ -1,25 +1,25 @@
-# Plan 06 Include Resolver Task Plan
+# Phase 05-10 Full Review Task Plan
 
-Goal: complete Plan 06 include resolver, commit each plan task separately, request code-review subagent QA, record review and fix docs, run final main-agent review, then update `docs/superpowers/PROGRESS.md`.
+Goal: review Phase/Plan 05 through 10 for bugs and cross-phase consistency, record `phase05-10review.md`, request independent subagent assessment, fix confirmed P1/P2 issues, verify, and commit according to project discipline.
 
 ## Phases
 
-- [complete] Phase 1: implement Plan 06 tasks 1-10 with TDD and one commit per task.
-- [complete] Phase 2: perform simple local review.
-- [complete] Phase 3: request code-review subagent QA and write `plan06review.md`.
-- [complete] Phase 4: request fix subagent for confirmed findings and write `plan06fix.md`.
-- [complete] Phase 5: main-agent final review, full verification, update `PROGRESS.md`, and commit docs.
+- [complete] Phase 1: gather phase 05-10 docs, current implementation, git state, and existing review/fix records.
+- [complete] Phase 2: run subagent read-only reviews for 05-07 and 08-10.
+- [complete] Phase 3: write failing regression tests for confirmed P1/P2 issues.
+- [complete] Phase 4: implement scoped fixes and update `phase05-10review.md`.
+- [complete] Phase 5: run focused and full verification, update progress if needed, and commit.
 
 ## Constraints
 
 - Do not create `codex/`-prefixed branches.
-- Do not remove or revert pre-existing untracked files: `AGENTS.md`, `docs/superpowers/plans/plan03review.md`, `task_plan.md`, `findings.md`, `progress.md`.
+- Preserve the pre-existing `AGENTS.md` user edit.
 - If plan reality differs from implementation during fixes, add `> Note:` to the relevant plan document before continuing.
-- Follow Plan 06 commit messages exactly where provided.
-- Use one commit for review/fix/progress docs unless a code fix task requires its own commit.
+- Use TDD for production bug fixes.
+- Record subagent findings and final disposition in `docs/superpowers/plans/phase05-10review.md`.
 
 ## Errors Encountered
 
 | Error | Attempt | Resolution |
 |---|---|---|
-| Plan glob miss. | Tried `Get-Content docs\superpowers\plans\plan06*.md`. | Read dated file `docs\superpowers\plans\2026-05-22-06-include-resolver.md`. |
+| Full-history fork rejected. | Tried spawning explorer with `fork_context=true` plus explicit agent settings. | Spawned read-only explorers without forked history and included the repo/path context in prompts. |

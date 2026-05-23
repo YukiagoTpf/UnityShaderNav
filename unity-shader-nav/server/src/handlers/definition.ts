@@ -27,38 +27,40 @@ export function registerDefinitionHandler(
       const workspace = await manager.workspaceForOrCreateFile(params.textDocument.uri);
       if (!workspace) return null;
 
-      const lineText = doc.getText().split(/\r?\n/)[params.position.line] ?? '';
-      const include = scanIncludes(lineText)[0];
+      const fullText = doc.getText();
+      const include = scanIncludes(fullText).find((candidate) =>
+        candidate.line === params.position.line
+        && params.position.character >= candidate.pathRange.start.character
+        && params.position.character <= candidate.pathRange.end.character,
+      );
       if (include) {
         const start = include.pathRange.start.character;
         const end = include.pathRange.end.character;
-        if (params.position.character >= start && params.position.character <= end) {
-          const resolved = await resolveInclude(
-            include.path,
-            params.textDocument.uri,
-            workspace.includeCtx,
+        const resolved = await resolveInclude(
+          include.path,
+          params.textDocument.uri,
+          workspace.includeCtx,
+        );
+        if (!resolved) return null;
+        if (resolved.caseInsensitive) {
+          connection.console.warn(
+            `[UnityShaderNav] case-insensitive include match: "${include.path}" -> ${resolved.absolutePath}`,
           );
-          if (!resolved) return null;
-          if (resolved.caseInsensitive) {
-            connection.console.warn(
-              `[UnityShaderNav] case-insensitive include match: "${include.path}" -> ${resolved.absolutePath}`,
-            );
-          }
-          const targetUri = pathToFileURL(resolved.absolutePath).href;
-          const targetRange = {
-            start: { line: 0, character: 0 },
-            end: { line: 0, character: 0 },
-          };
-          return [{
-            targetUri,
-            targetRange,
-            targetSelectionRange: targetRange,
-            originSelectionRange: {
-              start: { line: params.position.line, character: start },
-              end: { line: params.position.line, character: end },
-            },
-          }];
         }
+        const targetUri = pathToFileURL(resolved.absolutePath).href;
+        const targetRange = {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 0 },
+        };
+        return [{
+          targetUri,
+          targetRange,
+          targetSelectionRange: targetRange,
+          originSelectionRange: {
+            start: { line: params.position.line, character: start },
+            end: { line: params.position.line, character: end },
+          },
+        }];
       }
 
       const idx = workspace.store.get(params.textDocument.uri);

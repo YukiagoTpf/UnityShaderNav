@@ -29,12 +29,12 @@ export async function rebuildWorkspacesWithOpenDocuments(
   manager: WorkspaceManager,
   getOpenDocuments: OpenDocumentsProvider,
   suspender?: RebuildSuspender,
-  beforeRebuild?: (workspace: Workspace) => void,
+  beforeRebuild?: (workspace: Workspace) => void | Promise<void>,
 ): Promise<void> {
   suspender?.suspend();
   try {
     for (const workspace of manager.list()) {
-      beforeRebuild?.(workspace);
+      await beforeRebuild?.(workspace);
       await workspace.rebuild(connection);
     }
     await reindexOpenDocuments(manager, getOpenDocuments);
@@ -57,6 +57,26 @@ export async function applySettingsAndRebuild(
     getOpenDocuments,
     suspender,
     (workspace) => {
+      workspace.settings = settings;
+      workspace.table = new MacroPatternTable(settings.declarationMacros);
+    },
+  );
+}
+
+export async function applyScopedSettingsAndRebuild(
+  connection: Connection,
+  manager: WorkspaceManager,
+  settingsForWorkspace: (folderUri: string) => ExtensionSettings | Promise<ExtensionSettings>,
+  getOpenDocuments: OpenDocumentsProvider,
+  suspender?: RebuildSuspender,
+): Promise<void> {
+  await rebuildWorkspacesWithOpenDocuments(
+    connection,
+    manager,
+    getOpenDocuments,
+    suspender,
+    async (workspace) => {
+      const settings = await settingsForWorkspace(workspace.folderUri);
       workspace.settings = settings;
       workspace.table = new MacroPatternTable(settings.declarationMacros);
     },

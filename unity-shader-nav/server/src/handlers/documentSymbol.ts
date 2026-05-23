@@ -11,7 +11,7 @@ import type { WorkspaceManager } from '../workspace';
 
 export function registerDocumentSymbolHandler(
   connection: Connection,
-  _documents: TextDocuments<TextDocument>,
+  documents: TextDocuments<TextDocument>,
   manager: WorkspaceManager,
   suspender?: Pick<RequestSuspender, 'run'>,
 ): void {
@@ -20,7 +20,14 @@ export function registerDocumentSymbolHandler(
       const workspace = await manager.workspaceForOrCreateFile(params.textDocument.uri);
       if (!workspace) return null;
 
-      const index = workspace.store.get(params.textDocument.uri);
+      let index = workspace.store.get(params.textDocument.uri);
+      if (!index) {
+        const document = documents.get(params.textDocument.uri);
+        if (document) {
+          await workspace.reindex(document.uri, document.getText());
+          index = workspace.store.get(params.textDocument.uri);
+        }
+      }
       if (!index) return null;
 
       return buildDocumentSymbols(index);
