@@ -8,7 +8,7 @@ import type {
 import type { TextDocument } from 'vscode-languageserver-textdocument';
 import { pathToFileURL } from 'node:url';
 import { resolveInclude } from '../include';
-import { resolveDefinition, wordAt } from '../index';
+import { memberAccessAt, resolveDefinition, resolveMember, wordAt } from '../index';
 import type { RequestSuspender } from '../lifecycle/requestSuspender';
 import { scanIncludes } from '../parser/include/lineScanner';
 import type { WorkspaceManager } from '../workspace';
@@ -66,7 +66,26 @@ export function registerDefinitionHandler(
       const idx = workspace.store.get(params.textDocument.uri);
       if (!idx) return null;
 
-      const word = wordAt(doc.getText(), params.position);
+      const memberAccess = memberAccessAt(fullText, params.position);
+      if (memberAccess?.receiver) {
+        const links = resolveMember(
+          idx,
+          workspace.global,
+          memberAccess.receiver.text,
+          memberAccess.member.text,
+          params.position,
+        );
+        if (links.length > 0) {
+          return links.map((link) => ({
+            targetUri: link.targetUri,
+            targetRange: link.targetRange,
+            targetSelectionRange: link.targetSelectionRange,
+            originSelectionRange: memberAccess.member.range,
+          }));
+        }
+      }
+
+      const word = wordAt(fullText, params.position);
       if (!word) return null;
 
       const links = resolveDefinition(idx, word.text, params.position, workspace.global);
