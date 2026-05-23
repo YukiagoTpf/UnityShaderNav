@@ -332,7 +332,7 @@ test('Packages references are excluded by default and included with config flag'
 });
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 npm test
@@ -348,7 +348,7 @@ git commit -m "test(plan-13): Find References e2e + includePackages toggle"
 - Modify: `README.md` — 列出全部功能 + 配置项
 - Optional: 在 `docs/superpowers/plans/README.md` 末尾标记完成
 
-- [ ] **Step 1: 写 README**
+- [x] **Step 1: 写 README**
 
 ```markdown
 # UnityShaderNav
