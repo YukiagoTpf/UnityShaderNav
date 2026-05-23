@@ -1,5 +1,6 @@
 import * as assert from 'node:assert';
 import { promises as fs } from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 
@@ -20,6 +21,51 @@ async function ensureWorkspaceFolder(folderPath: string): Promise<void> {
 
 async function ensureSettingsDirectory(folderPath: string): Promise<void> {
   await fs.mkdir(path.join(folderPath, '.vscode'), { recursive: true });
+}
+
+async function removeWorkspaceFolder(folderPath: string): Promise<void> {
+  const index = vscode.workspace.workspaceFolders?.findIndex((folder) => folder.uri.fsPath === folderPath) ?? -1;
+  if (index >= 0) {
+    vscode.workspace.updateWorkspaceFolders(index, 1);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+}
+
+async function makeIncludeReferencesProject(): Promise<string> {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'usn-include-refs-'));
+  const assetsShaderDir = path.join(root, 'Assets', 'Shaders');
+  const packageShaderDir = path.join(root, 'Packages', 'com.example.refs', 'ShaderLibrary');
+
+  await fs.mkdir(assetsShaderDir, { recursive: true });
+  await fs.mkdir(packageShaderDir, { recursive: true });
+  await fs.mkdir(path.join(root, 'ProjectSettings'), { recursive: true });
+
+  await fs.writeFile(path.join(root, 'ProjectSettings', 'ProjectVersion.txt'), 'm_EditorVersion: 2022.3.0f1\n');
+  await fs.writeFile(path.join(packageShaderDir, 'Common.hlsl'), 'float4 PackageCommon() { return 1; }\n');
+  await fs.writeFile(path.join(assetsShaderDir, 'LocalOnly.hlsl'), 'float4 LocalOnly() { return 0; }\n');
+  await fs.writeFile(
+    path.join(assetsShaderDir, 'IncludeRefs.hlsl'),
+    [
+      '#include "../../Packages/com.example.refs/ShaderLibrary/Common.hlsl"',
+      '#include "../../Packages/com.example.refs/ShaderLibrary/./Common.hlsl"',
+      '#include "Packages/com.example.refs/ShaderLibrary/Common.hlsl"',
+      '#include "LocalOnly.hlsl"',
+      'float4 UseIncludes() { return PackageCommon(); }',
+    ].join('\n'),
+  );
+  await fs.writeFile(
+    path.join(root, 'Packages', 'packages-lock.json'),
+    JSON.stringify({
+      dependencies: {
+        'com.example.refs': {
+          version: 'file:com.example.refs',
+          source: 'embedded',
+        },
+      },
+    }, null, 2),
+  );
+
+  return root;
 }
 
 async function waitForReferences(
@@ -125,6 +171,40 @@ suite('Find References', () => {
         false,
         vscode.ConfigurationTarget.Workspace,
       );
+    }
+  });
+
+  test('Shift+F12 inside include path returns include references for the same resolved target', async () => {
+    const root = await makeIncludeReferencesProject();
+    try {
+      await ensureWorkspaceFolder(root);
+      const uri = vscode.Uri.file(path.join(root, 'Assets', 'Shaders', 'IncludeRefs.hlsl'));
+      const doc = await vscode.workspace.openTextDocument(uri);
+      await vscode.window.showTextDocument(doc);
+
+      const refs = await waitForReferences(
+        uri,
+        positionOf(doc, '"Packages/com.example.refs/ShaderLibrary/Common.hlsl"', 2),
+        (result) => {
+          const lines = new Set(
+            (result ?? [])
+              .filter((ref) => ref.uri.fsPath === uri.fsPath)
+              .map((ref) => ref.range.start.line),
+          );
+          return [0, 1, 2].every((line) => lines.has(line)) && !lines.has(3);
+        },
+      );
+
+      const lines = new Set(
+        (refs ?? [])
+          .filter((ref) => ref.uri.fsPath === uri.fsPath)
+          .map((ref) => ref.range.start.line),
+      );
+      assert.ok(refs, 'expected include reference provider results');
+      assert.deepEqual([...lines].sort((a, b) => a - b), [0, 1, 2]);
+    } finally {
+      await removeWorkspaceFolder(root);
+      await fs.rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     }
   });
 });
