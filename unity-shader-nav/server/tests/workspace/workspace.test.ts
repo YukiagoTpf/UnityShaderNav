@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -62,5 +62,67 @@ describe('Workspace.bootstrap', () => {
     expect(workspace.unityRoot).toBe(projectRoot);
     expect(workspace.global.lookup('Common').length).toBeGreaterThanOrEqual(1);
     expect(workspace.global.lookup('Core').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('applies a changed event by re-reading the file from disk', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-apply-change-'));
+    await mkdir(join(root, 'Assets', 'Shaders'), { recursive: true });
+    await mkdir(join(root, 'Packages'), { recursive: true });
+    await mkdir(join(root, 'ProjectSettings'), { recursive: true });
+    await writeFile(join(root, 'Packages', 'packages-lock.json'), '{"dependencies":{}}');
+    const shaderPath = join(root, 'Assets', 'Shaders', 'Common.hlsl');
+    const shaderUri = pathToFileURL(shaderPath).href;
+    await writeFile(shaderPath, 'float4 BeforeChange() { return 0; }');
+
+    const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+    await workspace.bootstrap(fakeConnection);
+    expect(workspace.global.lookup('BeforeChange').length).toBeGreaterThanOrEqual(1);
+
+    await writeFile(shaderPath, 'float4 AfterChange() { return 1; }');
+    await workspace.applyChanges([{ uri: shaderUri, type: 'changed' }], fakeConnection);
+
+    expect(workspace.global.lookup('BeforeChange')).toEqual([]);
+    expect(workspace.global.lookup('AfterChange').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('drops deleted files from the live and global indexes', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-delete-change-'));
+    await mkdir(join(root, 'Assets', 'Shaders'), { recursive: true });
+    await mkdir(join(root, 'Packages'), { recursive: true });
+    await mkdir(join(root, 'ProjectSettings'), { recursive: true });
+    await writeFile(join(root, 'Packages', 'packages-lock.json'), '{"dependencies":{}}');
+    const shaderPath = join(root, 'Assets', 'Shaders', 'Deleted.hlsl');
+    const shaderUri = pathToFileURL(shaderPath).href;
+    await writeFile(shaderPath, 'float4 DeletedSymbol() { return 0; }');
+
+    const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+    await workspace.bootstrap(fakeConnection);
+    expect(workspace.global.lookup('DeletedSymbol').length).toBeGreaterThanOrEqual(1);
+
+    await workspace.applyChanges([{ uri: shaderUri, type: 'deleted' }], fakeConnection);
+
+    expect(workspace.store.get(shaderUri)).toBeUndefined();
+    expect(workspace.global.lookup('DeletedSymbol')).toEqual([]);
+  });
+
+  it('rebuild clears stale indexes and reloads Packages', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-rebuild-'));
+    await mkdir(join(root, 'Assets', 'Shaders'), { recursive: true });
+    await mkdir(join(root, 'Packages'), { recursive: true });
+    await mkdir(join(root, 'ProjectSettings'), { recursive: true });
+    await writeFile(join(root, 'Packages', 'packages-lock.json'), '{"dependencies":{}}');
+    const shaderPath = join(root, 'Assets', 'Shaders', 'Common.hlsl');
+    await writeFile(shaderPath, 'float4 BeforeRebuild() { return 0; }');
+
+    const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+    await workspace.bootstrap(fakeConnection);
+    expect(workspace.global.lookup('BeforeRebuild').length).toBeGreaterThanOrEqual(1);
+
+    await writeFile(shaderPath, 'float4 AfterRebuild() { return 1; }');
+    await workspace.rebuild(fakeConnection);
+
+    expect(workspace.global.lookup('BeforeRebuild')).toEqual([]);
+    expect(workspace.global.lookup('AfterRebuild').length).toBeGreaterThanOrEqual(1);
+    expect(workspace.packageResolver).toBeDefined();
   });
 });

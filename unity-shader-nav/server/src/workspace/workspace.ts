@@ -10,6 +10,11 @@ import { indexFile } from '../parser/hlsl';
 import { detectUnityRoot } from './detectUnityRoot';
 import { walkFiles } from './walkFiles';
 
+export interface FileEvent {
+  uri: string;
+  type: 'created' | 'changed' | 'deleted';
+}
+
 export class Workspace {
   readonly folderUri: string;
   unityRoot: string | undefined;
@@ -111,6 +116,29 @@ export class Workspace {
     if (!shouldStore()) return;
     this.store.set(uri, idx);
     this.global.upsert(idx);
+  }
+
+  async applyChanges(events: FileEvent[], connection: Connection): Promise<void> {
+    for (const event of events) {
+      if (event.type === 'deleted') {
+        this.drop(event.uri);
+        continue;
+      }
+
+      try {
+        const filePath = fileURLToPath(event.uri);
+        await this.indexAndStore(filePath, connection);
+      } catch {
+        this.drop(event.uri);
+      }
+    }
+  }
+
+  async rebuild(connection: Connection): Promise<void> {
+    this.store.clear();
+    this.global.clear();
+    this.diskIndexes.clear();
+    await this.bootstrap(connection);
   }
 
   closeDocument(uri: string): void {

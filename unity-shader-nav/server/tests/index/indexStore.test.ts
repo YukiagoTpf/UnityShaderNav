@@ -22,5 +22,10 @@ describe('IndexStore', () => {
 
     expect(store.get(first.uri)).toBeUndefined();
     expect([...store.uris()]).toEqual([second.uri]);
+
+    store.clear();
+
+    expect(store.get(second.uri)).toBeUndefined();
+    expect([...store.uris()]).toEqual([]);
   });
 });

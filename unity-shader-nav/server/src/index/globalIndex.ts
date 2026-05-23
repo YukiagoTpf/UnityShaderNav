@@ -32,6 +32,11 @@ export class GlobalSymbolIndex {
     this.byUri.delete(uri);
   }
 
+  clear(): void {
+    this.byName.clear();
+    this.byUri.clear();
+  }
+
   lookup(name: string): SymbolEntry[] {
     return this.byName.get(name)?.slice() ?? [];
   }

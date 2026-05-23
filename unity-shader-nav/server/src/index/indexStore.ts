@@ -15,6 +15,10 @@ export class IndexStore {
     this.byUri.delete(uri);
   }
 
+  clear(): void {
+    this.byUri.clear();
+  }
+
   uris(): IterableIterator<string> {
     return this.byUri.keys();
   }

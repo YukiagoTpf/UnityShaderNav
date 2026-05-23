@@ -47,4 +47,16 @@ describe('GlobalSymbolIndex', () => {
 
     expect(global.lookup('foo')).toEqual([]);
   });
+
+  it('clears all indexed symbols', () => {
+    const global = new GlobalSymbolIndex();
+
+    global.upsert(fileIndex('file:///a.hlsl', ['foo']));
+    global.upsert(fileIndex('file:///b.hlsl', ['bar']));
+    global.clear();
+
+    expect(global.lookup('foo')).toEqual([]);
+    expect(global.lookup('bar')).toEqual([]);
+    expect([...global.uris()]).toEqual([]);
+  });
 });
