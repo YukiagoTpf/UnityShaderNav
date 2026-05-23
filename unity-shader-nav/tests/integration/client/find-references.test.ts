@@ -18,13 +18,8 @@ async function ensureWorkspaceFolder(folderPath: string): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 1200));
 }
 
-async function ensureSettingsFile(folderPath: string): Promise<void> {
-  const settingsDir = path.join(folderPath, '.vscode');
-  const settingsPath = path.join(settingsDir, 'settings.json');
-  await fs.mkdir(settingsDir, { recursive: true });
-  await fs.writeFile(settingsPath, '{}', { flag: 'wx' }).catch((error: NodeJS.ErrnoException) => {
-    if (error.code !== 'EEXIST') throw error;
-  });
+async function ensureSettingsDirectory(folderPath: string): Promise<void> {
+  await fs.mkdir(path.join(folderPath, '.vscode'), { recursive: true });
 }
 
 async function waitForReferences(
@@ -82,14 +77,13 @@ suite('Find References', () => {
     const uri = vscode.Uri.file(path.join(root, 'Assets', 'Shaders', 'Shared.hlsl'));
     const settingsFolder = vscode.workspace.workspaceFolders?.[0];
     assert.ok(settingsFolder, 'expected integration test workspace folder');
-    await ensureSettingsFile(settingsFolder.uri.fsPath);
+    await ensureSettingsDirectory(settingsFolder.uri.fsPath);
     const doc = await vscode.workspace.openTextDocument(uri);
     await vscode.window.showTextDocument(doc);
     const position = positionOf(doc, 'SharedRef');
     const config = vscode.workspace.getConfiguration('unityShaderNav');
 
     try {
-      await vscode.commands.executeCommand('workbench.action.files.saveAll');
       await config.update(
         'findReferences.includePackages',
         false,
@@ -108,7 +102,6 @@ suite('Find References', () => {
       const userOnlyPaths = userOnly?.map((ref) => ref.uri.fsPath).join(', ') ?? '<none>';
       assert.ok(userOnly, `expected user-only references, got ${userOnlyPaths}`);
 
-      await vscode.commands.executeCommand('workbench.action.files.saveAll');
       await config.update(
         'findReferences.includePackages',
         true,
@@ -127,7 +120,6 @@ suite('Find References', () => {
       const withPackagePaths = withPackages?.map((ref) => ref.uri.fsPath).join(', ') ?? '<none>';
       assert.ok(withPackages, `expected package reference after enabling setting, got ${withPackagePaths}`);
     } finally {
-      await vscode.commands.executeCommand('workbench.action.files.saveAll');
       await config.update(
         'findReferences.includePackages',
         false,

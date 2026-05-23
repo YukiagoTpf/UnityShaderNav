@@ -18,13 +18,8 @@ async function ensureWorkspaceFolder(folderPath: string): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 1000));
 }
 
-async function ensureSettingsFile(folderPath: string): Promise<void> {
-  const settingsDir = path.join(folderPath, '.vscode');
-  const settingsPath = path.join(settingsDir, 'settings.json');
-  await fs.mkdir(settingsDir, { recursive: true });
-  await fs.writeFile(settingsPath, '{}', { flag: 'wx' }).catch((error: NodeJS.ErrnoException) => {
-    if (error.code !== 'EEXIST') throw error;
-  });
+async function ensureSettingsDirectory(folderPath: string): Promise<void> {
+  await fs.mkdir(path.join(folderPath, '.vscode'), { recursive: true });
 }
 
 async function waitForDefinitions(
@@ -83,8 +78,7 @@ suite('F12 on macro-declared variable', () => {
     ].join('\n');
 
     try {
-      await ensureSettingsFile(folder.uri.fsPath);
-      await vscode.commands.executeCommand('workbench.action.files.saveAll');
+      await ensureSettingsDirectory(folder.uri.fsPath);
       await config.update('declarationMacros', [], vscode.ConfigurationTarget.Workspace);
       await vscode.workspace.fs.writeFile(uri, Buffer.from(text, 'utf8'));
 
@@ -107,7 +101,6 @@ suite('F12 on macro-declared variable', () => {
       const disposable = vscode.workspace.onDidChangeConfiguration((event) => {
         sawConfigEvent = sawConfigEvent || event.affectsConfiguration('unityShaderNav.declarationMacros');
       });
-      await vscode.commands.executeCommand('workbench.action.files.saveAll');
       await config.update(
         'declarationMacros',
         [{ pattern: 'MY_TEX2D($name)', kind: 'variable' }],
@@ -130,7 +123,6 @@ suite('F12 on macro-declared variable', () => {
       assert.ok(links && links.length >= 1, 'expected definition after declarationMacros update');
       assert.strictEqual(targetRange(links[0]).start.line, 0);
     } finally {
-      await vscode.commands.executeCommand('workbench.action.files.saveAll');
       await config.update('declarationMacros', undefined, vscode.ConfigurationTarget.Workspace);
       await vscode.workspace.fs.delete(uri, { useTrash: false }).then(undefined, () => undefined);
       await vscode.workspace.fs
