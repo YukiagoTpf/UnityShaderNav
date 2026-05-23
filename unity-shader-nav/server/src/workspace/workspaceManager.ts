@@ -26,6 +26,10 @@ export class WorkspaceManager {
     return [...this.byFolder.values()];
   }
 
+  async persistAll(): Promise<void> {
+    await Promise.all(this.list().map((workspace) => workspace.persist()));
+  }
+
   mode(): 'standalone' | 'ready' {
     return this.list().some((workspace) => !workspace.isStandalone()) ? 'ready' : 'standalone';
   }

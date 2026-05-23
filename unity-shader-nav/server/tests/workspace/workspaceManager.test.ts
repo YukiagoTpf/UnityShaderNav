@@ -88,4 +88,16 @@ describe('WorkspaceManager: multi-root', () => {
 
     expect(bootstrap).toHaveBeenCalledWith(fakeConnection, '/global-storage');
   });
+
+  it('persists all managed workspaces', async () => {
+    const standaloneFolder = await mkdtemp(join(tmpdir(), 'usn-persist-all-'));
+    const manager = new WorkspaceManager();
+    vi.spyOn(Workspace.prototype, 'bootstrap').mockResolvedValue(undefined);
+    const persist = vi.spyOn(Workspace.prototype, 'persist').mockResolvedValue(undefined);
+
+    await manager.addFolder(pathToFileURL(standaloneFolder).href, DEFAULT_SETTINGS, fakeConnection);
+    await manager.persistAll();
+
+    expect(persist).toHaveBeenCalledTimes(1);
+  });
 });

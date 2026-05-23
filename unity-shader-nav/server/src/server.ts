@@ -57,4 +57,8 @@ onSettingsChanged(connection, async (settings) => {
 registerDefinitionHandler(connection, documents, manager, suspender);
 registerFileWatchers(connection, manager, suspender, openDocuments);
 
+connection.onShutdown(async () => {
+  await manager.persistAll();
+});
+
 connection.listen();
