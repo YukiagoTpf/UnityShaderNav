@@ -1,4 +1,5 @@
 **/*.ts
 **/*.map
 tsconfig*.json
+*.tsbuildinfo
 src/**

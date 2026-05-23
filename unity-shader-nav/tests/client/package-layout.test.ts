@@ -75,8 +75,8 @@ suite('packaged server layout', () => {
     const root = monorepoRoot();
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'unity-shader-nav-stale-'));
     try {
-      const oldTime = new Date('2024-01-01T00:00:00Z');
-      const newTime = new Date('2024-01-02T00:00:00Z');
+      const oldTime = new Date('2024-01-01T00:00:01.000Z');
+      const newTime = new Date('2024-01-01T00:00:01.500Z');
       const files = [
         'client/out/extension.js',
         'client/out/server/server.js',
@@ -110,4 +110,52 @@ suite('packaged server layout', () => {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }
   });
+
+  test('VSIX verifier rejects generated TypeScript build cache entries', () => {
+    const root = monorepoRoot();
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'unity-shader-nav-vsix-check-'));
+    try {
+      const vsixPath = path.join(tempRoot, 'extension.vsix');
+      fs.writeFileSync(vsixPath, zipWithCentralDirectoryEntries([
+        'extension/package.json',
+        'extension/tsconfig.tsbuildinfo',
+        'extension/out/extension.js',
+        'extension/out/server/server.js',
+        'extension/out/grammars/tree-sitter-hlsl.wasm',
+        'extension/out/server/node_modules/web-tree-sitter/tree-sitter.js',
+        'extension/out/server/node_modules/web-tree-sitter/tree-sitter.wasm',
+      ]));
+
+      const result = spawnSync(
+        process.execPath,
+        [path.resolve(root, 'scripts/package-vsix.mjs'), '--verify-vsix', vsixPath],
+        { encoding: 'utf8' },
+      );
+
+      assert.notStrictEqual(result.status, 0);
+      assert.match(result.stderr, /VSIX must not include generated file extension\/tsconfig\.tsbuildinfo/);
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
 });
+
+function zipWithCentralDirectoryEntries(entries: string[]): Buffer {
+  const records = entries.map((entry) => {
+    const name = Buffer.from(entry, 'utf8');
+    const header = Buffer.alloc(46);
+    header.writeUInt32LE(0x02014b50, 0);
+    header.writeUInt16LE(20, 4);
+    header.writeUInt16LE(20, 6);
+    header.writeUInt16LE(name.length, 28);
+    return Buffer.concat([header, name]);
+  });
+  const centralDirectory = Buffer.concat(records);
+  const endOfCentralDirectory = Buffer.alloc(22);
+  endOfCentralDirectory.writeUInt32LE(0x06054b50, 0);
+  endOfCentralDirectory.writeUInt16LE(entries.length, 8);
+  endOfCentralDirectory.writeUInt16LE(entries.length, 10);
+  endOfCentralDirectory.writeUInt32LE(centralDirectory.length, 12);
+  endOfCentralDirectory.writeUInt32LE(0, 16);
+  return Buffer.concat([centralDirectory, endOfCentralDirectory]);
+}

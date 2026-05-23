@@ -55,18 +55,21 @@ const requiredVsixEntries = [
   'extension/out/server/node_modules/web-tree-sitter/tree-sitter.js',
   'extension/out/server/node_modules/web-tree-sitter/tree-sitter.wasm',
 ];
+const forbiddenVsixEntryPatterns = [
+  /^extension\/.*\.tsbuildinfo$/,
+];
 
 try {
+  if (args.verifyVsix) {
+    await assertVsixContents(resolve(args.verifyVsix));
+    process.exit(0);
+  }
+
   await assertFreshBuildOutputs(monorepoRoot);
   if (args.checkOutput) process.exit(0);
 
   const vsixPath = await packageVsix();
-  const entries = await listZipEntries(vsixPath);
-  for (const entry of requiredVsixEntries) {
-    if (!entries.has(entry)) {
-      throw new Error(`VSIX is missing required file ${entry}`);
-    }
-  }
+  await assertVsixContents(vsixPath);
 
   console.log(`[package-vsix] verified ${relative(monorepoRoot, vsixPath)}`);
   for (const entry of requiredVsixEntries) console.log(`[package-vsix] contains ${entry}`);
@@ -80,8 +83,22 @@ async function assertFreshBuildOutputs(root) {
     const outputPath = resolve(root, check.output);
     const outputStat = await statOrThrow(outputPath, `${check.output} is missing; run npm run build before packaging`);
     const newest = await newestInput(root, check.inputs);
-    if (outputStat.mtimeMs + 999 < newest.mtimeMs) {
+    if (outputStat.mtimeMs < newest.mtimeMs) {
       throw new Error(`${check.output} is stale; newest input ${newest.relativePath} is newer`);
+    }
+  }
+}
+
+async function assertVsixContents(vsixPath) {
+  const entries = await listZipEntries(vsixPath);
+  for (const entry of requiredVsixEntries) {
+    if (!entries.has(entry)) {
+      throw new Error(`VSIX is missing required file ${entry}`);
+    }
+  }
+  for (const entry of entries) {
+    if (forbiddenVsixEntryPatterns.some((pattern) => pattern.test(entry))) {
+      throw new Error(`VSIX must not include generated file ${entry}`);
     }
   }
 }
@@ -196,13 +213,15 @@ function findEndOfCentralDirectory(buffer) {
 }
 
 function parseArgs(rawArgs) {
-  const parsed = { checkOutput: false, monorepoRoot: undefined };
+  const parsed = { checkOutput: false, monorepoRoot: undefined, verifyVsix: undefined };
   for (let i = 0; i < rawArgs.length; i++) {
     const arg = rawArgs[i];
     if (arg === '--check-output') {
       parsed.checkOutput = true;
     } else if (arg === '--monorepo-root') {
       parsed.monorepoRoot = rawArgs[++i];
+    } else if (arg === '--verify-vsix') {
+      parsed.verifyVsix = rawArgs[++i];
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
