@@ -117,6 +117,7 @@ suite('packaged server layout', () => {
     try {
       const vsixPath = path.join(tempRoot, 'extension.vsix');
       fs.writeFileSync(vsixPath, zipWithCentralDirectoryEntries([
+        'extension/README.md',
         'extension/package.json',
         'extension/tsconfig.tsbuildinfo',
         'extension/out/extension.js',
@@ -134,6 +135,33 @@ suite('packaged server layout', () => {
 
       assert.notStrictEqual(result.status, 0);
       assert.match(result.stderr, /VSIX must not include generated file extension\/tsconfig\.tsbuildinfo/);
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('VSIX verifier requires the extension README', () => {
+    const root = monorepoRoot();
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'unity-shader-nav-vsix-readme-'));
+    try {
+      const vsixPath = path.join(tempRoot, 'extension.vsix');
+      fs.writeFileSync(vsixPath, zipWithCentralDirectoryEntries([
+        'extension/package.json',
+        'extension/out/extension.js',
+        'extension/out/server/server.js',
+        'extension/out/grammars/tree-sitter-hlsl.wasm',
+        'extension/out/server/node_modules/web-tree-sitter/tree-sitter.js',
+        'extension/out/server/node_modules/web-tree-sitter/tree-sitter.wasm',
+      ]));
+
+      const result = spawnSync(
+        process.execPath,
+        [path.resolve(root, 'scripts/package-vsix.mjs'), '--verify-vsix', vsixPath],
+        { encoding: 'utf8' },
+      );
+
+      assert.notStrictEqual(result.status, 0);
+      assert.match(result.stderr, /VSIX is missing required file extension\/README\.md/);
     } finally {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }

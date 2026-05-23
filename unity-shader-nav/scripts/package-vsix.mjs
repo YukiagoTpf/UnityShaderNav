@@ -1,4 +1,4 @@
-import { readdir, readFile, rm, stat } from 'node:fs/promises';
+import { copyFile, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -49,6 +49,7 @@ const freshnessChecks = [
 ];
 
 const requiredVsixEntries = [
+  'extension/README.md',
   'extension/out/extension.js',
   'extension/out/server/server.js',
   'extension/out/grammars/tree-sitter-hlsl.wasm',
@@ -148,6 +149,7 @@ async function packageVsix() {
   const packageJson = JSON.parse(await readFile(resolve(clientRoot, 'package.json'), 'utf8'));
   const vsixPath = resolve(clientRoot, `${packageJson.name}-${packageJson.version}.vsix`);
   await rm(vsixPath, { force: true });
+  const restoreReadme = await stageReadme();
 
   const npxArgs = [
     '--no-install',
@@ -160,8 +162,45 @@ async function packageVsix() {
   ];
   const command = process.platform === 'win32' ? process.env.ComSpec ?? 'cmd.exe' : 'npx';
   const commandArgs = process.platform === 'win32' ? ['/d', '/s', '/c', 'npx.cmd', ...npxArgs] : npxArgs;
-  await run(command, commandArgs, clientRoot);
-  return vsixPath;
+  try {
+    await run(command, commandArgs, clientRoot);
+    return vsixPath;
+  } finally {
+    await restoreReadme();
+  }
+}
+
+async function stageReadme() {
+  const source = findReadmeSource();
+  const target = resolve(clientRoot, 'README.md');
+  let previous;
+  try {
+    previous = await readFile(target);
+  } catch {
+    previous = undefined;
+  }
+
+  await copyFile(source, target);
+
+  return async () => {
+    if (previous) {
+      await writeFile(target, previous);
+    } else {
+      await rm(target, { force: true });
+    }
+  };
+}
+
+function findReadmeSource() {
+  const candidates = [
+    resolve(monorepoRoot, 'README.md'),
+    resolve(dirname(monorepoRoot), 'README.md'),
+  ];
+  const source = candidates.find((candidate) => existsSync(candidate));
+  if (!source) {
+    throw new Error(`README.md is missing; checked ${candidates.map((candidate) => relative(monorepoRoot, candidate)).join(', ')}`);
+  }
+  return source;
 }
 
 function run(command, commandArgs, cwd) {
