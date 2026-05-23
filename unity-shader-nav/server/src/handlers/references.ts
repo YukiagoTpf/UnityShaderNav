@@ -5,7 +5,13 @@ import type {
   TextDocuments,
 } from 'vscode-languageserver/node';
 import type { TextDocument } from 'vscode-languageserver-textdocument';
-import type { Range } from '@unity-shader-nav/shared';
+import type {
+  Range,
+  ReferenceContext,
+  ReferenceEntry,
+  SymbolEntry,
+  SymbolKind,
+} from '@unity-shader-nav/shared';
 import {
   resolveReferenceTargets,
   resolveReferenceTargetsForName,
@@ -34,6 +40,37 @@ function isScopedTarget(target: ReferenceTarget): boolean {
 
 function isMemberTarget(target: ReferenceTarget): boolean {
   return target.kind === 'structMember' && !!target.parentType;
+}
+
+function isGlobalKindAwareTarget(target: ReferenceTarget): boolean {
+  return !isScopedTarget(target) && !isMemberTarget(target);
+}
+
+function compatibleReferenceContexts(kind: SymbolKind): readonly ReferenceContext[] {
+  switch (kind) {
+    case 'function':
+      return ['call', 'pragma'];
+    case 'struct':
+      return ['type'];
+    case 'macro':
+      return ['identifier', 'call'];
+    case 'variable':
+    case 'cbuffer':
+      return ['identifier', 'member'];
+    case 'structMember':
+      return ['member'];
+    case 'parameter':
+    case 'localVariable':
+      return ['identifier'];
+  }
+}
+
+function isReferenceContextCompatible(target: ReferenceTarget, reference: ReferenceEntry): boolean {
+  return compatibleReferenceContexts(target.kind).includes(reference.context);
+}
+
+function isSymbolKindCompatible(target: ReferenceTarget, symbol: SymbolEntry): boolean {
+  return symbol.kind === target.kind;
 }
 
 function locationKey(location: Location): string {
@@ -81,6 +118,9 @@ export function registerReferencesHandler(
       const scopedTargets = targets.filter(isScopedTarget);
       const memberTargets = targets.filter(isMemberTarget);
       const narrowedTargets = [...scopedTargets, ...memberTargets];
+      const globalKindAwareTargets = narrowedTargets.length === 0
+        ? targets.filter(isGlobalKindAwareTarget)
+        : [];
       const queryName = targets[0]?.name ?? word.text;
       const includePackages = workspace.settings.findReferences.includePackages;
       const symbolsAsReferences = params.context.includeDeclaration
@@ -98,6 +138,10 @@ export function registerReferencesHandler(
               parentType: symbol.parentType,
             }))
           ))
+          .filter((symbol) => (
+            globalKindAwareTargets.length === 0
+            || globalKindAwareTargets.some((target) => isSymbolKindCompatible(target, symbol))
+          ))
           .map((symbol) => ({
             uri: symbol.location.uri,
             range: symbol.location.range,
@@ -108,14 +152,22 @@ export function registerReferencesHandler(
         .lookup(queryName)
         .filter((reference) => includePackages || !workspace.isInPackages(reference.location.uri))
         .filter((reference) => {
-          if (narrowedTargets.length === 0) return true;
+          if (narrowedTargets.length === 0 && globalKindAwareTargets.length === 0) return true;
+          const activeTargets = narrowedTargets.length > 0 ? narrowedTargets : globalKindAwareTargets;
+
+          if (
+            globalKindAwareTargets.length > 0 &&
+            !globalKindAwareTargets.some((target) => isReferenceContextCompatible(target, reference))
+          ) {
+            return false;
+          }
 
           const candidateIndex = workspace.store?.get(reference.location.uri);
           if (!candidateIndex) return false;
 
           const candidateTargets = reference.context === 'member'
             ? resolveReferenceTargetsForMemberReference(candidateIndex, reference, workspace.global)
-            : reference.context === 'identifier'
+            : reference.context !== 'include'
               ? resolveReferenceTargetsForName(
                 candidateIndex,
                 reference.name,
@@ -125,7 +177,11 @@ export function registerReferencesHandler(
               : [];
 
           return candidateTargets.some((candidate) =>
-            narrowedTargets.some((target) => sameTarget(candidate, target)),
+            activeTargets.some((target) =>
+              narrowedTargets.length > 0
+                ? sameTarget(candidate, target)
+                : candidate.kind === target.kind && isReferenceContextCompatible(target, reference),
+            ),
           );
         })
         .map((reference) => ({
