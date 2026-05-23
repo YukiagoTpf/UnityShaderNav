@@ -1,4 +1,5 @@
 import * as assert from 'node:assert';
+import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 
@@ -17,8 +18,13 @@ async function ensureWorkspaceFolder(folderPath: string): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 1000));
 }
 
-async function ensureSettingsDirectory(folderUri: vscode.Uri): Promise<void> {
-  await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(folderUri, '.vscode'));
+async function ensureSettingsFile(folderPath: string): Promise<void> {
+  const settingsDir = path.join(folderPath, '.vscode');
+  const settingsPath = path.join(settingsDir, 'settings.json');
+  await fs.mkdir(settingsDir, { recursive: true });
+  await fs.writeFile(settingsPath, '{}', { flag: 'wx' }).catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== 'EEXIST') throw error;
+  });
 }
 
 async function waitForDefinitions(
@@ -77,7 +83,7 @@ suite('F12 on macro-declared variable', () => {
     ].join('\n');
 
     try {
-      await ensureSettingsDirectory(folder.uri);
+      await ensureSettingsFile(folder.uri.fsPath);
       await config.update('declarationMacros', [], vscode.ConfigurationTarget.Workspace);
       await vscode.workspace.fs.writeFile(uri, Buffer.from(text, 'utf8'));
 

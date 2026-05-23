@@ -1,4 +1,5 @@
 import * as assert from 'node:assert';
+import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 
@@ -17,8 +18,13 @@ async function ensureWorkspaceFolder(folderPath: string): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 1200));
 }
 
-async function ensureSettingsDirectory(folderUri: vscode.Uri): Promise<void> {
-  await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(folderUri, '.vscode'));
+async function ensureSettingsFile(folderPath: string): Promise<void> {
+  const settingsDir = path.join(folderPath, '.vscode');
+  const settingsPath = path.join(settingsDir, 'settings.json');
+  await fs.mkdir(settingsDir, { recursive: true });
+  await fs.writeFile(settingsPath, '{}', { flag: 'wx' }).catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== 'EEXIST') throw error;
+  });
 }
 
 async function waitForReferences(
@@ -76,7 +82,7 @@ suite('Find References', () => {
     const uri = vscode.Uri.file(path.join(root, 'Assets', 'Shaders', 'Shared.hlsl'));
     const settingsFolder = vscode.workspace.workspaceFolders?.[0];
     assert.ok(settingsFolder, 'expected integration test workspace folder');
-    await ensureSettingsDirectory(settingsFolder.uri);
+    await ensureSettingsFile(settingsFolder.uri.fsPath);
     const doc = await vscode.workspace.openTextDocument(uri);
     await vscode.window.showTextDocument(doc);
     const position = positionOf(doc, 'SharedRef');
