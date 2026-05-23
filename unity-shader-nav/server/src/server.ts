@@ -3,15 +3,18 @@ import { loadSettings, onSettingsChanged } from './config';
 import { registerDefinitionHandler } from './handlers/definition';
 import { registerDocumentSymbolHandler } from './handlers/documentSymbol';
 import { registerDocuments } from './handlers/documents';
+import { registerReferencesHandler } from './handlers/references';
 import { registerFileWatchers } from './lifecycle/fileWatcher';
 import { applyScopedSettingsAndRebuild, reindexOpenDocuments } from './lifecycle/rebuild';
 import { RequestSuspender } from './lifecycle/requestSuspender';
 import { WorkspaceManager } from './workspace';
+import { DEFAULT_SETTINGS, type ExtensionSettings } from '@unity-shader-nav/shared';
 
 const connection = getConnection();
 const manager = new WorkspaceManager();
 const suspender = new RequestSuspender({ timeoutMs: 5000 });
 let globalStorageDir: string | undefined;
+let settingsRef: ExtensionSettings = DEFAULT_SETTINGS;
 
 connection.onInitialize((params) => {
   const options = params.initializationOptions as { globalStorageDir?: unknown } | undefined;
@@ -29,6 +32,7 @@ connection.onInitialized(async () => {
   suspender.suspend();
   try {
     const settings = await loadSettings(connection);
+    settingsRef = settings;
     manager.configure(settings, connection, globalStorageDir);
     const folders = await connection.workspace.getWorkspaceFolders() ?? [];
     for (const folder of folders) {
@@ -63,6 +67,7 @@ connection.onInitialized(async () => {
 });
 
 onSettingsChanged(connection, async (settings) => {
+  settingsRef = settings;
   manager.configure(settings, connection, globalStorageDir);
   await applyScopedSettingsAndRebuild(
     connection,
@@ -75,6 +80,13 @@ onSettingsChanged(connection, async (settings) => {
 
 registerDefinitionHandler(connection, documents, manager, suspender);
 registerDocumentSymbolHandler(connection, documents, manager, suspender);
+registerReferencesHandler(
+  connection,
+  documents,
+  manager,
+  () => settingsRef.findReferences.includePackages,
+  suspender,
+);
 registerFileWatchers(connection, manager, suspender, openDocuments);
 
 connection.onShutdown(async () => {

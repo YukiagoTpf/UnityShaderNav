@@ -171,7 +171,7 @@ isInPackages(uri: string): boolean {
 }
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add server/src/workspace/workspace.ts
@@ -189,7 +189,7 @@ git commit -m "feat(plan-13): Workspace tracks GlobalReferenceIndex"
 
 > Note: 当前实现已在 Plan 10 之后把 request handlers 统一接入 `RequestSuspender` 和 `WorkspaceManager.workspaceForOrCreateFile()`，以支持冷启动/重建挂起和 standalone lazy workspace。Task 3 实施时 references handler 按这个现有生命周期实现为 async handler，而不是照原示例使用同步 `workspaceFor()`。
 
-- [ ] **Step 1: handler**
+- [x] **Step 1: handler**
 
 ```typescript
 import type { Connection, TextDocuments, ReferenceParams, Location } from 'vscode-languageserver/node';
@@ -228,13 +228,13 @@ export function registerReferencesHandler(
 }
 ```
 
-- [ ] **Step 2: capability**
+- [x] **Step 2: capability**
 
 ```typescript
 referencesProvider: true,
 ```
 
-- [ ] **Step 3: server.ts**
+- [x] **Step 3: server.ts**
 
 ```typescript
 let settingsRef: ExtensionSettings = DEFAULT_SETTINGS;
