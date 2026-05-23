@@ -14,7 +14,7 @@
 | 06 | include-resolver | ✅ Done + review fix applied | Case 4 | include path F12 + refs；case fallback；block comment false positive fixed |
 | 07 | package-resolver-and-cross-file | ✅ Done + review fixes applied | Case 2, 3, 9 | MVP 完成 |
 | 08 | index-lifecycle | ✅ Done + review fixes applied | — | watcher debounce/rebuild + live overlay suspension covered |
-| 09 | cache-persistence | ⏸ P1 | — | |
+| 09 | cache-persistence | ✅ Done + review fixes applied | — | P3 cross-process atomic cache write hardening deferred |
 | 10 | document-symbols | ⏸ P1 | Case 12 | |
 | 11 | chain-lookup | ⏸ P1 | Case 10 | L3b 已标 P2（B4 修订） |
 | 12 | macro-definitions | ⏸ P1 | Case 11 | |
@@ -377,6 +377,47 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 - settings change 清理 stale index，并恢复打开文档 ✓
 - cold start / rebuild 期间 definition request 通过 ref-count suspender 挂起，超时返回 null ✓
 
+## Plan 09 实施记录
+
+**Commits**：`56134a9..2e54737`（8 个 Task commit + test isolation/fix commits + review/fix docs）。
+
+| Task | 状态 | Commit |
+|---|---|---|
+| 1 CacheManifest shared types | ✅ | `56134a9` |
+| 2 CacheStore + fingerprint | ✅ | `e9619ba` |
+| 3 cache directory selection | ✅（偏离 1） | `d2f6f64` |
+| 4 pass globalStorageDir | ✅ | `27bbc84` |
+| 5 CacheManager mtime/size validation | ✅ | `bd03e34` |
+| 6 Workspace cache bootstrap/refresh/persist | ✅ | `915ee00` |
+| 7 cold-start cache roundtrip | ✅ | `cb126fc` |
+| 8 shutdown persist | ✅ | `d67741d` |
+
+**Review / fix**：
+- `docs/superpowers/plans/plan09review.md` 落库：code-review subagent 无 P1，发现 standalone globalStorage fallback 未真正恢复/持久化、packages-lock 变化后旧包缓存符号可能复活；P3 为跨进程 cache 写入非完全原子。
+- `docs/superpowers/plans/plan09fix.md` 落库：修复 standalone manifest load + standalone opened file persist；warm cache restore 过滤当前 packages-lock 不再覆盖的 `Packages/` / `Library/PackageCache/` 文件；P3 记录 deferred。
+- `c498aa1 fix(plan-09): serialize cache manifest writes`
+- `2e54737 fix(plan-09): address cache persistence review findings`
+
+**Plan 与现实偏离（已在 plan markdown 内联 Note）**：
+1. Task 3：`CacheManager` 在 Task 5 才创建。为保持中间提交可编译，Task 3 的 `server/src/cache/index.ts` 只导出已存在的 `CacheStore` / cache-location API，Task 5 再补 `CacheManager` 导出。
+
+**主 agent 验证结果（2026-05-23）**：
+- `npm run build`：shared/server/client TypeScript builds + copy-server + bundle 全过。
+- `npm run test -w @unity-shader-nav/server`：server vitest **38 files / 159 tests** PASS。
+- `npm test`：端到端 PASS（含 test-electron + server vitest；test-electron 日志仍有 VSCode 对已删除临时 workspace 的 noisy validation warnings）。
+
+**Acceptance**：
+- CacheManifest / fingerprint / mismatch invalidation 覆盖 ✓
+- Unity 项目缓存写入 `Library/UnityShaderNavCache/index.json`，第二次 bootstrap 走 cache restore ✓
+- Standalone 模式写入并恢复 `globalStorageDir/standalone/<hash>/index.json` ✓
+- `(mtime, size)` 校验失效文件并刷新，新增文件补扫 ✓
+- `packages-lock.json` 变化后 warm cache 不复用旧 package cache 符号 ✓
+- shutdown 调用 `WorkspaceManager.persistAll()` 兜底 flush ✓
+- 同进程并发 cache save 在 Windows 下串行化，避免共享 tmp/rename 竞态 ✓
+
+**Deferred**：
+- P3：跨 VSCode/server 进程同时写同一 cache manifest 尚未做 lockfile/atomic replace 硬化。缓存可重建，当前 Plan 09 先保留为 follow-up。
+
 ## 进行中 TODO
 
 ### 🟡 Plan 01 follow-up（plan01fix 之后还剩的）
@@ -403,15 +444,15 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 
 ### ⏳ 已展望的风险（来自 REVIEW，未排进 Blocker）
 
-- **R6/R7/R8**：性能并发模型 — cold start 串行 `fs.stat()`、persist 全量重写、`fullScan()` 无 bounded concurrency。Plan 09 前要继续补 concurrency/persistence model 段落
+- **R6/R7/R8**：性能并发模型 — Plan 09 已落 cache persistence MVP；cold/warm restore 仍是串行 `fs.stat()`、persist 仍全量重写、`fullScan()` 仍无 bounded concurrency。后续性能专项再处理。
 - **R3**：Plan 10 buildDocumentSymbols 嵌套算法 fiddly，TDD 时小心
 - ~~**R5**：Plan 06 `existsCaseSensitive` 在 macOS 上语义反了；macOS CI 会爆~~ ✅ Plan 06 实现用逐段 `readdir` 校验真实大小写，并通过显式 ignore-case fallback 返回磁盘真实路径
 - ~~**P3**：Plan 08 `this.store.clear?.()` 用 optional chaining 兜底，但 `IndexStore.clear()` 没正式定义~~ ✅ Plan 08 已补 `IndexStore.clear()` / `GlobalSymbolIndex.clear()`
 
 ## 下一步
 
-1. 进入 **Plan 09: cache-persistence**，持久化索引并处理启动恢复。
-2. Plan 09 前重点确认 full-scan bounded concurrency、cache invalidation 与 packages-lock / settings lifecycle 的衔接。
+1. 进入 **Plan 10: document-symbols**，实现 Outline / Document Symbols。
+2. Plan 09 follow-up：如需支持多 VSCode 窗口同时打开同一 Unity 项目，再补跨进程 cache manifest 写入锁或更强 atomic replace。
 
 ## 历史回放（review 修订）
 
@@ -429,3 +470,4 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 - 2026-05-23：Plan 06 实施 + review/fix（commit `d154078..5375c40`，10 个 task commit + review doc + fix commit，Case 4 覆盖；2 处偏离 plan markdown 内联记录）
 - 2026-05-23：Plan 07 实施 + review/fix（commit `7dffab7..310a83b`，11 个 task commit + review doc + fix commit，Case 2/3/9 覆盖；2 处偏离 plan markdown 内联记录；MVP 完成）
 - 2026-05-23：Plan 08 实施 + review/fix（commit `a99bb7c..15a1091`，8 个 task commit + review doc + fix commits；文件 watcher debounce/rebuild、settings cleanup、open document overlay、request suspension 覆盖；4 处偏离 plan markdown 内联记录）
+- 2026-05-23：Plan 09 实施 + review/fix（commit `56134a9..2e54737`，8 个 task commit + review/fix docs；cache manifest/fingerprint、Unity `Library/UnityShaderNavCache`、standalone globalStorage fallback、warm restore refresh、shutdown persist 覆盖；1 处偏离 plan markdown 内联记录；P3 跨进程 cache write hardening deferred）

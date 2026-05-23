@@ -32,4 +32,3 @@ Impact: cache is rebuildable, so this is not blocking for Plan 09, but cross-pro
 
 - Subagent: `npm run test -w @unity-shader-nav/server -- --run tests/cache` -> 17/17 passed.
 - Main agent before review: `npm test` -> passed after fixing same-process cache write serialization.
-
