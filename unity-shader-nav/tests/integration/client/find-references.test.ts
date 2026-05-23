@@ -89,6 +89,7 @@ suite('Find References', () => {
     const config = vscode.workspace.getConfiguration('unityShaderNav');
 
     try {
+      await vscode.commands.executeCommand('workbench.action.files.saveAll');
       await config.update(
         'findReferences.includePackages',
         false,
@@ -107,6 +108,7 @@ suite('Find References', () => {
       const userOnlyPaths = userOnly?.map((ref) => ref.uri.fsPath).join(', ') ?? '<none>';
       assert.ok(userOnly, `expected user-only references, got ${userOnlyPaths}`);
 
+      await vscode.commands.executeCommand('workbench.action.files.saveAll');
       await config.update(
         'findReferences.includePackages',
         true,
@@ -125,6 +127,7 @@ suite('Find References', () => {
       const withPackagePaths = withPackages?.map((ref) => ref.uri.fsPath).join(', ') ?? '<none>';
       assert.ok(withPackages, `expected package reference after enabling setting, got ${withPackagePaths}`);
     } finally {
+      await vscode.commands.executeCommand('workbench.action.files.saveAll');
       await config.update(
         'findReferences.includePackages',
         false,

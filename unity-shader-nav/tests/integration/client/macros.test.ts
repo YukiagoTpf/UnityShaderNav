@@ -84,6 +84,7 @@ suite('F12 on macro-declared variable', () => {
 
     try {
       await ensureSettingsFile(folder.uri.fsPath);
+      await vscode.commands.executeCommand('workbench.action.files.saveAll');
       await config.update('declarationMacros', [], vscode.ConfigurationTarget.Workspace);
       await vscode.workspace.fs.writeFile(uri, Buffer.from(text, 'utf8'));
 
@@ -106,6 +107,7 @@ suite('F12 on macro-declared variable', () => {
       const disposable = vscode.workspace.onDidChangeConfiguration((event) => {
         sawConfigEvent = sawConfigEvent || event.affectsConfiguration('unityShaderNav.declarationMacros');
       });
+      await vscode.commands.executeCommand('workbench.action.files.saveAll');
       await config.update(
         'declarationMacros',
         [{ pattern: 'MY_TEX2D($name)', kind: 'variable' }],
@@ -128,6 +130,7 @@ suite('F12 on macro-declared variable', () => {
       assert.ok(links && links.length >= 1, 'expected definition after declarationMacros update');
       assert.strictEqual(targetRange(links[0]).start.line, 0);
     } finally {
+      await vscode.commands.executeCommand('workbench.action.files.saveAll');
       await config.update('declarationMacros', undefined, vscode.ConfigurationTarget.Workspace);
       await vscode.workspace.fs.delete(uri, { useTrash: false }).then(undefined, () => undefined);
       await vscode.workspace.fs
