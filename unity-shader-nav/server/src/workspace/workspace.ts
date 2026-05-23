@@ -1,7 +1,17 @@
 import { promises as fs } from 'node:fs';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { Connection } from 'vscode-languageserver/node';
-import type { ExtensionSettings, FileIndex } from '@unity-shader-nav/shared';
+import type {
+  CachedFile,
+  CacheFingerprint,
+  CacheManifest,
+  ExtensionSettings,
+  FileIndex,
+} from '@unity-shader-nav/shared';
+import { CacheManager, CacheStore, chooseCacheDir } from '../cache';
+import { buildFingerprint } from '../cache/fingerprint';
 import { PackageResolver } from '../packages';
 import type { IncludeContext } from '../include';
 import { GlobalSymbolIndex, IndexStore } from '../index';
@@ -23,6 +33,9 @@ export class Workspace {
   readonly store = new IndexStore();
   readonly global = new GlobalSymbolIndex();
   private readonly diskIndexes = new Map<string, FileIndex>();
+  private cache: CacheManager | undefined;
+  private fingerprint: CacheFingerprint | undefined;
+  private globalStorageDir: string | undefined;
   table: MacroPatternTable;
   settings: ExtensionSettings;
 
@@ -41,6 +54,7 @@ export class Workspace {
   }
 
   async bootstrap(connection: Connection, _globalStorageDir?: string): Promise<void> {
+    this.globalStorageDir = _globalStorageDir;
     const folderPath = fileURLToPath(this.folderUri);
     const configuredRoot = this.settings.projectRoot.trim();
     this.unityRoot = configuredRoot || (await detectUnityRoot(folderPath)) || undefined;
@@ -51,6 +65,8 @@ export class Workspace {
         unityProjectRoot: undefined,
         includeDirectories: this.settings.includeDirectories,
       };
+      await this.configureCache(folderPath, _globalStorageDir);
+      await this.bootstrapFromCache(connection, undefined);
       return;
     }
 
@@ -62,7 +78,101 @@ export class Workspace {
       packagePhysicalPaths: this.packageResolver.asIncludeContextMap(),
     };
 
+    await this.configureCache(folderPath, _globalStorageDir);
+    const manifest = await this.cache?.load(this.fingerprint);
+    if (manifest) {
+      await this.bootstrapFromCache(connection, manifest);
+      return;
+    }
+
     await this.fullScan(connection);
+    await this.persist();
+  }
+
+  private async configureCache(folderPath: string, globalStorageDir?: string): Promise<void> {
+    const cacheDir = chooseCacheDir({
+      unityProjectRoot: this.unityRoot,
+      workspaceFolderUri: this.folderUri,
+      globalStorageDir,
+    });
+    if (!cacheDir) {
+      this.cache = undefined;
+      this.fingerprint = undefined;
+      return;
+    }
+
+    this.cache = new CacheManager(new CacheStore(cacheDir));
+    this.fingerprint = await buildFingerprint(this.settings, this.resolveWasmPath(folderPath));
+  }
+
+  private resolveWasmPath(folderPath: string): string {
+    const candidates = [
+      join(__dirname, '..', '..', 'grammars', 'tree-sitter-hlsl.wasm'),
+      join(__dirname, '..', 'grammars', 'tree-sitter-hlsl.wasm'),
+      join(folderPath, 'server', 'grammars', 'tree-sitter-hlsl.wasm'),
+    ];
+    return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0];
+  }
+
+  private async bootstrapFromCache(
+    connection: Connection,
+    manifest: CacheManifest | undefined,
+  ): Promise<void> {
+    if (!manifest || !this.cache) return;
+
+    const progress = await connection.window.createWorkDoneProgress();
+    progress.begin('UnityShaderNav', undefined, 'restoring cache...', false);
+    const refreshQueue: string[] = [];
+
+    try {
+      for (const cachedFile of manifest.files) {
+        if (await this.cache.isValid(cachedFile)) {
+          this.diskIndexes.set(cachedFile.uri, cachedFile.index);
+          this.store.set(cachedFile.uri, cachedFile.index);
+          this.global.upsert(cachedFile.index);
+        } else {
+          refreshQueue.push(cachedFile.uri);
+        }
+      }
+
+      progress.report(`re-parsing ${refreshQueue.length} changed files...`);
+      for (const uri of refreshQueue) {
+        try {
+          const filePath = fileURLToPath(uri);
+          await this.indexAndStore(filePath, connection);
+        } catch {
+          this.drop(uri);
+        }
+      }
+
+      await this.indexMissingDiskFiles(connection);
+    } finally {
+      progress.done();
+    }
+
+    await this.persist();
+  }
+
+  private async indexMissingDiskFiles(connection: Connection): Promise<void> {
+    if (!this.unityRoot) return;
+
+    const userFiles = await walkFiles(this.unityRoot, [
+      ...this.settings.excludePatterns,
+      'Packages/**',
+    ]);
+    for (const filePath of userFiles) {
+      const uri = pathToFileURL(filePath).href;
+      if (!this.store.get(uri)) await this.indexAndStore(filePath, connection);
+    }
+
+    if (!this.packageResolver) return;
+    for (const { path } of this.packageResolver.allPaths()) {
+      const packageFiles = await walkFiles(path, ['**/Documentation~/**', '**/Samples~/**']);
+      for (const filePath of packageFiles) {
+        const uri = pathToFileURL(filePath).href;
+        if (!this.store.get(uri)) await this.indexAndStore(filePath, connection);
+      }
+    }
   }
 
   private async indexAndStore(absPath: string, connection?: Connection): Promise<void> {
@@ -132,13 +242,32 @@ export class Workspace {
         this.drop(event.uri);
       }
     }
+    await this.persist();
   }
 
   async rebuild(connection: Connection): Promise<void> {
     this.store.clear();
     this.global.clear();
     this.diskIndexes.clear();
-    await this.bootstrap(connection);
+    await this.bootstrap(connection, this.globalStorageDir);
+  }
+
+  async persist(): Promise<void> {
+    if (!this.cache || !this.fingerprint) return;
+
+    const records: CachedFile[] = [];
+    for (const [uri, index] of this.diskIndexes) {
+      const snapshot = await this.cache.snapshot(uri, index);
+      if (snapshot) records.push(snapshot);
+    }
+
+    const manifest = this.cache.buildManifest(
+      this.folderUri,
+      this.unityRoot ?? null,
+      this.fingerprint,
+      records,
+    );
+    await this.cache.save(manifest);
   }
 
   closeDocument(uri: string): void {

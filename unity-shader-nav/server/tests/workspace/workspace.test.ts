@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -17,6 +17,10 @@ const fakeConnection = {
   },
 } as never;
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 describe('Workspace.bootstrap', () => {
   it('indexes user files and Packages into the global index', async () => {
     const folder = pathToFileURL(resolve(__dirname, '../include/fixtures/projectA')).href;
@@ -27,6 +31,31 @@ describe('Workspace.bootstrap', () => {
     expect(workspace.isStandalone()).toBe(false);
     expect(workspace.global.lookup('Common').length).toBeGreaterThanOrEqual(1);
     expect(workspace.global.lookup('Core').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('writes cache on first bootstrap and restores it on the second bootstrap', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-cache-bootstrap-'));
+    await mkdir(join(root, 'Assets', 'Shaders'), { recursive: true });
+    await mkdir(join(root, 'Packages'), { recursive: true });
+    await mkdir(join(root, 'ProjectSettings'), { recursive: true });
+    await writeFile(join(root, 'Packages', 'packages-lock.json'), '{"dependencies":{}}');
+    await writeFile(join(root, 'Assets', 'Shaders', 'Cached.hlsl'), 'float4 CachedSymbol() { return 0; }');
+
+    const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+    await ws1.bootstrap(fakeConnection);
+
+    const cachePath = join(root, 'Library', 'UnityShaderNavCache', 'index.json');
+    const manifest = JSON.parse(await readFile(cachePath, 'utf8'));
+    expect(manifest.files.length).toBeGreaterThanOrEqual(1);
+
+    const fullScan = vi.spyOn(Workspace.prototype, 'fullScan');
+    const ws2 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+    await ws2.bootstrap(fakeConnection);
+
+    expect(fullScan).not.toHaveBeenCalled();
+    expect(ws2.global.lookup('CachedSymbol').length).toBeGreaterThanOrEqual(1);
+
+    await rm(root, { recursive: true, force: true });
   });
 
   it('restores the full-scan index when a scanned file is opened and closed', async () => {
