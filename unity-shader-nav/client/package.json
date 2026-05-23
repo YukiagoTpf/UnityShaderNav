@@ -90,7 +90,8 @@
   },
   "scripts": {
     "build": "tsc -p . && node ../scripts/copy-server.mjs && node ../scripts/build.mjs",
-    "watch": "tsc -p . -w"
+    "watch": "tsc -p . -w",
+    "vscode:prepublish": "node ../scripts/package-vsix.mjs --check-output"
   },
   "dependencies": {
     "@unity-shader-nav/shared": "0.0.1",

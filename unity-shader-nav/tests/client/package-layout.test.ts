@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createRequire } from 'node:module';
 import * as os from 'node:os';
+import { spawnSync } from 'node:child_process';
 
 function monorepoRoot(): string {
   return path.resolve(__dirname, '../../..');
@@ -65,6 +66,46 @@ suite('packaged server layout', () => {
       const tree = await parseHlsl('float f() { return 1; }');
       assert.strictEqual(tree.rootNode.type, 'translation_unit');
       assert.strictEqual(tree.rootNode.hasError, false);
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('packaging guard rejects stale server output', () => {
+    const root = monorepoRoot();
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'unity-shader-nav-stale-'));
+    try {
+      const oldTime = new Date('2024-01-01T00:00:00Z');
+      const newTime = new Date('2024-01-02T00:00:00Z');
+      const files = [
+        'client/out/extension.js',
+        'client/out/server/server.js',
+        'client/out/grammars/tree-sitter-hlsl.wasm',
+        'client/out/server/node_modules/web-tree-sitter/tree-sitter.js',
+        'client/out/server/node_modules/web-tree-sitter/tree-sitter.wasm',
+        'client/src/extension.ts',
+        'server/src/server.ts',
+        'server/grammars/tree-sitter-hlsl.wasm',
+        'node_modules/web-tree-sitter/tree-sitter.js',
+        'node_modules/web-tree-sitter/tree-sitter.wasm',
+      ];
+
+      for (const file of files) {
+        const absolute = path.join(tempRoot, file);
+        fs.mkdirSync(path.dirname(absolute), { recursive: true });
+        fs.writeFileSync(absolute, file);
+        fs.utimesSync(absolute, oldTime, oldTime);
+      }
+      fs.utimesSync(path.join(tempRoot, 'server/src/server.ts'), newTime, newTime);
+
+      const result = spawnSync(
+        process.execPath,
+        [path.resolve(root, 'scripts/package-vsix.mjs'), '--check-output', '--monorepo-root', tempRoot],
+        { encoding: 'utf8' },
+      );
+
+      assert.notStrictEqual(result.status, 0);
+      assert.match(result.stderr, /client[\\/]out[\\/]server[\\/]server\.js is stale/);
     } finally {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }
