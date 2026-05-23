@@ -689,6 +689,72 @@ describe('registerReferencesHandler', () => {
     ]);
   });
 
+  it('filters global call references to call-compatible targets when a struct shares the name', async () => {
+    const { connection, handler } = captureReferencesHandler();
+    const uri = 'file:///project/Assets/GlobalFunctionStructKind.hlsl';
+    const text = [
+      'struct Helper { float value; };',
+      'float Helper(float x) { return x; }',
+      'float UseFunction() {',
+      '  return Helper(1);',
+      '}',
+      'float UseType(Helper value) {',
+      '  return value.value;',
+      '}',
+    ].join('\n');
+    const doc = TextDocument.create(uri, 'hlsl', 1, text);
+    const index = await indexFile(uri, text);
+    const store = new IndexStore();
+    store.set(uri, index);
+    const workspace = {
+      settings: DEFAULT_SETTINGS,
+      store,
+      global: new GlobalSymbolIndex(),
+      globalRefs: new GlobalReferenceIndex(),
+      isInPackages: () => false,
+    };
+    workspace.global.upsert(index);
+    workspace.globalRefs.upsert(index);
+    const documents = {
+      get(requestedUri: string) {
+        return requestedUri === uri ? doc : undefined;
+      },
+    } as never;
+    const manager = {
+      async workspaceForOrCreateFile() {
+        return workspace;
+      },
+    } as never;
+    const functionSymbol = index.symbols.find(
+      (symbol) => symbol.name === 'Helper' && symbol.kind === 'function',
+    );
+    const functionCall = index.references.find(
+      (reference) =>
+        reference.name === 'Helper' &&
+        reference.context === 'call' &&
+        reference.location.range.start.line === 3,
+    );
+    const typeReference = index.references.find(
+      (reference) => reference.name === 'Helper' && reference.context === 'type',
+    );
+    if (!functionSymbol || !functionCall || !typeReference) {
+      throw new Error('missing Helper function/struct fixture locations');
+    }
+
+    registerReferencesHandler(connection, documents, manager);
+
+    const result = await handler()({
+      textDocument: { uri },
+      position: { line: 3, character: 11 },
+      context: { includeDeclaration: true },
+    });
+
+    expect(result).toEqual([
+      { uri, range: functionSymbol.location.range },
+      { uri, range: functionCall.location.range },
+    ]);
+  });
+
   it('keeps macro references broad enough for define symbols while excluding local noise', async () => {
     const { connection, handler } = captureReferencesHandler();
     const uri = 'file:///project/Assets/MacroReferences.hlsl';

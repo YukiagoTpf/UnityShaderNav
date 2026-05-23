@@ -6,9 +6,9 @@ import type {
 } from 'vscode-languageserver/node';
 import type { TextDocument } from 'vscode-languageserver-textdocument';
 import type {
+  FileIndex,
   Range,
   ReferenceContext,
-  ReferenceEntry,
   SymbolEntry,
   SymbolKind,
 } from '@unity-shader-nav/shared';
@@ -28,6 +28,13 @@ function samePosition(a: Range['start'], b: Range['start']): boolean {
 
 function sameRange(a: Range, b: Range): boolean {
   return samePosition(a.start, b.start) && samePosition(a.end, b.end);
+}
+
+function containsPosition(range: Range, position: Range['start']): boolean {
+  if (position.line < range.start.line || position.line > range.end.line) return false;
+  if (position.line === range.start.line && position.character < range.start.character) return false;
+  if (position.line === range.end.line && position.character > range.end.character) return false;
+  return true;
 }
 
 function sameTarget(a: ReferenceTarget, b: ReferenceTarget): boolean {
@@ -65,12 +72,41 @@ function compatibleReferenceContexts(kind: SymbolKind): readonly ReferenceContex
   }
 }
 
-function isReferenceContextCompatible(target: ReferenceTarget, reference: ReferenceEntry): boolean {
-  return compatibleReferenceContexts(target.kind).includes(reference.context);
+function isReferenceContextCompatible(target: ReferenceTarget, context: ReferenceContext): boolean {
+  return compatibleReferenceContexts(target.kind).includes(context);
 }
 
 function isSymbolKindCompatible(target: ReferenceTarget, symbol: SymbolEntry): boolean {
   return symbol.kind === target.kind;
+}
+
+function narrowGlobalTargetsForOccurrence(
+  targets: ReferenceTarget[],
+  index: FileIndex | undefined,
+  name: string,
+  position: Range['start'],
+): ReferenceTarget[] {
+  if (!index || targets.length <= 1) return targets;
+
+  const occurrenceContexts = index.references
+    .filter((reference) =>
+      reference.name === name && containsPosition(reference.location.range, position),
+    )
+    .map((reference) => reference.context);
+  if (occurrenceContexts.length > 0) {
+    return targets.filter((target) =>
+      occurrenceContexts.some((context) => isReferenceContextCompatible(target, context)),
+    );
+  }
+
+  const declarationKinds = index.symbols
+    .filter((symbol) => symbol.name === name && containsPosition(symbol.location.range, position))
+    .map((symbol) => symbol.kind);
+  if (declarationKinds.length > 0) {
+    return targets.filter((target) => declarationKinds.includes(target.kind));
+  }
+
+  return targets;
 }
 
 function locationKey(location: Location): string {
@@ -118,10 +154,15 @@ export function registerReferencesHandler(
       const scopedTargets = targets.filter(isScopedTarget);
       const memberTargets = targets.filter(isMemberTarget);
       const narrowedTargets = [...scopedTargets, ...memberTargets];
-      const globalKindAwareTargets = narrowedTargets.length === 0
-        ? targets.filter(isGlobalKindAwareTarget)
-        : [];
       const queryName = targets[0]?.name ?? word.text;
+      const globalKindAwareTargets = narrowedTargets.length === 0
+        ? narrowGlobalTargetsForOccurrence(
+          targets.filter(isGlobalKindAwareTarget),
+          idx,
+          queryName,
+          params.position,
+        )
+        : [];
       const includePackages = workspace.settings.findReferences.includePackages;
       const symbolsAsReferences = params.context.includeDeclaration
         ? workspace.global
@@ -157,7 +198,9 @@ export function registerReferencesHandler(
 
           if (
             globalKindAwareTargets.length > 0 &&
-            !globalKindAwareTargets.some((target) => isReferenceContextCompatible(target, reference))
+            !globalKindAwareTargets.some((target) =>
+              isReferenceContextCompatible(target, reference.context),
+            )
           ) {
             return false;
           }
@@ -180,7 +223,8 @@ export function registerReferencesHandler(
             activeTargets.some((target) =>
               narrowedTargets.length > 0
                 ? sameTarget(candidate, target)
-                : candidate.kind === target.kind && isReferenceContextCompatible(target, reference),
+                : candidate.kind === target.kind &&
+                  isReferenceContextCompatible(target, reference.context),
             ),
           );
         })
