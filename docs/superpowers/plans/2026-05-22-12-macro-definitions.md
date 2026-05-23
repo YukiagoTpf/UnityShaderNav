@@ -9,6 +9,8 @@
 - 不需要扩展 resolver，因为现有 `resolveDefinition` 直接按 name 查找，`macro` 符号自然进入候选；多文件多 `#define` 同名（常见，如 `#define _SHADOWS_ENABLED`）走 multi-candidate Peek（ADR-0001）。
 - 引用端：tree-sitter-hlsl 把宏调用解析为 `call_expression` 或 `preproc_*`。在 collector 中加一条规则：当 call_expression 的 callee 是大写全局 identifier，且未匹配 declaration macro 时，仍登记为 `'call'` 引用——这部分 Plan 03 已经覆盖。F12 时 `resolveDefinition` 自动命中 `macro` 符号。
 
+> Note: Review fix added two hardening changes beyond the original task text: `scanDefines` now carries multi-line `/* ... */` comment state so disabled defines are not indexed, and `CACHE_VERSION` was bumped from 2 to 3 because Plan 12 changes cached `FileIndex.symbols` semantics by adding macro symbols.
+
 **Tech Stack:** 既有。
 
 **Dependencies:** Plan 01-07。

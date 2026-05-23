@@ -17,7 +17,7 @@
 | 09 | cache-persistence | ✅ Done + review fixes applied | — | P3 cross-process atomic cache write hardening deferred |
 | 10 | document-symbols | ✅ Done + review fixes applied | Case 12 | Outline / Document Symbols；cache version bumped |
 | 11 | chain-lookup | ✅ Done + review/fix checked | Case 10 | L1/L2/L3a 完成；L3b/L4 仍 P2 |
-| 12 | macro-definitions | ⏸ P1 | Case 11 | |
+| 12 | macro-definitions | ✅ Done + review fixes applied | Case 11 | `#define` symbols + macro F12；cache version bumped |
 | 13 | find-references | ⏸ P1 | Case 13, 14 | |
 
 依赖：01 → 02 → 03 → 04 → {05, 06} → 07 → {08, 09, 10, 11, 12, 13}。
@@ -487,6 +487,41 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 - Spec §10 Case 10：test-electron 覆盖 `.positionWS` F12 到 struct member ✓
 - L3b（缺显式类型从 RHS call 推导）和 L4（数组、嵌套字段、cbuffer 内 struct）仍显式不支持，留 P2 ✓
 
+## Plan 12 实施记录
+
+**Commits**：`b4624b0..f1b35de`（3 个 Task commit + self-review/code-review/fix docs + fix commit）。
+
+| Task | 状态 | Commit |
+|---|---|---|
+| 1 scanDefines | ✅ | `b4624b0` |
+| 2 fileIndexer 集成 macro symbols | ✅ | `dfbf889` |
+| 3 test-electron 宏定义 F12 | ✅ | `0006d3b` |
+
+**Review / fix**：
+- `docs/superpowers/plans/plan12-self-review.md` 落库：主 agent 快速审查发现 cache version 与 block comment 两个问题。
+- `docs/superpowers/plans/plan12review.md` 落库：code-review subagent Anscombe (`019e5476-ff2c-78c3-b375-9e3bc20e8350`) 复核确认 1 个 P1、1 个 P2，无其他明确回归。
+- `ff5d79d fix(plan-12): harden macro definition indexing`
+- `docs/superpowers/plans/plan12fix.md` 落库：fix subagent Carson (`019e547e-4723-7730-9883-97d52fc2fbd8`) 修复并记录 RED/GREEN。
+
+**Plan 与现实偏离（已在 plan markdown 内联 Note）**：
+1. Review fix 超出原始 task 文本：`scanDefines()` 现在携带多行 `/* ... */` 注释状态，避免 disabled `#define` 进入索引。
+2. `CACHE_VERSION` 从 2 bump 到 3，避免 Plan 09 warm cache 复用缺少 macro symbols 的旧 `FileIndex`。
+
+**主 agent 验证结果（2026-05-23）**：
+- `git diff --check 93a49b2..HEAD`：PASS。
+- `npm run test -w @unity-shader-nav/server -- --run tests/parser/preproc/scanDefines.test.ts tests/cache`：**6 files / 21 tests** PASS。
+- `npm run build`：shared/server/client TypeScript builds + copy-server + bundle PASS。
+- `node tests/out/runTest.js`：rerun PASS；包含 `Macro definitions / F12 on SAMPLE_TEXTURE2D jumps to #define`。
+- `npm run test -w @unity-shader-nav/server`：server vitest **42 files / 184 tests** PASS。
+- Root `npm test` 两次在 Electron 阶段命中既有 activation/rebuild/lifecycle workspace timing flake（Plan 12 macro test itself passed）；拆分重跑 Electron + server vitest 均 PASS。
+
+**Acceptance**：
+- `scanDefines()` 捕获 object-like / function-like / empty define，忽略 `//` 与多行 block-comment 中的 disabled define ✓
+- `.hlsl` 全文与 `.shader` HLSL block 内 `#define` 进入 `FileIndex.symbols`，`kind='macro'`，range 行号带 block offset ✓
+- Spec §10 Case 11：test-electron 覆盖 `SAMPLE_TEXTURE2D(...)` F12 到 `Macros.hlsl` 的 `#define SAMPLE_TEXTURE2D` ✓
+- `CACHE_VERSION = 3`，旧 version 2 manifest 被拒绝，避免 warm cache 隐藏 macro symbols ✓
+- 宏体不展开；F12 停在 define 行 ✓
+
 ## Phase 05-10 Full Review（2026-05-23）
 
 **Review doc**：`docs/superpowers/plans/phase05-10review.md`
@@ -542,7 +577,7 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 
 ## 下一步
 
-1. 进入 **Plan 12: macro-definitions**，实现宏使用 F12 到 `#define`。
+1. 进入 **Plan 13: find-references**，实现 Shift+F12 user files / Packages 开关。
 2. Plan 09 follow-up：如需支持多 VSCode 窗口同时打开同一 Unity 项目，再补跨进程 cache manifest 写入锁或更强 atomic replace。
 
 ## 历史回放（review 修订）
@@ -565,3 +600,4 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 - 2026-05-23：Plan 10 实施 + review/fix（commit `fbed2f7..293c955`，4 个 task commit + review/fix docs；Document Symbols / Outline 覆盖 Case 12；cache version bump；0 处偏离）
 - 2026-05-23：Phase 05-10 full review + fixes（`phase05-10review.md`；修 include F12 注释语义、scoped settings/lazy workspace、standalone unsaved cache、Document Symbols 首次请求竞态、cache persist best-effort）
 - 2026-05-23：Plan 11 实施 + review/fix（commit `458a0ed..2f9c9c3`，4 个 task commit + review/fix docs；chain lookup L1/L2/L3a，Case 10 覆盖；1 处集成测偏离 plan markdown 内联记录）
+- 2026-05-23：Plan 12 实施 + review/fix（commit `b4624b0..f1b35de`，3 个 task commit + review/fix docs；宏使用 F12 到 `#define`，Case 11 覆盖；cache version bump 到 3；block-comment disabled define 过滤）

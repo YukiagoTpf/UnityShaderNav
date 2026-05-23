@@ -1,11 +1,12 @@
 import { extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { FileIndex, ReferenceEntry } from '@unity-shader-nav/shared';
+import type { FileIndex, ReferenceEntry, SymbolEntry } from '@unity-shader-nav/shared';
 import type { MacroPatternTable } from '../../macros';
 import { parseHlsl } from './parser';
 import { collect } from './collector';
 import { matchPragmaLine } from '../../macros/matcher';
 import { scanIncludes } from '../include/lineScanner';
+import { scanDefines } from '../preproc/scanDefines';
 import { scanBlocks } from '../shaderlab/blockScanner';
 import { scanStructure } from '../shaderlab/structureScanner';
 
@@ -75,6 +76,29 @@ function scanIncludeReferences(
   }));
 }
 
+function pushDefines(blockText: string, lineOffset: number, uri: string, dest: SymbolEntry[]): void {
+  const defines = scanDefines(blockText);
+  for (const define of defines) {
+    dest.push({
+      name: define.name,
+      kind: 'macro',
+      location: {
+        uri,
+        range: {
+          start: {
+            line: define.nameRange.start.line + lineOffset,
+            character: define.nameRange.start.character,
+          },
+          end: {
+            line: define.nameRange.end.line + lineOffset,
+            character: define.nameRange.end.character,
+          },
+        },
+      },
+    });
+  }
+}
+
 export async function indexFile(
   uri: string,
   text: string,
@@ -85,6 +109,7 @@ export async function indexFile(
     const tree = await parseHlsl(text);
     const idx = collect(tree.rootNode, text, uri, 0, table);
     idx.references.push(...scanIncludeReferences(text, 0, uri));
+    pushDefines(text, 0, uri, idx.symbols);
     if (table) idx.references.push(...scanPragmas(text, 0, table, uri));
     return idx;
   }
@@ -101,6 +126,7 @@ export async function indexFile(
       const tree = await parseHlsl(blockText);
       const part = collect(tree.rootNode, blockText, uri, block.contentStartLine, table);
       merged.symbols.push(...part.symbols);
+      pushDefines(blockText, block.contentStartLine, uri, merged.symbols);
       merged.references.push(...part.references);
       merged.references.push(...scanIncludeReferences(blockText, block.contentStartLine, uri));
       if (table) {

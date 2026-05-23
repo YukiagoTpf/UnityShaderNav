@@ -17,6 +17,15 @@ describe('fileIndexer: pure .hlsl', () => {
 
     expect(includeRef?.name).toBe('Common.hlsl');
   });
+
+  it('records #define directives as macro symbols', async () => {
+    const text = '#define FOO 1\nfloat4 main(){return 0;}';
+    const idx = await indexFile('file:///t/d.hlsl', text);
+    const foo = idx.symbols.find((s) => s.name === 'FOO');
+
+    expect(foo?.kind).toBe('macro');
+    expect(foo?.location.range.start).toEqual({ line: 0, character: 8 });
+  });
 });
 
 describe('fileIndexer: .shader multi-pass', () => {
@@ -43,5 +52,26 @@ describe('fileIndexer: .shader multi-pass', () => {
 
     expect(idx.structure?.shaders).toBeDefined();
     expect(idx.structure?.shaders[0]?.children[0]?.children.length).toBeGreaterThan(0);
+  });
+
+  it('records #define directives inside shader HLSL blocks with original line offsets', async () => {
+    const text = [
+      'Shader "T" {',
+      '  SubShader {',
+      '    Pass {',
+      '      HLSLPROGRAM',
+      '      #define SHADER_MACRO 1',
+      '      float4 main(){return 0;}',
+      '      ENDHLSL',
+      '    }',
+      '  }',
+      '}',
+    ].join('\n');
+
+    const idx = await indexFile('file:///t/macro.shader', text);
+    const macro = idx.symbols.find((s) => s.name === 'SHADER_MACRO');
+
+    expect(macro?.kind).toBe('macro');
+    expect(macro?.location.range.start).toEqual({ line: 4, character: 14 });
   });
 });
