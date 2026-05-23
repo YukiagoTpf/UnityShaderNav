@@ -243,7 +243,7 @@ onSettingsChanged(connection, async (s) => { settingsRef = s; /* + rebuild */ })
 registerReferencesHandler(connection, documents, mgr, () => settingsRef.findReferences.includePackages);
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add server/src
@@ -260,7 +260,7 @@ git commit -m "feat(plan-13): references handler with includePackages toggle"
 - Create: `tests/integration/client/fixtures/refs/Use2.hlsl`
 - Create: `tests/integration/client/find-references.test.ts`
 
-- [ ] **Step 1: fixture**
+- [x] **Step 1: fixture**
 
 `Lib.hlsl`:
 ```hlsl
@@ -279,7 +279,7 @@ float a(float x) { return Helper(x); }
 float b(float x) { return Helper(x + 1); }
 ```
 
-- [ ] **Step 2: 测试**
+- [x] **Step 2: 测试**
 
 ```typescript
 suite('Find References', () => {
@@ -305,7 +305,7 @@ suite('Find References', () => {
 });
 ```
 
-- [ ] **Step 3: 测试 Packages 开关**
+- [x] **Step 3: 测试 Packages 开关**
 
 ```typescript
 test('Packages references are excluded by default and included with config flag', async () => {

@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "com.example.refs": {
+      "version": "file:com.example.refs",
+      "source": "embedded"
+    }
+  }
+}

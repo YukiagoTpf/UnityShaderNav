@@ -17,6 +17,10 @@ async function ensureWorkspaceFolder(folderPath: string): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 1000));
 }
 
+async function ensureSettingsDirectory(folderUri: vscode.Uri): Promise<void> {
+  await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(folderUri, '.vscode'));
+}
+
 async function waitForDefinitions(
   uri: vscode.Uri,
   position: vscode.Position,
@@ -73,6 +77,7 @@ suite('F12 on macro-declared variable', () => {
     ].join('\n');
 
     try {
+      await ensureSettingsDirectory(folder.uri);
       await config.update('declarationMacros', [], vscode.ConfigurationTarget.Workspace);
       await vscode.workspace.fs.writeFile(uri, Buffer.from(text, 'utf8'));
 
