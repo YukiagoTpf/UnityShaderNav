@@ -1,20 +1,36 @@
-# Phase 05-10 Full Review Progress
+# Plan 13 Find References Progress
 
-- Started review on 2026-05-23.
-- Loaded skills: `using-superpowers`, `planning-with-files`, `dispatching-parallel-agents`, and `test-driven-development`.
+- Started on 2026-05-23.
+- Loaded skills: `using-superpowers`, `planning-with-files`, `requesting-code-review`, `subagent-driven-development`, `test-driven-development`, `verification-before-completion`, and `receiving-code-review`.
 - Read `docs/superpowers/PROGRESS.md` first per project instructions.
-- Confirmed current branch/worktree has a pre-existing user edit in `AGENTS.md`; do not revert it.
-- Spawned read-only subagents:
-  - Lagrange: Phase 05-07 review.
-  - Faraday: Phase 08-10 review.
-- Lagrange reported no P1 and two P2 findings: include F12 block-comment inconsistency, and global settings/projectRoot multi-root isolation risk.
-- Fixed include F12 by scanning the full document for include directives so block-comment state matches indexing.
-- Added scoped settings rebuild support and wired explicit workspace folders to `loadSettings(connection, folder.uri)`.
-- Faraday reported no P1 and two P2 findings: standalone unsaved cache pollution and lazy workspace settings scope.
-- Hume independently reported the same two as P1 and added a P2 documentSymbol first-response race.
-- Fixed standalone cache pollution by refreshing `diskIndexes` from disk text, not unsaved live buffers.
-- Added `WorkspaceManager.configureSettingsResolver()` and wired lazy workspaces to scoped settings.
-- Fixed documentSymbol store-miss race by indexing the open document on demand.
-- Made workspace cache persistence best-effort after a focused parallel test exposed a Windows fixture-cache rename race.
-- Fixed fileWatcher fake-timer verification to await async timer callbacks with `advanceTimersByTimeAsync`.
-- Fresh full verification: `npm test` passed after build, test-electron, and workspace vitest.
+- Confirmed current branch is `plan12-macro-definitions`.
+- Confirmed dirty `AGENTS.md` is an instruction update from the user and must not be lost.
+- Stashed working-memory files, committed `AGENTS.md` as `a701830 docs(agents): update collaboration rules`.
+- Switched to `main`, merged `plan12-macro-definitions` with merge commit `8a3fba8`, and pushed `origin/main`.
+- Created branch `plan13-find-references` from updated `main` and restored working-memory files.
+- Read Plan 13 and the core server surfaces: `Workspace`, `WorkspaceManager`, `definition` handler, `server.ts`, `connection.ts`, index exports, and integration test patterns.
+- Task 1 RED: focused test failed because `src/index/globalReferences` was missing.
+- Task 1 GREEN: `npm run test -w @unity-shader-nav/server -- --run tests/index/globalReferences.test.ts` passed 4/4.
+- Committed Task 1 as `891c38d feat(plan-13): add global reference index`.
+- Task 2 RED: `tests/workspace/workspace.test.ts` failed on missing `workspace.globalRefs` and `workspace.isInPackages`.
+- Task 2 GREEN: `npm run test -w @unity-shader-nav/server -- --run tests/workspace/workspace.test.ts` passed 13/13.
+- Committed Task 2 as `62d5219 feat(plan-13): track workspace references`.
+- Task 3 RED: `tests/handlers/references.test.ts` failed because `src/handlers/references` was missing.
+- Task 3 GREEN: `npm run test -w @unity-shader-nav/server -- --run tests/handlers/references.test.ts tests/handshake.test.ts` passed 7/7.
+- Committed Task 3 as `eb8c4cf feat(plan-13): register references handler`.
+- Task 4 integration TS compile: `npx tsc -p tests/tsconfig.json` passed.
+- Task 4 Electron check after rebuild: Find References suite passed both `Helper` user refs and includePackages toggle tests. Full Electron run still hit existing rebuild/lifecycle timing flakes (`BranchOnly`, `NewlyAdded`), unrelated to Plan 13.
+- Committed Task 4 as `5aea597 test(plan-13): cover find references integration`.
+- Committed Task 5 as `7310c26 docs(plan-13): document delivered navigation features`.
+- Main-agent self review found P1 package declaration filtering gap when `context.includeDeclaration` is true.
+- Self-review fix RED/GREEN: `npm run test -w @unity-shader-nav/server -- --run tests/handlers/references.test.ts` failed, then passed 4/4 after filtering declaration locations.
+- Committed self-review fix as `cf60847 fix(plan-13): filter package declarations from references`.
+- Code-review subagent Franklin (`019e54a0-9b5b-7793-8989-f932138ac092`) reported no P1/blocking findings, one P2, two P3, and three residual test gaps.
+- Recorded Franklin's review in `docs/superpowers/plans/plan13review.md`.
+- Fix subagent Curie (`019e54a6-2054-70d0-a3d6-526e16d1f9a5`) fixed the P2 workspace-scoped setting issue and both P3 items.
+- Main agent verified Curie's focused fix with `npm run test -w @unity-shader-nav/server -- --run tests/handlers/references.test.ts tests/lifecycle/rebuild.test.ts`: 2 files / 9 tests passed.
+- Committed review fixes as `90d6824 fix(plan-13): apply scoped references review fixes`.
+- Main agent hardened Electron settings writes in follow-up test commits `3747c4a`, `81b4518`, and `2d0bc43`.
+- Final verification: `npm run build` passed, `npx tsc -p tests/tsconfig.json` passed, and `npm run test -w @unity-shader-nav/server` passed 44 files / 198 tests.
+- Final Electron verification: Plan 13 Find References integration tests passed; full Electron run still has existing Windows timing flakes in rebuild/lifecycle/macro settings tests, recorded in `docs/superpowers/PROGRESS.md`.
+- Updated Plan 13 checkboxes and `docs/superpowers/PROGRESS.md`.
