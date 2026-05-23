@@ -247,4 +247,23 @@ describe('WorkspaceManager: multi-root', () => {
 
     expect(persist).toHaveBeenCalledTimes(1);
   });
+
+  it('persists a ready workspace before removing its folder routing', async () => {
+    const standaloneFolder = await mkdtemp(join(tmpdir(), 'usn-remove-persist-'));
+    const folderUri = pathToFileURL(standaloneFolder).href;
+    const fileUri = pathToFileURL(join(standaloneFolder, 'Loose.hlsl')).href;
+    const calls: string[] = [];
+    const manager = new WorkspaceManager();
+    vi.spyOn(Workspace.prototype, 'bootstrap').mockResolvedValue(undefined);
+    vi.spyOn(Workspace.prototype, 'persist').mockImplementation(async function persist(this: Workspace) {
+      calls.push(`persist:${this.folderUri}`);
+      expect(manager.workspaceFor(fileUri)).toBe(this);
+    });
+
+    await manager.addFolder(folderUri, DEFAULT_SETTINGS, fakeConnection);
+    await manager.removeFolder(folderUri);
+
+    expect(calls).toEqual([`persist:${folderUri}`]);
+    expect(manager.workspaceFor(fileUri)).toBeUndefined();
+  });
 });

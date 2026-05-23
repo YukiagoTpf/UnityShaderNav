@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { registerFileWatchers } from '../../src/lifecycle/fileWatcher';
+import { DEFAULT_SETTINGS } from '@unity-shader-nav/shared';
+import { applyWorkspaceFolderChanges, registerFileWatchers } from '../../src/lifecycle/fileWatcher';
 import type { FileEvent } from '../../src/workspace/workspace';
 
 function deferred<T = void>(): {
@@ -305,5 +306,74 @@ describe('registerFileWatchers', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('applyWorkspaceFolderChanges', () => {
+  it('suspends requests until folder removals and additions complete', async () => {
+    const calls: string[] = [];
+    const manager = {
+      removeFolder: vi.fn(async () => {
+        calls.push('removeFolder');
+      }),
+      addFolder: vi.fn(async () => {
+        calls.push('addFolder');
+      }),
+    };
+    const suspender = {
+      suspend: vi.fn(() => calls.push('suspend')),
+      release: vi.fn(() => calls.push('release')),
+    };
+
+    await applyWorkspaceFolderChanges(
+      {
+        removed: [{ uri: 'file:///removed' }],
+        added: [{ uri: 'file:///added' }],
+      },
+      {
+        manager: manager as never,
+        connection: {} as never,
+        loadSettings: async () => DEFAULT_SETTINGS,
+        suspender,
+      },
+    );
+
+    expect(calls).toEqual(['suspend', 'removeFolder', 'addFolder', 'release']);
+    expect(manager.removeFolder).toHaveBeenCalledWith('file:///removed');
+    expect(manager.addFolder).toHaveBeenCalledWith(
+      'file:///added',
+      DEFAULT_SETTINGS,
+      {},
+      undefined,
+    );
+  });
+
+  it('releases request suspension when adding a folder fails', async () => {
+    const manager = {
+      removeFolder: vi.fn(async () => {}),
+      addFolder: vi.fn(async () => {
+        throw new Error('bootstrap failed');
+      }),
+    };
+    const suspender = {
+      suspend: vi.fn(),
+      release: vi.fn(),
+    };
+
+    await expect(applyWorkspaceFolderChanges(
+      {
+        removed: [],
+        added: [{ uri: 'file:///added' }],
+      },
+      {
+        manager: manager as never,
+        connection: {} as never,
+        loadSettings: async () => DEFAULT_SETTINGS,
+        suspender,
+      },
+    )).rejects.toThrow('bootstrap failed');
+
+    expect(suspender.suspend).toHaveBeenCalledTimes(1);
+    expect(suspender.release).toHaveBeenCalledTimes(1);
   });
 });

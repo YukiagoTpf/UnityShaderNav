@@ -4,7 +4,7 @@ import { registerDefinitionHandler } from './handlers/definition';
 import { registerDocumentSymbolHandler } from './handlers/documentSymbol';
 import { registerDocuments } from './handlers/documents';
 import { registerReferencesHandler } from './handlers/references';
-import { registerFileWatchers } from './lifecycle/fileWatcher';
+import { applyWorkspaceFolderChanges, registerFileWatchers } from './lifecycle/fileWatcher';
 import { applyScopedSettingsAndRebuild, reindexOpenDocuments } from './lifecycle/rebuild';
 import { RequestSuspender } from './lifecycle/requestSuspender';
 import { WorkspaceManager } from './workspace';
@@ -44,17 +44,16 @@ connection.onInitialized(async () => {
     connection.sendNotification('unityShaderNav/mode', { mode: manager.mode() });
 
     connection.workspace.onDidChangeWorkspaceFolders((event) => {
-      for (const removed of event.removed) manager.removeFolder(removed.uri);
-      void (async () => {
-        for (const added of event.added) {
-          await manager.addFolder(
-            added.uri,
-            await loadSettings(connection, added.uri),
-            connection,
-            globalStorageDir,
-          );
-        }
-      })();
+      void applyWorkspaceFolderChanges(event, {
+        manager,
+        connection,
+        loadSettings: (scopeUri) => loadSettings(connection, scopeUri),
+        globalStorageDir,
+        suspender,
+      }).catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        connection.console.error(`[UnityShaderNav] workspace folder change failed: ${message}`);
+      });
     });
 
     connection.console.log('[UnityShaderNav] server initialized');

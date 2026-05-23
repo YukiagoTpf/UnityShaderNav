@@ -1,4 +1,5 @@
 import type { Connection } from 'vscode-languageserver/node';
+import type { ExtensionSettings } from '@unity-shader-nav/shared';
 import { Debouncer } from './debouncer';
 import {
   rebuildWorkspacesWithOpenDocuments,
@@ -10,6 +11,19 @@ import type { FileEvent, Workspace } from '../workspace/workspace';
 import type { WorkspaceManager } from '../workspace/workspaceManager';
 
 const WATCHER_NOTIFICATION = 'unityShaderNav/fileChange';
+
+interface WorkspaceFolderChange {
+  added: Iterable<{ uri: string }>;
+  removed: Iterable<{ uri: string }>;
+}
+
+interface WorkspaceFolderChangeDependencies {
+  manager: Pick<WorkspaceManager, 'addFolder' | 'removeFolder'>;
+  connection: Connection;
+  loadSettings(scopeUri: string): ExtensionSettings | Promise<ExtensionSettings>;
+  globalStorageDir?: string;
+  suspender?: Pick<RequestSuspender, 'suspend' | 'release'>;
+}
 
 function isRebuildTrigger(uri: string): boolean {
   return uri.endsWith('/.git/HEAD') || uri.endsWith('/Packages/packages-lock.json');
@@ -54,4 +68,33 @@ export function registerFileWatchers(
   connection.onNotification(WATCHER_NOTIFICATION, (event: FileEvent) => {
     debouncer.push(event);
   });
+}
+
+export async function applyWorkspaceFolderChanges(
+  event: WorkspaceFolderChange,
+  {
+    manager,
+    connection,
+    loadSettings,
+    globalStorageDir,
+    suspender,
+  }: WorkspaceFolderChangeDependencies,
+): Promise<void> {
+  suspender?.suspend();
+  try {
+    for (const removed of event.removed) {
+      await manager.removeFolder(removed.uri);
+    }
+
+    for (const added of event.added) {
+      await manager.addFolder(
+        added.uri,
+        await loadSettings(added.uri),
+        connection,
+        globalStorageDir,
+      );
+    }
+  } finally {
+    suspender?.release();
+  }
 }

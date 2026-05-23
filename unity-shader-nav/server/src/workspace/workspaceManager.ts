@@ -162,8 +162,22 @@ export class WorkspaceManager {
     return this.workspaceFromReadyRecord(created);
   }
 
-  removeFolder(folderUri: string): void {
-    this.byFolder.delete(folderUri);
-    this.sendModeNotification();
+  async removeFolder(folderUri: string): Promise<void> {
+    const record = this.byFolder.get(folderUri);
+    if (!record) return;
+
+    try {
+      await record.ready;
+      if (this.byFolder.get(folderUri) === record) {
+        await record.workspace.persist();
+      }
+    } catch {
+      // Failed or incomplete bootstrap has no reliable workspace state to persist.
+    } finally {
+      if (this.byFolder.get(folderUri) === record) {
+        this.byFolder.delete(folderUri);
+        this.sendModeNotification();
+      }
+    }
   }
 }
