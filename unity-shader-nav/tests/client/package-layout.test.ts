@@ -2,6 +2,7 @@ import * as assert from 'node:assert';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createRequire } from 'node:module';
+import * as os from 'node:os';
 
 function monorepoRoot(): string {
   return path.resolve(__dirname, '../../..');
@@ -38,5 +39,25 @@ suite('packaged server layout', () => {
 
     const fromServerEntry = createRequire(serverEntry);
     assert.ok(fromServerEntry.resolve('web-tree-sitter').includes('web-tree-sitter'));
+  });
+
+  test('VSIX-like server root can resolve web-tree-sitter without monorepo node_modules', () => {
+    const root = monorepoRoot();
+    const sourceServerRoot = path.resolve(root, 'client/out/server');
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'unity-shader-nav-vsix-'));
+    const extensionRoot = path.join(tempRoot, 'extension');
+    const packagedServerRoot = path.join(extensionRoot, 'out/server');
+    try {
+      fs.cpSync(sourceServerRoot, packagedServerRoot, { recursive: true });
+      const serverEntry = path.join(packagedServerRoot, 'server.js');
+      const resolved = createRequire(serverEntry).resolve('web-tree-sitter');
+
+      assert.ok(
+        resolved.startsWith(packagedServerRoot),
+        `expected web-tree-sitter to resolve inside packaged server root, got ${resolved}`,
+      );
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
   });
 });
