@@ -38,4 +38,3 @@ npm run build
 npm run test -w @unity-shader-nav/server -- --run tests/index/chainLookup.test.ts tests/handlers/definition.test.ts
 npm test
 ```
-
