@@ -21,6 +21,7 @@ export function createInitializeResult(): InitializeResult {
     capabilities: {
       textDocumentSync: TextDocumentSyncKind.Incremental,
       definitionProvider: true,
+      documentSymbolProvider: true,
     },
     serverInfo: {
       name: SERVER_NAME,

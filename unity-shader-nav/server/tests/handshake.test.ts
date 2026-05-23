@@ -12,4 +12,9 @@ describe('LSP handshake', () => {
     const result = createInitializeResult();
     expect(result.capabilities.definitionProvider).toBe(true);
   });
+
+  it('advertises documentSymbolProvider', () => {
+    const result = createInitializeResult();
+    expect(result.capabilities.documentSymbolProvider).toBe(true);
+  });
 });

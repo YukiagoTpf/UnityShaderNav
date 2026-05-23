@@ -1,6 +1,7 @@
 import { getConnection, createInitializeResult } from './connection';
 import { loadSettings, onSettingsChanged } from './config';
 import { registerDefinitionHandler } from './handlers/definition';
+import { registerDocumentSymbolHandler } from './handlers/documentSymbol';
 import { registerDocuments } from './handlers/documents';
 import { registerFileWatchers } from './lifecycle/fileWatcher';
 import { applySettingsAndRebuild, reindexOpenDocuments } from './lifecycle/rebuild';
@@ -55,6 +56,7 @@ onSettingsChanged(connection, async (settings) => {
 });
 
 registerDefinitionHandler(connection, documents, manager, suspender);
+registerDocumentSymbolHandler(connection, documents, manager);
 registerFileWatchers(connection, manager, suspender, openDocuments);
 
 connection.onShutdown(async () => {
