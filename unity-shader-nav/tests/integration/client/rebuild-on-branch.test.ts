@@ -9,7 +9,7 @@ function sourceFixtureRoot(): string {
 }
 
 async function makeProjectCopy(): Promise<string> {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'usn-lifecycle-'));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'usn-rebuild-'));
   await fs.cp(sourceFixtureRoot(), root, { recursive: true });
   return root;
 }
@@ -55,35 +55,29 @@ async function waitForDefinitions(
   return latest;
 }
 
-suite('Lifecycle: edit triggers reindex', () => {
-  test('adding a new function to Common.hlsl makes it discoverable from Main.shader', async () => {
+suite('Rebuild on branch switch', () => {
+  test('touching .git/HEAD keeps cross-file index usable after rebuild', async () => {
     const root = await makeProjectCopy();
     try {
-      await ensureWorkspaceFolder(root);
-      const commonPath = path.join(root, 'Assets', 'Shaders', 'Common.hlsl');
-      const mainUri = vscode.Uri.file(path.join(root, 'Assets', 'Shaders', 'Main.shader'));
-      const before = await fs.readFile(commonPath, 'utf8');
+      const gitDir = path.join(root, '.git');
+      const headPath = path.join(gitDir, 'HEAD');
+      await fs.mkdir(gitDir, { recursive: true });
+      await fs.writeFile(headPath, 'ref: refs/heads/main\n');
 
-      await fs.writeFile(commonPath, `${before}\nfloat4 NewlyAdded() { return 1; }\n`);
+      await ensureWorkspaceFolder(root);
+      const mainUri = vscode.Uri.file(path.join(root, 'Assets', 'Shaders', 'Main.shader'));
+      const doc = await vscode.workspace.openTextDocument(mainUri);
+      await vscode.window.showTextDocument(doc);
+      const line = doc.getText().split(/\r?\n/).findIndex((text) => text.includes('return Common()'));
+      assert.ok(line >= 0, 'expected Common() call in fixture');
+      const position = new vscode.Position(line, doc.lineAt(line).text.indexOf('Common()') + 2);
+
+      await fs.writeFile(headPath, 'ref: refs/heads/feature\n');
       await new Promise((resolve) => setTimeout(resolve, 1000));
 
-      const mainDoc = await vscode.workspace.openTextDocument(mainUri);
-      await vscode.window.showTextDocument(mainDoc);
-      const endLine = mainDoc.getText().split(/\r?\n/).findIndex((line) => line.trim() === 'ENDHLSL');
-      assert.ok(endLine >= 0, 'expected ENDHLSL in Main.shader');
+      const links = await waitForDefinitions(mainUri, position);
 
-      const edit = new vscode.WorkspaceEdit();
-      const inserted = '    float4 _z = NewlyAdded();\n';
-      edit.insert(mainUri, new vscode.Position(endLine, 0), inserted);
-      assert.ok(await vscode.workspace.applyEdit(edit), 'expected Main.shader edit to apply');
-      await new Promise((resolve) => setTimeout(resolve, 800));
-
-      const links = await waitForDefinitions(
-        mainUri,
-        new vscode.Position(endLine, inserted.indexOf('NewlyAdded') + 2),
-      );
-
-      assert.ok(links && links.length >= 1, 'expected NewlyAdded definition');
+      assert.ok(links && links.length >= 1, 'expected Common definition after .git/HEAD change');
       assert.ok(targetUri(links[0]).fsPath.endsWith(path.join('Assets', 'Shaders', 'Common.hlsl')));
     } finally {
       await removeWorkspaceFolder(root);
