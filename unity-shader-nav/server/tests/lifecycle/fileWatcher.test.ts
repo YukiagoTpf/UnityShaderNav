@@ -107,4 +107,47 @@ describe('registerFileWatchers', () => {
       vi.useRealTimers();
     }
   });
+
+  it('suspends requests while rebuilding and releases afterward', async () => {
+    vi.useFakeTimers();
+    try {
+      let handler: ((event: FileEvent) => void) | undefined;
+      const workspace = {
+        folderUri: 'file:///projectA',
+        applyChanges: vi.fn(async () => {}),
+        rebuild: vi.fn(async () => {}),
+      };
+      const manager = {
+        workspaceFor: vi.fn(() => workspace),
+        list: vi.fn(() => [workspace]),
+      };
+      const connection = {
+        console: { log: vi.fn() },
+        onNotification: vi.fn((_name: string, callback: (event: FileEvent) => void) => {
+          handler = callback;
+        }),
+      };
+      const suspender = {
+        suspend: vi.fn(),
+        release: vi.fn(),
+      };
+
+      registerFileWatchers(connection as never, manager as never, suspender);
+      handler?.({ uri: 'file:///projectA/.git/HEAD', type: 'changed' });
+      vi.advanceTimersByTime(501);
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+
+      expect(suspender.suspend).toHaveBeenCalledTimes(1);
+      expect(workspace.rebuild).toHaveBeenCalledTimes(1);
+      expect(suspender.release).toHaveBeenCalledTimes(1);
+      expect(suspender.suspend.mock.invocationCallOrder[0]).toBeLessThan(
+        workspace.rebuild.mock.invocationCallOrder[0],
+      );
+      expect(suspender.release.mock.invocationCallOrder[0]).toBeGreaterThan(
+        workspace.rebuild.mock.invocationCallOrder[0],
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

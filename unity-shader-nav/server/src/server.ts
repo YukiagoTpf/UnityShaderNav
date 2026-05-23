@@ -3,35 +3,42 @@ import { loadSettings, onSettingsChanged } from './config';
 import { registerDefinitionHandler } from './handlers/definition';
 import { registerDocuments } from './handlers/documents';
 import { registerFileWatchers } from './lifecycle/fileWatcher';
+import { RequestSuspender } from './lifecycle/requestSuspender';
 import { MacroPatternTable } from './macros';
 import { WorkspaceManager } from './workspace';
 
 const connection = getConnection();
 const manager = new WorkspaceManager();
+const suspender = new RequestSuspender({ timeoutMs: 5000 });
 
 connection.onInitialize(() => createInitializeResult());
 
 const documents = registerDocuments(connection, manager);
 
 connection.onInitialized(async () => {
-  const settings = await loadSettings(connection);
-  manager.configure(settings, connection);
-  const folders = await connection.workspace.getWorkspaceFolders() ?? [];
-  for (const folder of folders) {
-    await manager.addFolder(folder.uri, settings, connection);
+  suspender.suspend();
+  try {
+    const settings = await loadSettings(connection);
+    manager.configure(settings, connection);
+    const folders = await connection.workspace.getWorkspaceFolders() ?? [];
+    for (const folder of folders) {
+      await manager.addFolder(folder.uri, settings, connection);
+    }
+    connection.sendNotification('unityShaderNav/mode', { mode: manager.mode() });
+
+    connection.workspace.onDidChangeWorkspaceFolders((event) => {
+      for (const removed of event.removed) manager.removeFolder(removed.uri);
+      void (async () => {
+        for (const added of event.added) {
+          await manager.addFolder(added.uri, settings, connection);
+        }
+      })();
+    });
+
+    connection.console.log('[UnityShaderNav] server initialized');
+  } finally {
+    suspender.release();
   }
-  connection.sendNotification('unityShaderNav/mode', { mode: manager.mode() });
-
-  connection.workspace.onDidChangeWorkspaceFolders((event) => {
-    for (const removed of event.removed) manager.removeFolder(removed.uri);
-    void (async () => {
-      for (const added of event.added) {
-        await manager.addFolder(added.uri, settings, connection);
-      }
-    })();
-  });
-
-  connection.console.log('[UnityShaderNav] server initialized');
 });
 
 onSettingsChanged(connection, async (settings) => {
@@ -46,7 +53,7 @@ onSettingsChanged(connection, async (settings) => {
   }
 });
 
-registerDefinitionHandler(connection, documents, manager);
-registerFileWatchers(connection, manager);
+registerDefinitionHandler(connection, documents, manager, suspender);
+registerFileWatchers(connection, manager, suspender);
 
 connection.listen();

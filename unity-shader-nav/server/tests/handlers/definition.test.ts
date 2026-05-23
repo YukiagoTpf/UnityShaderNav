@@ -4,6 +4,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import type { FileIndex } from '@unity-shader-nav/shared';
 import { GlobalSymbolIndex, IndexStore } from '../../src/index';
 import { registerDefinitionHandler } from '../../src/handlers/definition';
+import { RequestSuspender } from '../../src/lifecycle/requestSuspender';
 
 describe('registerDefinitionHandler', () => {
   it('returns location links for the identifier under the cursor', async () => {
@@ -71,5 +72,50 @@ describe('registerDefinitionHandler', () => {
         },
       },
     ]);
+  });
+
+  it('waits for RequestSuspender release before resolving definitions', async () => {
+    let handler: ((params: DefinitionParams) => Promise<unknown>) | undefined;
+    const connection = {
+      onDefinition(fn: (params: DefinitionParams) => Promise<unknown>) {
+        handler = fn;
+        return { dispose() {} };
+      },
+    } as unknown as Connection;
+    const uri = 'file:///t/x.hlsl';
+    const doc = TextDocument.create(uri, 'hlsl', 1, 'float4 main() { return 0; }');
+    const documents = {
+      get(requestedUri: string) {
+        return requestedUri === uri ? doc : undefined;
+      },
+    } as never;
+    const workspace = {
+      includeCtx: { unityProjectRoot: undefined, includeDirectories: [] },
+      store: new IndexStore(),
+      global: new GlobalSymbolIndex(),
+    };
+    const manager = {
+      async workspaceForOrCreateFile() {
+        return workspace;
+      },
+    } as never;
+    const suspender = new RequestSuspender({ timeoutMs: 1000 });
+    suspender.suspend();
+
+    registerDefinitionHandler(connection, documents, manager, suspender);
+
+    const promise = handler?.({
+      textDocument: { uri },
+      position: { line: 0, character: 7 },
+    });
+    let settled = false;
+    void promise?.then(() => {
+      settled = true;
+    });
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+
+    expect(settled).toBe(false);
+    suspender.release();
+    await expect(promise).resolves.toBeNull();
   });
 });
