@@ -207,6 +207,10 @@ git commit -m "feat(plan-08): Workspace.applyChanges + rebuild"
 - Create: `client/src/watcher.ts`
 - Modify: `client/src/client.ts`
 
+> Note: 实际接入口是 `client/src/extension.ts`，不是 `client/src/client.ts`。`createLanguageClient()` 只负责构造 client，watcher 需要在 `client.start()` 后注册，放在 `activate()` 里更符合现有 client lifecycle。
+>
+> Note: 没有修改 `client/package.json` 注册 `workspace/didChangeWatchedFiles`。实际实现采用 VSCode `FileSystemWatcher` 直接转发自定义 `unityShaderNav/fileChange` notification；`.git/HEAD` 和 `Packages/packages-lock.json` 最终同时转发 create/change/delete，以覆盖原子替换场景。
+
 - [ ] **Step 1: 写 watcher**
 
 ```typescript
@@ -447,6 +451,8 @@ git commit -m "feat(plan-08): suspend LSP requests during bootstrap/rebuild"
 **Files:**
 - Create: `tests/integration/client/lifecycle.test.ts`
 
+> Note: 集成测试没有直接修改仓库 fixture，而是复制 `server/tests/include/fixtures/projectA` 到系统临时目录。这样测试中断不会污染 tracked fixture。测试也先断言 `NewlyAdded` 在外部文件写入前不可解析，再等待 watcher 让它变可解析，避免 lazy workspace scan 造成伪阳性。
+
 - [ ] **Step 1: 测试**
 
 ```typescript
@@ -507,6 +513,8 @@ git commit -m "test(plan-08): edit propagates through file watcher"
 
 **Files:**
 - Create: `tests/integration/client/rebuild-on-branch.test.ts`
+
+> Note: 原计划的 `.git/HEAD` smoke 只验证“不报错/旧 Common 仍可跳”，断言太弱。实际测试改为先让 `BranchOnly()` 不可解析，再修改磁盘 `Common.hlsl` 并 touch `.git/HEAD`，最后断言 `BranchOnly()` 可解析且旧 `Common()` 不再可解析，以证明 rebuild 真正清理并读取了新磁盘状态。
 
 - [ ] **Step 1: 测试思路**
 

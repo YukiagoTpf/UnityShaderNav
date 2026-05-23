@@ -13,7 +13,7 @@
 | 05 | macro-pattern-recognizer | ✅ Done + review fixes applied | Case 5, 6, 7 | macro declarations + pragma refs；custom setting reindex covered |
 | 06 | include-resolver | ✅ Done + review fix applied | Case 4 | include path F12 + refs；case fallback；block comment false positive fixed |
 | 07 | package-resolver-and-cross-file | ✅ Done + review fixes applied | Case 2, 3, 9 | MVP 完成 |
-| 08 | index-lifecycle | ⏸ P1 | — | |
+| 08 | index-lifecycle | ✅ Done + review fixes applied | — | watcher debounce/rebuild + live overlay suspension covered |
 | 09 | cache-persistence | ⏸ P1 | — | |
 | 10 | document-symbols | ⏸ P1 | Case 12 | |
 | 11 | chain-lookup | ⏸ P1 | Case 10 | L3b 已标 P2（B4 修订） |
@@ -336,6 +336,47 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 **Deferred**：
 - `Workspace.fullScan()` 当前通过 `GlobalSymbolIndex.upsert()` 避免同 URI 重复，但配置变更后若 excludePatterns 收紧，不会主动删除此前已扫描但现在被排除的旧文件。Plan 08 index lifecycle 设计中处理 store/global 清理与增量删除。
 
+## Plan 08 实施记录
+
+**Commits**：`a99bb7c..15a1091`（8 个 Task commit + review doc + fix commits）。
+
+| Task | 状态 | Commit |
+|---|---|---|
+| 1 Debouncer | ✅ | `a99bb7c` |
+| 2 Workspace.applyChanges + rebuild | ✅ | `7e17185` |
+| 3 client-side FileSystemWatcher forwarding | ✅（偏离 1/2） | `5ce6679` |
+| 4 server-side file watcher dispatcher | ✅ | `8ef6288` |
+| 5 RequestSuspender | ✅ | `a90600c` |
+| 6 suspend during bootstrap/rebuild | ✅ | `5bd59fb` |
+| 7 edit propagates through watcher | ✅（偏离 3） | `6ed3831` |
+| 8 `.git/HEAD` rebuild smoke | ✅（偏离 4） | `544376c` |
+
+**Review / fix**：
+- `docs/superpowers/plans/plan08review.md` 落库：独立 code-review subagent 发现 live overlay 在 rebuild 后丢失、settings 变更 stale index、meta watcher 漏 create/delete、集成测伪阳性、RequestSuspender overlap 等问题。
+- `docs/superpowers/plans/plan08fix.md` 落库：新增 `lifecycle/rebuild.ts` 统一清理式 rebuild + open document 恢复；settings change 走同一 rebuild；meta watcher 覆盖 create/change/delete；RequestSuspender 改 ref-count；集成测试强化。
+- `a4038dd docs(plans): record plan 08 code review`
+- `b28895f fix(plan-08): address index lifecycle review findings`
+- `15a1091 fix(plan-08): preserve live overlays after incremental changes`
+
+**Plan 与现实偏离（已在 plan markdown 内联 Note）**：
+1. Task 3：watcher 接入口放在 `client/src/extension.ts`，因为必须在 `client.start()` 后注册；未改 `client/src/client.ts`。
+2. Task 3：未使用 `client/package.json` 的 `workspace/didChangeWatchedFiles` 注册；实际用 VSCode `FileSystemWatcher` 转发自定义 notification，并对 `.git/HEAD` / `packages-lock.json` 覆盖 create/change/delete。
+3. Task 7：集成测试复制 fixture 到系统临时目录，避免污染 tracked fixture；先断言新符号不可见，再通过外部文件写入触发 watcher。
+4. Task 8：`.git/HEAD` 测试从弱 smoke 改为证明 rebuild 读取新磁盘状态，并断言旧符号消失。
+
+**主 agent 验证结果（2026-05-23）**：
+- `npm run test -w @unity-shader-nav/server`：server vitest **33 files / 137 tests** PASS。
+- `npm run build`：3 个 workspace tsc + copy-server + bundle 全过。
+- `npx tsc -p tests/tsconfig.json`：test-electron TS 编译 PASS。
+- `node tests/out/runTest.js`：exit code 0，Mocha/test-electron PASS（日志含 VSCode 对已删除临时 workspace 的 noisy validation warnings）。
+
+**Acceptance**：
+- Debouncer 500ms 聚合与 20 文件 rebuild 阈值 ✓
+- 普通 shader/HLSL 文件变更触发增量索引，并恢复 open document live overlay ✓
+- `.git/HEAD` / `Packages/packages-lock.json` create/change/delete 触发清理式 rebuild ✓
+- settings change 清理 stale index，并恢复打开文档 ✓
+- cold start / rebuild 期间 definition request 通过 ref-count suspender 挂起，超时返回 null ✓
+
 ## 进行中 TODO
 
 ### 🟡 Plan 01 follow-up（plan01fix 之后还剩的）
@@ -362,15 +403,15 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 
 ### ⏳ 已展望的风险（来自 REVIEW，未排进 Blocker）
 
-- **R6/R7/R8**：性能并发模型 — cold start 串行 `fs.stat()`、persist 全量重写、`fullScan()` 无 bounded concurrency。Plan 08/09 前要补 concurrency model 段落
+- **R6/R7/R8**：性能并发模型 — cold start 串行 `fs.stat()`、persist 全量重写、`fullScan()` 无 bounded concurrency。Plan 09 前要继续补 concurrency/persistence model 段落
 - **R3**：Plan 10 buildDocumentSymbols 嵌套算法 fiddly，TDD 时小心
 - ~~**R5**：Plan 06 `existsCaseSensitive` 在 macOS 上语义反了；macOS CI 会爆~~ ✅ Plan 06 实现用逐段 `readdir` 校验真实大小写，并通过显式 ignore-case fallback 返回磁盘真实路径
-- **P3**：Plan 08 `this.store.clear?.()` 用 optional chaining 兜底，但 `IndexStore.clear()` 没正式定义 — Plan 07/08 落地时补
+- ~~**P3**：Plan 08 `this.store.clear?.()` 用 optional chaining 兜底，但 `IndexStore.clear()` 没正式定义~~ ✅ Plan 08 已补 `IndexStore.clear()` / `GlobalSymbolIndex.clear()`
 
 ## 下一步
 
-1. 进入 **Plan 08: index-lifecycle**，补文件变更触发增量/重建、进度条与挂起处理。
-2. Plan 08 前重点确认 full-scan 清理、include graph/circular guard、PackageResolver reload、workspace folder/settings 变化的生命周期边界。
+1. 进入 **Plan 09: cache-persistence**，持久化索引并处理启动恢复。
+2. Plan 09 前重点确认 full-scan bounded concurrency、cache invalidation 与 packages-lock / settings lifecycle 的衔接。
 
 ## 历史回放（review 修订）
 
@@ -387,3 +428,4 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 - 2026-05-23：Phase 01-05 full review + fixes（`phase01-05review.md`；修 packaged runtime closure、Plan 03 type refs、top-level globals；`npm test` 9/9 + 76/76）
 - 2026-05-23：Plan 06 实施 + review/fix（commit `d154078..5375c40`，10 个 task commit + review doc + fix commit，Case 4 覆盖；2 处偏离 plan markdown 内联记录）
 - 2026-05-23：Plan 07 实施 + review/fix（commit `7dffab7..310a83b`，11 个 task commit + review doc + fix commit，Case 2/3/9 覆盖；2 处偏离 plan markdown 内联记录；MVP 完成）
+- 2026-05-23：Plan 08 实施 + review/fix（commit `a99bb7c..15a1091`，8 个 task commit + review doc + fix commits；文件 watcher debounce/rebuild、settings cleanup、open document overlay、request suspension 覆盖；4 处偏离 plan markdown 内联记录）
