@@ -10,7 +10,11 @@ function sourceFixtureRoot(): string {
 
 async function makeProjectCopy(): Promise<string> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'usn-lifecycle-'));
-  await fs.cp(sourceFixtureRoot(), root, { recursive: true });
+  const sourceRoot = sourceFixtureRoot();
+  await fs.cp(sourceRoot, root, {
+    recursive: true,
+    filter: (source) => !path.relative(sourceRoot, source).split(path.sep).includes('Library'),
+  });
   return root;
 }
 
