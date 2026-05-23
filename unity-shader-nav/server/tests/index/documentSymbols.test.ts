@@ -96,4 +96,44 @@ describe('buildDocumentSymbols: .shader with structure', () => {
     expect(passes[0].children?.map((node) => node.name)).toEqual(['vert']);
     expect(passes[1].children?.map((node) => node.name)).toEqual(['frag']);
   });
+
+  it('keeps same-named struct members scoped to their nearest Pass-local struct', () => {
+    const idx: FileIndex = {
+      uri: 'file:///t/m.shader',
+      symbols: [
+        sym('Attributes', 'struct', 5),
+        sym('positionOS', 'structMember', 6, 'Attributes'),
+        sym('Attributes', 'struct', 25),
+        sym('positionCS', 'structMember', 26, 'Attributes'),
+      ],
+      references: [],
+      structure: {
+        shaders: [{
+          kind: 'shader',
+          name: 'X',
+          headerLine: 0,
+          closeLine: 50,
+          children: [{
+            kind: 'subshader',
+            headerLine: 1,
+            closeLine: 49,
+            children: [
+              { kind: 'pass', name: 'Lit', headerLine: 2, closeLine: 20, children: [] },
+              { kind: 'pass', name: 'Shadow', headerLine: 21, closeLine: 48, children: [] },
+            ],
+          }],
+        }],
+      },
+    };
+
+    const tree = buildDocumentSymbols(idx);
+
+    const passes = tree[0].children?.[0].children ?? [];
+    const litAttributes = passes[0].children?.find((node) => node.name === 'Attributes');
+    const shadowAttributes = passes[1].children?.find((node) => node.name === 'Attributes');
+
+    expect(passes.map((node) => node.name)).toEqual(['Pass "Lit"', 'Pass "Shadow"']);
+    expect(litAttributes?.children?.map((node) => node.name)).toEqual(['positionOS']);
+    expect(shadowAttributes?.children?.map((node) => node.name)).toEqual(['positionCS']);
+  });
 });

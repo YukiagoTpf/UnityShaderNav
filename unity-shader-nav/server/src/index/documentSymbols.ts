@@ -85,24 +85,36 @@ function pragmaToDocumentSymbol(reference: ReferenceEntry): DocumentSymbol {
 }
 
 function buildHlslSymbols(index: FileIndex): DocumentSymbol[] {
-  const membersByParent = new Map<string, SymbolEntry[]>();
+  const membersByStruct = new Map<SymbolEntry, SymbolEntry[]>();
   const topLevel: SymbolEntry[] = [];
 
   for (const symbol of index.symbols) {
     if (symbol.kind === 'parameter' || symbol.kind === 'localVariable') continue;
-    if (symbol.kind === 'structMember' && symbol.parentType) {
-      const members = membersByParent.get(symbol.parentType) ?? [];
-      members.push(symbol);
-      membersByParent.set(symbol.parentType, members);
-      continue;
-    }
+    if (symbol.kind === 'structMember') continue;
     topLevel.push(symbol);
+  }
+
+  const structs = topLevel
+    .filter((symbol) => symbol.kind === 'struct')
+    .sort((a, b) => startsBefore(a.location.range, b.location.range));
+
+  for (const symbol of index.symbols) {
+    if (symbol.kind !== 'structMember' || !symbol.parentType) continue;
+    const parent = [...structs].reverse().find((candidate) =>
+      candidate.name === symbol.parentType
+      && startsBefore(candidate.location.range, symbol.location.range) <= 0,
+    );
+    if (!parent) continue;
+
+    const members = membersByStruct.get(parent) ?? [];
+    members.push(symbol);
+    membersByStruct.set(parent, members);
   }
 
   const docs = topLevel.map((symbol) => {
     const doc = symbolToDocumentSymbol(symbol);
     if (symbol.kind === 'struct') {
-      doc.children = (membersByParent.get(symbol.name) ?? [])
+      doc.children = (membersByStruct.get(symbol) ?? [])
         .sort((a, b) => startsBefore(a.location.range, b.location.range))
         .map(symbolToDocumentSymbol);
       doc.range = rangeWithChildren(doc.range, doc.children);

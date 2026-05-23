@@ -56,7 +56,7 @@ onSettingsChanged(connection, async (settings) => {
 });
 
 registerDefinitionHandler(connection, documents, manager, suspender);
-registerDocumentSymbolHandler(connection, documents, manager);
+registerDocumentSymbolHandler(connection, documents, manager, suspender);
 registerFileWatchers(connection, manager, suspender, openDocuments);
 
 connection.onShutdown(async () => {

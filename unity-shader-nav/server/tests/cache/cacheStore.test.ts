@@ -50,6 +50,16 @@ describe('CacheStore', () => {
     expect(await store.load()).toBeNull();
 
     await writeFile(join(dir, 'index.json'), JSON.stringify({
+      version: CACHE_VERSION - 1,
+      workspaceFolderUri: 'file:///x',
+      unityProjectRoot: '/x',
+      createdAt: 123,
+      fingerprint: { grammarVersion: 'g', settingsHash: 's', macroTableHash: 'm' },
+      files: [],
+    }), 'utf8');
+    expect(await store.load()).toBeNull();
+
+    await writeFile(join(dir, 'index.json'), JSON.stringify({
       version: CACHE_VERSION + 1,
       workspaceFolderUri: 'file:///x',
       unityProjectRoot: '/x',

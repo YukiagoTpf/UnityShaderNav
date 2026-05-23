@@ -1,6 +1,6 @@
 import type { FileIndex } from './symbols';
 
-export const CACHE_VERSION = 1;
+export const CACHE_VERSION = 2;
 
 /**
  * Fields that invalidate the whole cache when changed between runs.
