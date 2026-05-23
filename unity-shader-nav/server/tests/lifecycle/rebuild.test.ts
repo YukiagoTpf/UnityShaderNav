@@ -122,4 +122,32 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
     expect(workspaceB?.global.lookup('OnlyInB').length).toBeGreaterThanOrEqual(1);
     expect(workspaceB?.global.lookup('Common')).toEqual([]);
   });
+
+  it('does not rebuild indexes when only findReferences.includePackages changes', async () => {
+    const workspace = {
+      folderUri: 'file:///project-a',
+      settings: DEFAULT_SETTINGS,
+      rebuild: vi.fn(async () => {}),
+    };
+    const manager = {
+      list: () => [workspace],
+      workspaceForOrCreateFile: vi.fn(async () => ({
+        reindex: vi.fn(async () => {}),
+      })),
+    };
+
+    await applyScopedSettingsAndRebuild(
+      fakeConnection,
+      manager as never,
+      async () => ({
+        ...DEFAULT_SETTINGS,
+        findReferences: { includePackages: true },
+      }),
+      () => [{ uri: 'file:///project-a/Assets/Open.hlsl', getText: () => 'float4 Open() { return 0; }' }],
+    );
+
+    expect(workspace.settings.findReferences.includePackages).toBe(true);
+    expect(workspace.rebuild).not.toHaveBeenCalled();
+    expect(manager.workspaceForOrCreateFile).not.toHaveBeenCalled();
+  });
 });

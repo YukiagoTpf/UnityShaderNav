@@ -17,4 +17,9 @@ describe('LSP handshake', () => {
     const result = createInitializeResult();
     expect(result.capabilities.documentSymbolProvider).toBe(true);
   });
+
+  it('advertises referencesProvider', () => {
+    const result = createInitializeResult();
+    expect(result.capabilities.referencesProvider).toBe(true);
+  });
 });

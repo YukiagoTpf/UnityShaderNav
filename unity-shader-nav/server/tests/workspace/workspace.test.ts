@@ -33,6 +33,17 @@ describe('Workspace.bootstrap', () => {
     expect(workspace.global.lookup('Core').length).toBeGreaterThanOrEqual(1);
   });
 
+  it('indexes user files and Packages into the global reference index', async () => {
+    const projectRoot = resolve(__dirname, '../include/fixtures/projectA');
+    const folder = pathToFileURL(projectRoot).href;
+    const workspace = new Workspace(folder, DEFAULT_SETTINGS);
+
+    await workspace.bootstrap(fakeConnection);
+
+    const refs = workspace.globalRefs.lookup('Core');
+    expect(refs.some((ref) => ref.location.uri.endsWith('/Assets/Shaders/Main.shader'))).toBe(true);
+  });
+
   it('writes cache on first bootstrap and restores it on the second bootstrap', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-cache-bootstrap-'));
     await mkdir(join(root, 'Assets', 'Shaders'), { recursive: true });
@@ -166,6 +177,44 @@ describe('Workspace.bootstrap', () => {
 
     expect(workspace.global.lookup('Common').length).toBeGreaterThanOrEqual(1);
     expect(workspace.global.lookup('LiveOnly')).toEqual([]);
+  });
+
+  it('keeps global references in sync with live reindex and drop', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-live-refs-'));
+    const shaderPath = join(root, 'Loose.hlsl');
+    const shaderUri = pathToFileURL(shaderPath).href;
+    await writeFile(shaderPath, 'float4 SavedOnly() { return 0; }');
+
+    try {
+      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      await workspace.bootstrap(fakeConnection);
+
+      await workspace.reindex(shaderUri, 'float4 Caller() { return Target(); }');
+      expect(workspace.globalRefs.lookup('Target')).toHaveLength(1);
+
+      await workspace.reindex(shaderUri, 'float4 Caller() { return 0; }');
+      expect(workspace.globalRefs.lookup('Target')).toEqual([]);
+
+      await workspace.reindex(shaderUri, 'float4 Caller() { return Target(); }');
+      workspace.drop(shaderUri);
+      expect(workspace.globalRefs.lookup('Target')).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('detects references under package roots', async () => {
+    const projectRoot = resolve(__dirname, '../include/fixtures/projectA');
+    const workspace = new Workspace(pathToFileURL(projectRoot).href, DEFAULT_SETTINGS);
+    await workspace.bootstrap(fakeConnection);
+
+    const packageUri = pathToFileURL(
+      join(projectRoot, 'Packages', 'com.example.urp', 'ShaderLibrary', 'Core.hlsl'),
+    ).href;
+    const userUri = pathToFileURL(join(projectRoot, 'Assets', 'Shaders', 'Main.shader')).href;
+
+    expect(workspace.isInPackages(packageUri)).toBe(true);
+    expect(workspace.isInPackages(userUri)).toBe(false);
   });
 
   it('uses settings.projectRoot when the workspace folder is not a Unity root', async () => {

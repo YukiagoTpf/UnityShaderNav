@@ -18,7 +18,7 @@
 | 10 | document-symbols | ✅ Done + review fixes applied | Case 12 | Outline / Document Symbols；cache version bumped |
 | 11 | chain-lookup | ✅ Done + review/fix checked | Case 10 | L1/L2/L3a 完成；L3b/L4 仍 P2 |
 | 12 | macro-definitions | ✅ Done + review fixes applied | Case 11 | `#define` symbols + macro F12；cache version bumped |
-| 13 | find-references | ⏸ P1 | Case 13, 14 | |
+| 13 | find-references | ✅ Done + review fixes applied | Case 13, 14 | Shift+F12 user refs + includePackages；scoped setting covered |
 
 依赖：01 → 02 → 03 → 04 → {05, 06} → 07 → {08, 09, 10, 11, 12, 13}。
 
@@ -522,6 +522,45 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 - `CACHE_VERSION = 3`，旧 version 2 manifest 被拒绝，避免 warm cache 隐藏 macro symbols ✓
 - 宏体不展开；F12 停在 define 行 ✓
 
+## Plan 13 实施记录
+
+**Commits**：`891c38d..2d0bc43`（5 个 Task commit + self-review/code-review/fix docs + fix/test hardening commits）。
+
+| Task | 状态 | Commit |
+|---|---|---|
+| 1 GlobalReferenceIndex | ✅ | `891c38d` |
+| 2 Workspace 集成 globalRefs + Packages 判断 | ✅（偏离 1） | `62d5219` |
+| 3 references handler + capability/server wiring | ✅（偏离 2） | `eb8c4cf` |
+| 4 Find References 集成测 + fixture | ✅ | `5aea597` |
+| 5 README 功能与配置说明 | ✅ | `7310c26` |
+
+**Review / fix**：
+- `docs/superpowers/plans/plan13-self-review.md` 落库：主 agent 发现 `includeDeclaration` 的 package declaration 未过滤，补 RED/GREEN 单测后修复。
+- `cf60847 fix(plan-13): filter package declarations from references`
+- `docs/superpowers/plans/plan13review.md` 落库：code-review subagent Franklin (`019e54a0-9b5b-7793-8989-f932138ac092`) 无 P1，发现 1 个 P2 + 2 个 P3。
+- `docs/superpowers/plans/plan13fix.md` 落库：fix subagent Curie (`019e54a6-2054-70d0-a3d6-526e16d1f9a5`) 修复 P2/P3。
+- `90d6824 fix(plan-13): apply scoped references review fixes`
+- `3747c4a`, `81b4518`, `2d0bc43`：加固 Electron 配置写入测试前置，避免 `.vscode/` 缺失或 settings 写入由测试手动接管。
+
+**Plan 与现实偏离（已在 plan markdown 内联 Note）**：
+1. `Workspace.isInPackages()` 沿用 `Workspace.isWithinPath()` 的 normalized path containment，而不是原 plan 的字符串 `path + '/'`，以匹配 Windows 路径/大小写语义。
+2. references handler 按 Plan 10 后的现状接入 `RequestSuspender` 和 `workspaceForOrCreateFile()`，而不是原 plan 示例里的同步 `workspaceFor()`。
+
+**主 agent 验证结果（2026-05-23）**：
+- `npm run build`：shared/server/client TypeScript builds + copy-server + bundle PASS。
+- `npx tsc -p tests/tsconfig.json`：test-electron TS 编译 PASS。
+- `npm run test -w @unity-shader-nav/server`：server vitest **44 files / 198 tests** PASS。
+- `node tests/out/runTest.js`：Find References integration 两个用例 PASS（`Helper` user refs、`includePackages` toggle）。全量 Electron run 仍命中既有 rebuild/lifecycle/macro settings timing flakes：`.git/HEAD` rebuild、temp workspace add、macro custom settings；非 Plan 13 新功能路径。
+
+**Acceptance**：
+- `GlobalReferenceIndex` 聚合/upsert/delete/clear 覆盖 ✓
+- Workspace cache restore / full scan / live reindex / close / drop / rebuild 路径同步 `globalRefs` ✓
+- `textDocument/references` capability + handler 注册 ✓
+- `context.includeDeclaration === true` 包含声明，且声明/引用都遵守 Packages 过滤 ✓
+- Spec §10 Case 13：Shift+F12 在用户函数上列出 user files 引用 ✓
+- Spec §10 Case 14：`unityShaderNav.findReferences.includePackages=true` 时列表新增 Packages 引用 ✓
+- review fix 后 includePackages 使用 resolved workspace scoped settings，includePackages-only settings change 不触发重建 ✓
+
 ## Phase 05-10 Full Review（2026-05-23）
 
 **Review doc**：`docs/superpowers/plans/phase05-10review.md`
@@ -577,8 +616,9 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 
 ## 下一步
 
-1. 进入 **Plan 13: find-references**，实现 Shift+F12 user files / Packages 开关。
+1. MVP + P1（Plan 01-13）已全部实现；下一步建议做 VSIX 手动打包/安装验证。
 2. Plan 09 follow-up：如需支持多 VSCode 窗口同时打开同一 Unity 项目，再补跨进程 cache manifest 写入锁或更强 atomic replace。
+3. test-electron follow-up：rebuild/lifecycle/macros 配置相关测试在 Windows 下仍有 timing flake，可单独稳定化。
 
 ## 历史回放（review 修订）
 
@@ -601,3 +641,4 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 - 2026-05-23：Phase 05-10 full review + fixes（`phase05-10review.md`；修 include F12 注释语义、scoped settings/lazy workspace、standalone unsaved cache、Document Symbols 首次请求竞态、cache persist best-effort）
 - 2026-05-23：Plan 11 实施 + review/fix（commit `458a0ed..2f9c9c3`，4 个 task commit + review/fix docs；chain lookup L1/L2/L3a，Case 10 覆盖；1 处集成测偏离 plan markdown 内联记录）
 - 2026-05-23：Plan 12 实施 + review/fix（commit `b4624b0..f1b35de`，3 个 task commit + review/fix docs；宏使用 F12 到 `#define`，Case 11 覆盖；cache version bump 到 3；block-comment disabled define 过滤）
+- 2026-05-23：Plan 13 实施 + review/fix（commit `891c38d..2d0bc43`，Shift+F12 Find References，Case 13/14 覆盖；workspace-scoped includePackages；includePackages-only setting change 不重建）

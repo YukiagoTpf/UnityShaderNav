@@ -3,6 +3,7 @@ import { loadSettings, onSettingsChanged } from './config';
 import { registerDefinitionHandler } from './handlers/definition';
 import { registerDocumentSymbolHandler } from './handlers/documentSymbol';
 import { registerDocuments } from './handlers/documents';
+import { registerReferencesHandler } from './handlers/references';
 import { registerFileWatchers } from './lifecycle/fileWatcher';
 import { applyScopedSettingsAndRebuild, reindexOpenDocuments } from './lifecycle/rebuild';
 import { RequestSuspender } from './lifecycle/requestSuspender';
@@ -75,6 +76,12 @@ onSettingsChanged(connection, async (settings) => {
 
 registerDefinitionHandler(connection, documents, manager, suspender);
 registerDocumentSymbolHandler(connection, documents, manager, suspender);
+registerReferencesHandler(
+  connection,
+  documents,
+  manager,
+  suspender,
+);
 registerFileWatchers(connection, manager, suspender, openDocuments);
 
 connection.onShutdown(async () => {
