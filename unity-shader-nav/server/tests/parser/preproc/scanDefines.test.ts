@@ -31,4 +31,16 @@ describe('scanDefines', () => {
 
     expect(out.find((d) => d.name === 'COMMENTED_OUT')).toBeUndefined();
   });
+
+  it('ignores defines inside multi-line block comments', () => {
+    const text = [
+      '#define REAL_BEFORE 1',
+      '/*',
+      '#define DISABLED_IN_BLOCK 1',
+      '*/',
+      '#define REAL_AFTER 1',
+    ].join('\n');
+
+    expect(scanDefines(text).map((d) => d.name)).toEqual(['REAL_BEFORE', 'REAL_AFTER']);
+  });
 });
