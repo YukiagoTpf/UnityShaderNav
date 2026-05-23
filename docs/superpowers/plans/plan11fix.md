@@ -22,4 +22,3 @@ Ohm reported:
 - `node tests/out/runTest.js`: PASS.
 - `npm test`: PASS after rerunning an Electron flake.
 - `git diff --check 1b562be7405d9ae9f62b9861b4857106479d6a14..HEAD`: PASS.
-
