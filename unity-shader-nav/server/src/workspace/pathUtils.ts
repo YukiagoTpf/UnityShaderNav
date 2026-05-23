@@ -26,5 +26,10 @@ export function containsPath(
   const normalizedCandidate = normalizePathForComparison(pathApi.resolve(candidate), options);
   const rel = pathApi.relative(normalizedRoot, normalizedCandidate);
 
-  return rel === '' || (!!rel && !rel.startsWith('..') && !pathApi.isAbsolute(rel));
+  return rel === ''
+    || (!!rel && !isParentRelativePath(rel) && !pathApi.isAbsolute(rel));
+}
+
+function isParentRelativePath(rel: string): boolean {
+  return rel === '..' || rel.startsWith('../') || rel.startsWith('..\\');
 }

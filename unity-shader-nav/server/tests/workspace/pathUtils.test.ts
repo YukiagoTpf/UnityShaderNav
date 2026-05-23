@@ -15,6 +15,10 @@ describe('workspace pathUtils', () => {
 
     expect(containsPath('C:\\Unity\\Project', 'c:\\unity\\project\\Assets\\Main.shader', options))
       .toBe(true);
+    expect(containsPath('C:\\Unity\\Project', 'C:\\Unity\\Project\\..cache\\File.hlsl', options))
+      .toBe(true);
+    expect(containsPath('C:\\Unity\\Project', 'C:\\Unity\\Project\\..\\Other\\File.hlsl', options))
+      .toBe(false);
     expect(containsPath('C:\\Unity\\Project', 'C:\\Unity\\ProjectSibling\\Main.shader', options))
       .toBe(false);
     expect(containsPath('C:\\Unity\\Project', 'D:\\Unity\\Project\\Main.shader', options))
@@ -26,6 +30,10 @@ describe('workspace pathUtils', () => {
 
     expect(containsPath('/Unity/Project', '/Unity/Project/Assets/Main.shader', options))
       .toBe(true);
+    expect(containsPath('/Unity/Project', '/Unity/Project/..generated/file.hlsl', options))
+      .toBe(true);
+    expect(containsPath('/Unity/Project', '/Unity/Project/../Other/file.hlsl', options))
+      .toBe(false);
     expect(containsPath('/Unity/Project', '/unity/project/Assets/Main.shader', options))
       .toBe(false);
   });
