@@ -15,7 +15,7 @@
 | 07 | package-resolver-and-cross-file | ✅ Done + review fixes applied | Case 2, 3, 9 | MVP 完成 |
 | 08 | index-lifecycle | ✅ Done + review fixes applied | — | watcher debounce/rebuild + live overlay suspension covered |
 | 09 | cache-persistence | ✅ Done + review fixes applied | — | P3 cross-process atomic cache write hardening deferred |
-| 10 | document-symbols | ⏸ P1 | Case 12 | |
+| 10 | document-symbols | ✅ Done + review fixes applied | Case 12 | Outline / Document Symbols；cache version bumped |
 | 11 | chain-lookup | ⏸ P1 | Case 10 | L3b 已标 P2（B4 修订） |
 | 12 | macro-definitions | ⏸ P1 | Case 11 | |
 | 13 | find-references | ⏸ P1 | Case 13, 14 | |
@@ -418,6 +418,39 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 **Deferred**：
 - P3：跨 VSCode/server 进程同时写同一 cache manifest 尚未做 lockfile/atomic replace 硬化。缓存可重建，当前 Plan 09 先保留为 follow-up。
 
+## Plan 10 实施记录
+
+**Commits**：`fbed2f7..293c955`（4 个 Task commit + review/fix docs + fix commit）。
+
+| Task | 状态 | Commit |
+|---|---|---|
+| 1 FileIndex 携带 ShaderLab structure | ✅ | `fbed2f7` |
+| 2 buildDocumentSymbols 纯函数 | ✅ | `caa3d9b` |
+| 3 LSP documentSymbol provider | ✅ | `462ba4f` |
+| 4 test-electron Outline 集成测 | ✅ | `15ab7a9` |
+
+**Review / fix**：
+- `docs/superpowers/plans/plan10review.md` 落库：code-review subagent 发现同名 struct member 跨 Pass 污染、Plan 09 cache version 未随 `FileIndex.structure` 失效、documentSymbol handler 未走 request suspension / lazy workspace。
+- `docs/superpowers/plans/plan10fix.md` 落库：struct member 绑定到最近前序同名 struct；`CACHE_VERSION` bump 到 2；documentSymbol handler 改 async + `workspaceForOrCreateFile()` + `RequestSuspender`。
+- `293c955 fix(plan-10): address document symbol review findings`
+
+**Plan 与现实偏离**：**0 处**。没有需要在 plan markdown 内联 `> Note:` 的偏离。
+
+**主 agent 验证结果（2026-05-23）**：
+- `npm run test -w @unity-shader-nav/server -- --run tests/index/documentSymbols.test.ts tests/handlers/documentSymbol.test.ts tests/cache/cacheStore.test.ts`：focused review-fix regression **10/10** PASS。
+- `npm run build`：shared/server/client TypeScript builds + copy-server + bundle 全过。
+- `node tests/out/runTest.js`：test-electron PASS（用于复核一次不可复现的 harness flake）。
+- `npm test`：端到端 PASS（test-electron + server vitest）。
+- `npm run test -w @unity-shader-nav/server`：server vitest **40 files / 166 tests** PASS。
+
+**Acceptance**：
+- `.hlsl` document symbols 包含 function / struct / cbuffer / pragma 入口 ✓
+- struct member 作为 struct children，不再顶层显示；同名 struct 在不同 Pass 中不串 member ✓
+- `.shader` 顶层 `Shader "Name"`，下钻 `SubShader` → `Pass "X"` → Pass 内 HLSL symbol ✓
+- LSP capability `documentSymbolProvider: true` + handler 注册 ✓
+- cold start / rebuild / standalone lazy workspace 期间 documentSymbol request 通过 `RequestSuspender` 与 `workspaceForOrCreateFile()` 处理 ✓
+- Plan 09 warm cache 因 `CACHE_VERSION = 2` 失效重建，避免旧 `FileIndex` 缺 `structure` 导致 Outline 扁平化 ✓
+
 ## 进行中 TODO
 
 ### 🟡 Plan 01 follow-up（plan01fix 之后还剩的）
@@ -445,13 +478,13 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 ### ⏳ 已展望的风险（来自 REVIEW，未排进 Blocker）
 
 - **R6/R7/R8**：性能并发模型 — Plan 09 已落 cache persistence MVP；cold/warm restore 仍是串行 `fs.stat()`、persist 仍全量重写、`fullScan()` 仍无 bounded concurrency。后续性能专项再处理。
-- **R3**：Plan 10 buildDocumentSymbols 嵌套算法 fiddly，TDD 时小心
+- ~~**R3**：Plan 10 buildDocumentSymbols 嵌套算法 fiddly，TDD 时小心~~ ✅ Plan 10 已完成；review fix 补同名 struct 跨 Pass 回归
 - ~~**R5**：Plan 06 `existsCaseSensitive` 在 macOS 上语义反了；macOS CI 会爆~~ ✅ Plan 06 实现用逐段 `readdir` 校验真实大小写，并通过显式 ignore-case fallback 返回磁盘真实路径
 - ~~**P3**：Plan 08 `this.store.clear?.()` 用 optional chaining 兜底，但 `IndexStore.clear()` 没正式定义~~ ✅ Plan 08 已补 `IndexStore.clear()` / `GlobalSymbolIndex.clear()`
 
 ## 下一步
 
-1. 进入 **Plan 10: document-symbols**，实现 Outline / Document Symbols。
+1. 进入 **Plan 11: chain-lookup**，实现链式成员/类型 lookup。
 2. Plan 09 follow-up：如需支持多 VSCode 窗口同时打开同一 Unity 项目，再补跨进程 cache manifest 写入锁或更强 atomic replace。
 
 ## 历史回放（review 修订）
@@ -471,3 +504,4 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 - 2026-05-23：Plan 07 实施 + review/fix（commit `7dffab7..310a83b`，11 个 task commit + review doc + fix commit，Case 2/3/9 覆盖；2 处偏离 plan markdown 内联记录；MVP 完成）
 - 2026-05-23：Plan 08 实施 + review/fix（commit `a99bb7c..15a1091`，8 个 task commit + review doc + fix commits；文件 watcher debounce/rebuild、settings cleanup、open document overlay、request suspension 覆盖；4 处偏离 plan markdown 内联记录）
 - 2026-05-23：Plan 09 实施 + review/fix（commit `56134a9..2e54737`，8 个 task commit + review/fix docs；cache manifest/fingerprint、Unity `Library/UnityShaderNavCache`、standalone globalStorage fallback、warm restore refresh、shutdown persist 覆盖；1 处偏离 plan markdown 内联记录；P3 跨进程 cache write hardening deferred）
+- 2026-05-23：Plan 10 实施 + review/fix（commit `fbed2f7..293c955`，4 个 task commit + review/fix docs；Document Symbols / Outline 覆盖 Case 12；cache version bump；0 处偏离）
