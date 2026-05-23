@@ -1,10 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DEFAULT_SETTINGS } from '@unity-shader-nav/shared';
 import { WorkspaceManager } from '../../src/workspace/workspaceManager';
+import { Workspace } from '../../src/workspace/workspace';
 
 const fakeConnection = {
   console: { log() {} },
@@ -16,6 +17,10 @@ const fakeConnection = {
     }),
   },
 } as never;
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 async function makeProjectB(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'usn-project-b-'));
@@ -69,5 +74,18 @@ describe('WorkspaceManager: multi-root', () => {
     const workspace = manager.list()[0];
     expect(workspace.unityRoot).toBe(projectA);
     expect(workspace.global.lookup('Common').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('passes configured globalStorageDir to newly added workspaces', async () => {
+    const standaloneFolder = await mkdtemp(join(tmpdir(), 'usn-global-storage-'));
+    const manager = new WorkspaceManager();
+    const bootstrap = vi
+      .spyOn(Workspace.prototype, 'bootstrap')
+      .mockResolvedValue(undefined);
+
+    manager.configure(DEFAULT_SETTINGS, fakeConnection, '/global-storage');
+    await manager.addFolder(pathToFileURL(standaloneFolder).href, DEFAULT_SETTINGS, fakeConnection);
+
+    expect(bootstrap).toHaveBeenCalledWith(fakeConnection, '/global-storage');
   });
 });

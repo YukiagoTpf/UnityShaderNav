@@ -14,10 +14,12 @@ export class WorkspaceManager {
   private readonly byFolder = new Map<string, Workspace>();
   private settings: ExtensionSettings | undefined;
   private connection: Connection | undefined;
+  private globalStorageDir: string | undefined;
 
-  configure(settings: ExtensionSettings, connection: Connection): void {
+  configure(settings: ExtensionSettings, connection: Connection, globalStorageDir?: string): void {
     this.settings = settings;
     this.connection = connection;
+    if (globalStorageDir !== undefined) this.globalStorageDir = globalStorageDir;
   }
 
   list(): Workspace[] {
@@ -62,9 +64,10 @@ export class WorkspaceManager {
     if (this.byFolder.has(folderUri)) return;
     const currentSettings = this.settings ?? settings;
     const currentConnection = this.connection ?? connection;
+    const currentGlobalStorageDir = globalStorageDir ?? this.globalStorageDir;
     const workspace = new Workspace(folderUri, currentSettings);
     this.byFolder.set(folderUri, workspace);
-    await workspace.bootstrap(currentConnection, globalStorageDir);
+    await workspace.bootstrap(currentConnection, currentGlobalStorageDir);
     this.sendModeNotification();
   }
 

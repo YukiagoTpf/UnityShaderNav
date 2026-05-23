@@ -41,6 +41,9 @@ export function createLanguageClient(context: ExtensionContext): LanguageClient 
       { scheme: 'file', language: 'shaderlab' },
       { scheme: 'file', language: 'hlsl' },
     ],
+    initializationOptions: {
+      globalStorageDir: context.globalStorageUri.fsPath,
+    },
     synchronize: {
       configurationSection: SETTINGS_SECTIONS,
     },

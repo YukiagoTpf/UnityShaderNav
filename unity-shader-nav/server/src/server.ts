@@ -10,8 +10,15 @@ import { WorkspaceManager } from './workspace';
 const connection = getConnection();
 const manager = new WorkspaceManager();
 const suspender = new RequestSuspender({ timeoutMs: 5000 });
+let globalStorageDir: string | undefined;
 
-connection.onInitialize(() => createInitializeResult());
+connection.onInitialize((params) => {
+  const options = params.initializationOptions as { globalStorageDir?: unknown } | undefined;
+  globalStorageDir = typeof options?.globalStorageDir === 'string'
+    ? options.globalStorageDir
+    : undefined;
+  return createInitializeResult();
+});
 
 const documents = registerDocuments(connection, manager);
 const openDocuments = () => documents.all();
@@ -20,10 +27,10 @@ connection.onInitialized(async () => {
   suspender.suspend();
   try {
     const settings = await loadSettings(connection);
-    manager.configure(settings, connection);
+    manager.configure(settings, connection, globalStorageDir);
     const folders = await connection.workspace.getWorkspaceFolders() ?? [];
     for (const folder of folders) {
-      await manager.addFolder(folder.uri, settings, connection);
+      await manager.addFolder(folder.uri, settings, connection, globalStorageDir);
     }
     await reindexOpenDocuments(manager, openDocuments);
     connection.sendNotification('unityShaderNav/mode', { mode: manager.mode() });
@@ -32,7 +39,7 @@ connection.onInitialized(async () => {
       for (const removed of event.removed) manager.removeFolder(removed.uri);
       void (async () => {
         for (const added of event.added) {
-          await manager.addFolder(added.uri, settings, connection);
+          await manager.addFolder(added.uri, settings, connection, globalStorageDir);
         }
       })();
     });
