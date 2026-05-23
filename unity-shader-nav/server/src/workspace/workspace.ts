@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { Connection } from 'vscode-languageserver/node';
 import type {
@@ -66,7 +66,10 @@ export class Workspace {
         includeDirectories: this.settings.includeDirectories,
       };
       await this.configureCache(folderPath, _globalStorageDir);
-      await this.bootstrapFromCache(connection, undefined);
+      const manifest = await this.cache?.load(this.fingerprint);
+      if (manifest && this.matchesWorkspace(manifest)) {
+        await this.bootstrapFromCache(connection, manifest);
+      }
       return;
     }
 
@@ -131,6 +134,8 @@ export class Workspace {
 
     try {
       for (const cachedFile of manifest.files) {
+        if (!this.shouldRestoreCachedFile(cachedFile.uri)) continue;
+
         if (await this.cache.isValid(cachedFile)) {
           this.diskIndexes.set(cachedFile.uri, cachedFile.index);
           this.store.set(cachedFile.uri, cachedFile.index);
@@ -156,6 +161,39 @@ export class Workspace {
     }
 
     await this.persist();
+  }
+
+  private shouldRestoreCachedFile(uri: string): boolean {
+    if (!this.unityRoot || !this.packageResolver) return true;
+
+    let filePath: string;
+    try {
+      filePath = fileURLToPath(uri);
+    } catch {
+      return false;
+    }
+
+    const currentPackageRoots = this.packageResolver.allPaths().map(({ path }) => path);
+    if (currentPackageRoots.some((root) => this.isWithinPath(filePath, root))) {
+      return true;
+    }
+
+    const packageAreas = [
+      join(this.unityRoot, 'Packages'),
+      join(this.unityRoot, 'Library', 'PackageCache'),
+    ];
+    return !packageAreas.some((root) => this.isWithinPath(filePath, root));
+  }
+
+  private isWithinPath(candidate: string, root: string): boolean {
+    const normalizedRoot = this.normalizePathForComparison(resolve(root));
+    const normalizedCandidate = this.normalizePathForComparison(resolve(candidate));
+    const rel = relative(normalizedRoot, normalizedCandidate);
+    return rel === '' || (!!rel && !rel.startsWith('..') && !isAbsolute(rel));
+  }
+
+  private normalizePathForComparison(absPath: string): string {
+    return process.platform === 'win32' ? absPath.toLowerCase() : absPath;
   }
 
   private async indexMissingDiskFiles(connection: Connection): Promise<void> {
@@ -229,6 +267,9 @@ export class Workspace {
   async reindex(uri: string, text: string, shouldStore: () => boolean = () => true): Promise<void> {
     const idx = await indexFile(uri, text, this.table);
     if (!shouldStore()) return;
+    if (this.isStandalone()) {
+      this.diskIndexes.set(uri, idx);
+    }
     this.store.set(uri, idx);
     this.global.upsert(idx);
   }

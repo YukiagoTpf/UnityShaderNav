@@ -60,6 +60,72 @@ describe('Workspace.bootstrap', () => {
     }
   });
 
+  it('persists opened standalone files into global storage and restores them on next bootstrap', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-standalone-cache-'));
+    const globalStorageDir = await mkdtemp(join(tmpdir(), 'usn-global-storage-'));
+    const shaderPath = join(root, 'Loose.hlsl');
+    const shaderUri = pathToFileURL(shaderPath).href;
+    await writeFile(shaderPath, 'float4 StandaloneCached() { return 0; }');
+
+    try {
+      const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      await ws1.bootstrap(fakeConnection, globalStorageDir);
+      await ws1.reindex(shaderUri, await readFile(shaderPath, 'utf8'));
+      await ws1.persist();
+
+      const ws2 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      await ws2.bootstrap(fakeConnection, globalStorageDir);
+
+      expect(ws2.isStandalone()).toBe(true);
+      expect(ws2.global.lookup('StandaloneCached').length).toBeGreaterThanOrEqual(1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(globalStorageDir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not restore cached package files no longer covered by packages-lock', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-package-cache-filter-'));
+    await mkdir(join(root, 'Assets', 'Shaders'), { recursive: true });
+    await mkdir(join(root, 'Packages'), { recursive: true });
+    await mkdir(join(root, 'ProjectSettings'), { recursive: true });
+    const oldPackageRoot = join(root, 'Library', 'PackageCache', 'com.example.render@oldhash');
+    const newPackageRoot = join(root, 'Library', 'PackageCache', 'com.example.render@newhash');
+    await mkdir(oldPackageRoot, { recursive: true });
+    await mkdir(newPackageRoot, { recursive: true });
+    await writeFile(join(oldPackageRoot, 'Old.hlsl'), 'float4 OldPackageSymbol() { return 0; }');
+    await writeFile(join(newPackageRoot, 'New.hlsl'), 'float4 NewPackageSymbol() { return 0; }');
+
+    const writeLockfile = async (hash: string) => writeFile(
+      join(root, 'Packages', 'packages-lock.json'),
+      JSON.stringify({
+        dependencies: {
+          'com.example.render': {
+            version: '1.0.0',
+            source: 'registry',
+            hash,
+          },
+        },
+      }),
+    );
+
+    try {
+      await writeLockfile('oldhash');
+      const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      await ws1.bootstrap(fakeConnection);
+      expect(ws1.global.lookup('OldPackageSymbol').length).toBeGreaterThanOrEqual(1);
+
+      await writeLockfile('newhash');
+      const ws2 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      await ws2.bootstrap(fakeConnection);
+
+      expect(ws2.global.lookup('OldPackageSymbol')).toEqual([]);
+      expect(ws2.global.lookup('NewPackageSymbol').length).toBeGreaterThanOrEqual(1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('restores the full-scan index when a scanned file is opened and closed', async () => {
     const projectRoot = resolve(__dirname, '../include/fixtures/projectA');
     const folder = pathToFileURL(projectRoot).href;
