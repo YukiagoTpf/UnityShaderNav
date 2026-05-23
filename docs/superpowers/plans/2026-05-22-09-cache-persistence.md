@@ -362,6 +362,8 @@ describe('chooseCacheDir', () => {
 
 - [ ] **Step 3: index.ts**
 
+> Note: `CacheManager` is created in Task 5. Exporting it in Task 3 would make the intermediate commit fail TypeScript compilation, so Task 3 exports only `CacheStore` and cache-location APIs; Task 5 adds the `CacheManager` export.
+
 ```typescript
 export { CacheStore } from './cacheStore';
 export { chooseCacheDir } from './cacheLocation';
