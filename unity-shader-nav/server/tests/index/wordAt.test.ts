@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { wordAt } from '../../src/index/wordAt';
+import { memberAccessAt, wordAt } from '../../src/index/wordAt';
 
 describe('wordAt', () => {
   it('returns the identifier under cursor', () => {
@@ -16,5 +16,23 @@ describe('wordAt', () => {
 
   it('supports identifiers with leading underscore and digits', () => {
     expect(wordAt('  _Color2', { line: 0, character: 4 })?.text).toBe('_Color2');
+  });
+});
+
+describe('memberAccessAt', () => {
+  it('returns member and receiver for member access', () => {
+    const result = memberAccessAt('  float x = surface.uv;', { line: 0, character: 20 });
+
+    expect(result?.member.text).toBe('uv');
+    expect(result?.member.range.start.character).toBe(20);
+    expect(result?.receiver?.text).toBe('surface');
+    expect(result?.receiver?.range.start.character).toBe(12);
+  });
+
+  it('returns just the word when there is no receiver', () => {
+    const result = memberAccessAt('void foo() { bar; }', { line: 0, character: 14 });
+
+    expect(result?.member.text).toBe('bar');
+    expect(result?.receiver).toBeNull();
   });
 });
