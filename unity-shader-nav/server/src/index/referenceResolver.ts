@@ -41,17 +41,30 @@ function containsPosition(range: Range, position: Position): boolean {
   return true;
 }
 
+function isExactDeclarationTarget(symbol: SymbolEntry): boolean {
+  return symbol.kind === 'parameter' || symbol.kind === 'localVariable' || symbol.kind === 'structMember';
+}
+
 export function resolveReferenceTargetsForName(
   index: FileIndex,
   name: string,
   position: Position,
   global?: GlobalSymbolIndex | null,
 ): ReferenceTarget[] {
+  const exactDeclarations = index.symbols.filter(
+    (symbol) =>
+      symbol.name === name &&
+      isExactDeclarationTarget(symbol) &&
+      containsPosition(symbol.location.range, position),
+  );
+  if (exactDeclarations.length > 0) return exactDeclarations.map(toReferenceTarget);
+
   const scopedDeclarations = index.symbols.filter(
     (symbol) =>
       symbol.name === name &&
       (symbol.kind === 'parameter' || symbol.kind === 'localVariable') &&
-      containsPosition(symbol.location.range, position),
+      symbol.scopeRange &&
+      containsPosition(symbol.scopeRange, position),
   );
   if (scopedDeclarations.length > 0) return scopedDeclarations.map(toReferenceTarget);
 

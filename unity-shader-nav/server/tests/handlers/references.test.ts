@@ -559,6 +559,72 @@ describe('registerReferencesHandler', () => {
     ]);
   });
 
+  it('filters member references from a struct member declaration position', async () => {
+    const { connection, handler } = captureReferencesHandler();
+    const uri = 'file:///project/Assets/MemberDeclarationReferences.hlsl';
+    const text = [
+      'struct Surface { float3 positionWS; };',
+      'struct Other { float3 positionWS; };',
+      'float3 ReadSurface(Surface surface) {',
+      '  return surface.positionWS;',
+      '}',
+      'float3 ReadOther(Other other) {',
+      '  return other.positionWS;',
+      '}',
+    ].join('\n');
+    const doc = TextDocument.create(uri, 'hlsl', 1, text);
+    const index = await indexFile(uri, text);
+    const store = new IndexStore();
+    store.set(uri, index);
+    const workspace = {
+      settings: DEFAULT_SETTINGS,
+      store,
+      global: new GlobalSymbolIndex(),
+      globalRefs: new GlobalReferenceIndex(),
+      isInPackages: () => false,
+    };
+    workspace.global.upsert(index);
+    workspace.globalRefs.upsert(index);
+    const documents = {
+      get(requestedUri: string) {
+        return requestedUri === uri ? doc : undefined;
+      },
+    } as never;
+    const manager = {
+      async workspaceForOrCreateFile() {
+        return workspace;
+      },
+    } as never;
+    const surfaceMember = index.symbols.find(
+      (symbol) =>
+        symbol.name === 'positionWS' &&
+        symbol.kind === 'structMember' &&
+        symbol.parentType === 'Surface',
+    );
+    const surfaceReference = index.references.find(
+      (reference) =>
+        reference.name === 'positionWS' &&
+        reference.context === 'member' &&
+        reference.location.range.start.line === 3,
+    );
+    if (!surfaceMember || !surfaceReference) {
+      throw new Error('missing Surface.positionWS fixture locations');
+    }
+
+    registerReferencesHandler(connection, documents, manager);
+
+    const result = await handler()({
+      textDocument: { uri },
+      position: { line: 0, character: 25 },
+      context: { includeDeclaration: true },
+    });
+
+    expect(result).toEqual([
+      { uri, range: surfaceMember.location.range },
+      { uri, range: surfaceReference.location.range },
+    ]);
+  });
+
   it('waits for RequestSuspender release before resolving references', async () => {
     const { connection, handler } = captureReferencesHandler();
     const uri = 'file:///project/Assets/Use.hlsl';
