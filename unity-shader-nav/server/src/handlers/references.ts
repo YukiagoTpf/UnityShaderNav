@@ -5,9 +5,31 @@ import type {
   TextDocuments,
 } from 'vscode-languageserver/node';
 import type { TextDocument } from 'vscode-languageserver-textdocument';
-import { wordAt } from '../index';
+import type { Range } from '@unity-shader-nav/shared';
+import {
+  resolveReferenceTargets,
+  resolveReferenceTargetsForName,
+  wordAt,
+  type ReferenceTarget,
+} from '../index';
 import type { RequestSuspender } from '../lifecycle/requestSuspender';
 import type { WorkspaceManager } from '../workspace';
+
+function samePosition(a: Range['start'], b: Range['start']): boolean {
+  return a.line === b.line && a.character === b.character;
+}
+
+function sameRange(a: Range, b: Range): boolean {
+  return samePosition(a.start, b.start) && samePosition(a.end, b.end);
+}
+
+function sameTarget(a: ReferenceTarget, b: ReferenceTarget): boolean {
+  return a.kind === b.kind && a.uri === b.uri && sameRange(a.range, b.range);
+}
+
+function isScopedTarget(target: ReferenceTarget): boolean {
+  return (target.kind === 'localVariable' || target.kind === 'parameter') && !!target.scopeRange;
+}
 
 export function registerReferencesHandler(
   connection: Connection,
@@ -26,11 +48,28 @@ export function registerReferencesHandler(
       const word = wordAt(document.getText(), params.position);
       if (!word) return null;
 
+      const idx = workspace.store?.get(params.textDocument.uri);
+      const targets = idx
+        ? resolveReferenceTargets(idx, document.getText(), params.position, workspace.global)
+        : [];
+      const scopedTargets = targets.filter(isScopedTarget);
+      const queryName = targets[0]?.name ?? word.text;
       const includePackages = workspace.settings.findReferences.includePackages;
       const symbolsAsReferences = params.context.includeDeclaration
         ? workspace.global
-          .lookup(word.text)
+          .lookup(queryName)
           .filter((symbol) => includePackages || !workspace.isInPackages(symbol.location.uri))
+          .filter((symbol) => (
+            scopedTargets.length === 0
+            || scopedTargets.some((target) => sameTarget(target, {
+              name: symbol.name,
+              kind: symbol.kind,
+              uri: symbol.location.uri,
+              range: symbol.location.range,
+              scopeRange: symbol.scopeRange,
+              parentType: symbol.parentType,
+            }))
+          ))
           .map((symbol) => ({
             uri: symbol.location.uri,
             range: symbol.location.range,
@@ -38,8 +77,24 @@ export function registerReferencesHandler(
         : [];
 
       const references = workspace.globalRefs
-        .lookup(word.text)
+        .lookup(queryName)
         .filter((reference) => includePackages || !workspace.isInPackages(reference.location.uri))
+        .filter((reference) => {
+          if (scopedTargets.length === 0) return true;
+
+          const candidateIndex = workspace.store?.get(reference.location.uri);
+          if (!candidateIndex) return false;
+
+          const candidateTargets = resolveReferenceTargetsForName(
+            candidateIndex,
+            reference.name,
+            reference.location.range.start,
+            workspace.global,
+          );
+          return candidateTargets.some((candidate) =>
+            scopedTargets.some((target) => sameTarget(candidate, target)),
+          );
+        })
         .map((reference) => ({
           uri: reference.location.uri,
           range: reference.location.range,

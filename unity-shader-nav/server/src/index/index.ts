@@ -3,7 +3,7 @@ export { GlobalSymbolIndex } from './globalIndex';
 export { GlobalReferenceIndex } from './globalReferences';
 export { resolveMember, resolveMemberSymbols } from './chainLookup';
 export { resolveDefinition, resolveDefinitionSymbols } from './symbolResolver';
-export { resolveReferenceTargets } from './referenceResolver';
+export { resolveReferenceTargets, resolveReferenceTargetsForName } from './referenceResolver';
 export { memberAccessAt, wordAt } from './wordAt';
 export type { ReferenceTarget } from './referenceResolver';
 export type { LocationLink } from './symbolResolver';

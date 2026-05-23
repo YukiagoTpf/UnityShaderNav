@@ -27,6 +27,15 @@ function toReferenceTarget(symbol: SymbolEntry): ReferenceTarget {
   return target;
 }
 
+export function resolveReferenceTargetsForName(
+  index: FileIndex,
+  name: string,
+  position: Position,
+  global?: GlobalSymbolIndex | null,
+): ReferenceTarget[] {
+  return resolveDefinitionSymbols(index, name, position, global).map(toReferenceTarget);
+}
+
 export function resolveReferenceTargets(
   index: FileIndex,
   text: string,
@@ -48,5 +57,5 @@ export function resolveReferenceTargets(
   const word = wordAt(text, position);
   if (!word) return [];
 
-  return resolveDefinitionSymbols(index, word.text, position, global).map(toReferenceTarget);
+  return resolveReferenceTargetsForName(index, word.text, position, global);
 }
