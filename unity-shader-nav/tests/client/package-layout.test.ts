@@ -41,14 +41,15 @@ suite('packaged server layout', () => {
     assert.ok(fromServerEntry.resolve('web-tree-sitter').includes('web-tree-sitter'));
   });
 
-  test('VSIX-like server root can resolve web-tree-sitter without monorepo node_modules', () => {
+  test('VSIX-like extension root can start packaged parser without monorepo node_modules', async () => {
     const root = monorepoRoot();
-    const sourceServerRoot = path.resolve(root, 'client/out/server');
+    const sourceOutRoot = path.resolve(root, 'client/out');
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'unity-shader-nav-vsix-'));
     const extensionRoot = path.join(tempRoot, 'extension');
-    const packagedServerRoot = path.join(extensionRoot, 'out/server');
+    const packagedOutRoot = path.join(extensionRoot, 'out');
+    const packagedServerRoot = path.join(packagedOutRoot, 'server');
     try {
-      fs.cpSync(sourceServerRoot, packagedServerRoot, { recursive: true });
+      fs.cpSync(sourceOutRoot, packagedOutRoot, { recursive: true });
       const serverEntry = path.join(packagedServerRoot, 'server.js');
       const resolved = createRequire(serverEntry).resolve('web-tree-sitter');
 
@@ -56,6 +57,14 @@ suite('packaged server layout', () => {
         resolved.startsWith(packagedServerRoot),
         `expected web-tree-sitter to resolve inside packaged server root, got ${resolved}`,
       );
+
+      const parserPath = path.join(packagedServerRoot, 'parser/hlsl/parser.js');
+      const { parseHlsl } = require(parserPath) as {
+        parseHlsl(text: string): Promise<{ rootNode: { type: string; hasError: boolean } }>;
+      };
+      const tree = await parseHlsl('float f() { return 1; }');
+      assert.strictEqual(tree.rootNode.type, 'translation_unit');
+      assert.strictEqual(tree.rootNode.hasError, false);
     } finally {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }
