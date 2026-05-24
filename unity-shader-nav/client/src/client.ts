@@ -15,19 +15,6 @@ const SETTINGS_SECTIONS = [
   'unityShaderNav.findReferences.includePackages',
 ];
 
-function currentUnityShaderNavSettings(): object {
-  const config = workspace.getConfiguration('unityShaderNav');
-  return {
-    projectRoot: config.get('projectRoot', ''),
-    includeDirectories: config.get('includeDirectories', []),
-    excludePatterns: config.get('excludePatterns', ['**/Library/**', '**/Temp/**', '**/Logs/**']),
-    declarationMacros: config.get('declarationMacros', []),
-    findReferences: {
-      includePackages: config.get('findReferences.includePackages', false),
-    },
-  };
-}
-
 export function createLanguageClient(context: ExtensionContext): LanguageClient {
   const serverModule = context.asAbsolutePath(path.join('out', 'server', 'server.js'));
 
@@ -44,9 +31,6 @@ export function createLanguageClient(context: ExtensionContext): LanguageClient 
     initializationOptions: {
       globalStorageDir: context.globalStorageUri.fsPath,
     },
-    synchronize: {
-      configurationSection: SETTINGS_SECTIONS,
-    },
   };
 
   const client = new LanguageClient(
@@ -61,9 +45,7 @@ export function createLanguageClient(context: ExtensionContext): LanguageClient 
     if (!changed) return;
 
     void client.sendNotification('workspace/didChangeConfiguration', {
-      settings: {
-        unityShaderNav: currentUnityShaderNavSettings(),
-      },
+      settings: null,
     }).catch((err) => console.error('[UnityShaderNav] failed to forward configuration change', err));
   }));
 

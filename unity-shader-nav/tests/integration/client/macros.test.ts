@@ -71,7 +71,7 @@ suite('F12 on macro-declared variable', () => {
 
         try {
           await ensureSettingsDirectory(folder.uri.fsPath);
-          await config.update('declarationMacros', [], vscode.ConfigurationTarget.Workspace);
+          await config.update('declarationMacros', [], vscode.ConfigurationTarget.WorkspaceFolder);
           await vscode.workspace.fs.writeFile(uri, Buffer.from(text, 'utf8'));
 
           const doc = await vscode.workspace.openTextDocument(uri);
@@ -96,7 +96,7 @@ suite('F12 on macro-declared variable', () => {
           await config.update(
             'declarationMacros',
             [{ pattern: 'MY_TEX2D($name)', kind: 'variable' }],
-            vscode.ConfigurationTarget.Workspace,
+            vscode.ConfigurationTarget.WorkspaceFolder,
           );
           disposable.dispose();
           assert.strictEqual(sawConfigEvent, true, 'VSCode should emit declarationMacros configuration changes');
@@ -115,7 +115,7 @@ suite('F12 on macro-declared variable', () => {
           assert.ok(links && links.length >= 1, 'expected definition after declarationMacros update');
           assert.strictEqual(targetRange(links[0]).start.line, 0);
         } finally {
-          await config.update('declarationMacros', undefined, vscode.ConfigurationTarget.Workspace);
+          await config.update('declarationMacros', undefined, vscode.ConfigurationTarget.WorkspaceFolder);
           await vscode.workspace.fs.delete(uri, { useTrash: false }).then(undefined, () => undefined);
           await vscode.workspace.fs
             .delete(vscode.Uri.joinPath(folder.uri, '.vscode', 'settings.json'), { useTrash: false })

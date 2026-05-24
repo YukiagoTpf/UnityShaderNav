@@ -54,22 +54,26 @@
       "properties": {
         "unityShaderNav.projectRoot": {
           "type": "string",
+          "scope": "resource",
           "default": "",
           "description": "Path to Unity project root (containing Assets/ and ProjectSettings/). Empty = autodetect."
         },
         "unityShaderNav.includeDirectories": {
           "type": "array",
           "items": { "type": "string" },
+          "scope": "resource",
           "default": [],
           "description": "Extra include search paths."
         },
         "unityShaderNav.excludePatterns": {
           "type": "array",
           "items": { "type": "string" },
+          "scope": "resource",
           "default": ["**/Library/**", "**/Temp/**", "**/Logs/**"]
         },
         "unityShaderNav.declarationMacros": {
           "type": "array",
+          "scope": "resource",
           "items": {
             "type": "object",
             "properties": {
@@ -88,6 +92,7 @@
         },
         "unityShaderNav.findReferences.includePackages": {
           "type": "boolean",
+          "scope": "resource",
           "default": false
         }
       }
