@@ -8,7 +8,7 @@ import type {
 } from '@unity-shader-nav/shared';
 import type { GlobalSymbolIndex } from './globalIndex';
 import { resolveMemberSymbols } from './chainLookup';
-import { resolveDefinitionSymbols } from './symbolResolver';
+import { resolveDefinitionSymbols, type ResolutionOptions } from './symbolResolver';
 import { memberAccessAt, wordAt } from './wordAt';
 
 export interface ReferenceTarget {
@@ -50,6 +50,7 @@ export function resolveReferenceTargetsForName(
   name: string,
   position: Position,
   global?: GlobalSymbolIndex | null,
+  options?: ResolutionOptions,
 ): ReferenceTarget[] {
   const exactDeclarations = index.symbols.filter(
     (symbol) =>
@@ -59,7 +60,7 @@ export function resolveReferenceTargetsForName(
   );
   if (exactDeclarations.length > 0) return exactDeclarations.map(toReferenceTarget);
 
-  return resolveDefinitionSymbols(index, name, position, global).map(toReferenceTarget);
+  return resolveDefinitionSymbols(index, name, position, global, options).map(toReferenceTarget);
 }
 
 export function resolveReferenceTargets(
@@ -67,6 +68,7 @@ export function resolveReferenceTargets(
   text: string,
   position: Position,
   global?: GlobalSymbolIndex | null,
+  options?: ResolutionOptions,
 ): ReferenceTarget[] {
   const memberAccess = memberAccessAt(text, position);
   if (memberAccess?.receiver) {
@@ -76,6 +78,7 @@ export function resolveReferenceTargets(
       memberAccess.receiver.text,
       memberAccess.member.text,
       position,
+      options,
     );
     if (memberTargets.length > 0) return memberTargets.map(toReferenceTarget);
   }
@@ -83,13 +86,14 @@ export function resolveReferenceTargets(
   const word = wordAt(text, position);
   if (!word) return [];
 
-  return resolveReferenceTargetsForName(index, word.text, position, global);
+  return resolveReferenceTargetsForName(index, word.text, position, global, options);
 }
 
 export function resolveReferenceTargetsForMemberReference(
   index: FileIndex,
   reference: ReferenceEntry,
   global?: GlobalSymbolIndex | null,
+  options?: ResolutionOptions,
 ): ReferenceTarget[] {
   if (reference.context !== 'member' || !reference.receiver) return [];
 
@@ -99,5 +103,6 @@ export function resolveReferenceTargetsForMemberReference(
     reference.receiver,
     reference.name,
     reference.location.range.start,
+    options,
   ).map(toReferenceTarget);
 }

@@ -1,10 +1,15 @@
 import type { FileIndex, Position, Range, SymbolEntry } from '@unity-shader-nav/shared';
 import type { GlobalSymbolIndex } from './globalIndex';
+import { uriKey } from './uriKey';
 
 export interface LocationLink {
   targetUri: string;
   targetRange: Range;
   targetSelectionRange: Range;
+}
+
+export interface ResolutionOptions {
+  visibleUriKeys?: ReadonlySet<string>;
 }
 
 function inRange(pos: Position, range: Range): boolean {
@@ -26,11 +31,16 @@ function asLink(symbol: SymbolEntry): LocationLink {
   };
 }
 
+function isVisible(symbol: SymbolEntry, options?: ResolutionOptions): boolean {
+  return !options?.visibleUriKeys || options.visibleUriKeys.has(uriKey(symbol.location.uri));
+}
+
 export function resolveDefinitionSymbols(
   idx: FileIndex,
   name: string,
   refPos: Position,
   global?: GlobalSymbolIndex | null,
+  options?: ResolutionOptions,
 ): SymbolEntry[] {
   const candidates = idx.symbols.filter((symbol) => symbol.name === name);
   const scoped = candidates.filter(
@@ -63,7 +73,8 @@ export function resolveDefinitionSymbols(
     (symbol) =>
       symbol.location.uri !== idx.uri &&
       symbol.kind !== 'parameter' &&
-      symbol.kind !== 'localVariable',
+      symbol.kind !== 'localVariable' &&
+      isVisible(symbol, options),
   );
 
   return [...fileGlobals, ...otherGlobals];
@@ -74,6 +85,7 @@ export function resolveDefinition(
   name: string,
   refPos: Position,
   global?: GlobalSymbolIndex | null,
+  options?: ResolutionOptions,
 ): LocationLink[] {
-  return resolveDefinitionSymbols(idx, name, refPos, global).map(asLink);
+  return resolveDefinitionSymbols(idx, name, refPos, global, options).map(asLink);
 }

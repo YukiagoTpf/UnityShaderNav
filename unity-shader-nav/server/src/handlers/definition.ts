@@ -8,7 +8,7 @@ import type {
 import type { TextDocument } from 'vscode-languageserver-textdocument';
 import { pathToFileURL } from 'node:url';
 import { resolveInclude } from '../include';
-import { memberAccessAt, resolveDefinition, resolveMember, wordAt } from '../index';
+import { collectVisibleUriKeys, memberAccessAt, resolveDefinition, resolveMember, wordAt } from '../index';
 import type { RequestSuspender } from '../lifecycle/requestSuspender';
 import { scanIncludes } from '../parser/include/lineScanner';
 import { isGenericDefinitionContext } from '../parser/lexical/context';
@@ -75,6 +75,13 @@ export function registerDefinitionHandler(
         return null;
       }
 
+      const visibleUriKeys = await collectVisibleUriKeys(
+        workspace.store,
+        workspace.includeCtx,
+        params.textDocument.uri,
+      );
+      const resolutionOptions = visibleUriKeys.size > 1 ? { visibleUriKeys } : undefined;
+
       const memberAccess = memberAccessAt(fullText, params.position);
       if (memberAccess?.receiver) {
         const links = resolveMember(
@@ -83,6 +90,7 @@ export function registerDefinitionHandler(
           memberAccess.receiver.text,
           memberAccess.member.text,
           params.position,
+          resolutionOptions,
         );
         if (links.length > 0) {
           return links.map((link) => ({
@@ -97,7 +105,13 @@ export function registerDefinitionHandler(
       const word = wordAt(fullText, params.position);
       if (!word) return null;
 
-      const links = resolveDefinition(idx, word.text, params.position, workspace.global);
+      const links = resolveDefinition(
+        idx,
+        word.text,
+        params.position,
+        workspace.global,
+        resolutionOptions,
+      );
       if (links.length === 0) return null;
 
       return links.map((link) => ({

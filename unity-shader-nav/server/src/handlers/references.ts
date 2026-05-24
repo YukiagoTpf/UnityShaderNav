@@ -14,6 +14,7 @@ import type {
   SymbolKind,
 } from '@unity-shader-nav/shared';
 import {
+  collectVisibleUriKeys,
   resolveReferenceTargets,
   resolveReferenceTargetsForName,
   resolveReferenceTargetsForMemberReference,
@@ -50,6 +51,18 @@ function sameTarget(a: ReferenceTarget, b: ReferenceTarget): boolean {
   return a.kind === b.kind && a.uri === b.uri && sameRange(a.range, b.range);
 }
 
+function symbolToTarget(symbol: SymbolEntry): ReferenceTarget {
+  const target: ReferenceTarget = {
+    name: symbol.name,
+    kind: symbol.kind,
+    uri: symbol.location.uri,
+    range: symbol.location.range,
+  };
+  if (symbol.scopeRange) target.scopeRange = symbol.scopeRange;
+  if (symbol.parentType) target.parentType = symbol.parentType;
+  return target;
+}
+
 function isScopedTarget(target: ReferenceTarget): boolean {
   return (target.kind === 'localVariable' || target.kind === 'parameter') && !!target.scopeRange;
 }
@@ -83,10 +96,6 @@ function compatibleReferenceContexts(kind: SymbolKind): readonly ReferenceContex
 
 function isReferenceContextCompatible(target: ReferenceTarget, context: ReferenceContext): boolean {
   return compatibleReferenceContexts(target.kind).includes(context);
-}
-
-function isSymbolKindCompatible(target: ReferenceTarget, symbol: SymbolEntry): boolean {
-  return symbol.kind === target.kind;
 }
 
 function narrowGlobalTargetsForOccurrence(
@@ -199,8 +208,14 @@ export function registerReferencesHandler(
       if (!word) return null;
 
       const idx = workspace.store?.get(params.textDocument.uri);
+      const visibleUriKeys = idx && workspace.includeCtx
+        ? await collectVisibleUriKeys(workspace.store, workspace.includeCtx, params.textDocument.uri)
+        : undefined;
+      const resolutionOptions = visibleUriKeys && visibleUriKeys.size > 1
+        ? { visibleUriKeys }
+        : undefined;
       const targets = idx
-        ? resolveReferenceTargets(idx, fullText, params.position, workspace.global)
+        ? resolveReferenceTargets(idx, fullText, params.position, workspace.global, resolutionOptions)
         : [];
       const scopedTargets = targets.filter(isScopedTarget);
       const memberTargets = targets.filter(isMemberTarget);
@@ -214,75 +229,73 @@ export function registerReferencesHandler(
           params.position,
         )
         : [];
+      const activeTargets = narrowedTargets.length > 0 ? narrowedTargets : globalKindAwareTargets;
       const includePackages = workspace.settings.findReferences.includePackages;
       const symbolsAsReferences = params.context.includeDeclaration
         ? workspace.global
           .lookup(queryName)
           .filter((symbol) => includePackages || !workspace.isInPackages(symbol.location.uri))
-          .filter((symbol) => (
-            narrowedTargets.length === 0
-            || narrowedTargets.some((target) => sameTarget(target, {
-              name: symbol.name,
-              kind: symbol.kind,
-              uri: symbol.location.uri,
-              range: symbol.location.range,
-              scopeRange: symbol.scopeRange,
-              parentType: symbol.parentType,
-            }))
-          ))
-          .filter((symbol) => (
-            globalKindAwareTargets.length === 0
-            || globalKindAwareTargets.some((target) => isSymbolKindCompatible(target, symbol))
-          ))
+          .filter((symbol) =>
+            activeTargets.length === 0 ||
+            activeTargets.some((target) => sameTarget(target, symbolToTarget(symbol))))
           .map((symbol) => ({
             uri: symbol.location.uri,
             range: symbol.location.range,
           }))
         : [];
 
-      const references = workspace.globalRefs
-        .lookup(queryName)
-        .filter((reference) => includePackages || !workspace.isInPackages(reference.location.uri))
-        .filter((reference) => {
-          if (narrowedTargets.length === 0 && globalKindAwareTargets.length === 0) return true;
-          const activeTargets = narrowedTargets.length > 0 ? narrowedTargets : globalKindAwareTargets;
+      const references: Location[] = [];
+      for (const reference of workspace.globalRefs.lookup(queryName)) {
+        if (!includePackages && workspace.isInPackages(reference.location.uri)) continue;
 
-          if (
-            globalKindAwareTargets.length > 0 &&
-            !globalKindAwareTargets.some((target) =>
-              isReferenceContextCompatible(target, reference.context),
+        if (activeTargets.length === 0) {
+          references.push({ uri: reference.location.uri, range: reference.location.range });
+          continue;
+        }
+
+        if (
+          globalKindAwareTargets.length > 0 &&
+          !globalKindAwareTargets.some((target) =>
+            isReferenceContextCompatible(target, reference.context),
+          )
+        ) {
+          continue;
+        }
+
+        const candidateIndex = workspace.store?.get(reference.location.uri);
+        if (!candidateIndex) continue;
+
+        const candidateVisibleUriKeys = workspace.includeCtx
+          ? await collectVisibleUriKeys(workspace.store, workspace.includeCtx, reference.location.uri)
+          : undefined;
+        const candidateResolutionOptions = candidateVisibleUriKeys && candidateVisibleUriKeys.size > 1
+          ? { visibleUriKeys: candidateVisibleUriKeys }
+          : undefined;
+        const candidateTargets = reference.context === 'member'
+          ? resolveReferenceTargetsForMemberReference(
+            candidateIndex,
+            reference,
+            workspace.global,
+            candidateResolutionOptions,
+          )
+          : reference.context !== 'include'
+            ? resolveReferenceTargetsForName(
+              candidateIndex,
+              reference.name,
+              reference.location.range.start,
+              workspace.global,
+              candidateResolutionOptions,
             )
-          ) {
-            return false;
-          }
+            : [];
 
-          const candidateIndex = workspace.store?.get(reference.location.uri);
-          if (!candidateIndex) return false;
-
-          const candidateTargets = reference.context === 'member'
-            ? resolveReferenceTargetsForMemberReference(candidateIndex, reference, workspace.global)
-            : reference.context !== 'include'
-              ? resolveReferenceTargetsForName(
-                candidateIndex,
-                reference.name,
-                reference.location.range.start,
-                workspace.global,
-              )
-              : [];
-
-          return candidateTargets.some((candidate) =>
-            activeTargets.some((target) =>
-              narrowedTargets.length > 0
-                ? sameTarget(candidate, target)
-                : candidate.kind === target.kind &&
-                  isReferenceContextCompatible(target, reference.context),
-            ),
-          );
-        })
-        .map((reference) => ({
-          uri: reference.location.uri,
-          range: reference.location.range,
-        }));
+        if (
+          candidateTargets.some((candidate) =>
+            activeTargets.some((target) => sameTarget(candidate, target)),
+          )
+        ) {
+          references.push({ uri: reference.location.uri, range: reference.location.range });
+        }
+      }
 
       return uniqueLocations([...symbolsAsReferences, ...references]);
     };

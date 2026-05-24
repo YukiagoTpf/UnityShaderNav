@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join, resolve as pathResolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import type { Connection, Location, ReferenceParams } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
@@ -78,6 +80,96 @@ function expectedScopedLocations(index: FileIndex, name: string, scopeRange: Ran
 }
 
 describe('registerReferencesHandler', () => {
+  it('filters global references to the canonical include-visible target', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-issue-1-refs-'));
+    try {
+      const assets = join(root, 'Assets');
+      await mkdir(assets, { recursive: true });
+      const mainPath = join(assets, 'Main.hlsl');
+      const sharedPath = join(assets, 'Shared.hlsl');
+      const otherUsePath = join(assets, 'OtherUse.hlsl');
+      const otherSharedPath = join(assets, 'OtherShared.hlsl');
+      const mainText = [
+        '#include "Shared.hlsl"',
+        'float4 Main() { return Helper(); }',
+      ].join('\n');
+      const sharedText = 'float4 Helper() { return 1; }';
+      const otherUseText = [
+        '#include "OtherShared.hlsl"',
+        'float4 OtherUse() { return Helper(); }',
+      ].join('\n');
+      const otherSharedText = 'float4 Helper() { return 2; }';
+      await writeFile(mainPath, mainText, 'utf8');
+      await writeFile(sharedPath, sharedText, 'utf8');
+      await writeFile(otherUsePath, otherUseText, 'utf8');
+      await writeFile(otherSharedPath, otherSharedText, 'utf8');
+
+      const mainUri = pathToFileURL(mainPath).href;
+      const sharedUri = pathToFileURL(sharedPath).href;
+      const otherUseUri = pathToFileURL(otherUsePath).href;
+      const otherSharedUri = pathToFileURL(otherSharedPath).href;
+      const indexes = await Promise.all([
+        indexFile(mainUri, mainText),
+        indexFile(sharedUri, sharedText),
+        indexFile(otherUseUri, otherUseText),
+        indexFile(otherSharedUri, otherSharedText),
+      ]);
+      const [mainIndex, sharedIndex] = indexes;
+      const store = new IndexStore();
+      const global = new GlobalSymbolIndex();
+      const globalRefs = new GlobalReferenceIndex();
+      for (const index of indexes) {
+        store.set(index.uri, index);
+        global.upsert(index);
+        globalRefs.upsert(index);
+      }
+      const sharedHelper = sharedIndex.symbols.find(
+        (symbol) => symbol.name === 'Helper' && symbol.kind === 'function',
+      );
+      const mainCall = mainIndex.references.find(
+        (reference) => reference.name === 'Helper' && reference.context === 'call',
+      );
+      if (!sharedHelper || !mainCall) {
+        throw new Error('missing canonical Helper declaration/call');
+      }
+      const { connection, handler } = captureReferencesHandler();
+      const doc = TextDocument.create(mainUri, 'hlsl', 1, mainText);
+      const documents = {
+        get(requestedUri: string) {
+          return requestedUri === mainUri ? doc : undefined;
+        },
+      } as never;
+      const workspace = {
+        settings: DEFAULT_SETTINGS,
+        includeCtx: { unityProjectRoot: root, includeDirectories: [] },
+        store,
+        global,
+        globalRefs,
+        isInPackages: () => false,
+      };
+      const manager = {
+        async workspaceForOrCreateFile(requestedUri: string) {
+          return requestedUri === mainUri ? workspace : undefined;
+        },
+      } as never;
+
+      registerReferencesHandler(connection, documents, manager);
+
+      const result = await handler()({
+        textDocument: { uri: mainUri },
+        position: { line: 1, character: mainText.split('\n')[1].indexOf('Helper') + 1 },
+        context: { includeDeclaration: true },
+      });
+
+      expect(result).toEqual([
+        { uri: sharedUri, range: sharedHelper.location.range },
+        { uri: mainUri, range: mainCall.location.range },
+      ]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('returns declaration and non-package references for the word under the cursor', async () => {
     const { connection, handler } = captureReferencesHandler();
     const uri = 'file:///project/Assets/Use.hlsl';

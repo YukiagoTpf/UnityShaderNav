@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { Connection, DefinitionParams } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import type { FileIndex } from '@unity-shader-nav/shared';
 import { GlobalSymbolIndex, IndexStore } from '../../src/index';
 import { registerDefinitionHandler } from '../../src/handlers/definition';
 import { RequestSuspender } from '../../src/lifecycle/requestSuspender';
+import { indexFile } from '../../src/parser/hlsl/fileIndexer';
 
 function createDefinitionFixture(
   uri: string,
@@ -95,6 +100,88 @@ function memberIndex(uri: string): FileIndex {
 }
 
 describe('registerDefinitionHandler', () => {
+  it('filters global definition candidates to the transitive include chain', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-issue-1-def-'));
+    try {
+      const assets = join(root, 'Assets');
+      await mkdir(assets, { recursive: true });
+      const mainPath = join(assets, 'Main.hlsl');
+      const sharedPath = join(assets, 'Shared.hlsl');
+      const otherPath = join(assets, 'Other.hlsl');
+      const mainText = [
+        '#include "Shared.hlsl"',
+        'float4 Main() { return Helper(); }',
+      ].join('\n');
+      const sharedText = 'float4 Helper() { return 1; }';
+      const otherText = 'float4 Helper() { return 2; }';
+      await writeFile(mainPath, mainText, 'utf8');
+      await writeFile(sharedPath, sharedText, 'utf8');
+      await writeFile(otherPath, otherText, 'utf8');
+
+      const mainUri = pathToFileURL(mainPath).href;
+      const sharedUri = pathToFileURL(sharedPath).href;
+      const otherUri = pathToFileURL(otherPath).href;
+      const mainIndex = await indexFile(mainUri, mainText);
+      const sharedIndex = await indexFile(sharedUri, sharedText);
+      const otherIndex = await indexFile(otherUri, otherText);
+      const store = new IndexStore();
+      const global = new GlobalSymbolIndex();
+      for (const index of [mainIndex, sharedIndex, otherIndex]) {
+        store.set(index.uri, index);
+        global.upsert(index);
+      }
+      let handler: ((params: DefinitionParams) => Promise<unknown>) | undefined;
+      const connection = {
+        onDefinition(fn: (params: DefinitionParams) => Promise<unknown>) {
+          handler = fn;
+          return { dispose() {} };
+        },
+        console: {
+          warn() {},
+        },
+      } as unknown as Connection;
+      const doc = TextDocument.create(mainUri, 'hlsl', 1, mainText);
+      const documents = {
+        get(requestedUri: string) {
+          return requestedUri === mainUri ? doc : undefined;
+        },
+      } as never;
+      const workspace = {
+        includeCtx: { unityProjectRoot: root, includeDirectories: [] },
+        store,
+        global,
+      };
+      const manager = {
+        async workspaceForOrCreateFile(requestedUri: string) {
+          return requestedUri === mainUri ? workspace : undefined;
+        },
+      } as never;
+      const sharedHelper = sharedIndex.symbols.find(
+        (symbol) => symbol.name === 'Helper' && symbol.kind === 'function',
+      );
+      if (!sharedHelper) throw new Error('missing Shared.Helper symbol');
+
+      registerDefinitionHandler(connection, documents, manager);
+
+      const result = await handler?.({
+        textDocument: { uri: mainUri },
+        position: { line: 1, character: mainText.split('\n')[1].indexOf('Helper') + 1 },
+      }) as LocationLink[] | null;
+
+      expect(result).toEqual([{
+        targetUri: sharedUri,
+        targetRange: sharedHelper.location.range,
+        targetSelectionRange: sharedHelper.location.range,
+        originSelectionRange: {
+          start: { line: 1, character: 23 },
+          end: { line: 1, character: 29 },
+        },
+      }]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('returns location links for the identifier under the cursor', async () => {
     let handler: ((params: DefinitionParams) => Promise<unknown>) | undefined;
     const connection = {

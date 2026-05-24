@@ -1,6 +1,7 @@
 import type { FileIndex, Position, Range, SymbolEntry } from '@unity-shader-nav/shared';
 import type { GlobalSymbolIndex } from './globalIndex';
-import type { LocationLink } from './symbolResolver';
+import type { LocationLink, ResolutionOptions } from './symbolResolver';
+import { uriKey } from './uriKey';
 
 function inRange(pos: Position, range: Range): boolean {
   if (pos.line < range.start.line || pos.line > range.end.line) return false;
@@ -22,6 +23,7 @@ function inferReceiverType(
   global: GlobalSymbolIndex | null | undefined,
   receiver: string,
   refPos: Position,
+  options?: ResolutionOptions,
 ): string | null {
   const params = index.symbols.filter(
     (symbol) =>
@@ -56,9 +58,16 @@ function inferReceiverType(
   if (fileGlobal?.declaredType) return fileGlobal.declaredType;
 
   const crossFileGlobal = (global?.lookup(receiver) ?? []).find(
-    (symbol) => symbol.kind === 'variable' && symbol.declaredType,
+    (symbol) =>
+      symbol.kind === 'variable' &&
+      symbol.declaredType &&
+      isVisible(symbol, options),
   );
   return crossFileGlobal?.declaredType ?? null;
+}
+
+function isVisible(symbol: SymbolEntry, options?: ResolutionOptions): boolean {
+  return !options?.visibleUriKeys || options.visibleUriKeys.has(uriKey(symbol.location.uri));
 }
 
 function linkKey(symbol: SymbolEntry): string {
@@ -86,8 +95,9 @@ export function resolveMemberSymbols(
   receiver: string,
   member: string,
   refPos: Position,
+  options?: ResolutionOptions,
 ): SymbolEntry[] {
-  const receiverType = inferReceiverType(index, global, receiver, refPos);
+  const receiverType = inferReceiverType(index, global, receiver, refPos, options);
   if (!receiverType) return [];
 
   const members = [
@@ -101,7 +111,8 @@ export function resolveMemberSymbols(
       (symbol) =>
         symbol.kind === 'structMember' &&
         symbol.parentType === receiverType &&
-        symbol.name === member,
+        symbol.name === member &&
+        isVisible(symbol, options),
     ),
   ];
 
@@ -122,6 +133,7 @@ export function resolveMember(
   receiver: string,
   member: string,
   refPos: Position,
+  options?: ResolutionOptions,
 ): LocationLink[] {
-  return resolveMemberSymbols(index, global, receiver, member, refPos).map(toLink);
+  return resolveMemberSymbols(index, global, receiver, member, refPos, options).map(toLink);
 }
