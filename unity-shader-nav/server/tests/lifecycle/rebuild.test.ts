@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   applyScopedSettingsAndRebuild,
   applySettingsAndRebuild,
+  openDocumentGenerationKey,
   rebuildWorkspacesWithOpenDocuments,
 } from '../../src/lifecycle/rebuild';
 import { WorkspaceManager } from '../../src/workspace';
@@ -109,6 +110,58 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
       fakeConnection,
       manager as never,
       () => [liveDocument],
+      suspender,
+    );
+
+    expect(calls).toEqual([
+      'suspend',
+      'rebuild',
+      'reindex-start:float4 Stale() { return 0; }',
+      'release',
+    ]);
+  });
+
+  it('does not restore a stale open document overlay after close and reopen at the same version', async () => {
+    const calls: string[] = [];
+    const workspace = {
+      rebuild: vi.fn(async () => {
+        calls.push('rebuild');
+      }),
+    };
+    const staleDocument = {
+      uri: 'file:///Standalone.hlsl',
+      version: 1,
+      [openDocumentGenerationKey]: 1,
+      getText: () => 'float4 Stale() { return 0; }',
+    };
+    const freshDocument = {
+      uri: 'file:///Standalone.hlsl',
+      version: 1,
+      [openDocumentGenerationKey]: 2,
+      getText: () => 'float4 Fresh() { return 0; }',
+    };
+    let liveDocuments = [staleDocument];
+    const liveWorkspace = {
+      reindex: vi.fn(async (_uri: string, text: string, shouldStore?: () => boolean) => {
+        calls.push(`reindex-start:${text}`);
+        liveDocuments = [freshDocument];
+        if (shouldStore?.() ?? true) calls.push(`store:${text}`);
+      }),
+    };
+    const manager = {
+      list: () => [workspace],
+      readyList: async () => [workspace],
+      workspaceForOrCreateFile: vi.fn(async () => liveWorkspace),
+    };
+    const suspender = {
+      suspend: vi.fn(() => calls.push('suspend')),
+      release: vi.fn(() => calls.push('release')),
+    };
+
+    await rebuildWorkspacesWithOpenDocuments(
+      fakeConnection,
+      manager as never,
+      () => liveDocuments,
       suspender,
     );
 

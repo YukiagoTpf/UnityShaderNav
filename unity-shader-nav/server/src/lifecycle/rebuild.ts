@@ -5,9 +5,12 @@ import type { Workspace } from '../workspace/workspace';
 import type { WorkspaceManager } from '../workspace/workspaceManager';
 import type { RequestSuspender } from './requestSuspender';
 
+export const openDocumentGenerationKey = '__unityShaderNavOpenGeneration' as const;
+
 export interface OpenDocumentSnapshot {
   uri: string;
   version: number;
+  [openDocumentGenerationKey]?: number;
   getText(): string;
 }
 
@@ -29,11 +32,14 @@ async function reindexOpenDocuments(
   for (const document of getOpenDocuments()) {
     const uri = document.uri;
     const version = document.version;
+    const generation = document[openDocumentGenerationKey] ?? document;
     const text = document.getText();
     const workspace = await manager.workspaceForOrCreateFile(uri);
     await workspace?.reindex(uri, text, () =>
       Array.from(getOpenDocuments()).some((current) =>
-        current.uri === uri && current.version === version,
+        current.uri === uri
+        && current.version === version
+        && (current[openDocumentGenerationKey] ?? current) === generation,
       ),
     );
   }

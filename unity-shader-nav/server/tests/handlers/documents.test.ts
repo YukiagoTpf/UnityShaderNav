@@ -218,4 +218,56 @@ describe('registerDocuments', () => {
 
     expect(calls).toEqual(['store:float4 Fresh() { return 0; }']);
   });
+
+  it('does not store stale text after the same URI closes and reopens at the same version', async () => {
+    const harness = createConnectionHarness();
+    const calls: string[] = [];
+    let allowStaleReindex!: () => void;
+    const staleReindex = new Promise<void>((resolve) => {
+      allowStaleReindex = resolve;
+    });
+    const workspace = {
+      async reindex(_uri: string, text: string, shouldStore: () => boolean) {
+        if (text.includes('Stale')) await staleReindex;
+        if (shouldStore()) calls.push(`store:${text}`);
+      },
+      closeDocument(uri: string) {
+        calls.push(`close:${uri}`);
+      },
+    };
+    const manager = {
+      workspaceFor(uri: string) {
+        return uri === 'file:///t/reopened.hlsl' ? workspace : undefined;
+      },
+      async workspaceForOrCreateFile(uri: string) {
+        return this.workspaceFor(uri);
+      },
+    } as never;
+
+    registerDocuments(harness.connection, manager);
+    harness.open({
+      textDocument: {
+        uri: 'file:///t/reopened.hlsl',
+        languageId: 'hlsl',
+        version: 1,
+        text: 'float4 Stale() { return 0; }',
+      },
+    });
+    harness.close({ textDocument: { uri: 'file:///t/reopened.hlsl' } });
+    harness.open({
+      textDocument: {
+        uri: 'file:///t/reopened.hlsl',
+        languageId: 'hlsl',
+        version: 1,
+        text: 'float4 Fresh() { return 0; }',
+      },
+    });
+    allowStaleReindex();
+
+    await waitFor(() => calls.includes('store:float4 Fresh() { return 0; }'));
+
+    expect(calls).toContain('close:file:///t/reopened.hlsl');
+    expect(calls).toContain('store:float4 Fresh() { return 0; }');
+    expect(calls).not.toContain('store:float4 Stale() { return 0; }');
+  });
 });
