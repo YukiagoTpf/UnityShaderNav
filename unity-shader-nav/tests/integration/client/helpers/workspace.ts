@@ -7,6 +7,11 @@ const DEFAULT_REMOVE_SETTLE_MS = 500;
 const UPDATE_TIMEOUT_MS = 7000;
 const RETRY_MS = 100;
 
+export interface WorkspaceFolderHandle {
+  folder: vscode.WorkspaceFolder;
+  added: boolean;
+}
+
 async function delay(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -17,6 +22,12 @@ function samePath(left: string, right: string): boolean {
   return process.platform === 'win32'
     ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
     : normalizedLeft === normalizedRight;
+}
+
+function isWithinPath(root: string, candidate: string): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  if (relative === '') return true;
+  return !!relative && !relative.startsWith('..') && !path.isAbsolute(relative);
 }
 
 function findWorkspaceFolder(folderPath: string): { folder: vscode.WorkspaceFolder; index: number } | undefined {
@@ -38,9 +49,9 @@ async function waitForWorkspaceFolder(
   return findWorkspaceFolder(folderPath)?.folder;
 }
 
-export async function addWorkspaceFolder(folderPath: string): Promise<vscode.WorkspaceFolder> {
+export async function addWorkspaceFolder(folderPath: string): Promise<WorkspaceFolderHandle> {
   const existing = findWorkspaceFolder(folderPath);
-  if (existing) return existing.folder;
+  if (existing) return { folder: existing.folder, added: false };
 
   const deadline = Date.now() + UPDATE_TIMEOUT_MS;
   while (Date.now() < deadline) {
@@ -53,12 +64,12 @@ export async function addWorkspaceFolder(folderPath: string): Promise<vscode.Wor
       const folder = await waitForWorkspaceFolder(folderPath, true);
       assert.ok(folder, `expected workspace folder to exist after adding: ${folderPath}`);
       await delay(DEFAULT_ADD_SETTLE_MS);
-      return folder;
+      return { folder, added: true };
     }
 
     await delay(RETRY_MS);
     const folder = findWorkspaceFolder(folderPath)?.folder;
-    if (folder) return folder;
+    if (folder) return { folder, added: false };
   }
 
   assert.fail(`expected workspace folder to be added: ${folderPath}`);
@@ -84,14 +95,24 @@ export async function removeWorkspaceFolder(folderPath: string): Promise<void> {
   assert.fail(`expected workspace folder to be removed: ${folderPath}`);
 }
 
+export async function closeEditorsForFolder(folderPath: string): Promise<void> {
+  for (const editor of [...vscode.window.visibleTextEditors]) {
+    if (!isWithinPath(folderPath, editor.document.uri.fsPath)) {
+      continue;
+    }
+    await vscode.window.showTextDocument(editor.document, editor.viewColumn, false);
+    await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+  }
+}
+
 export async function withWorkspaceFolder<T>(
   folderPath: string,
   fn: (folder: vscode.WorkspaceFolder) => Promise<T>,
 ): Promise<T> {
-  const folder = await addWorkspaceFolder(folderPath);
+  const handle = await addWorkspaceFolder(folderPath);
   try {
-    return await fn(folder);
+    return await fn(handle.folder);
   } finally {
-    await removeWorkspaceFolder(folderPath);
+    if (handle.added) await removeWorkspaceFolder(folderPath);
   }
 }

@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { withWorkspaceFolder } from './helpers/workspace';
+import { closeEditorsForFolder, withWorkspaceFolder } from './helpers/workspace';
 
 function sourceFixtureRoot(): string {
   return path.resolve(__dirname, '../../../../server/tests/include/fixtures/projectA');
@@ -46,38 +46,42 @@ suite('Lifecycle: edit triggers reindex', () => {
     const root = await makeProjectCopy();
     try {
       await withWorkspaceFolder(root, async () => {
-        const commonPath = path.join(root, 'Assets', 'Shaders', 'Common.hlsl');
-        const mainUri = vscode.Uri.file(path.join(root, 'Assets', 'Shaders', 'Main.shader'));
-        const before = await fs.readFile(commonPath, 'utf8');
+        try {
+          const commonPath = path.join(root, 'Assets', 'Shaders', 'Common.hlsl');
+          const mainUri = vscode.Uri.file(path.join(root, 'Assets', 'Shaders', 'Main.shader'));
+          const before = await fs.readFile(commonPath, 'utf8');
 
-        const mainDoc = await vscode.workspace.openTextDocument(mainUri);
-        await vscode.window.showTextDocument(mainDoc);
-        const endLine = mainDoc.getText().split(/\r?\n/).findIndex((line) => line.trim() === 'ENDHLSL');
-        assert.ok(endLine >= 0, 'expected ENDHLSL in Main.shader');
+          const mainDoc = await vscode.workspace.openTextDocument(mainUri);
+          await vscode.window.showTextDocument(mainDoc);
+          const endLine = mainDoc.getText().split(/\r?\n/).findIndex((line) => line.trim() === 'ENDHLSL');
+          assert.ok(endLine >= 0, 'expected ENDHLSL in Main.shader');
 
-        const edit = new vscode.WorkspaceEdit();
-        const inserted = '    float4 _z = NewlyAdded();\n';
-        edit.insert(mainUri, new vscode.Position(endLine, 0), inserted);
-        assert.ok(await vscode.workspace.applyEdit(edit), 'expected Main.shader edit to apply');
-        await new Promise((resolve) => setTimeout(resolve, 800));
+          const edit = new vscode.WorkspaceEdit();
+          const inserted = '    float4 _z = NewlyAdded();\n';
+          edit.insert(mainUri, new vscode.Position(endLine, 0), inserted);
+          assert.ok(await vscode.workspace.applyEdit(edit), 'expected Main.shader edit to apply');
+          await new Promise((resolve) => setTimeout(resolve, 800));
 
-        const unresolved = await vscode.commands.executeCommand<Array<vscode.LocationLink | vscode.Location>>(
-          'vscode.executeDefinitionProvider',
-          mainUri,
-          new vscode.Position(endLine, inserted.indexOf('NewlyAdded') + 2),
-        );
-        assert.equal(unresolved?.length ?? 0, 0, 'NewlyAdded should not resolve before external file change');
+          const unresolved = await vscode.commands.executeCommand<Array<vscode.LocationLink | vscode.Location>>(
+            'vscode.executeDefinitionProvider',
+            mainUri,
+            new vscode.Position(endLine, inserted.indexOf('NewlyAdded') + 2),
+          );
+          assert.equal(unresolved?.length ?? 0, 0, 'NewlyAdded should not resolve before external file change');
 
-        await fs.writeFile(commonPath, `${before}\nfloat4 NewlyAdded() { return 1; }\n`);
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+          await fs.writeFile(commonPath, `${before}\nfloat4 NewlyAdded() { return 1; }\n`);
+          await new Promise((resolve) => setTimeout(resolve, 1000));
 
-        const links = await waitForDefinitions(
-          mainUri,
-          new vscode.Position(endLine, inserted.indexOf('NewlyAdded') + 2),
-        );
+          const links = await waitForDefinitions(
+            mainUri,
+            new vscode.Position(endLine, inserted.indexOf('NewlyAdded') + 2),
+          );
 
-        assert.ok(links && links.length >= 1, 'expected NewlyAdded definition');
-        assert.ok(targetUri(links[0]).fsPath.endsWith(path.join('Assets', 'Shaders', 'Common.hlsl')));
+          assert.ok(links && links.length >= 1, 'expected NewlyAdded definition');
+          assert.ok(targetUri(links[0]).fsPath.endsWith(path.join('Assets', 'Shaders', 'Common.hlsl')));
+        } finally {
+          await closeEditorsForFolder(root);
+        }
       });
     } finally {
       await fs.rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });

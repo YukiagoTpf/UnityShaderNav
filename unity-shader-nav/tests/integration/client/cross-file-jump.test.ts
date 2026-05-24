@@ -30,12 +30,14 @@ async function waitForDefinitions(
 }
 
 suite('F12 cross-file', () => {
+  let workspace: Awaited<ReturnType<typeof addWorkspaceFolder>> | undefined;
+
   suiteSetup(async () => {
-    await addWorkspaceFolder(fixtureRoot());
+    workspace = await addWorkspaceFolder(fixtureRoot());
   });
 
   suiteTeardown(async () => {
-    await removeWorkspaceFolder(fixtureRoot());
+    if (workspace?.added) await removeWorkspaceFolder(fixtureRoot());
   });
 
   test('jumps to Common.hlsl', async () => {
