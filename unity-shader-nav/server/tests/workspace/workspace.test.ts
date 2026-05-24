@@ -71,6 +71,33 @@ describe('Workspace.bootstrap', () => {
     }
   });
 
+  it('falls back to full scan when the persisted manifest schema is invalid', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-cache-invalid-schema-'));
+    await mkdir(join(root, 'Assets', 'Shaders'), { recursive: true });
+    await mkdir(join(root, 'Packages'), { recursive: true });
+    await mkdir(join(root, 'ProjectSettings'), { recursive: true });
+    await writeFile(join(root, 'Packages', 'packages-lock.json'), '{"dependencies":{}}');
+    await writeFile(join(root, 'Assets', 'Shaders', 'Recovered.hlsl'), 'float4 RecoveredSymbol() { return 0; }');
+
+    try {
+      const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      await ws1.bootstrap(fakeConnection);
+
+      const cachePath = join(root, 'Library', 'UnityShaderNavCache', 'index.json');
+      const { files: _files, ...corruptedManifest } = JSON.parse(await readFile(cachePath, 'utf8'));
+      await writeFile(cachePath, JSON.stringify(corruptedManifest), 'utf8');
+
+      const fullScan = vi.spyOn(Workspace.prototype, 'fullScan');
+      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      await workspace.bootstrap(fakeConnection);
+
+      expect(fullScan).toHaveBeenCalledTimes(1);
+      expect(workspace.global.lookup('RecoveredSymbol').length).toBeGreaterThanOrEqual(1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('persists opened standalone files into global storage and restores them on next bootstrap', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-standalone-cache-'));
     const globalStorageDir = await mkdtemp(join(tmpdir(), 'usn-global-storage-'));
