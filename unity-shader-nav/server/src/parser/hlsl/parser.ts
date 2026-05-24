@@ -14,6 +14,7 @@ let language: Parser.Language | undefined;
 let TS: any;
 
 const HLSL_WASM = 'tree-sitter-hlsl.wasm';
+const STRUCT_FIELD_MACRO_LINE_RE = /^([ \t]*)(UNITY_VERTEX_INPUT_INSTANCE_ID|UNITY_VERTEX_OUTPUT_STEREO)([ \t]*)$/gm;
 
 function resolveWasmPath(): string {
   const candidates = [
@@ -44,10 +45,15 @@ export async function parseHlsl(text: string): Promise<Parser.Tree> {
   await ensureReady();
   const parser = new TS();
   parser.setLanguage(language!);
-  return parser.parse(text);
+  return parser.parse(stabilizeMacroStatementLines(text));
 }
 
 export async function getLanguage(): Promise<Parser.Language> {
   await ensureReady();
   return language!;
+}
+
+function stabilizeMacroStatementLines(text: string): string {
+  return text.replace(STRUCT_FIELD_MACRO_LINE_RE, (_line, indent: string, name: string, trailing: string) =>
+    `${indent}${name.slice(0, -1)};${trailing}`);
 }

@@ -14,6 +14,16 @@ import { scanIncludes } from '../parser/include/lineScanner';
 import { isGenericDefinitionContext } from '../parser/lexical/context';
 import type { WorkspaceManager } from '../workspace';
 
+function logDefinitionTrace(
+  connection: Connection,
+  enabled: boolean,
+  event: string,
+  data: Record<string, unknown>,
+): void {
+  if (!enabled) return;
+  connection.console.log(`[UnityShaderNav][definition-trace] ${event} ${JSON.stringify(data)}`);
+}
+
 export function registerDefinitionHandler(
   connection: Connection,
   documents: TextDocuments<TextDocument>,
@@ -27,6 +37,14 @@ export function registerDefinitionHandler(
 
       const workspace = await manager.workspaceForOrCreateFile(params.textDocument.uri);
       if (!workspace) return null;
+      const traceEnabled = workspace.settings?.debug?.definitionTrace === true;
+      const trace = (event: string, data: Record<string, unknown>) =>
+        logDefinitionTrace(connection, traceEnabled, event, data);
+      trace('request', {
+        uri: params.textDocument.uri,
+        position: params.position,
+        languageId: doc.languageId,
+      });
 
       const fullText = doc.getText();
       const include = scanIncludes(fullText).find((candidate) =>
@@ -48,6 +66,10 @@ export function registerDefinitionHandler(
             `[UnityShaderNav] case-insensitive include match: "${include.path}" -> ${resolved.absolutePath}`,
           );
         }
+        trace('include', {
+          path: include.path,
+          resolvedUri: pathToFileURL(resolved.absolutePath).href,
+        });
         const targetUri = pathToFileURL(resolved.absolutePath).href;
         const targetRange = {
           start: { line: 0, character: 0 },
@@ -69,9 +91,17 @@ export function registerDefinitionHandler(
         await workspace.reindex(doc.uri, fullText);
         idx = workspace.store.get(params.textDocument.uri);
       }
-      if (!idx) return null;
+      if (!idx) {
+        trace('index.missing', { uri: params.textDocument.uri });
+        return null;
+      }
+      trace('index.loaded', {
+        symbols: idx.symbols.length,
+        references: idx.references.length,
+      });
 
       if (!isGenericDefinitionContext(fullText, params.position, doc.languageId, params.textDocument.uri)) {
+        trace('context.rejected', {});
         return null;
       }
 
@@ -80,9 +110,14 @@ export function registerDefinitionHandler(
         workspace.includeCtx,
         params.textDocument.uri,
       );
-      const resolutionOptions = { visibleUriKeys };
+      const resolutionOptions = { visibleUriKeys, trace };
+      trace('visibility', { visibleUriCount: visibleUriKeys.size });
 
       const memberAccess = memberAccessAt(fullText, params.position);
+      trace('memberAccess', {
+        member: memberAccess?.member.text,
+        receiver: memberAccess?.receiver?.text,
+      });
       if (memberAccess?.receiver) {
         const links = resolveMember(
           idx,
@@ -93,6 +128,7 @@ export function registerDefinitionHandler(
           resolutionOptions,
         );
         if (links.length > 0) {
+          trace('member.result', { links: links.length });
           return links.map((link) => ({
             targetUri: link.targetUri,
             targetRange: link.targetRange,
@@ -100,10 +136,18 @@ export function registerDefinitionHandler(
             originSelectionRange: memberAccess.member.range,
           }));
         }
+        trace('member.result', { links: 0 });
       }
 
       const word = wordAt(fullText, params.position);
-      if (!word) return null;
+      if (!word) {
+        trace('word.missing', {});
+        return null;
+      }
+      trace('word', {
+        text: word.text,
+        range: word.range,
+      });
 
       const links = resolveDefinition(
         idx,
@@ -112,7 +156,11 @@ export function registerDefinitionHandler(
         workspace.global,
         resolutionOptions,
       );
-      if (links.length === 0) return null;
+      if (links.length === 0) {
+        trace('definition.result', { links: 0 });
+        return null;
+      }
+      trace('definition.result', { links: links.length });
 
       return links.map((link) => ({
         targetUri: link.targetUri,

@@ -3,6 +3,7 @@ import { DEFAULT_SETTINGS, type ExtensionSettings } from '@unity-shader-nav/shar
 
 type PartialSettings = Partial<Omit<ExtensionSettings, 'findReferences'>> & {
   findReferences?: Partial<ExtensionSettings['findReferences']>;
+  debug?: Partial<ExtensionSettings['debug']>;
 };
 
 function mergeSettings(rawValue: unknown): ExtensionSettings {
@@ -13,6 +14,10 @@ function mergeSettings(rawValue: unknown): ExtensionSettings {
     findReferences: {
       ...DEFAULT_SETTINGS.findReferences,
       ...(raw.findReferences ?? {}),
+    },
+    debug: {
+      ...DEFAULT_SETTINGS.debug,
+      ...(raw.debug ?? {}),
     },
   };
 }

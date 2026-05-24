@@ -6,6 +6,8 @@
 
 **Root Cause:** The current `main` implementation already resolves the reported shapes after the scope-aware navigation work: `resolveDefinitionSymbols()` returns same-file and include-visible struct symbols for type identifiers, and `resolveMemberSymbols()` infers receiver types from parameters, locals, and globals before selecting `structMember` symbols. The remaining issue is coverage drift: there is no dedicated issue #2 acceptance test for `Customdata customdata;`, include-chain struct type lookup, or both `i.positionWS` and `inputData.positionWS` in the same fixture.
 
+> Note: 2026-05-24 real-project verification reopened issue #2. `Assets/Shader/Char_Common.shader` still fails because the HLSL parser can mis-nest a Unity macro-bearing struct body and collect later function-body declarations such as `InputData inputData;` as `v2f` struct members instead of local variables. Add a focused regression and debug trace before changing collector behavior.
+
 **Architecture:** Add handler-level tests at the LSP boundary instead of only unit-level resolver tests. Use real temp files plus `indexFile()`, `IndexStore`, `GlobalSymbolIndex`, and `collectVisibleUriKeys()` through the existing definition handler so the tests exercise parsing, indexing, include visibility, word/member detection, and final `LocationLink` output.
 
 **Tech Stack:** TypeScript, Vitest, VSCode LSP handlers, existing HLSL indexer, `IndexStore`, `GlobalSymbolIndex`, and definition handler fixtures.

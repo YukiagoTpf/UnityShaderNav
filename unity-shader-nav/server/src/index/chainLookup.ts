@@ -33,7 +33,15 @@ function inferReceiverType(
       symbol.scopeRange &&
       inRange(refPos, symbol.scopeRange),
   );
-  if (params.length > 0) return params[0].declaredType ?? null;
+  if (params.length > 0) {
+    options?.trace?.('member.receiverType', {
+      receiver,
+      source: 'parameter',
+      declaredType: params[0].declaredType,
+      candidates: params.length,
+    });
+    return params[0].declaredType ?? null;
+  }
 
   const locals = index.symbols.filter(
     (symbol) =>
@@ -49,13 +57,27 @@ function inferReceiverType(
     for (const local of locals) {
       if (laterThan(local.location.range.start, best.location.range.start)) best = local;
     }
+    options?.trace?.('member.receiverType', {
+      receiver,
+      source: 'localVariable',
+      declaredType: best.declaredType,
+      candidates: locals.length,
+    });
     return best.declaredType ?? null;
   }
 
   const fileGlobal = index.symbols.find(
     (symbol) => symbol.name === receiver && symbol.kind === 'variable' && symbol.declaredType,
   );
-  if (fileGlobal?.declaredType) return fileGlobal.declaredType;
+  if (fileGlobal?.declaredType) {
+    options?.trace?.('member.receiverType', {
+      receiver,
+      source: 'fileGlobal',
+      declaredType: fileGlobal.declaredType,
+      candidates: 1,
+    });
+    return fileGlobal.declaredType;
+  }
 
   const crossFileGlobal = (global?.lookup(receiver) ?? []).find(
     (symbol) =>
@@ -63,6 +85,12 @@ function inferReceiverType(
       symbol.declaredType &&
       isVisible(symbol, options),
   );
+  options?.trace?.('member.receiverType', {
+    receiver,
+    source: crossFileGlobal ? 'visibleGlobal' : 'notFound',
+    declaredType: crossFileGlobal?.declaredType,
+    candidates: crossFileGlobal ? 1 : 0,
+  });
   return crossFileGlobal?.declaredType ?? null;
 }
 
@@ -89,6 +117,17 @@ function toLink(symbol: SymbolEntry): LocationLink {
   };
 }
 
+function describeSymbol(symbol: SymbolEntry): Record<string, unknown> {
+  return {
+    name: symbol.name,
+    kind: symbol.kind,
+    uri: symbol.location.uri,
+    range: symbol.location.range,
+    declaredType: symbol.declaredType,
+    parentType: symbol.parentType,
+  };
+}
+
 export function resolveMemberSymbols(
   index: FileIndex,
   global: GlobalSymbolIndex | null | undefined,
@@ -98,7 +137,10 @@ export function resolveMemberSymbols(
   options?: ResolutionOptions,
 ): SymbolEntry[] {
   const receiverType = inferReceiverType(index, global, receiver, refPos, options);
-  if (!receiverType) return [];
+  if (!receiverType) {
+    options?.trace?.('member.noReceiverType', { receiver, member });
+    return [];
+  }
 
   const members = [
     ...index.symbols.filter(
@@ -122,6 +164,13 @@ export function resolveMemberSymbols(
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
+  });
+  options?.trace?.('member.candidates', {
+    receiver,
+    member,
+    receiverType,
+    candidates: unique.length,
+    symbols: unique.slice(0, 5).map(describeSymbol),
   });
 
   return unique;

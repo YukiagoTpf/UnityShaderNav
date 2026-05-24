@@ -8,8 +8,11 @@ export interface LocationLink {
   targetSelectionRange: Range;
 }
 
+export type ResolutionTrace = (event: string, data: Record<string, unknown>) => void;
+
 export interface ResolutionOptions {
   visibleUriKeys?: ReadonlySet<string>;
+  trace?: ResolutionTrace;
 }
 
 function inRange(pos: Position, range: Range): boolean {
@@ -35,6 +38,17 @@ function isVisible(symbol: SymbolEntry, options?: ResolutionOptions): boolean {
   return !options?.visibleUriKeys || options.visibleUriKeys.has(uriKey(symbol.location.uri));
 }
 
+function describeSymbol(symbol: SymbolEntry): Record<string, unknown> {
+  return {
+    name: symbol.name,
+    kind: symbol.kind,
+    uri: symbol.location.uri,
+    range: symbol.location.range,
+    declaredType: symbol.declaredType,
+    parentType: symbol.parentType,
+  };
+}
+
 export function resolveDefinitionSymbols(
   idx: FileIndex,
   name: string,
@@ -50,6 +64,11 @@ export function resolveDefinitionSymbols(
       inRange(refPos, symbol.scopeRange) &&
       isBeforeOrAt(symbol.location.range.start, refPos),
   );
+  options?.trace?.('definition.candidates', {
+    name,
+    sameFileCandidates: candidates.length,
+    scopedCandidates: scoped.length,
+  });
 
   if (scoped.length > 0) {
     let best = scoped[0];
@@ -63,6 +82,7 @@ export function resolveDefinitionSymbols(
         best = symbol;
       }
     }
+    options?.trace?.('definition.scopedSelected', describeSymbol(best));
     return [best];
   }
 
@@ -76,6 +96,11 @@ export function resolveDefinitionSymbols(
       symbol.kind !== 'localVariable' &&
       isVisible(symbol, options),
   );
+  options?.trace?.('definition.globalCandidates', {
+    name,
+    sameFileGlobals: fileGlobals.length,
+    visibleOtherGlobals: otherGlobals.length,
+  });
 
   return [...fileGlobals, ...otherGlobals];
 }

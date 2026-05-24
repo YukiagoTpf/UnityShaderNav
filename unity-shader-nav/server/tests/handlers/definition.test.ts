@@ -719,6 +719,88 @@ describe('registerDefinitionHandler', () => {
     });
   });
 
+  it('resolves locals and struct members after macro fields in a shader struct', async () => {
+    const uri = 'file:///t/issue2-macro-struct.shader';
+    const text = [
+      'Shader "Test/Issue2MacroStruct" {',
+      '  SubShader {',
+      '    Pass {',
+      '      HLSLPROGRAM',
+      '      struct InputData {',
+      '        float3 positionWS;',
+      '      };',
+      '      struct a2v {',
+      '        float4 positionOS : POSITION;',
+      '        UNITY_VERTEX_INPUT_INSTANCE_ID',
+      '      };',
+      '      struct v2f {',
+      '        float3 positionWS : TEXCOORD1;',
+      '        DECLARE_LIGHTMAP_OR_SH(staticLightmapUV, vertexSH, 8);',
+      '      #ifdef DYNAMICLIGHTMAP_ON',
+      '        float2 dynamicLightmapUV : TEXCOORD9;',
+      '      #endif',
+      '        float4 positionCS : SV_POSITION;',
+      '        UNITY_VERTEX_INPUT_INSTANCE_ID',
+      '        UNITY_VERTEX_OUTPUT_STEREO',
+      '      };',
+      '      half4 frag(v2f i) : SV_Target {',
+      '        InputData inputData;',
+      '        inputData = (InputData)0;',
+      '        inputData.positionWS = i.positionWS;',
+      '        return half4(1, 1, 1, 1);',
+      '      }',
+      '      ENDHLSL',
+      '    }',
+      '  }',
+      '}',
+    ].join('\n');
+    const index = await indexFile(uri, text);
+    const { handler } = createDefinitionFixture(uri, 'shaderlab', text, index);
+    const localSymbol = index.symbols.find(
+      (symbol) => symbol.name === 'inputData' && symbol.kind === 'localVariable',
+    );
+    const inputDataMember = index.symbols.find(
+      (symbol) =>
+        symbol.name === 'positionWS' &&
+        symbol.kind === 'structMember' &&
+        symbol.parentType === 'InputData',
+    );
+    const v2fMember = index.symbols.find(
+      (symbol) =>
+        symbol.name === 'positionWS' &&
+        symbol.kind === 'structMember' &&
+        symbol.parentType === 'v2f',
+    );
+    expect(localSymbol).toBeDefined();
+    expect(inputDataMember).toBeDefined();
+    expect(v2fMember).toBeDefined();
+    if (!localSymbol || !inputDataMember || !v2fMember) return;
+
+    const localResult = await handler({
+      textDocument: { uri },
+      position: tokenPosition(text, 22, 'inputData'),
+    }) as LocationLink[] | null;
+
+    expect(localResult).toHaveLength(1);
+    expect(localResult?.[0].targetRange).toEqual(localSymbol.location.range);
+
+    const localMemberResult = await handler({
+      textDocument: { uri },
+      position: tokenPosition(text, 24, 'positionWS'),
+    }) as LocationLink[] | null;
+
+    expect(localMemberResult).toHaveLength(1);
+    expect(localMemberResult?.[0].targetRange).toEqual(inputDataMember.location.range);
+
+    const parameterMemberResult = await handler({
+      textDocument: { uri },
+      position: tokenPosition(text, 24, 'positionWS', 1),
+    }) as LocationLink[] | null;
+
+    expect(parameterMemberResult).toHaveLength(1);
+    expect(parameterMemberResult?.[0].targetRange).toEqual(v2fMember.location.range);
+  });
+
   it('returns null for generic identifiers inside hlsl line comments', async () => {
     const uri = 'file:///t/comment.hlsl';
     const text = [

@@ -13,6 +13,7 @@ export interface ExtensionSettings {
   excludePatterns: string[];
   declarationMacros: UserDeclarationMacro[];
   findReferences: { includePackages: boolean };
+  debug: { definitionTrace: boolean };
 }
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
@@ -21,4 +22,5 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   excludePatterns: ['**/Library/**', '**/Temp/**', '**/Logs/**'],
   declarationMacros: [],
   findReferences: { includePackages: false },
+  debug: { definitionTrace: false },
 };

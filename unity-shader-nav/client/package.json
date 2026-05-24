@@ -94,6 +94,12 @@
           "type": "boolean",
           "scope": "resource",
           "default": false
+        },
+        "unityShaderNav.debug.definitionTrace": {
+          "type": "boolean",
+          "scope": "resource",
+          "default": false,
+          "description": "Log detailed definition-resolution diagnostics to the UnityShaderNav output channel."
         }
       }
     }

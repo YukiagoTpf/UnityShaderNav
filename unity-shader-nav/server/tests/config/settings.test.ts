@@ -35,6 +35,15 @@ describe('loadSettings', () => {
     ]);
     expect(settings.excludePatterns).toEqual(DEFAULT_SETTINGS.excludePatterns);
     expect(settings.findReferences.includePackages).toBe(false);
+    expect(settings.debug.definitionTrace).toBe(false);
+  });
+
+  it('merges debug settings with defaults', async () => {
+    const settings = await loadSettings(connectionWithConfiguration({
+      debug: { definitionTrace: true },
+    }));
+
+    expect(settings.debug.definitionTrace).toBe(true);
   });
 });
 

@@ -13,6 +13,7 @@ import { matchDeclarationCall } from '../../macros/matcher';
 
 interface CollectorState {
   uri: string;
+  sourceText: string;
   /** Line offset to apply to all ranges (used when collecting HLSL block inside .shader). */
   lineOffset: number;
   symbols: SymbolEntry[];
@@ -266,9 +267,12 @@ function collectStruct(node: Parser.SyntaxNode, st: CollectorState): void {
 
   const body = node.childForFieldName('body');
   if (!body) return;
+  const textualEnd = st.sourceText.indexOf('};', body.startIndex);
+  const bodyEndIndex = textualEnd >= 0 && textualEnd < body.endIndex ? textualEnd : body.endIndex;
   for (let i = 0; i < body.namedChildCount; i++) {
     const field = body.namedChild(i);
     if (!field || field.type !== 'field_declaration') continue;
+    if (field.startIndex >= bodyEndIndex) continue;
     const typeNode = field.childForFieldName('type');
     for (const declNode of declaratorNodes(field)) {
       const fidNode = declaratorNameNode(declNode);
@@ -362,13 +366,14 @@ function collectReferences(node: Parser.SyntaxNode, st: CollectorState): void {
 
 export function collect(
   root: Parser.SyntaxNode,
-  _text: string,
+  text: string,
   uri: string,
   lineOffset: number,
   table?: MacroPatternTable,
 ): FileIndex {
   const st: CollectorState = {
     uri,
+    sourceText: text,
     lineOffset,
     symbols: [],
     references: [],
