@@ -594,7 +594,8 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 
 **现状判断**：
 - VSIX 打包和安装链路已验证可用；后续不再把“反复安装 VSIX”作为基础功能调试手段。
-- 真实项目 `F:\Project\UnityProject\Pandora` 暴露基础功能仍有问题，当前重点转为源码调试 Extension Development Host。
+- 源码调试环境已跑通：VSCode 打开 `F:\Project\UnityShaderNav\unity-shader-nav`，F5 启动 Extension Development Host，并在开发宿主里打开真实项目 `F:\Project\UnityProject\Pandora`。
+- 真实项目 `F:\Project\UnityProject\Pandora` 暴露基础功能仍有问题，当前重点是在 Extension Development Host 中定位 F12 / Find References / Outline 的真实行为。
 - VSIX 只用于发布前/交付验证；源码调试用 F5 启动开发版扩展，避免每次改代码都重新 package/install。
 
 **源码调试流程（推荐）**：
@@ -666,7 +667,7 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 
 ## 下一步
 
-1. MVP + P1（Plan 01-13）已全部实现；下一步建议做 VSIX 手动打包/安装验证。
+1. MVP + P1（Plan 01-13）已全部实现；VSIX 安装链路已确认，下一步在源码调试环境中修真实项目基础功能。
 2. Plan 09 follow-up：如需支持多 VSCode 窗口同时打开同一 Unity 项目，再补跨进程 cache manifest 写入锁或更强 atomic replace。
 3. ~~test-electron follow-up：rebuild/lifecycle/macros 配置相关测试在 Windows 下仍有 timing flake，可单独稳定化。~~ ✅ Overall Consistency Fixes 已通过 fresh VS Code profile + 临时 `.code-workspace` + Node-only package-layout split 稳定化。
 
