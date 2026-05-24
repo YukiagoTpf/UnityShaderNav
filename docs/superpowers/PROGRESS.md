@@ -64,6 +64,10 @@ GitHub Issues 是当前 backlog：
   - 修复 `UNITY_VERTEX_INPUT_INSTANCE_ID` / `UNITY_VERTEX_OUTPUT_STEREO` 等无分号 Unity struct 宏导致 tree-sitter 把后续 `frag` 函数体误嵌进 `v2f` 的问题。
   - 真实案例：`Char_Common.shader` 中 `InputData inputData;` 重新被索引为 `frag` local variable，结构体类型跳转恢复。
   - 剩余问题：真实 Extension Host 中 `inputData.positionWS` 这类结构体成员 token 仍提示 no definition，#2 已重新打开继续跟进。
+- `951c9ea fix(plan-09): invalidate stale struct macro cache`
+  - 将 cache schema version 升到 5，拒绝上一轮 parser/collector 修复前写出的 version 4 cache。
+  - 诊断结论：成员跳转失败符合旧 cache 仍把 `inputData` 存成 `v2f` struct member 的症状；重建索引后 handler 可将 `inputData.positionWS` 跳到 URP `Input.hlsl` 的 `InputData.positionWS`。
+  - 验证：`npm run test -w @unity-shader-nav/server` PASS（46 files / 272 tests），`npm run build` PASS。
 
 ## 历史实施索引
 
