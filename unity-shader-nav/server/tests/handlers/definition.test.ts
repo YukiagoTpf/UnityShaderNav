@@ -6,6 +6,66 @@ import { GlobalSymbolIndex, IndexStore } from '../../src/index';
 import { registerDefinitionHandler } from '../../src/handlers/definition';
 import { RequestSuspender } from '../../src/lifecycle/requestSuspender';
 
+function createDefinitionFixture(
+  uri: string,
+  languageId: string,
+  text: string,
+  idx: FileIndex,
+): { handler: (params: DefinitionParams) => Promise<unknown> } {
+  let handler: ((params: DefinitionParams) => Promise<unknown>) | undefined;
+  const connection = {
+    onDefinition(fn: (params: DefinitionParams) => Promise<unknown>) {
+      handler = fn;
+      return { dispose() {} };
+    },
+    console: {
+      warn() {},
+    },
+  } as unknown as Connection;
+  const doc = TextDocument.create(uri, languageId, 1, text);
+  const documents = {
+    get(requestedUri: string) {
+      return requestedUri === uri ? doc : undefined;
+    },
+  } as never;
+  const workspace = {
+    includeCtx: { unityProjectRoot: undefined, includeDirectories: [] },
+    store: new IndexStore(),
+    global: new GlobalSymbolIndex(),
+  };
+  workspace.store.set(uri, idx);
+  const manager = {
+    async workspaceForOrCreateFile(requestedUri: string) {
+      return requestedUri === uri ? workspace : undefined;
+    },
+  } as never;
+
+  registerDefinitionHandler(connection, documents, manager);
+  if (!handler) throw new Error('definition handler was not registered');
+  return { handler };
+}
+
+function helperIndex(uri: string, text: string): FileIndex {
+  const lines = text.split(/\r?\n/);
+  const line = lines.findIndex((candidate) => candidate.includes('float4 helper'));
+  if (line < 0) throw new Error('fixture is missing helper declaration');
+  const character = lines[line].indexOf('helper');
+  return {
+    uri,
+    symbols: [
+      {
+        name: 'helper',
+        kind: 'function',
+        location: {
+          uri,
+          range: { start: { line, character }, end: { line, character: character + 'helper'.length } },
+        },
+      },
+    ],
+    references: [],
+  };
+}
+
 describe('registerDefinitionHandler', () => {
   it('returns location links for the identifier under the cursor', async () => {
     let handler: ((params: DefinitionParams) => Promise<unknown>) | undefined;
@@ -210,5 +270,114 @@ describe('registerDefinitionHandler', () => {
       start: { line: 0, character: 46 },
       end: { line: 0, character: 56 },
     });
+  });
+
+  it('returns null for generic identifiers inside hlsl line comments', async () => {
+    const uri = 'file:///t/comment.hlsl';
+    const text = [
+      'float4 helper(float4 v) { return v; }',
+      '// helper should not jump from a comment',
+    ].join('\n');
+    const { handler } = createDefinitionFixture(uri, 'hlsl', text, helperIndex(uri, text));
+
+    await expect(handler({
+      textDocument: { uri },
+      position: { line: 1, character: 4 },
+    })).resolves.toBeNull();
+  });
+
+  it('returns null for generic identifiers inside hlsl block comments', async () => {
+    const uri = 'file:///t/block-comment.hlsl';
+    const text = [
+      'float4 helper(float4 v) { return v; }',
+      '/*',
+      ' * helper should not jump from a block comment',
+      ' */',
+    ].join('\n');
+    const { handler } = createDefinitionFixture(uri, 'hlsl', text, helperIndex(uri, text));
+
+    await expect(handler({
+      textDocument: { uri },
+      position: { line: 2, character: 4 },
+    })).resolves.toBeNull();
+  });
+
+  it('returns null for generic identifiers inside hlsl string literals', async () => {
+    const uri = 'file:///t/string.hlsl';
+    const text = [
+      'float4 helper(float4 v) { return v; }',
+      'float4 main() { const char* s = "helper"; return helper(0); }',
+    ].join('\n');
+    const { handler } = createDefinitionFixture(uri, 'hlsl', text, helperIndex(uri, text));
+
+    await expect(handler({
+      textDocument: { uri },
+      position: { line: 1, character: 35 },
+    })).resolves.toBeNull();
+  });
+
+  it('returns null for generic identifiers in shaderlab properties and tags', async () => {
+    const uri = 'file:///t/surface.shader';
+    const text = [
+      'Shader "T/Test" {',
+      '  Properties {',
+      '    helper ("helper", Float) = 0',
+      '  }',
+      '  SubShader {',
+      '    Tags { "RenderType"="helper" }',
+      '    Pass {',
+      '      HLSLPROGRAM',
+      '      float4 helper(float4 v) { return v; }',
+      '      ENDHLSL',
+      '    }',
+      '  }',
+      '}',
+    ].join('\n');
+    const { handler } = createDefinitionFixture(uri, 'shaderlab', text, helperIndex(uri, text));
+
+    await expect(handler({
+      textDocument: { uri },
+      position: { line: 2, character: 5 },
+    })).resolves.toBeNull();
+    await expect(handler({
+      textDocument: { uri },
+      position: { line: 5, character: 27 },
+    })).resolves.toBeNull();
+  });
+
+  it('still resolves generic identifiers inside shaderlab hlsl blocks', async () => {
+    const uri = 'file:///t/surface.shader';
+    const text = [
+      'Shader "T/Test" {',
+      '  Properties { helper ("helper", Float) = 0 }',
+      '  SubShader {',
+      '    Pass {',
+      '      HLSLPROGRAM',
+      '      float4 helper(float4 v) { return v; }',
+      '      float4 main() { return helper(0); }',
+      '      ENDHLSL',
+      '    }',
+      '  }',
+      '}',
+    ].join('\n');
+    const idx = helperIndex(uri, text);
+    const { handler } = createDefinitionFixture(uri, 'shaderlab', text, idx);
+
+    const result = await handler({
+      textDocument: { uri },
+      position: { line: 6, character: 31 },
+    });
+
+    expect(result).toEqual([
+      {
+        targetUri: uri,
+        targetRange: idx.symbols[0].location.range,
+        targetSelectionRange: idx.symbols[0].location.range,
+        originSelectionRange: {
+          start: { line: 6, character: 29 },
+          end: { line: 6, character: 35 },
+        },
+      },
+    ]);
   });
 });

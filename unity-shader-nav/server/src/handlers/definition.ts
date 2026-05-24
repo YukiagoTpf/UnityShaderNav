@@ -11,6 +11,7 @@ import { resolveInclude } from '../include';
 import { memberAccessAt, resolveDefinition, resolveMember, wordAt } from '../index';
 import type { RequestSuspender } from '../lifecycle/requestSuspender';
 import { scanIncludes } from '../parser/include/lineScanner';
+import { isGenericDefinitionContext } from '../parser/lexical/context';
 import type { WorkspaceManager } from '../workspace';
 
 export function registerDefinitionHandler(
@@ -65,6 +66,10 @@ export function registerDefinitionHandler(
 
       const idx = workspace.store.get(params.textDocument.uri);
       if (!idx) return null;
+
+      if (!isGenericDefinitionContext(fullText, params.position, doc.languageId, params.textDocument.uri)) {
+        return null;
+      }
 
       const memberAccess = memberAccessAt(fullText, params.position);
       if (memberAccess?.receiver) {

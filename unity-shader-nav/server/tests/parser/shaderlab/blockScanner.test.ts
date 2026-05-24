@@ -105,3 +105,27 @@ describe('scanBlocks: directive with same-line block comment (P2#1)', () => {
     expect(b.endLine).toBe(5);
   });
 });
+
+describe('scanBlocks: shaderlab regions around hlsl', () => {
+  it('keeps Properties and Tags outside the HLSLPROGRAM content range', () => {
+    const text = [
+      'Shader "T/Test" {',
+      '  Properties { helper ("helper", Float) = 0 }',
+      '  SubShader {',
+      '    Tags { "RenderType"="helper" }',
+      '    Pass {',
+      '      HLSLPROGRAM',
+      '      float4 helper(float4 v) { return v; }',
+      '      ENDHLSL',
+      '    }',
+      '  }',
+      '}',
+    ].join('\n');
+
+    const result = scanBlocks(text);
+
+    expect(result.blocks).toHaveLength(1);
+    expect(result.blocks[0].contentStartLine).toBe(6);
+    expect(result.blocks[0].contentEndLine).toBe(6);
+  });
+});
