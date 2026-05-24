@@ -208,12 +208,17 @@ export function registerReferencesHandler(
       if (!word) return null;
 
       const idx = workspace.store?.get(params.textDocument.uri);
-      const visibleUriKeys = idx && workspace.includeCtx
-        ? await collectVisibleUriKeys(workspace.store, workspace.includeCtx, params.textDocument.uri)
-        : undefined;
-      const resolutionOptions = visibleUriKeys && visibleUriKeys.size > 1
-        ? { visibleUriKeys }
-        : undefined;
+      const visibleByUri = new Map<string, Promise<Set<string>>>();
+      const visibleForUri = (uri: string): Promise<Set<string>> => {
+        const existing = visibleByUri.get(uri);
+        if (existing) return existing;
+
+        const next = collectVisibleUriKeys(workspace.store, workspace.includeCtx, uri);
+        visibleByUri.set(uri, next);
+        return next;
+      };
+      const visibleUriKeys = idx ? await visibleForUri(params.textDocument.uri) : undefined;
+      const resolutionOptions = visibleUriKeys ? { visibleUriKeys } : undefined;
       const targets = idx
         ? resolveReferenceTargets(idx, fullText, params.position, workspace.global, resolutionOptions)
         : [];
@@ -265,12 +270,8 @@ export function registerReferencesHandler(
         const candidateIndex = workspace.store?.get(reference.location.uri);
         if (!candidateIndex) continue;
 
-        const candidateVisibleUriKeys = workspace.includeCtx
-          ? await collectVisibleUriKeys(workspace.store, workspace.includeCtx, reference.location.uri)
-          : undefined;
-        const candidateResolutionOptions = candidateVisibleUriKeys && candidateVisibleUriKeys.size > 1
-          ? { visibleUriKeys: candidateVisibleUriKeys }
-          : undefined;
+        const candidateVisibleUriKeys = await visibleForUri(reference.location.uri);
+        const candidateResolutionOptions = { visibleUriKeys: candidateVisibleUriKeys };
         const candidateTargets = reference.context === 'member'
           ? resolveReferenceTargetsForMemberReference(
             candidateIndex,

@@ -80,7 +80,7 @@ export function registerDefinitionHandler(
         workspace.includeCtx,
         params.textDocument.uri,
       );
-      const resolutionOptions = visibleUriKeys.size > 1 ? { visibleUriKeys } : undefined;
+      const resolutionOptions = { visibleUriKeys };
 
       const memberAccess = memberAccessAt(fullText, params.position);
       if (memberAccess?.receiver) {

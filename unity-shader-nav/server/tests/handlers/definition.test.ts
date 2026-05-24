@@ -341,96 +341,93 @@ describe('registerDefinitionHandler', () => {
   });
 
   it('uses member receiver type to disambiguate struct members', async () => {
-    let handler: ((params: DefinitionParams) => Promise<unknown>) | undefined;
-    const connection = {
-      onDefinition(fn: (params: DefinitionParams) => Promise<unknown>) {
-        handler = fn;
-        return { dispose() {} };
-      },
-    } as unknown as Connection;
-    const uri = 'file:///t/use.hlsl';
-    const doc = TextDocument.create(
-      uri,
-      'hlsl',
-      1,
-      'float3 main(Surface surface) { return surface.positionWS; }',
-    );
-    const documents = {
-      get(requestedUri: string) {
-        return requestedUri === uri ? doc : undefined;
-      },
-    } as never;
-    const idx: FileIndex = {
-      uri,
-      references: [],
-      symbols: [
-        {
-          name: 'surface',
-          kind: 'parameter',
-          declaredType: 'Surface',
-          scopeRange: { start: { line: 0, character: 0 }, end: { line: 0, character: 58 } },
-          location: {
-            uri,
-            range: { start: { line: 0, character: 20 }, end: { line: 0, character: 27 } },
-          },
-        },
-      ],
-    };
-    const workspace = {
-      includeCtx: { unityProjectRoot: undefined, includeDirectories: [] },
-      store: new IndexStore(),
-      global: new GlobalSymbolIndex(),
-    };
-    workspace.store.set(uri, idx);
-    workspace.global.upsert({
-      uri: 'file:///t/Surface.hlsl',
-      references: [],
-      symbols: [
-        {
-          name: 'positionWS',
-          kind: 'structMember',
-          parentType: 'Surface',
-          location: {
-            uri: 'file:///t/Surface.hlsl',
-            range: { start: { line: 1, character: 11 }, end: { line: 1, character: 21 } },
-          },
-        },
-      ],
-    });
-    workspace.global.upsert({
-      uri: 'file:///t/Other.hlsl',
-      references: [],
-      symbols: [
-        {
-          name: 'positionWS',
-          kind: 'structMember',
-          parentType: 'Other',
-          location: {
-            uri: 'file:///t/Other.hlsl',
-            range: { start: { line: 1, character: 11 }, end: { line: 1, character: 21 } },
-          },
-        },
-      ],
-    });
-    const manager = {
-      async workspaceForOrCreateFile() {
-        return workspace;
-      },
-    } as never;
+    const root = await mkdtemp(join(tmpdir(), 'usn-member-def-'));
+    try {
+      const assets = join(root, 'Assets');
+      await mkdir(assets, { recursive: true });
+      const usePath = join(assets, 'Use.hlsl');
+      const surfacePath = join(assets, 'Surface.hlsl');
+      const otherPath = join(assets, 'Other.hlsl');
+      const useText = [
+        '#include "Surface.hlsl"',
+        'float3 main(Surface surface) { return surface.positionWS; }',
+      ].join('\n');
+      const surfaceText = [
+        'struct Surface {',
+        '  float3 positionWS;',
+        '};',
+      ].join('\n');
+      const otherText = [
+        'struct Other {',
+        '  float3 positionWS;',
+        '};',
+      ].join('\n');
+      await writeFile(usePath, useText, 'utf8');
+      await writeFile(surfacePath, surfaceText, 'utf8');
+      await writeFile(otherPath, otherText, 'utf8');
 
-    registerDefinitionHandler(connection, documents, manager);
+      const uri = pathToFileURL(usePath).href;
+      const surfaceUri = pathToFileURL(surfacePath).href;
+      const otherUri = pathToFileURL(otherPath).href;
+      const indexes = await Promise.all([
+        indexFile(uri, useText),
+        indexFile(surfaceUri, surfaceText),
+        indexFile(otherUri, otherText),
+      ]);
+      const store = new IndexStore();
+      const global = new GlobalSymbolIndex();
+      for (const index of indexes) {
+        store.set(index.uri, index);
+        global.upsert(index);
+      }
+      const surfaceMember = indexes[1].symbols.find(
+        (symbol) =>
+          symbol.name === 'positionWS' &&
+          symbol.kind === 'structMember' &&
+          symbol.parentType === 'Surface',
+      );
+      if (!surfaceMember) throw new Error('missing Surface.positionWS symbol');
+      let handler: ((params: DefinitionParams) => Promise<unknown>) | undefined;
+      const connection = {
+        onDefinition(fn: (params: DefinitionParams) => Promise<unknown>) {
+          handler = fn;
+          return { dispose() {} };
+        },
+      } as unknown as Connection;
+      const doc = TextDocument.create(uri, 'hlsl', 1, useText);
+      const documents = {
+        get(requestedUri: string) {
+          return requestedUri === uri ? doc : undefined;
+        },
+      } as never;
+      const workspace = {
+        includeCtx: { unityProjectRoot: root, includeDirectories: [] },
+        store,
+        global,
+      };
+      const manager = {
+        async workspaceForOrCreateFile() {
+          return workspace;
+        },
+      } as never;
 
-    const result = await handler?.({
-      textDocument: { uri },
-      position: { line: 0, character: 48 },
-    }) as LocationLink[] | null;
+      registerDefinitionHandler(connection, documents, manager);
 
-    expect(result).toHaveLength(1);
-    expect(result?.[0].targetUri).toBe('file:///t/Surface.hlsl');
-    expect(result?.[0].originSelectionRange).toEqual({
-      start: { line: 0, character: 46 },
-      end: { line: 0, character: 56 },
-    });
+      const result = await handler?.({
+        textDocument: { uri },
+        position: { line: 1, character: 48 },
+      }) as LocationLink[] | null;
+
+      expect(result).toHaveLength(1);
+      expect(result?.[0].targetUri).toBe(surfaceUri);
+      expect(result?.[0].targetRange).toEqual(surfaceMember.location.range);
+      expect(result?.[0].originSelectionRange).toEqual({
+        start: { line: 1, character: 46 },
+        end: { line: 1, character: 56 },
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it('returns null for generic identifiers inside hlsl line comments', async () => {
