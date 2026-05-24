@@ -167,7 +167,9 @@ suite('packaged server layout', () => {
     }
   });
 
-  test('direct VSCE package from client includes the extension README', () => {
+  test('direct VSCE package from client includes the extension README', function () {
+    this.timeout(60000);
+
     const root = monorepoRoot();
     const clientRoot = path.resolve(root, 'client');
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'unity-shader-nav-direct-vsce-'));

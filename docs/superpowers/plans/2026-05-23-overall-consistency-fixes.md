@@ -525,6 +525,8 @@ Acceptance commands for this phase:
 
 **Priority:** P2 recommended; also addresses P1 engineering stability TODO.
 
+> Note: Acceptance reruns showed that workspace-folder cleanup alone is not enough because `@vscode/test-electron` reuses `.vscode-test/user-data` by default. Prior runs left temporary workspace/cache/history state in the reused VS Code profile, causing later Electron runs to validate deleted temp folders and make extension hosts unresponsive. The runner needs a fresh user-data/extensions profile per run, and Node-only package-layout checks should run outside Electron so synchronous `vsce package` work does not compete with the extension host. A fresh profile also starts in single-folder mode unless launched with a workspace file, so the Electron runner must open a temporary `.code-workspace` to exercise add/remove workspace-folder APIs reliably.
+
 **Files:**
 - Create: `unity-shader-nav/tests/integration/client/helpers/workspace.ts`
 - Modify: `unity-shader-nav/tests/integration/client/*.test.ts`

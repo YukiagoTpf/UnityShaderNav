@@ -10,7 +10,8 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "watch": "npm run watch --workspaces --if-present",
-    "test": "npm run build && tsc -p tests/tsconfig.json && node tests/out/runTest.js && npm run test --workspaces --if-present",
+    "test": "npm run build && tsc -p tests/tsconfig.json && npm run test:package-layout && node tests/out/runTest.js && npm run test --workspaces --if-present",
+    "test:package-layout": "mocha tests/out/client/package-layout.test.js --ui tdd --timeout 60000",
     "clean": "rimraf client/out server/out shared/out client/tsconfig.tsbuildinfo server/tsconfig.tsbuildinfo shared/tsconfig.tsbuildinfo",
     "package:vsix": "npm run clean && npm run build && node scripts/package-vsix.mjs"
   },
