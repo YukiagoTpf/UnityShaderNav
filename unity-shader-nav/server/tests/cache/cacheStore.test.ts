@@ -166,6 +166,24 @@ describe('CacheStore', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
+  it('rejects pre-struct-macro-cache manifests', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'usn-cache-pre-struct-macro-'));
+    const store = new CacheStore(dir);
+
+    await writeFile(join(dir, 'index.json'), JSON.stringify({
+      version: 4,
+      workspaceFolderUri: 'file:///x',
+      unityProjectRoot: '/x',
+      createdAt: 123,
+      fingerprint: { grammarVersion: 'g', settingsHash: 's', macroTableHash: 'm' },
+      files: [],
+    }), 'utf8');
+
+    expect(await store.load()).toBeNull();
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
   it('returns null when fingerprint mismatches', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'usn-cache-fp-'));
     const store = new CacheStore(dir);
