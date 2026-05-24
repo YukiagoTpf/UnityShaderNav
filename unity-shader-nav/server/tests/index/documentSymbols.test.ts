@@ -136,4 +136,43 @@ describe('buildDocumentSymbols: .shader with structure', () => {
     expect(litAttributes?.children?.map((node) => node.name)).toEqual(['positionOS']);
     expect(shadowAttributes?.children?.map((node) => node.name)).toEqual(['positionCS']);
   });
+
+  it('does not return empty symbol names when parser recovery produces empty symbols', () => {
+    const idx: FileIndex = {
+      uri: 'file:///t/macro-struct.shader',
+      symbols: [
+        sym('v2f', 'struct', 5),
+        sym('', 'structMember', 12, 'v2f'),
+      ],
+      references: [],
+      structure: {
+        shaders: [{
+          kind: 'shader',
+          name: 'X',
+          headerLine: 0,
+          closeLine: 20,
+          children: [{
+            kind: 'subshader',
+            headerLine: 1,
+            closeLine: 19,
+            children: [
+              { kind: 'pass', name: 'ForwardLit', headerLine: 2, closeLine: 18, children: [] },
+            ],
+          }],
+        }],
+      },
+    };
+    const tree = buildDocumentSymbols(idx);
+    const names: string[] = [];
+    const collectNames = (nodes: typeof tree): void => {
+      for (const node of nodes) {
+        names.push(node.name);
+        collectNames(node.children ?? []);
+      }
+    };
+
+    collectNames(tree);
+
+    expect(names).not.toContain('');
+  });
 });

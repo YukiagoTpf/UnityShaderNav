@@ -38,6 +38,10 @@ function startsBefore(a: Range, b: Range): number {
   return a.start.line - b.start.line || a.start.character - b.start.character;
 }
 
+function hasSymbolName(symbol: SymbolEntry): boolean {
+  return symbol.name.trim().length > 0;
+}
+
 function makeDocumentSymbol(
   name: string,
   kind: LspSymbolKind,
@@ -89,6 +93,7 @@ function buildHlslSymbols(index: FileIndex): DocumentSymbol[] {
   const topLevel: SymbolEntry[] = [];
 
   for (const symbol of index.symbols) {
+    if (!hasSymbolName(symbol)) continue;
     if (symbol.kind === 'parameter' || symbol.kind === 'localVariable') continue;
     if (symbol.kind === 'structMember') continue;
     topLevel.push(symbol);
@@ -99,6 +104,7 @@ function buildHlslSymbols(index: FileIndex): DocumentSymbol[] {
     .sort((a, b) => startsBefore(a.location.range, b.location.range));
 
   for (const symbol of index.symbols) {
+    if (!hasSymbolName(symbol)) continue;
     if (symbol.kind !== 'structMember' || !symbol.parentType) continue;
     const parent = [...structs].reverse().find((candidate) =>
       candidate.name === symbol.parentType
