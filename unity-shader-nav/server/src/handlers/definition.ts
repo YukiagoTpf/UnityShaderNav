@@ -64,7 +64,11 @@ export function registerDefinitionHandler(
         }];
       }
 
-      const idx = workspace.store.get(params.textDocument.uri);
+      let idx = workspace.store.get(params.textDocument.uri);
+      if (!idx && typeof workspace.reindex === 'function') {
+        await workspace.reindex(doc.uri, fullText);
+        idx = workspace.store.get(params.textDocument.uri);
+      }
       if (!idx) return null;
 
       if (!isGenericDefinitionContext(fullText, params.position, doc.languageId, params.textDocument.uri)) {

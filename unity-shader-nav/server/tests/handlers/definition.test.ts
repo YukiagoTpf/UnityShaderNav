@@ -207,6 +207,52 @@ describe('registerDefinitionHandler', () => {
     await expect(promise).resolves.toBeNull();
   });
 
+  it('reindexes the open document on demand when the store misses', async () => {
+    let handler: ((params: DefinitionParams) => Promise<unknown>) | undefined;
+    const connection = {
+      onDefinition(fn: (params: DefinitionParams) => Promise<unknown>) {
+        handler = fn;
+        return { dispose() {} };
+      },
+    } as unknown as Connection;
+    const uri = 'file:///t/live.hlsl';
+    const text = [
+      'float4 helper(float4 v) { return v; }',
+      'float4 main() { return helper(float4(1,1,1,1)); }',
+    ].join('\n');
+    const doc = TextDocument.create(uri, 'hlsl', 1, text);
+    const documents = {
+      get(requestedUri: string) {
+        return requestedUri === uri ? doc : undefined;
+      },
+    } as never;
+    const workspace = {
+      includeCtx: { unityProjectRoot: undefined, includeDirectories: [] },
+      store: new IndexStore(),
+      global: new GlobalSymbolIndex(),
+      async reindex(requestedUri: string, requestedText: string) {
+        const idx = helperIndex(requestedUri, requestedText);
+        this.store.set(requestedUri, idx);
+        this.global.upsert(idx);
+      },
+    };
+    const manager = {
+      async workspaceForOrCreateFile() {
+        return workspace;
+      },
+    } as never;
+
+    registerDefinitionHandler(connection, documents, manager);
+
+    const result = await handler?.({
+      textDocument: { uri },
+      position: { line: 1, character: 25 },
+    }) as LocationLink[] | null;
+
+    expect(result).toHaveLength(1);
+    expect(result?.[0].targetUri).toBe(uri);
+  });
+
   it('uses member receiver type to disambiguate struct members', async () => {
     let handler: ((params: DefinitionParams) => Promise<unknown>) | undefined;
     const connection = {

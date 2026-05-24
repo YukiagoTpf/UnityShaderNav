@@ -2,7 +2,7 @@
   "name": "unity-shader-nav",
   "displayName": "UnityShaderNav",
   "description": "Code navigation for Unity Shader files (ShaderLab + HLSL).",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "publisher": "Yukiago",
   "private": true,
   "repository": {
