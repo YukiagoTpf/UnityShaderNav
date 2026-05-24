@@ -1,20 +1,10 @@
 import * as assert from 'node:assert';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { withWorkspaceFolder } from './helpers/workspace';
 
 function fixturePath(...segments: string[]): string {
   return path.resolve(__dirname, '../../../integration/client/fixtures', ...segments);
-}
-
-async function ensureWorkspaceFolder(folderPath: string): Promise<void> {
-  if (vscode.workspace.workspaceFolders?.some((folder) => folder.uri.fsPath === folderPath)) return;
-  const added = vscode.workspace.updateWorkspaceFolders(
-    vscode.workspace.workspaceFolders?.length ?? 0,
-    0,
-    { uri: vscode.Uri.file(folderPath) },
-  );
-  if (!added) return;
-  await new Promise((resolve) => setTimeout(resolve, 1000));
 }
 
 async function waitForDocumentSymbols(
@@ -43,45 +33,47 @@ function childNamed(
 
 suite('Document Symbols', () => {
   test('outline contains function, struct children, cbuffer, and pragma in .hlsl', async () => {
-    await ensureWorkspaceFolder(fixturePath());
-    const uri = vscode.Uri.file(fixturePath('single-file', 'test.hlsl'));
-    const doc = await vscode.workspace.openTextDocument(uri);
-    await vscode.window.showTextDocument(doc);
+    await withWorkspaceFolder(fixturePath(), async () => {
+      const uri = vscode.Uri.file(fixturePath('single-file', 'test.hlsl'));
+      const doc = await vscode.workspace.openTextDocument(uri);
+      await vscode.window.showTextDocument(doc);
 
-    const symbols = await waitForDocumentSymbols(uri, (result) =>
-      !!childNamed(result, 'helper')
-      && !!childNamed(result, 'Attributes')
-      && !!childNamed(result, 'UnityPerMaterial')
-      && !!childNamed(result, '#pragma main'),
-    );
+      const symbols = await waitForDocumentSymbols(uri, (result) =>
+        !!childNamed(result, 'helper')
+        && !!childNamed(result, 'Attributes')
+        && !!childNamed(result, 'UnityPerMaterial')
+        && !!childNamed(result, '#pragma main'),
+      );
 
-    assert.ok(symbols, 'document symbol provider returned no symbols');
-    const attributes = childNamed(symbols, 'Attributes');
-    assert.ok(
-      childNamed(attributes?.children, 'positionOS'),
-      'expected struct member under Attributes',
-    );
+      assert.ok(symbols, 'document symbol provider returned no symbols');
+      const attributes = childNamed(symbols, 'Attributes');
+      assert.ok(
+        childNamed(attributes?.children, 'positionOS'),
+        'expected struct member under Attributes',
+      );
+    });
   });
 
   test('.shader outline shows Shader > SubShader > Pass > entry', async () => {
-    await ensureWorkspaceFolder(fixturePath());
-    const uri = vscode.Uri.file(fixturePath('multi-pass-test.shader'));
-    const doc = await vscode.workspace.openTextDocument(uri);
-    await vscode.window.showTextDocument(doc);
+    await withWorkspaceFolder(fixturePath(), async () => {
+      const uri = vscode.Uri.file(fixturePath('multi-pass-test.shader'));
+      const doc = await vscode.workspace.openTextDocument(uri);
+      await vscode.window.showTextDocument(doc);
 
-    const symbols = await waitForDocumentSymbols(uri, (result) => {
-      const shader = childNamed(result, 'Shader "Test/MultiPassDefn"');
-      const subshader = childNamed(shader?.children, 'SubShader');
-      const forward = childNamed(subshader?.children, 'Pass "ForwardLit"');
-      return !!childNamed(forward?.children, 'vert');
+      const symbols = await waitForDocumentSymbols(uri, (result) => {
+        const shader = childNamed(result, 'Shader "Test/MultiPassDefn"');
+        const subshader = childNamed(shader?.children, 'SubShader');
+        const forward = childNamed(subshader?.children, 'Pass "ForwardLit"');
+        return !!childNamed(forward?.children, 'vert');
+      });
+
+      const shader = childNamed(symbols, 'Shader "Test/MultiPassDefn"');
+      assert.ok(shader, 'expected Shader root symbol');
+      const subshader = childNamed(shader.children, 'SubShader');
+      assert.ok(subshader, 'expected SubShader child');
+      const forward = childNamed(subshader.children, 'Pass "ForwardLit"');
+      assert.ok(forward, 'expected ForwardLit pass child');
+      assert.ok(childNamed(forward.children, 'vert'), 'expected vert under ForwardLit');
     });
-
-    const shader = childNamed(symbols, 'Shader "Test/MultiPassDefn"');
-    assert.ok(shader, 'expected Shader root symbol');
-    const subshader = childNamed(shader.children, 'SubShader');
-    assert.ok(subshader, 'expected SubShader child');
-    const forward = childNamed(subshader.children, 'Pass "ForwardLit"');
-    assert.ok(forward, 'expected ForwardLit pass child');
-    assert.ok(childNamed(forward.children, 'vert'), 'expected vert under ForwardLit');
   });
 });

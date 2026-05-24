@@ -1,6 +1,7 @@
 import * as assert from 'node:assert';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { withWorkspaceFolder } from './helpers/workspace';
 
 function fixtureRoot(): string {
   return path.resolve(__dirname, '../../../../server/tests/include/fixtures/projectA');
@@ -8,17 +9,6 @@ function fixtureRoot(): string {
 
 function targetUri(link: vscode.LocationLink | vscode.Location): vscode.Uri {
   return (link as vscode.LocationLink).targetUri ?? (link as vscode.Location).uri;
-}
-
-async function ensureWorkspaceFolder(folderPath: string): Promise<void> {
-  if (vscode.workspace.workspaceFolders?.some((folder) => folder.uri.fsPath === folderPath)) return;
-  const added = vscode.workspace.updateWorkspaceFolders(
-    vscode.workspace.workspaceFolders?.length ?? 0,
-    0,
-    { uri: vscode.Uri.file(folderPath) },
-  );
-  if (!added) return;
-  await new Promise((resolve) => setTimeout(resolve, 1000));
 }
 
 async function waitForDefinitions(
@@ -42,18 +32,19 @@ async function waitForDefinitions(
 suite('F12 on #include', () => {
   test('opens Common.hlsl', async () => {
     const root = fixtureRoot();
-    await ensureWorkspaceFolder(root);
-    const uri = vscode.Uri.file(path.join(root, 'Assets/Shaders/Main.shader'));
-    const doc = await vscode.workspace.openTextDocument(uri);
-    await vscode.window.showTextDocument(doc);
+    await withWorkspaceFolder(root, async () => {
+      const uri = vscode.Uri.file(path.join(root, 'Assets/Shaders/Main.shader'));
+      const doc = await vscode.workspace.openTextDocument(uri);
+      await vscode.window.showTextDocument(doc);
 
-    const line = doc.getText().split(/\r?\n/).findIndex((text) => text.includes('"Common.hlsl"'));
-    assert.ok(line >= 0, 'expected Common.hlsl include line');
-    const character = doc.lineAt(line).text.indexOf('Common.hlsl') + 1;
+      const line = doc.getText().split(/\r?\n/).findIndex((text) => text.includes('"Common.hlsl"'));
+      assert.ok(line >= 0, 'expected Common.hlsl include line');
+      const character = doc.lineAt(line).text.indexOf('Common.hlsl') + 1;
 
-    const links = await waitForDefinitions(uri, new vscode.Position(line, character));
+      const links = await waitForDefinitions(uri, new vscode.Position(line, character));
 
-    assert.ok(links && links.length >= 1, 'expected at least one definition');
-    assert.ok(targetUri(links[0]).fsPath.endsWith(path.join('Assets', 'Shaders', 'Common.hlsl')));
+      assert.ok(links && links.length >= 1, 'expected at least one definition');
+      assert.ok(targetUri(links[0]).fsPath.endsWith(path.join('Assets', 'Shaders', 'Common.hlsl')));
+    });
   });
 });

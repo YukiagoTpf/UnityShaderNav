@@ -1,6 +1,7 @@
 import * as assert from 'node:assert';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { withWorkspaceFolder } from './helpers/workspace';
 
 function projectA(): string {
   return path.resolve(__dirname, '../../../../server/tests/include/fixtures/projectA');
@@ -12,17 +13,6 @@ function projectB(): string {
 
 function targetUri(link: vscode.LocationLink | vscode.Location): vscode.Uri {
   return (link as vscode.LocationLink).targetUri ?? (link as vscode.Location).uri;
-}
-
-async function ensureWorkspaceFolder(folderPath: string): Promise<void> {
-  if (vscode.workspace.workspaceFolders?.some((folder) => folder.uri.fsPath === folderPath)) return;
-  const added = vscode.workspace.updateWorkspaceFolders(
-    vscode.workspace.workspaceFolders?.length ?? 0,
-    0,
-    { uri: vscode.Uri.file(folderPath) },
-  );
-  if (!added) return;
-  await new Promise((resolve) => setTimeout(resolve, 1500));
 }
 
 async function waitForDefinitions(
@@ -48,35 +38,36 @@ suite('Multi-root isolation', () => {
   test('projectB resolves only projectB globals', async () => {
     const aRoot = projectA();
     const bRoot = projectB();
-    await ensureWorkspaceFolder(aRoot);
-    await ensureWorkspaceFolder(bRoot);
+    await withWorkspaceFolder(aRoot, async () => {
+      await withWorkspaceFolder(bRoot, async () => {
+        const uri = vscode.Uri.file(path.join(bRoot, 'Assets/Shaders/BMain.shader'));
+        const doc = await vscode.workspace.openTextDocument(uri);
+        await vscode.window.showTextDocument(doc);
 
-    const uri = vscode.Uri.file(path.join(bRoot, 'Assets/Shaders/BMain.shader'));
-    const doc = await vscode.workspace.openTextDocument(uri);
-    await vscode.window.showTextDocument(doc);
+        const lines = doc.getText().split(/\r?\n/);
+        const bLine = lines.findIndex((text) => text.includes('OnlyInB()') && text.includes('return'));
+        assert.ok(bLine >= 0, 'expected OnlyInB() call in projectB fixture');
+        const bCharacter = doc.lineAt(bLine).text.indexOf('OnlyInB()') + 2;
+        const bLinks = await waitForDefinitions(
+          uri,
+          new vscode.Position(bLine, bCharacter),
+          (links) => links?.length === 1,
+        );
 
-    const lines = doc.getText().split(/\r?\n/);
-    const bLine = lines.findIndex((text) => text.includes('OnlyInB()') && text.includes('return'));
-    assert.ok(bLine >= 0, 'expected OnlyInB() call in projectB fixture');
-    const bCharacter = doc.lineAt(bLine).text.indexOf('OnlyInB()') + 2;
-    const bLinks = await waitForDefinitions(
-      uri,
-      new vscode.Position(bLine, bCharacter),
-      (links) => links?.length === 1,
-    );
+        assert.ok(bLinks && bLinks.length === 1, `expected one OnlyInB definition, got ${bLinks?.length}`);
+        assert.ok(targetUri(bLinks[0]).fsPath.startsWith(bRoot), 'OnlyInB target should stay inside projectB');
 
-    assert.ok(bLinks && bLinks.length === 1, `expected one OnlyInB definition, got ${bLinks?.length}`);
-    assert.ok(targetUri(bLinks[0]).fsPath.startsWith(bRoot), 'OnlyInB target should stay inside projectB');
+        const commonLine = lines.findIndex((text) => text.includes('Common()'));
+        assert.ok(commonLine >= 0, 'expected Common() probe in projectB fixture');
+        const commonCharacter = doc.lineAt(commonLine).text.indexOf('Common()') + 2;
+        const commonLinks = await waitForDefinitions(
+          uri,
+          new vscode.Position(commonLine, commonCharacter),
+          (links) => (links?.length ?? 0) > 0,
+        );
 
-    const commonLine = lines.findIndex((text) => text.includes('Common()'));
-    assert.ok(commonLine >= 0, 'expected Common() probe in projectB fixture');
-    const commonCharacter = doc.lineAt(commonLine).text.indexOf('Common()') + 2;
-    const commonLinks = await waitForDefinitions(
-      uri,
-      new vscode.Position(commonLine, commonCharacter),
-      (links) => (links?.length ?? 0) > 0,
-    );
-
-    assert.strictEqual(commonLinks?.length ?? 0, 0, 'projectA Common must not leak into projectB');
+        assert.strictEqual(commonLinks?.length ?? 0, 0, 'projectA Common must not leak into projectB');
+      });
+    });
   });
 });

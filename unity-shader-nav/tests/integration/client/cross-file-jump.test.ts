@@ -1,20 +1,10 @@
 import * as assert from 'node:assert';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { addWorkspaceFolder, removeWorkspaceFolder } from './helpers/workspace';
 
 function fixtureRoot(): string {
   return path.resolve(__dirname, '../../../../server/tests/include/fixtures/projectA');
-}
-
-async function ensureWorkspaceFolder(folderPath: string): Promise<void> {
-  if (vscode.workspace.workspaceFolders?.some((folder) => folder.uri.fsPath === folderPath)) return;
-  const added = vscode.workspace.updateWorkspaceFolders(
-    vscode.workspace.workspaceFolders?.length ?? 0,
-    0,
-    { uri: vscode.Uri.file(folderPath) },
-  );
-  if (!added) return;
-  await new Promise((resolve) => setTimeout(resolve, 1500));
 }
 
 function targetUri(link: vscode.LocationLink | vscode.Location): vscode.Uri {
@@ -40,9 +30,16 @@ async function waitForDefinitions(
 }
 
 suite('F12 cross-file', () => {
+  suiteSetup(async () => {
+    await addWorkspaceFolder(fixtureRoot());
+  });
+
+  suiteTeardown(async () => {
+    await removeWorkspaceFolder(fixtureRoot());
+  });
+
   test('jumps to Common.hlsl', async () => {
     const root = fixtureRoot();
-    await ensureWorkspaceFolder(root);
     const uri = vscode.Uri.file(path.join(root, 'Assets/Shaders/Main.shader'));
     const doc = await vscode.workspace.openTextDocument(uri);
     await vscode.window.showTextDocument(doc);
@@ -59,7 +56,6 @@ suite('F12 cross-file', () => {
 
   test('jumps to Core() in Packages', async () => {
     const root = fixtureRoot();
-    await ensureWorkspaceFolder(root);
     const uri = vscode.Uri.file(path.join(root, 'Assets/Shaders/Main.shader'));
     const doc = await vscode.workspace.openTextDocument(uri);
     await vscode.window.showTextDocument(doc);
