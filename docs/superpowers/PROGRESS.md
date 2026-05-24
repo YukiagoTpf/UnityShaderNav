@@ -32,7 +32,7 @@ GitHub Issues 是当前 backlog：
 | Issue | 主题 | 状态 |
 |---|---|---|
 | [#1](https://github.com/YukiagoTpf/UnityShaderNav/issues/1) | F12 / References 应按 scope、include chain、canonical target 过滤，避免 name-only 混入其他 shader | Open |
-| [#2](https://github.com/YukiagoTpf/UnityShaderNav/issues/2) | struct 类型和成员跳转：`Customdata customdata;`、`i.positionWS` 等 | Closed |
+| [#2](https://github.com/YukiagoTpf/UnityShaderNav/issues/2) | struct 类型和成员跳转：`Customdata customdata;`、`i.positionWS` 等 | Open |
 | [#3](https://github.com/YukiagoTpf/UnityShaderNav/issues/3) | 大项目索引性能、cache 体积、跨进程 cache 写入硬化 | Open |
 | [#4](https://github.com/YukiagoTpf/UnityShaderNav/issues/4) | CI 缓存 `.vscode-test/` 下载 | Open |
 | [#5](https://github.com/YukiagoTpf/UnityShaderNav/issues/5) | `clean` 清理 `tests/out`，避免 stale Electron tests | Open |
@@ -60,6 +60,10 @@ GitHub Issues 是当前 backlog：
 - `cc3defd test(issue-2): cover receiver typed struct member navigation`
   - 为 `inputData.positionWS` 和 `i.positionWS` 补 receiver typed struct member 回归覆盖。
   - 验证：definition handler 17/17，server vitest 46 files / 269 tests PASS，`npm run build` PASS。
+- `ce5a1dc fix(plan-04): handle unity struct macro navigation`
+  - 修复 `UNITY_VERTEX_INPUT_INSTANCE_ID` / `UNITY_VERTEX_OUTPUT_STEREO` 等无分号 Unity struct 宏导致 tree-sitter 把后续 `frag` 函数体误嵌进 `v2f` 的问题。
+  - 真实案例：`Char_Common.shader` 中 `InputData inputData;` 重新被索引为 `frag` local variable，结构体类型跳转恢复。
+  - 剩余问题：真实 Extension Host 中 `inputData.positionWS` 这类结构体成员 token 仍提示 no definition，#2 已重新打开继续跟进。
 
 ## 历史实施索引
 
