@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type Parser from 'web-tree-sitter';
 import { parseHlsl } from '../../src/parser/hlsl/parser';
 import { MacroPatternTable } from '../../src/macros';
-import { matchDeclarationCall, matchPragmaLine } from '../../src/macros/matcher';
+import { matchDeclarationCall, matchPragmaLine, scanPragmaLines } from '../../src/macros/matcher';
 
 describe('matcher: TEXTURE2D / SAMPLER', () => {
   it('extracts _MainTex from TEXTURE2D call', async () => {
@@ -35,5 +35,26 @@ describe('matcher: #pragma vertex', () => {
   it('returns null for unrecognized pragma', () => {
     const table = new MacroPatternTable();
     expect(matchPragmaLine('#pragma multi_compile _ FOG', 0, table)).toBeNull();
+  });
+});
+
+describe('matcher: pragma scanner', () => {
+  it('ignores pragmas inside same-line block comments', () => {
+    const table = new MacroPatternTable();
+    const refs = scanPragmaLines('/* #pragma vertex Disabled */\n#pragma vertex vert', table);
+
+    expect(refs.map((ref) => ref.capturedName)).toEqual(['vert']);
+  });
+
+  it('carries block-comment state across lines', () => {
+    const table = new MacroPatternTable();
+    const refs = scanPragmaLines([
+      '/*',
+      '#pragma vertex Disabled',
+      '*/',
+      '#pragma fragment frag',
+    ].join('\n'), table);
+
+    expect(refs.map((ref) => ref.capturedName)).toEqual(['frag']);
   });
 });

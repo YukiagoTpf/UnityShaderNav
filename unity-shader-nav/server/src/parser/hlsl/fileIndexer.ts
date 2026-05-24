@@ -4,7 +4,7 @@ import type { FileIndex, ReferenceEntry, SymbolEntry } from '@unity-shader-nav/s
 import type { MacroPatternTable } from '../../macros';
 import { parseHlsl } from './parser';
 import { collect } from './collector';
-import { matchPragmaLine } from '../../macros/matcher';
+import { scanPragmaLines } from '../../macros/matcher';
 import { scanIncludes } from '../include/lineScanner';
 import { scanDefines } from '../preproc/scanDefines';
 import { scanBlocks } from '../shaderlab/blockScanner';
@@ -27,10 +27,7 @@ function scanPragmas(
   uri: string,
 ): ReferenceEntry[] {
   const refs: ReferenceEntry[] = [];
-  const lines = blockText.split(/\r?\n/);
-  for (let i = 0; i < lines.length; i++) {
-    const match = matchPragmaLine(lines[i], i, table);
-    if (!match) continue;
+  for (const match of scanPragmaLines(blockText, table)) {
     refs.push({
       name: match.capturedName,
       context: 'pragma',

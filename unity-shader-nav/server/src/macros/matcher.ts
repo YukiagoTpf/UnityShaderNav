@@ -14,6 +14,38 @@ export interface ReferenceMatch {
   nameRange: Range;
 }
 
+function stripComments(line: string, inBlockComment: boolean): { code: string; inBlockComment: boolean } {
+  const chars = line.split('');
+
+  for (let i = 0; i < chars.length; i++) {
+    if (inBlockComment) {
+      const endsBlock = chars[i] === '*' && chars[i + 1] === '/';
+      chars[i] = ' ';
+
+      if (endsBlock) {
+        chars[i + 1] = ' ';
+        i++;
+        inBlockComment = false;
+      }
+      continue;
+    }
+
+    if (chars[i] === '/' && chars[i + 1] === '/') {
+      for (let j = i; j < chars.length; j++) chars[j] = ' ';
+      break;
+    }
+
+    if (chars[i] === '/' && chars[i + 1] === '*') {
+      chars[i] = ' ';
+      chars[i + 1] = ' ';
+      i++;
+      inBlockComment = true;
+    }
+  }
+
+  return { code: chars.join(''), inBlockComment };
+}
+
 function firstNamedDescendantOfType(
   node: Parser.SyntaxNode,
   type: string,
@@ -85,4 +117,23 @@ export function matchPragmaLine(
       end: { line: lineNumber, character: startChar + captured.length },
     },
   };
+}
+
+export function scanPragmaLines(
+  text: string,
+  table: MacroPatternTable,
+): ReferenceMatch[] {
+  const refs: ReferenceMatch[] = [];
+  const lines = text.split(/\r?\n/);
+  let inBlockComment = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const stripped = stripComments(lines[i], inBlockComment);
+    inBlockComment = stripped.inBlockComment;
+
+    const match = matchPragmaLine(stripped.code, i, table);
+    if (match) refs.push(match);
+  }
+
+  return refs;
 }

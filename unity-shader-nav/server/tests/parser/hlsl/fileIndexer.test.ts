@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { indexFile } from '../../../src/parser/hlsl/fileIndexer';
+import { MacroPatternTable } from '../../../src/macros';
 
 describe('fileIndexer: pure .hlsl', () => {
   it('treats whole file as one HLSL block', async () => {
@@ -25,6 +26,22 @@ describe('fileIndexer: pure .hlsl', () => {
 
     expect(foo?.kind).toBe('macro');
     expect(foo?.location.range.start).toEqual({ line: 0, character: 8 });
+  });
+
+  it('ignores pragma references inside block comments', async () => {
+    const text = [
+      '/* #pragma vertex Disabled */',
+      '/*',
+      '#pragma fragment AlsoDisabled',
+      '*/',
+      '#pragma vertex vert',
+      'void vert() {}',
+    ].join('\n');
+    const idx = await indexFile('file:///t/pragmas.hlsl', text, new MacroPatternTable());
+
+    const pragmaRefs = idx.references.filter((r) => r.context === 'pragma');
+    expect(pragmaRefs.map((r) => r.name)).toEqual(['vert']);
+    expect(pragmaRefs[0]?.location.range.start).toEqual({ line: 4, character: 15 });
   });
 });
 
@@ -73,5 +90,30 @@ describe('fileIndexer: .shader multi-pass', () => {
 
     expect(macro?.kind).toBe('macro');
     expect(macro?.location.range.start).toEqual({ line: 4, character: 14 });
+  });
+
+  it('ignores pragma references inside block comments in shader HLSL blocks', async () => {
+    const text = [
+      'Shader "T" {',
+      '  SubShader {',
+      '    Pass {',
+      '      HLSLPROGRAM',
+      '      /* #pragma vertex Disabled */',
+      '      /*',
+      '      #pragma fragment AlsoDisabled',
+      '      */',
+      '      #pragma vertex vert',
+      '      void vert() {}',
+      '      ENDHLSL',
+      '    }',
+      '  }',
+      '}',
+    ].join('\n');
+
+    const idx = await indexFile('file:///t/pragmas.shader', text, new MacroPatternTable());
+    const pragmaRefs = idx.references.filter((r) => r.context === 'pragma');
+
+    expect(pragmaRefs.map((r) => r.name)).toEqual(['vert']);
+    expect(pragmaRefs[0]?.location.range.start).toEqual({ line: 8, character: 21 });
   });
 });

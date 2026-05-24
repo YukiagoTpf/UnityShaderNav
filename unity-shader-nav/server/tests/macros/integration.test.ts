@@ -30,6 +30,31 @@ describe('integration: macros end-to-end', () => {
     expect(vertRef).toBeDefined();
   });
 
+  it('does not register pragma references inside shader block comments', async () => {
+    const uri = 'file:///t/commented-pragmas.shader';
+    const text = [
+      'Shader "T/CommentedPragma" {',
+      '  SubShader {',
+      '    Pass {',
+      '      HLSLPROGRAM',
+      '      /*',
+      '      #pragma vertex Disabled',
+      '      */',
+      '      #pragma vertex vert',
+      '      void Disabled() {}',
+      '      void vert() {}',
+      '      ENDHLSL',
+      '    }',
+      '  }',
+      '}',
+    ].join('\n');
+
+    const idx = await indexFile(uri, text, new MacroPatternTable());
+    const pragmaRefs = idx.references.filter((r) => r.context === 'pragma');
+
+    expect(pragmaRefs.map((r) => r.name)).toEqual(['vert']);
+  });
+
   it('CBUFFER_START(UnityPerMaterial) registers UnityPerMaterial as cbuffer', async () => {
     const idx = await indexFile(
       'file:///t/cb.hlsl',
