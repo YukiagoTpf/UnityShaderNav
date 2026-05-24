@@ -99,6 +99,18 @@ function memberIndex(uri: string): FileIndex {
   };
 }
 
+function tokenPosition(text: string, line: number, token: string, occurrence = 0): { line: number; character: number } {
+  const lines = text.split(/\r?\n/);
+  let character = -1;
+  let from = 0;
+  for (let i = 0; i <= occurrence; i++) {
+    character = lines[line].indexOf(token, from);
+    if (character < 0) throw new Error(`missing token ${token} on line ${line}`);
+    from = character + token.length;
+  }
+  return { line, character };
+}
+
 describe('registerDefinitionHandler', () => {
   it('filters global definition candidates to the transitive include chain', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-issue-1-def-'));
@@ -338,6 +350,221 @@ describe('registerDefinitionHandler', () => {
 
     expect(result).toHaveLength(1);
     expect(result?.[0].targetUri).toBe(uri);
+  });
+
+  it('resolves a struct type identifier in a variable declaration', async () => {
+    const uri = 'file:///t/issue2-customdata.hlsl';
+    const text = [
+      'struct Customdata {',
+      '  half3 shadow;',
+      '  half midtone;',
+      '};',
+      'float4 frag() {',
+      '  Customdata customdata;',
+      '  customdata.midtone = 1;',
+      '  return float4(1, 1, 1, 1);',
+      '}',
+    ].join('\n');
+    const index = await indexFile(uri, text);
+    const { handler } = createDefinitionFixture(uri, 'hlsl', text, index);
+    const structSymbol = index.symbols.find(
+      (symbol) => symbol.name === 'Customdata' && symbol.kind === 'struct',
+    );
+    const localSymbol = index.symbols.find(
+      (symbol) => symbol.name === 'customdata' && symbol.kind === 'localVariable',
+    );
+    if (!structSymbol || !localSymbol) throw new Error('missing Customdata fixture symbols');
+
+    const typeResult = await handler({
+      textDocument: { uri },
+      position: tokenPosition(text, 5, 'Customdata'),
+    }) as LocationLink[] | null;
+
+    expect(typeResult).toHaveLength(1);
+    expect(typeResult?.[0].targetUri).toBe(uri);
+    expect(typeResult?.[0].targetRange).toEqual(structSymbol.location.range);
+    expect(typeResult?.[0].originSelectionRange).toEqual({
+      start: { line: 5, character: 2 },
+      end: { line: 5, character: 12 },
+    });
+
+    const variableResult = await handler({
+      textDocument: { uri },
+      position: tokenPosition(text, 5, 'customdata'),
+    }) as LocationLink[] | null;
+
+    expect(variableResult).toHaveLength(1);
+    expect(variableResult?.[0].targetUri).toBe(uri);
+    expect(variableResult?.[0].targetRange).toEqual(localSymbol.location.range);
+    expect(variableResult?.[0].targetRange).not.toEqual(structSymbol.location.range);
+  });
+
+  it('resolves an include-visible struct type identifier in a variable declaration', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-issue-2-type-'));
+    try {
+      const assets = join(root, 'Assets');
+      await mkdir(assets, { recursive: true });
+      const mainPath = join(assets, 'Main.hlsl');
+      const typesPath = join(assets, 'Types.hlsl');
+      const mainText = [
+        '#include "Types.hlsl"',
+        'float4 frag() {',
+        '  Customdata customdata;',
+        '  return float4(1, 1, 1, 1);',
+        '}',
+      ].join('\n');
+      const typesText = [
+        'struct Customdata {',
+        '  half midtone;',
+        '};',
+      ].join('\n');
+      await writeFile(mainPath, mainText, 'utf8');
+      await writeFile(typesPath, typesText, 'utf8');
+
+      const uri = pathToFileURL(mainPath).href;
+      const typesUri = pathToFileURL(typesPath).href;
+      const indexes = await Promise.all([
+        indexFile(uri, mainText),
+        indexFile(typesUri, typesText),
+      ]);
+      const store = new IndexStore();
+      const global = new GlobalSymbolIndex();
+      for (const idx of indexes) {
+        store.set(idx.uri, idx);
+        global.upsert(idx);
+      }
+      const structSymbol = indexes[1].symbols.find(
+        (symbol) => symbol.name === 'Customdata' && symbol.kind === 'struct',
+      );
+      if (!structSymbol) throw new Error('missing include Customdata symbol');
+      let handler: ((params: DefinitionParams) => Promise<unknown>) | undefined;
+      const connection = {
+        onDefinition(fn: (params: DefinitionParams) => Promise<unknown>) {
+          handler = fn;
+          return { dispose() {} };
+        },
+        console: {
+          warn() {},
+        },
+      } as unknown as Connection;
+      const doc = TextDocument.create(uri, 'hlsl', 1, mainText);
+      const documents = {
+        get(requestedUri: string) {
+          return requestedUri === uri ? doc : undefined;
+        },
+      } as never;
+      const workspace = {
+        includeCtx: { unityProjectRoot: root, includeDirectories: [] },
+        store,
+        global,
+      };
+      const manager = {
+        async workspaceForOrCreateFile() {
+          return workspace;
+        },
+      } as never;
+
+      registerDefinitionHandler(connection, documents, manager);
+
+      const result = await handler?.({
+        textDocument: { uri },
+        position: tokenPosition(mainText, 2, 'Customdata'),
+      }) as LocationLink[] | null;
+
+      expect(result).toHaveLength(1);
+      expect(result?.[0].targetUri).toBe(typesUri);
+      expect(result?.[0].targetRange).toEqual(structSymbol.location.range);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('resolves an include-visible struct type identifier inside a shader hlsl block', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-issue-2-shader-type-'));
+    try {
+      const assets = join(root, 'Assets');
+      await mkdir(assets, { recursive: true });
+      const mainPath = join(assets, 'Main.shader');
+      const typesPath = join(assets, 'Types.hlsl');
+      const mainText = [
+        'Shader "Test/Issue2" {',
+        '  SubShader {',
+        '    Pass {',
+        '      HLSLPROGRAM',
+        '      #include "Types.hlsl"',
+        '      float4 frag() {',
+        '        Customdata customdata;',
+        '        return float4(1, 1, 1, 1);',
+        '      }',
+        '      ENDHLSL',
+        '    }',
+        '  }',
+        '}',
+      ].join('\n');
+      const typesText = [
+        'struct Customdata {',
+        '  half midtone;',
+        '};',
+      ].join('\n');
+      await writeFile(mainPath, mainText, 'utf8');
+      await writeFile(typesPath, typesText, 'utf8');
+
+      const uri = pathToFileURL(mainPath).href;
+      const typesUri = pathToFileURL(typesPath).href;
+      const indexes = await Promise.all([
+        indexFile(uri, mainText),
+        indexFile(typesUri, typesText),
+      ]);
+      const store = new IndexStore();
+      const global = new GlobalSymbolIndex();
+      for (const idx of indexes) {
+        store.set(idx.uri, idx);
+        global.upsert(idx);
+      }
+      const structSymbol = indexes[1].symbols.find(
+        (symbol) => symbol.name === 'Customdata' && symbol.kind === 'struct',
+      );
+      if (!structSymbol) throw new Error('missing shader include Customdata symbol');
+      let handler: ((params: DefinitionParams) => Promise<unknown>) | undefined;
+      const connection = {
+        onDefinition(fn: (params: DefinitionParams) => Promise<unknown>) {
+          handler = fn;
+          return { dispose() {} };
+        },
+        console: {
+          warn() {},
+        },
+      } as unknown as Connection;
+      const doc = TextDocument.create(uri, 'shaderlab', 1, mainText);
+      const documents = {
+        get(requestedUri: string) {
+          return requestedUri === uri ? doc : undefined;
+        },
+      } as never;
+      const workspace = {
+        includeCtx: { unityProjectRoot: root, includeDirectories: [] },
+        store,
+        global,
+      };
+      const manager = {
+        async workspaceForOrCreateFile() {
+          return workspace;
+        },
+      } as never;
+
+      registerDefinitionHandler(connection, documents, manager);
+
+      const result = await handler?.({
+        textDocument: { uri },
+        position: tokenPosition(mainText, 6, 'Customdata'),
+      }) as LocationLink[] | null;
+
+      expect(result).toHaveLength(1);
+      expect(result?.[0].targetUri).toBe(typesUri);
+      expect(result?.[0].targetRange).toEqual(structSymbol.location.range);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it('uses member receiver type to disambiguate struct members', async () => {
