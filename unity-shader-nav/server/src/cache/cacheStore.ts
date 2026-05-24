@@ -52,9 +52,10 @@ function isRange(value: unknown): boolean {
     && isPosition(value.end);
 }
 
-function isLocation(value: unknown): boolean {
+function isLocation(value: unknown, expectedUri?: string): boolean {
   return isRecord(value)
     && typeof value.uri === 'string'
+    && (expectedUri === undefined || value.uri === expectedUri)
     && isRange(value.range);
 }
 
@@ -80,13 +81,13 @@ function optionalRange(value: unknown): boolean {
   return value === undefined || isRange(value);
 }
 
-function isSymbolEntry(value: unknown): boolean {
+function isSymbolEntry(value: unknown, expectedUri: string): boolean {
   if (!isRecord(value)) return false;
   if (
     typeof value.name !== 'string'
     || typeof value.kind !== 'string'
     || !symbolKinds.has(value.kind as SymbolKind)
-    || !isLocation(value.location)
+    || !isLocation(value.location, expectedUri)
     || !optionalString(value.scope)
     || !optionalString(value.parentType)
     || !optionalString(value.declaredType)
@@ -101,12 +102,12 @@ function isSymbolEntry(value: unknown): boolean {
     && value.parameters.every(isFunctionParameter);
 }
 
-function isReferenceEntry(value: unknown): boolean {
+function isReferenceEntry(value: unknown, expectedUri: string): boolean {
   return isRecord(value)
     && typeof value.name === 'string'
     && typeof value.context === 'string'
     && referenceContexts.has(value.context as ReferenceContext)
-    && isLocation(value.location)
+    && isLocation(value.location, expectedUri)
     && optionalString(value.receiver);
 }
 
@@ -126,13 +127,13 @@ function isStructureResult(value: unknown): boolean {
     && value.shaders.every(isShaderLabStructureNode);
 }
 
-function isFileIndex(value: unknown): value is FileIndex {
+function isFileIndex(value: unknown, expectedUri: string): value is FileIndex {
   return isRecord(value)
-    && typeof value.uri === 'string'
+    && value.uri === expectedUri
     && Array.isArray(value.symbols)
-    && value.symbols.every(isSymbolEntry)
+    && value.symbols.every((symbol) => isSymbolEntry(symbol, expectedUri))
     && Array.isArray(value.references)
-    && value.references.every(isReferenceEntry)
+    && value.references.every((reference) => isReferenceEntry(reference, expectedUri))
     && (value.structure === undefined || isStructureResult(value.structure));
 }
 
@@ -141,7 +142,7 @@ function isCachedFile(value: unknown): value is CachedFile {
     && typeof value.uri === 'string'
     && isFiniteNumber(value.mtimeMs)
     && isFiniteNumber(value.size)
-    && isFileIndex(value.index);
+    && isFileIndex(value.index, value.uri);
 }
 
 function toCacheManifest(value: unknown): CacheManifest | null {

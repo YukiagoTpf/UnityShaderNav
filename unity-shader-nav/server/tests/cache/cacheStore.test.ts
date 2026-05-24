@@ -296,6 +296,63 @@ describe('CacheStore', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
+  it('skips cached file records whose index uri differs from the file uri', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'usn-cache-mismatched-index-uri-'));
+    const store = new CacheStore(dir);
+    const file = validFile();
+
+    await writeRawManifest(dir, validManifest({
+      files: [
+        {
+          ...file,
+          index: validIndex('file:///x/Foreign.hlsl'),
+        },
+        file,
+      ],
+    }));
+
+    expect((await store.load(fingerprint))?.files).toEqual([file]);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('skips cached file records whose nested locations differ from the index uri', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'usn-cache-mismatched-location-uri-'));
+    const store = new CacheStore(dir);
+    const file = validFile();
+    const foreignUri = 'file:///x/Foreign.hlsl';
+
+    await writeRawManifest(dir, validManifest({
+      files: [
+        {
+          ...file,
+          index: {
+            ...file.index,
+            symbols: [{
+              ...file.index.symbols[0],
+              location: { uri: foreignUri, range },
+            }],
+          },
+        },
+        {
+          ...file,
+          index: {
+            ...file.index,
+            references: [{
+              ...file.index.references[0],
+              location: { uri: foreignUri, range },
+            }],
+          },
+        },
+        file,
+      ],
+    }));
+
+    expect((await store.load(fingerprint))?.files).toEqual([file]);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
   it('supports concurrent saves without sharing a tmp file', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'usn-cache-concurrent-'));
     const store = new CacheStore(dir);
