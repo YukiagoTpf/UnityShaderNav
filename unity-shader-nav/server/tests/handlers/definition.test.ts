@@ -413,6 +413,30 @@ describe('registerDefinitionHandler', () => {
     })).resolves.toBeNull();
   });
 
+  it('returns null for member access in shaderlab properties outside hlsl blocks', async () => {
+    const uri = 'file:///t/property-member.shader';
+    const text = [
+      'Shader "T/Test" {',
+      '  Properties {',
+      '    surface.positionWS ("surface.positionWS", Float) = 0',
+      '  }',
+      '  SubShader {',
+      '    Pass {',
+      '      HLSLPROGRAM',
+      '      float3 main(Surface surface) { return surface.positionWS; }',
+      '      ENDHLSL',
+      '    }',
+      '  }',
+      '}',
+    ].join('\n');
+    const { handler } = createDefinitionFixture(uri, 'shaderlab', text, memberIndex(uri));
+
+    await expect(handler({
+      textDocument: { uri },
+      position: { line: 2, character: 14 },
+    })).resolves.toBeNull();
+  });
+
   it('still resolves generic identifiers inside shaderlab hlsl blocks', async () => {
     const uri = 'file:///t/surface.shader';
     const text = [
