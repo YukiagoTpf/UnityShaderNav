@@ -56,6 +56,20 @@ describe('scanBlocks: comments do not trigger', () => {
     expect(result.blocks).toHaveLength(1);
     expect(result.blocks[0].unterminated).toBe(false);
   });
+
+  it('ignores HLSLPROGRAM/ENDHLSL inside multi-line block comments', () => {
+    const text = [
+      'Shader "T/Test" {',
+      '  /*',
+      '  HLSLPROGRAM',
+      '  */',
+      '  Properties { helper ("helper", Float) = 0 }',
+      '  ENDHLSL',
+      '}',
+    ].join('\n');
+
+    expect(scanBlocks(text).blocks).toHaveLength(0);
+  });
 });
 
 describe('scanBlocks: nested braces inside HLSL', () => {

@@ -66,6 +66,34 @@ function helperIndex(uri: string, text: string): FileIndex {
   };
 }
 
+function memberIndex(uri: string): FileIndex {
+  return {
+    uri,
+    references: [],
+    symbols: [
+      {
+        name: 'surface',
+        kind: 'parameter',
+        declaredType: 'Surface',
+        scopeRange: { start: { line: 0, character: 0 }, end: { line: 99, character: 0 } },
+        location: {
+          uri,
+          range: { start: { line: 0, character: 20 }, end: { line: 0, character: 27 } },
+        },
+      },
+      {
+        name: 'positionWS',
+        kind: 'structMember',
+        parentType: 'Surface',
+        location: {
+          uri,
+          range: { start: { line: 0, character: 35 }, end: { line: 0, character: 45 } },
+        },
+      },
+    ],
+  };
+}
+
 describe('registerDefinitionHandler', () => {
   it('returns location links for the identifier under the cursor', async () => {
     let handler: ((params: DefinitionParams) => Promise<unknown>) | undefined;
@@ -342,6 +370,46 @@ describe('registerDefinitionHandler', () => {
     await expect(handler({
       textDocument: { uri },
       position: { line: 5, character: 27 },
+    })).resolves.toBeNull();
+  });
+
+  it('returns null for shaderlab properties inside commented-out hlsl directives', async () => {
+    const uri = 'file:///t/commented-directives.shader';
+    const text = [
+      'Shader "T/Test" {',
+      '  /*',
+      '  HLSLPROGRAM',
+      '  */',
+      '  Properties { helper ("helper", Float) = 0 }',
+      '  ENDHLSL',
+      '  SubShader {',
+      '    Pass {',
+      '      HLSLPROGRAM',
+      '      float4 helper(float4 v) { return v; }',
+      '      ENDHLSL',
+      '    }',
+      '  }',
+      '}',
+    ].join('\n');
+    const { handler } = createDefinitionFixture(uri, 'shaderlab', text, helperIndex(uri, text));
+
+    await expect(handler({
+      textDocument: { uri },
+      position: { line: 4, character: 15 },
+    })).resolves.toBeNull();
+  });
+
+  it('returns null for member access inside hlsl line comments', async () => {
+    const uri = 'file:///t/comment-member.hlsl';
+    const text = [
+      'float3 main(Surface surface) { return 0; }',
+      '// surface.positionWS should not jump from a comment',
+    ].join('\n');
+    const { handler } = createDefinitionFixture(uri, 'hlsl', text, memberIndex(uri));
+
+    await expect(handler({
+      textDocument: { uri },
+      position: { line: 1, character: 13 },
     })).resolves.toBeNull();
   });
 
