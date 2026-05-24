@@ -16,7 +16,10 @@
       "request": "attach",
       "port": 6009,
       "restart": true,
-      "outFiles": ["${workspaceFolder}/server/out/**/*.js"]
+      "outFiles": [
+        "${workspaceFolder}/server/out/**/*.js",
+        "${workspaceFolder}/client/out/server/**/*.js"
+      ]
     }
   ],
   "compounds": [
