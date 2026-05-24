@@ -1,6 +1,6 @@
 # UnityShaderNav 实施进度
 
-更新于：2026-05-23。**第一次读这个文件的 agent** 请先看 [CLAUDE.md](../../CLAUDE.md) 了解执行纪律。
+更新于：2026-05-24。**第一次读这个文件的 agent** 请先看 [CLAUDE.md](../../CLAUDE.md) 了解执行纪律。
 
 ## 13 个 Plan 状态总览
 
@@ -561,6 +561,35 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 - Spec §10 Case 14：`unityShaderNav.findReferences.includePackages=true` 时列表新增 Packages 引用 ✓
 - review fix 后 includePackages 使用 resolved workspace scoped settings，includePackages-only settings change 不触发重建 ✓
 
+## Overall Consistency Fixes（2026-05-24）
+
+**Plan doc**：`docs/superpowers/plans/2026-05-23-overall-consistency-fixes.md`
+
+**Commits**：`fe33347..2806ca8`（plan doc + P1/P2 release/reference/workspace/cache/lexical/Electron stability fixes；P3 保持 deferred）。
+
+**完成内容**：
+- Phase 0：VSIX runtime closure、package guard、README staging/direct VSCE packaging 覆盖。
+- Phase 1：Find References 改为 canonical target 语义，覆盖 local/param scope、member receiver type、global kind-aware filter、include path references。
+- Phase 2：workspace path containment 统一、lazy readiness、folder add/remove suspension、open document rebuild guard、cache manifest schema guard。
+- Phase 3：generic F12 lexical/ShaderLab HLSL gate、block-comment-aware pragma scan。
+- Phase 4：Electron workspace/profile 隔离、resource-scoped settings manifest + multi-root override coverage、Node-only package-layout checks 从 Electron suite 拆出。
+
+**Deferred P3**：
+- Unity macro sentinel reference filtering、CG legacy declaration indexing。
+- `clean` 清理 `tests/out`、CI `.vscode-test/` cache。
+- runtime watch/dev script、cross-process cache write hardening、large-project perf、additional PackageManager forms、chain lookup L3b/L4。
+
+**主 agent 验证结果（2026-05-24）**：
+- `npm run clean` PASS。
+- `npm test` 修补后连续多轮 PASS；clean 后 PASS（build + package-layout Node mocha 7/7 + Electron 21/21 + server vitest 46 files / 256 tests）。
+- `node tests/out/runTest.js` PASS（Electron 21/21）。
+- `npm run test:package-layout` PASS（7/7）。
+- `git diff --check` PASS。
+
+**Review**：
+- Task-level spec / quality reviewers 无 blocking findings。
+- Final acceptance review 批准；无 blocking / important findings，P1/P2 完成且 P3 保持 deferred。
+
 ## Phase 05-10 Full Review（2026-05-23）
 
 **Review doc**：`docs/superpowers/plans/phase05-10review.md`
@@ -618,7 +647,7 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 
 1. MVP + P1（Plan 01-13）已全部实现；下一步建议做 VSIX 手动打包/安装验证。
 2. Plan 09 follow-up：如需支持多 VSCode 窗口同时打开同一 Unity 项目，再补跨进程 cache manifest 写入锁或更强 atomic replace。
-3. test-electron follow-up：rebuild/lifecycle/macros 配置相关测试在 Windows 下仍有 timing flake，可单独稳定化。
+3. ~~test-electron follow-up：rebuild/lifecycle/macros 配置相关测试在 Windows 下仍有 timing flake，可单独稳定化。~~ ✅ Overall Consistency Fixes 已通过 fresh VS Code profile + 临时 `.code-workspace` + Node-only package-layout split 稳定化。
 
 ## 历史回放（review 修订）
 
@@ -642,3 +671,4 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 - 2026-05-23：Plan 11 实施 + review/fix（commit `458a0ed..2f9c9c3`，4 个 task commit + review/fix docs；chain lookup L1/L2/L3a，Case 10 覆盖；1 处集成测偏离 plan markdown 内联记录）
 - 2026-05-23：Plan 12 实施 + review/fix（commit `b4624b0..f1b35de`，3 个 task commit + review/fix docs；宏使用 F12 到 `#define`，Case 11 覆盖；cache version bump 到 3；block-comment disabled define 过滤）
 - 2026-05-23：Plan 13 实施 + review/fix（commit `891c38d..2d0bc43`，Shift+F12 Find References，Case 13/14 覆盖；workspace-scoped includePackages；includePackages-only setting change 不重建）
+- 2026-05-24：Overall Consistency Fixes P1/P2 完成（commit `fe33347..2806ca8`；VSIX closure、Find References canonical semantics、workspace/cache lifecycle、lexical gates、Electron/release-chain stability）
