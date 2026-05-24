@@ -657,6 +657,68 @@ describe('registerDefinitionHandler', () => {
     }
   });
 
+  it('resolves struct members through function parameter and local receivers', async () => {
+    const uri = 'file:///t/issue2-member-receivers.hlsl';
+    const text = [
+      'struct Varyings {',
+      '  float3 positionWS;',
+      '};',
+      '',
+      'struct InputData {',
+      '  float3 positionWS;',
+      '  float4 shadowCoord;',
+      '};',
+      '',
+      'float4 frag(Varyings i) {',
+      '  InputData inputData;',
+      '  inputData.positionWS = i.positionWS;',
+      '  inputData.shadowCoord = float4(i.positionWS, 1);',
+      '  return float4(1, 1, 1, 1);',
+      '}',
+    ].join('\n');
+    const index = await indexFile(uri, text);
+    const { handler } = createDefinitionFixture(uri, 'hlsl', text, index);
+    const varyingsMember = index.symbols.find(
+      (symbol) =>
+        symbol.name === 'positionWS' &&
+        symbol.kind === 'structMember' &&
+        symbol.parentType === 'Varyings',
+    );
+    const inputDataMember = index.symbols.find(
+      (symbol) =>
+        symbol.name === 'positionWS' &&
+        symbol.kind === 'structMember' &&
+        symbol.parentType === 'InputData',
+    );
+    if (!varyingsMember || !inputDataMember) throw new Error('missing receiver member symbols');
+
+    const localReceiverResult = await handler({
+      textDocument: { uri },
+      position: tokenPosition(text, 11, 'positionWS'),
+    }) as LocationLink[] | null;
+
+    expect(localReceiverResult).toHaveLength(1);
+    expect(localReceiverResult?.[0].targetUri).toBe(uri);
+    expect(localReceiverResult?.[0].targetRange).toEqual(inputDataMember.location.range);
+    expect(localReceiverResult?.[0].originSelectionRange).toEqual({
+      start: { line: 11, character: 12 },
+      end: { line: 11, character: 22 },
+    });
+
+    const parameterReceiverResult = await handler({
+      textDocument: { uri },
+      position: tokenPosition(text, 11, 'positionWS', 1),
+    }) as LocationLink[] | null;
+
+    expect(parameterReceiverResult).toHaveLength(1);
+    expect(parameterReceiverResult?.[0].targetUri).toBe(uri);
+    expect(parameterReceiverResult?.[0].targetRange).toEqual(varyingsMember.location.range);
+    expect(parameterReceiverResult?.[0].originSelectionRange).toEqual({
+      start: { line: 11, character: 27 },
+      end: { line: 11, character: 37 },
+    });
+  });
+
   it('returns null for generic identifiers inside hlsl line comments', async () => {
     const uri = 'file:///t/comment.hlsl';
     const text = [
