@@ -252,7 +252,7 @@ describe('registerFileWatchers', () => {
         connection as never,
         manager as never,
         suspender,
-        () => [{ uri: 'file:///projectA/Assets/Shaders/Main.shader', getText: () => 'float4 LiveOnly();' }],
+        () => [{ uri: 'file:///projectA/Assets/Shaders/Main.shader', version: 1, getText: () => 'float4 LiveOnly();' }],
       );
       handler?.({ uri: 'file:///projectA/.git/HEAD', type: 'changed' });
       await vi.advanceTimersByTimeAsync(501);
@@ -296,7 +296,7 @@ describe('registerFileWatchers', () => {
         connection as never,
         manager as never,
         undefined,
-        () => [{ uri: 'file:///projectA/Assets/Shaders/Main.shader', getText: () => 'float4 LiveOnly();' }],
+        () => [{ uri: 'file:///projectA/Assets/Shaders/Main.shader', version: 1, getText: () => 'float4 LiveOnly();' }],
       );
       handler?.({ uri: 'file:///projectA/Assets/Shaders/Main.shader', type: 'changed' });
       vi.advanceTimersByTime(501);

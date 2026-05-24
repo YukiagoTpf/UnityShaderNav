@@ -7,6 +7,7 @@ import type { RequestSuspender } from './requestSuspender';
 
 export interface OpenDocumentSnapshot {
   uri: string;
+  version: number;
   getText(): string;
 }
 
@@ -26,8 +27,15 @@ async function reindexOpenDocuments(
   getOpenDocuments: OpenDocumentsProvider,
 ): Promise<void> {
   for (const document of getOpenDocuments()) {
-    const workspace = await manager.workspaceForOrCreateFile(document.uri);
-    await workspace?.reindex(document.uri, document.getText());
+    const uri = document.uri;
+    const version = document.version;
+    const text = document.getText();
+    const workspace = await manager.workspaceForOrCreateFile(uri);
+    await workspace?.reindex(uri, text, () =>
+      Array.from(getOpenDocuments()).some((current) =>
+        current.uri === uri && current.version === version,
+      ),
+    );
   }
 }
 

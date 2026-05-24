@@ -12,11 +12,14 @@ export function registerDocuments(
   const latestVersions = new Map<string, number>();
 
   const reindex = async (doc: TextDocument): Promise<void> => {
-    latestVersions.set(doc.uri, doc.version);
-    const workspace = await manager.workspaceForOrCreateFile(doc.uri);
+    const uri = doc.uri;
+    const version = doc.version;
+    const text = doc.getText();
+    latestVersions.set(uri, version);
+    const workspace = await manager.workspaceForOrCreateFile(uri);
     if (!workspace) return;
-    await workspace.reindex(doc.uri, doc.getText(), () =>
-      liveUris.has(doc.uri) && latestVersions.get(doc.uri) === doc.version,
+    await workspace.reindex(uri, text, () =>
+      liveUris.has(uri) && latestVersions.get(uri) === version,
     );
   };
 

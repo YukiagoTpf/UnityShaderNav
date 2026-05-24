@@ -64,7 +64,7 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
     await rebuildWorkspacesWithOpenDocuments(
       fakeConnection,
       manager as never,
-      () => [{ uri: 'file:///Standalone.hlsl', getText: () => 'float4 LiveOnly() { return 0; }' }],
+      () => [{ uri: 'file:///Standalone.hlsl', version: 1, getText: () => 'float4 LiveOnly() { return 0; }' }],
       suspender,
     );
 
@@ -72,6 +72,50 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
       'suspend',
       'rebuild',
       'reindex:float4 LiveOnly() { return 0; }',
+      'release',
+    ]);
+  });
+
+  it('does not restore a stale open document overlay when the live version changes during reindex', async () => {
+    const calls: string[] = [];
+    const workspace = {
+      rebuild: vi.fn(async () => {
+        calls.push('rebuild');
+      }),
+    };
+    const liveDocument = {
+      uri: 'file:///Standalone.hlsl',
+      version: 1,
+      getText: () => 'float4 Stale() { return 0; }',
+    };
+    const liveWorkspace = {
+      reindex: vi.fn(async (_uri: string, text: string, shouldStore?: () => boolean) => {
+        calls.push(`reindex-start:${text}`);
+        liveDocument.version = 2;
+        if (shouldStore?.() ?? true) calls.push(`store:${text}`);
+      }),
+    };
+    const manager = {
+      list: () => [workspace],
+      readyList: async () => [workspace],
+      workspaceForOrCreateFile: vi.fn(async () => liveWorkspace),
+    };
+    const suspender = {
+      suspend: vi.fn(() => calls.push('suspend')),
+      release: vi.fn(() => calls.push('release')),
+    };
+
+    await rebuildWorkspacesWithOpenDocuments(
+      fakeConnection,
+      manager as never,
+      () => [liveDocument],
+      suspender,
+    );
+
+    expect(calls).toEqual([
+      'suspend',
+      'rebuild',
+      'reindex-start:float4 Stale() { return 0; }',
       'release',
     ]);
   });
@@ -203,7 +247,7 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
         ...DEFAULT_SETTINGS,
         findReferences: { includePackages: true },
       }),
-      () => [{ uri: 'file:///project-a/Assets/Open.hlsl', getText: () => 'float4 Open() { return 0; }' }],
+      () => [{ uri: 'file:///project-a/Assets/Open.hlsl', version: 1, getText: () => 'float4 Open() { return 0; }' }],
     );
 
     expect(workspace.settings.findReferences.includePackages).toBe(true);

@@ -5,15 +5,21 @@ import { registerDocuments } from '../../src/handlers/documents';
 type OpenHandler = (event: {
   textDocument: { uri: string; languageId: string; version: number; text: string };
 }) => void;
+type ChangeHandler = (event: {
+  textDocument: { uri: string; version: number };
+  contentChanges: { text: string }[];
+}) => void;
 type CloseHandler = (event: { textDocument: { uri: string } }) => void;
 
 function createConnectionHarness(): {
   connection: Connection;
   open: OpenHandler;
+  change: ChangeHandler;
   close: CloseHandler;
   logs: string[];
 } {
   let open: OpenHandler | undefined;
+  let change: ChangeHandler | undefined;
   let close: CloseHandler | undefined;
   const logs: string[] = [];
   const disposable = { dispose() {} };
@@ -23,7 +29,8 @@ function createConnectionHarness(): {
       open = handler;
       return disposable;
     },
-    onDidChangeTextDocument() {
+    onDidChangeTextDocument(handler: ChangeHandler) {
+      change = handler;
       return disposable;
     },
     onDidCloseTextDocument(handler: CloseHandler) {
@@ -44,6 +51,7 @@ function createConnectionHarness(): {
   return {
     connection,
     open: (event) => open?.(event),
+    change: (event) => change?.(event),
     close: (event) => close?.(event),
     logs,
   };
@@ -163,5 +171,51 @@ describe('registerDocuments', () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     expect(calls).toEqual(['close:file:///t/closed.hlsl']);
+  });
+
+  it('does not store stale text after a newer document version arrives during indexing', async () => {
+    const harness = createConnectionHarness();
+    const calls: string[] = [];
+    let allowStaleReindex!: () => void;
+    const staleReindex = new Promise<void>((resolve) => {
+      allowStaleReindex = resolve;
+    });
+    const workspace = {
+      async reindex(_uri: string, text: string, shouldStore: () => boolean) {
+        if (text.includes('Stale')) await staleReindex;
+        if (shouldStore()) calls.push(`store:${text}`);
+      },
+      closeDocument() {},
+    };
+    const manager = {
+      workspaceFor(uri: string) {
+        return uri === 'file:///t/versioned.hlsl' ? workspace : undefined;
+      },
+      async workspaceForOrCreateFile(uri: string) {
+        return this.workspaceFor(uri);
+      },
+    } as never;
+
+    registerDocuments(harness.connection, manager);
+    harness.open({
+      textDocument: {
+        uri: 'file:///t/versioned.hlsl',
+        languageId: 'hlsl',
+        version: 1,
+        text: 'float4 Stale() { return 0; }',
+      },
+    });
+    harness.change({
+      textDocument: {
+        uri: 'file:///t/versioned.hlsl',
+        version: 2,
+      },
+      contentChanges: [{ text: 'float4 Fresh() { return 0; }' }],
+    });
+    allowStaleReindex();
+
+    await waitFor(() => calls.includes('store:float4 Fresh() { return 0; }'));
+
+    expect(calls).toEqual(['store:float4 Fresh() { return 0; }']);
   });
 });
