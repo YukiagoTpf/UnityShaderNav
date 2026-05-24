@@ -14,6 +14,15 @@ describe('wordAt', () => {
     expect(wordAt('a + b', { line: 0, character: 1 })).toBeNull();
   });
 
+  it('returns the identifier immediately before the cursor at a call boundary', () => {
+    const text = 'half4 color = CharFragmentPBR(inputData);';
+    const result = wordAt(text, { line: 0, character: text.indexOf('(') });
+
+    expect(result?.text).toBe('CharFragmentPBR');
+    expect(result?.range.start.character).toBe(14);
+    expect(result?.range.end.character).toBe(29);
+  });
+
   it('supports identifiers with leading underscore and digits', () => {
     expect(wordAt('  _Color2', { line: 0, character: 4 })?.text).toBe('_Color2');
   });

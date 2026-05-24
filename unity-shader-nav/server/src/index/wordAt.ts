@@ -17,9 +17,18 @@ export function wordAt(text: string, pos: Position): WordAt | null {
   if (pos.line < 0 || pos.line >= lines.length) return null;
 
   const line = lines[pos.line];
-  const ch = pos.character;
+  let ch = pos.character;
   if (ch < 0 || ch > line.length) return null;
-  if (!ID_CHAR_RE.test(line[ch] ?? '')) return null;
+  if (!ID_CHAR_RE.test(line[ch] ?? '')) {
+    if (
+      ch === 0
+      || !ID_CHAR_RE.test(line[ch - 1] ?? '')
+      || /\s/.test(line[ch] ?? ' ')
+    ) {
+      return null;
+    }
+    ch--;
+  }
 
   let start = ch;
   while (start > 0 && ID_CHAR_RE.test(line[start - 1])) start--;
