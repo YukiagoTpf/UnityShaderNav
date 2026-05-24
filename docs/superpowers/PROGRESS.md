@@ -32,7 +32,7 @@ GitHub Issues 是当前 backlog：
 | Issue | 主题 | 状态 |
 |---|---|---|
 | [#1](https://github.com/YukiagoTpf/UnityShaderNav/issues/1) | F12 / References 应按 scope、include chain、canonical target 过滤，避免 name-only 混入其他 shader | Open |
-| [#2](https://github.com/YukiagoTpf/UnityShaderNav/issues/2) | struct 类型和成员跳转：`Customdata customdata;`、`i.positionWS` 等 | Open |
+| [#2](https://github.com/YukiagoTpf/UnityShaderNav/issues/2) | struct 类型和成员跳转：`Customdata customdata;`、`i.positionWS` 等 | Closed |
 | [#3](https://github.com/YukiagoTpf/UnityShaderNav/issues/3) | 大项目索引性能、cache 体积、跨进程 cache 写入硬化 | Open |
 | [#4](https://github.com/YukiagoTpf/UnityShaderNav/issues/4) | CI 缓存 `.vscode-test/` 下载 | Open |
 | [#5](https://github.com/YukiagoTpf/UnityShaderNav/issues/5) | `clean` 清理 `tests/out`，避免 stale Electron tests | Open |
@@ -54,6 +54,12 @@ GitHub Issues 是当前 backlog：
   - 修复 `source=builtin` 的 Unity packages 未映射到 `Library/PackageCache/<name>@<version>` 的问题。
   - 真实案例：`PerceptualSmoothnessToPerceptualRoughness` 定义位于 `com.unity.render-pipelines.core@14.0.11/ShaderLibrary/CommonMaterial.hlsl`，现在可进入 package resolver / package scan。
   - 验证：package/include focused tests 22/22，server vitest 46 files / 262 tests PASS。
+- `3a5fbcc test(issue-2): cover struct type navigation`
+  - 为 `Customdata customdata;` 补 same-file、include-chain、`.shader` HLSLPROGRAM 回归覆盖。
+  - 验证 type token `Customdata` 跳 struct，variable token `customdata` 仍跳 local variable。
+- `cc3defd test(issue-2): cover receiver typed struct member navigation`
+  - 为 `inputData.positionWS` 和 `i.positionWS` 补 receiver typed struct member 回归覆盖。
+  - 验证：definition handler 17/17，server vitest 46 files / 269 tests PASS，`npm run build` PASS。
 
 ## 历史实施索引
 
