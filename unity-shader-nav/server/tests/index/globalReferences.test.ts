@@ -48,6 +48,18 @@ describe('GlobalReferenceIndex', () => {
     expect(global.lookup('foo')).toEqual([]);
   });
 
+  it('replaces entries when Windows drive file URIs differ only by encoding', () => {
+    const global = new GlobalReferenceIndex();
+    const plain = 'file:///f:/Project/UnityProject/Pandora/Assets/Shader/Char_Common.shader';
+    const encoded = 'file:///f%3A/Project/UnityProject/Pandora/Assets/Shader/Char_Common.shader';
+
+    global.upsert(fileIndex(plain, [reference(plain, 'old')]));
+    global.upsert(fileIndex(encoded, [reference(encoded, 'new')]));
+
+    expect(global.lookup('old')).toEqual([]);
+    expect(global.lookup('new')).toHaveLength(1);
+  });
+
   it('clears all indexed references', () => {
     const global = new GlobalReferenceIndex();
 

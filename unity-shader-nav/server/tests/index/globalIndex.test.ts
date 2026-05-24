@@ -48,6 +48,16 @@ describe('GlobalSymbolIndex', () => {
     expect(global.lookup('foo')).toEqual([]);
   });
 
+  it('replaces entries when Windows drive file URIs differ only by encoding', () => {
+    const global = new GlobalSymbolIndex();
+
+    global.upsert(fileIndex('file:///f:/Project/UnityProject/Pandora/Assets/Shader/Char_Common.shader', ['old']));
+    global.upsert(fileIndex('file:///f%3A/Project/UnityProject/Pandora/Assets/Shader/Char_Common.shader', ['new']));
+
+    expect(global.lookup('old')).toEqual([]);
+    expect(global.lookup('new')).toHaveLength(1);
+  });
+
   it('clears all indexed symbols', () => {
     const global = new GlobalSymbolIndex();
 

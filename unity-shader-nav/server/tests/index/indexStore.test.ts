@@ -28,4 +28,17 @@ describe('IndexStore', () => {
     expect(store.get(second.uri)).toBeUndefined();
     expect([...store.uris()]).toEqual([]);
   });
+
+  it('treats encoded and plain Windows drive file URIs as the same file', () => {
+    const store = new IndexStore();
+    const file = idx('file:///f:/Project/UnityProject/Pandora/Assets/Shader/Char_Common.shader');
+
+    store.set(file.uri, file);
+
+    expect(store.get('file:///f%3A/Project/UnityProject/Pandora/Assets/Shader/Char_Common.shader')).toBe(file);
+
+    store.delete('file:///f%3A/Project/UnityProject/Pandora/Assets/Shader/Char_Common.shader');
+
+    expect(store.get(file.uri)).toBeUndefined();
+  });
 });
