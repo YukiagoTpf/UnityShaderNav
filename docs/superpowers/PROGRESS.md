@@ -590,6 +590,27 @@ plan02fix 没碰任何 plan01fix 已建立的约定：
 - Task-level spec / quality reviewers 无 blocking findings。
 - Final acceptance review 批准；无 blocking / important findings，P1/P2 完成且 P3 保持 deferred。
 
+## Release Smoke / Source Debug Status（2026-05-24）
+
+**现状判断**：
+- VSIX 打包和安装链路已验证可用；后续不再把“反复安装 VSIX”作为基础功能调试手段。
+- 真实项目 `F:\Project\UnityProject\Pandora` 暴露基础功能仍有问题，当前重点转为源码调试 Extension Development Host。
+- VSIX 只用于发布前/交付验证；源码调试用 F5 启动开发版扩展，避免每次改代码都重新 package/install。
+
+**源码调试流程（推荐）**：
+1. 用 VSCode 打开 `F:\Project\UnityShaderNav\unity-shader-nav`。
+2. 在仓库根 `unity-shader-nav/` 执行 `npm run build`。
+3. 在 VSCode 按 F5，启动 Extension Development Host。
+4. 在新开的 Extension Development Host 里打开真实 Unity 项目 `F:\Project\UnityProject\Pandora`。
+5. 修改源码后执行 `npm run build`。
+6. 在 Extension Development Host 里按 `Ctrl+Shift+P`，执行 `Developer: Reload Window`，让开发版扩展重新加载。
+7. 用 Output 面板的 `UnityShaderNav` 频道和断点/日志定位 F12、Shift+F12、Outline 等基础功能问题。
+
+**注意**：
+- 已安装 VSIX 位于用户扩展目录，运行的是复制后的产物；仓库源码改动不会影响已安装插件。
+- 当前 `npm run watch` 仍只是 TypeScript watch，不完整维护 `client/out/server` 与 bundle。后续应补 runtime watch/dev script，减少手动 build/reload。
+- 调试基础功能时优先使用真实项目 repro + focused server tests，再用 VSIX 做最后安装验证。
+
 ## Phase 05-10 Full Review（2026-05-23）
 
 **Review doc**：`docs/superpowers/plans/phase05-10review.md`
