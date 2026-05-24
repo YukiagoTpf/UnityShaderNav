@@ -51,6 +51,11 @@ export function resolvePackagePhysicalPath(
     return join(projectRoot, 'Library', 'PackageCache', `${name}@${cacheKey}`);
   }
 
+  if (source === 'builtin') {
+    if (!entry.version) return null;
+    return join(projectRoot, 'Library', 'PackageCache', `${name}@${entry.version}`);
+  }
+
   if (source === 'git') {
     if (!entry.hash) return null;
     if (/\?path=/.test(entry.version)) return null;

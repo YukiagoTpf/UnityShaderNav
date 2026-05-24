@@ -32,6 +32,9 @@ async function makeFakeProject(): Promise<string> {
   await mkdir(join(root, 'Library', 'PackageCache', 'com.unity.render-pipelines.universal@abc'), {
     recursive: true,
   });
+  await mkdir(join(root, 'Library', 'PackageCache', 'com.unity.builtin@1.0.0'), {
+    recursive: true,
+  });
 
   return root;
 }
@@ -47,7 +50,8 @@ describe('PackageResolver', () => {
       .toBe(join(root, 'Library', 'PackageCache', 'com.unity.render-pipelines.universal@abc'));
     expect(resolver.getPath('com.example.embedded'))
       .toBe(join(root, 'Packages', 'com.example.embedded'));
-    expect(resolver.getPath('com.unity.builtin')).toBeUndefined();
+    expect(resolver.getPath('com.unity.builtin'))
+      .toBe(join(root, 'Library', 'PackageCache', 'com.unity.builtin@1.0.0'));
     expect(resolver.getPath('com.unknown')).toBeUndefined();
   });
 

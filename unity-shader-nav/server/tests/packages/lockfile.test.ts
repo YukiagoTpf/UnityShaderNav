@@ -27,12 +27,12 @@ describe('resolvePackagePhysicalPath', () => {
     )).toBe(join(projectRoot, 'Packages', 'com.example.urp'));
   });
 
-  it('builtin returns null', () => {
+  it('builtin maps to Library/PackageCache/<name>@<version>', () => {
     expect(resolvePackagePhysicalPath(
       'com.unity.render-pipelines.core',
       { version: '12.1.7', source: 'builtin' },
       projectRoot,
-    )).toBeNull();
+    )).toBe(join(projectRoot, 'Library', 'PackageCache', 'com.unity.render-pipelines.core@12.1.7'));
   });
 
   it('registry with hash maps to Library/PackageCache/<name>@<hash>', () => {
