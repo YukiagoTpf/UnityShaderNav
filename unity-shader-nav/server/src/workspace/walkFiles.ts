@@ -1,7 +1,9 @@
 import { promises as fs } from 'node:fs';
 import { join, relative } from 'node:path';
+import { mapWithConcurrency } from './concurrency';
 
 const HLSL_EXTS = new Set(['.shader', '.hlsl', '.cginc', '.hlslinc', '.compute']);
+const WALK_CONCURRENCY = 16;
 
 function matchesGlob(relPath: string, pattern: string): boolean {
   const source = pattern
@@ -32,19 +34,24 @@ export async function walkFiles(root: string, excludePatterns: string[]): Promis
       return;
     }
 
+    const childDirs: string[] = [];
     for (const entry of entries) {
       const absolutePath = join(dir, entry.name);
       const relativePath = relative(root, absolutePath).replace(/\\/g, '/');
       if (isExcluded(relativePath, excludePatterns)) continue;
 
       if (entry.isDirectory()) {
-        await recur(absolutePath);
+        childDirs.push(absolutePath);
       } else if (HLSL_EXTS.has(extensionOf(entry.name))) {
         out.push(absolutePath);
       }
     }
+
+    await mapWithConcurrency(childDirs, WALK_CONCURRENCY, async (childDir) => {
+      await recur(childDir);
+    });
   }
 
   await recur(root);
-  return out;
+  return out.sort();
 }
