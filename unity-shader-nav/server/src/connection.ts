@@ -23,6 +23,7 @@ export function createInitializeResult(): InitializeResult {
       definitionProvider: true,
       documentSymbolProvider: true,
       referencesProvider: true,
+      documentHighlightProvider: true,
     },
     serverInfo: {
       name: SERVER_NAME,

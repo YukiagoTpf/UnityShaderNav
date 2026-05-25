@@ -22,4 +22,9 @@ describe('LSP handshake', () => {
     const result = createInitializeResult();
     expect(result.capabilities.referencesProvider).toBe(true);
   });
+
+  it('advertises documentHighlightProvider', () => {
+    const result = createInitializeResult();
+    expect(result.capabilities.documentHighlightProvider).toBe(true);
+  });
 });
