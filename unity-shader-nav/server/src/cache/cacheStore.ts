@@ -239,9 +239,13 @@ export class CacheStore {
   private async writeManifest(manifest: CacheManifest): Promise<void> {
     await fs.mkdir(this.dir, { recursive: true });
     const tmpPath = `${this.path}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`;
-    await fs.writeFile(tmpPath, JSON.stringify(manifest), 'utf8');
-    await fs.rm(this.path, { force: true });
-    await fs.rename(tmpPath, this.path);
+    try {
+      await fs.writeFile(tmpPath, JSON.stringify(manifest), 'utf8');
+      await fs.rename(tmpPath, this.path);
+    } catch (error) {
+      await fs.rm(tmpPath, { force: true }).catch(() => undefined);
+      throw error;
+    }
   }
 
   async clear(): Promise<void> {

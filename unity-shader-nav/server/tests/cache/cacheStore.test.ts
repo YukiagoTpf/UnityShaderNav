@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -8,8 +8,29 @@ import {
   type CacheManifest,
   type FileIndex,
 } from '@unity-shader-nav/shared';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CacheStore } from '../../src/cache/cacheStore';
+
+const fsMock = vi.hoisted(() => ({
+  failNextRename: false,
+}));
+
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  return {
+    ...actual,
+    promises: {
+      ...actual.promises,
+      rename: async (...args: Parameters<typeof actual.promises.rename>) => {
+        if (fsMock.failNextRename) {
+          fsMock.failNextRename = false;
+          throw new Error('rename failed');
+        }
+        return actual.promises.rename(...args);
+      },
+    },
+  };
+});
 
 const fingerprint: CacheFingerprint = {
   grammarVersion: 'g',
@@ -21,6 +42,11 @@ const range = {
   start: { line: 0, character: 0 },
   end: { line: 0, character: 5 },
 };
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  fsMock.failNextRename = false;
+});
 
 function validIndex(uri = 'file:///x/Valid.hlsl'): FileIndex {
   return {
@@ -457,6 +483,44 @@ describe('CacheStore', () => {
     })));
 
     expect(await store.load(fingerprint)).not.toBeNull();
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('keeps the previous manifest when replacing the cache manifest fails', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'usn-cache-preserve-'));
+    const store = new CacheStore(dir);
+    const first = validManifest({ workspaceFolderUri: 'file:///first', createdAt: 1 });
+    const second = validManifest({ workspaceFolderUri: 'file:///second', createdAt: 2 });
+
+    await store.save(first);
+    fsMock.failNextRename = true;
+
+    await expect(store.save(second)).rejects.toThrow('rename failed');
+
+    expect(await store.load(fingerprint)).toMatchObject({
+      workspaceFolderUri: 'file:///first',
+      createdAt: 1,
+    });
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('supports concurrent saves from separate store instances for the same cache directory', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'usn-cache-multi-store-'));
+    const storeA = new CacheStore(dir);
+    const storeB = new CacheStore(dir);
+
+    await Promise.all(Array.from({ length: 8 }, (_, index) => {
+      const store = index % 2 === 0 ? storeA : storeB;
+      return store.save(validManifest({
+        workspaceFolderUri: `file:///writer-${index}`,
+        createdAt: index,
+      }));
+    }));
+
+    expect(await storeA.load(fingerprint)).not.toBeNull();
+    expect((await readdir(dir)).filter((name) => name.endsWith('.tmp'))).toEqual([]);
 
     await rm(dir, { recursive: true, force: true });
   });
