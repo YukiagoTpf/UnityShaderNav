@@ -19,12 +19,16 @@ import { MacroPatternTable } from '../macros';
 import { indexFile } from '../parser/hlsl';
 import { detectUnityRoot } from './detectUnityRoot';
 import { containsPath } from './pathUtils';
+import { mapWithConcurrency } from './concurrency';
 import { walkFiles } from './walkFiles';
 
 export interface FileEvent {
   uri: string;
   type: 'created' | 'changed' | 'deleted';
 }
+
+const INDEX_CONCURRENCY = 8;
+const CACHE_IO_CONCURRENCY = 32;
 
 export class Workspace {
   readonly folderUri: string;
@@ -135,10 +139,20 @@ export class Workspace {
     const refreshQueue: string[] = [];
 
     try {
-      for (const cachedFile of manifest.files) {
+      const restoreResults = await mapWithConcurrency(
+        manifest.files,
+        CACHE_IO_CONCURRENCY,
+        async (cachedFile) => ({
+          cachedFile,
+          valid: this.shouldRestoreCachedFile(cachedFile.uri)
+            && await this.cache!.isValid(cachedFile),
+        }),
+      );
+
+      for (const { cachedFile, valid } of restoreResults) {
         if (!this.shouldRestoreCachedFile(cachedFile.uri)) continue;
 
-        if (await this.cache.isValid(cachedFile)) {
+        if (valid) {
           this.diskIndexes.set(cachedFile.uri, cachedFile.index);
           this.store.set(cachedFile.uri, cachedFile.index);
           this.global.upsert(cachedFile.index);
@@ -149,14 +163,14 @@ export class Workspace {
       }
 
       progress.report(`re-parsing ${refreshQueue.length} changed files...`);
-      for (const uri of refreshQueue) {
+      await mapWithConcurrency(refreshQueue, INDEX_CONCURRENCY, async (uri) => {
         try {
           const filePath = fileURLToPath(uri);
           await this.indexAndStore(filePath, connection);
         } catch {
           this.drop(uri);
         }
-      }
+      });
 
       await this.indexMissingDiskFiles(connection);
     } finally {
@@ -210,19 +224,19 @@ export class Workspace {
       ...this.settings.excludePatterns,
       'Packages/**',
     ]);
-    for (const filePath of userFiles) {
+    await mapWithConcurrency(userFiles, INDEX_CONCURRENCY, async (filePath) => {
       const uri = pathToFileURL(filePath).href;
       if (!this.store.get(uri)) await this.indexAndStore(filePath, connection);
-    }
+    });
 
     if (!this.packageResolver) return;
-    for (const { path } of this.packageResolver.allPaths()) {
+    await mapWithConcurrency(this.packageResolver.allPaths(), INDEX_CONCURRENCY, async ({ path }) => {
       const packageFiles = await walkFiles(path, ['**/Documentation~/**', '**/Samples~/**']);
-      for (const filePath of packageFiles) {
+      await mapWithConcurrency(packageFiles, INDEX_CONCURRENCY, async (filePath) => {
         const uri = pathToFileURL(filePath).href;
         if (!this.store.get(uri)) await this.indexAndStore(filePath, connection);
-      }
-    }
+      });
+    });
   }
 
   private async indexAndStore(absPath: string, connection?: Connection): Promise<void> {
@@ -252,21 +266,21 @@ export class Workspace {
         'Packages/**',
       ]);
       let done = 0;
-      for (const file of userFiles) {
+      await mapWithConcurrency(userFiles, INDEX_CONCURRENCY, async (file) => {
         await this.indexAndStore(file, connection);
         done++;
         if (done % 25 === 0) progress.report(`${done}/${userFiles.length} files`);
-      }
+      });
 
       if (!this.packageResolver) return;
 
       progress.report('indexing Packages...');
-      for (const { path } of this.packageResolver.allPaths()) {
+      await mapWithConcurrency(this.packageResolver.allPaths(), INDEX_CONCURRENCY, async ({ path }) => {
         const packageFiles = await walkFiles(path, ['**/Documentation~/**', '**/Samples~/**']);
-        for (const file of packageFiles) {
+        await mapWithConcurrency(packageFiles, INDEX_CONCURRENCY, async (file) => {
           await this.indexAndStore(file, connection);
-        }
-      }
+        });
+      });
     } finally {
       progress.done();
     }
@@ -327,11 +341,14 @@ export class Workspace {
   async persist(): Promise<void> {
     if (!this.cache || !this.fingerprint) return;
 
-    const records: CachedFile[] = [];
-    for (const [uri, index] of this.diskIndexes) {
-      const snapshot = await this.cache.snapshot(uri, index);
-      if (snapshot) records.push(snapshot);
-    }
+    const snapshots = await mapWithConcurrency(
+      Array.from(this.diskIndexes),
+      CACHE_IO_CONCURRENCY,
+      async ([uri, index]) => this.cache!.snapshot(uri, index),
+    );
+    const records: CachedFile[] = snapshots
+      .filter((snapshot): snapshot is CachedFile => snapshot !== null)
+      .sort((a, b) => a.uri.localeCompare(b.uri));
 
     const manifest = this.cache.buildManifest(
       this.folderUri,

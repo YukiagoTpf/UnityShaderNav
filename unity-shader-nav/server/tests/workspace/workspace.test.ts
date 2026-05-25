@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DEFAULT_SETTINGS } from '@unity-shader-nav/shared';
+import { chooseCacheDir } from '../../src/cache/cacheLocation';
 import { Workspace } from '../../src/workspace/workspace';
 
 const fakeConnection = {
@@ -139,6 +140,38 @@ describe('Workspace.bootstrap', () => {
       await ws2.bootstrap(fakeConnection, globalStorageDir);
 
       expect(ws2.global.lookup('UnsavedOnly')).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(globalStorageDir, { recursive: true, force: true });
+    }
+  });
+
+  it('persists cached file records in deterministic uri order', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-standalone-sorted-cache-'));
+    const globalStorageDir = await mkdtemp(join(tmpdir(), 'usn-global-storage-'));
+    const folderUri = pathToFileURL(root).href;
+    const aPath = join(root, 'A.hlsl');
+    const bPath = join(root, 'B.hlsl');
+    const aUri = pathToFileURL(aPath).href;
+    const bUri = pathToFileURL(bPath).href;
+    await writeFile(aPath, 'float4 A() { return 0; }');
+    await writeFile(bPath, 'float4 B() { return 0; }');
+
+    try {
+      const workspace = new Workspace(folderUri, DEFAULT_SETTINGS);
+      await workspace.bootstrap(fakeConnection, globalStorageDir);
+      await workspace.reindex(bUri, await readFile(bPath, 'utf8'));
+      await workspace.reindex(aUri, await readFile(aPath, 'utf8'));
+      await workspace.persist();
+
+      const cacheDir = chooseCacheDir({
+        unityProjectRoot: undefined,
+        workspaceFolderUri: folderUri,
+        globalStorageDir,
+      });
+      const manifest = JSON.parse(await readFile(join(cacheDir!, 'index.json'), 'utf8'));
+
+      expect(manifest.files.map((file: { uri: string }) => file.uri)).toEqual([aUri, bUri]);
     } finally {
       await rm(root, { recursive: true, force: true });
       await rm(globalStorageDir, { recursive: true, force: true });
