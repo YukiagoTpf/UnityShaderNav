@@ -86,13 +86,78 @@ function inferReceiverType(
       symbol.declaredType &&
       isVisible(symbol, options),
   );
+  if (crossFileGlobal?.declaredType) {
+    options?.trace?.('member.receiverType', {
+      receiver,
+      source: 'visibleGlobal',
+      declaredType: crossFileGlobal.declaredType,
+      candidates: 1,
+    });
+    return crossFileGlobal.declaredType;
+  }
+
+  const inferredType = inferReceiverTypeFromCallAssignment(index, global, receiver, refPos, options);
   options?.trace?.('member.receiverType', {
     receiver,
-    source: crossFileGlobal ? 'visibleGlobal' : 'notFound',
-    declaredType: crossFileGlobal?.declaredType,
-    candidates: crossFileGlobal ? 1 : 0,
+    source: inferredType ? 'callAssignment' : 'notFound',
+    declaredType: inferredType,
+    candidates: inferredType ? 1 : 0,
   });
-  return crossFileGlobal?.declaredType ?? null;
+  return inferredType;
+}
+
+function inferReceiverTypeFromCallAssignment(
+  index: FileIndex,
+  global: GlobalSymbolIndex | null | undefined,
+  receiver: string,
+  refPos: Position,
+  options?: ResolutionOptions,
+): string | null {
+  const inferences = index.typeInferences?.filter(
+    (entry) =>
+      entry.receiver === receiver &&
+      entry.scopeRange &&
+      inRange(refPos, entry.scopeRange) &&
+      isBeforeOrAt(entry.assignmentRange.end, refPos),
+  ) ?? [];
+  if (inferences.length === 0) return null;
+
+  let best = inferences[0];
+  for (const entry of inferences) {
+    if (laterThan(entry.assignmentRange.start, best.assignmentRange.start)) best = entry;
+  }
+
+  const functions = [
+    ...index.symbols.filter(
+      (symbol) =>
+        symbol.name === best.callName &&
+        symbol.kind === 'function' &&
+        typeof (symbol as { returnType?: unknown }).returnType === 'string',
+    ),
+    ...(global?.lookup(best.callName) ?? []).filter(
+      (symbol) =>
+        symbol.kind === 'function' &&
+        typeof (symbol as { returnType?: unknown }).returnType === 'string' &&
+        isVisible(symbol, options),
+    ),
+  ];
+  const seen = new Set<string>();
+  const unique = functions.filter((symbol) => {
+    const key = linkKey(symbol);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  if (unique.length !== 1) {
+    options?.trace?.('member.callAssignmentAmbiguous', {
+      receiver,
+      callName: best.callName,
+      candidates: unique.length,
+    });
+    return null;
+  }
+
+  return (unique[0] as { returnType: string }).returnType;
 }
 
 function rootIdentifier(receiver: string): string {

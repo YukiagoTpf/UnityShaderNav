@@ -169,6 +169,33 @@ describe('collector: references', () => {
     expect(refs).toHaveLength(3);
     expect(refs.map((r) => r.location.range.start.character)).toEqual([23, 30, 37]);
   });
+
+  it('records direct call assignment type inference facts', async () => {
+    const text = [
+      'struct Surface { float3 positionWS; };',
+      'Surface MakeSurface() { Surface s; return s; }',
+      'void frag() {',
+      '  surface = MakeSurface();',
+      '  float3 p = surface.positionWS;',
+      '}',
+    ].join('\n');
+    const tree = await parseHlsl(text);
+    const result = collect(tree.rootNode, text, 'file:///t/rhs-inference.hlsl', 0);
+
+    expect(result.typeInferences).toEqual([{
+      receiver: 'surface',
+      callName: 'MakeSurface',
+      assignmentRange: {
+        start: { line: 3, character: 2 },
+        end: { line: 3, character: 25 },
+      },
+      scope: 'frag',
+      scopeRange: {
+        start: { line: 2, character: 12 },
+        end: { line: 5, character: 1 },
+      },
+    }]);
+  });
 });
 
 describe('collector: declarator variants', () => {

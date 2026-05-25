@@ -6,6 +6,7 @@ import type {
   Range,
   ReferenceEntry,
   SymbolEntry,
+  TypeInferenceEntry,
 } from '@unity-shader-nav/shared';
 import { rangeOf, textOf, walk } from './nodeHelpers';
 import type { MacroPatternTable } from '../../macros';
@@ -18,6 +19,7 @@ interface CollectorState {
   lineOffset: number;
   symbols: SymbolEntry[];
   references: ReferenceEntry[];
+  typeInferences: TypeInferenceEntry[];
   /**
    * Node ids that the collector has consumed as a declaration site for a
    * symbol (function name, struct name, parameter name, ...). The reference
@@ -235,22 +237,47 @@ function collectLocals(
   st: CollectorState,
 ): void {
   for (const n of walk(bodyNode)) {
-    if (n.type !== 'declaration') continue;
-    const typeNode = n.childForFieldName('type');
-    for (const declNode of declaratorNodes(n)) {
-      const idNode = declaratorNameNode(declNode);
-      if (!idNode) continue;
-      markDecl(st, idNode);
-      st.symbols.push({
-        name: textOf(idNode),
-        kind: 'localVariable',
-        location: { uri: st.uri, range: offsetRange(rangeOf(idNode), st.lineOffset) },
-        scope: fnName,
-        scopeRange,
-        declaredType: textOf(typeNode),
-      });
+    if (n.type === 'declaration') {
+      const typeNode = n.childForFieldName('type');
+      for (const declNode of declaratorNodes(n)) {
+        const idNode = declaratorNameNode(declNode);
+        if (!idNode) continue;
+        markDecl(st, idNode);
+        st.symbols.push({
+          name: textOf(idNode),
+          kind: 'localVariable',
+          location: { uri: st.uri, range: offsetRange(rangeOf(idNode), st.lineOffset) },
+          scope: fnName,
+          scopeRange,
+          declaredType: textOf(typeNode),
+        });
+      }
+    } else if (n.type === 'assignment_expression') {
+      collectTypeInference(fnName, scopeRange, n, st);
     }
   }
+}
+
+function collectTypeInference(
+  fnName: string,
+  scopeRange: Range,
+  node: Parser.SyntaxNode,
+  st: CollectorState,
+): void {
+  const left = node.childForFieldName('left');
+  const right = node.childForFieldName('right');
+  if (!left || !right || left.type !== 'identifier' || right.type !== 'call_expression') return;
+
+  const callee = right.childForFieldName('function');
+  if (!callee || callee.type !== 'identifier') return;
+
+  st.typeInferences.push({
+    receiver: textOf(left),
+    callName: textOf(callee),
+    assignmentRange: offsetRange(rangeOf(node), st.lineOffset),
+    scope: fnName,
+    scopeRange,
+  });
 }
 
 function collectStruct(node: Parser.SyntaxNode, st: CollectorState): void {
@@ -377,6 +404,7 @@ export function collect(
     lineOffset,
     symbols: [],
     references: [],
+    typeInferences: [],
     declarationSites: new Set(),
   };
 
@@ -403,5 +431,7 @@ export function collect(
     collectReferences(node, st);
   }
 
-  return { uri, symbols: st.symbols, references: st.references };
+  const result: FileIndex = { uri, symbols: st.symbols, references: st.references };
+  if (st.typeInferences.length > 0) result.typeInferences = st.typeInferences;
+  return result;
 }

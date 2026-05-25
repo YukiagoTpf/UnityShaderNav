@@ -37,6 +37,16 @@ function globalWithSurface(): GlobalSymbolIndex {
         parentType: 'Surface',
         location: { uri: 'file:///t/Surface.hlsl', range: memberRange },
       }),
+      {
+        name: 'MakeSurface',
+        kind: 'function',
+        returnType: 'Surface',
+        parameters: [],
+        location: {
+          uri: 'file:///t/Surface.hlsl',
+          range: { start: { line: 3, character: 8 }, end: { line: 3, character: 19 } },
+        },
+      },
     ],
   });
   return global;
@@ -92,6 +102,16 @@ function globalWithIssue9Types(): GlobalSymbolIndex {
           range: { start: { line: 13, character: 8 }, end: { line: 13, character: 13 } },
         },
       }),
+      {
+        name: 'MakeSurface',
+        kind: 'function',
+        returnType: 'Surface',
+        parameters: [],
+        location: {
+          uri: 'file:///t/Surface.hlsl',
+          range: { start: { line: 3, character: 8 }, end: { line: 3, character: 19 } },
+        },
+      },
     ],
   });
   return global;
@@ -274,5 +294,49 @@ describe('resolveMember', () => {
       start: { line: 13, character: 8 },
       end: { line: 13, character: 13 },
     });
+  });
+
+  it('infers an unknown receiver type from the nearest preceding call assignment', () => {
+    const global = globalWithSurface();
+    global.upsert({
+      uri,
+      references: [],
+      symbols: [{
+        name: 'MakeOther',
+        kind: 'function',
+        returnType: 'Other',
+        parameters: [],
+        location: {
+          uri,
+          range: { start: { line: 0, character: 0 }, end: { line: 0, character: 9 } },
+        },
+      }],
+    });
+    const idx: FileIndex = {
+      uri,
+      references: [],
+      symbols: [],
+      typeInferences: [
+        {
+          receiver: 'surface',
+          callName: 'MakeOther',
+          assignmentRange: { start: { line: 6, character: 2 }, end: { line: 6, character: 23 } },
+          scope: 'frag',
+          scopeRange: functionScope,
+        },
+        {
+          receiver: 'surface',
+          callName: 'MakeSurface',
+          assignmentRange: { start: { line: 8, character: 2 }, end: { line: 8, character: 25 } },
+          scope: 'frag',
+          scopeRange: functionScope,
+        },
+      ],
+    };
+
+    const links = resolveMember(idx, global, 'surface', 'positionWS', { line: 10, character: 22 });
+
+    expect(links).toHaveLength(1);
+    expect(links[0].targetRange).toEqual(memberRange);
   });
 });

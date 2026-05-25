@@ -44,10 +44,19 @@ export interface ReferenceEntry {
   receiver?: string;
 }
 
+export interface TypeInferenceEntry {
+  receiver: string;
+  callName: string;
+  assignmentRange: Range;
+  scope?: string;
+  scopeRange?: Range;
+}
+
 export interface FileIndex {
   uri: string;
   symbols: SymbolEntry[];
   references: ReferenceEntry[];
+  typeInferences?: TypeInferenceEntry[];
   /** Only populated for .shader files. */
   structure?: StructureResult;
 }
