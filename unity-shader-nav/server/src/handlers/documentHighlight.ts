@@ -1,4 +1,8 @@
 import type {
+  FileIndex,
+  Position,
+} from '@unity-shader-nav/shared';
+import type {
   Connection,
   DocumentHighlight,
   DocumentHighlightParams,
@@ -30,11 +34,82 @@ import {
   uniqueLocations,
 } from './referenceMatching';
 
+function isSimpleIdentifier(value: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
+}
+
 function toHighlight(location: Location): DocumentHighlight {
   return {
     range: location.range,
     kind: DocumentHighlightKind.Text,
   };
+}
+
+function receiverTargets(
+  index: FileIndex,
+  receiver: string,
+  position: Position,
+  global: Parameters<typeof resolveReferenceTargetsForName>[3],
+  resolutionOptions: Parameters<typeof resolveReferenceTargetsForName>[4],
+) {
+  if (!isSimpleIdentifier(receiver)) return [];
+  return resolveReferenceTargetsForName(
+    index,
+    receiver,
+    position,
+    global,
+    resolutionOptions,
+  );
+}
+
+function sameReceiverMemberLocations(
+  index: FileIndex,
+  memberName: string,
+  receiverName: string,
+  receiverPosition: Position,
+  global: Parameters<typeof resolveReferenceTargetsForName>[3],
+  resolutionOptions: Parameters<typeof resolveReferenceTargetsForName>[4],
+): Location[] {
+  const activeReceiverTargets = receiverTargets(
+    index,
+    receiverName,
+    receiverPosition,
+    global,
+    resolutionOptions,
+  );
+  if (activeReceiverTargets.length === 0) return [];
+
+  const locations: Location[] = [];
+  for (const reference of index.references) {
+    if (
+      reference.name !== memberName ||
+      reference.context !== 'member' ||
+      !reference.receiver ||
+      !isSimpleIdentifier(reference.receiver)
+    ) {
+      continue;
+    }
+
+    const candidateReceiverTargets = receiverTargets(
+      index,
+      reference.receiver,
+      reference.location.range.start,
+      global,
+      resolutionOptions,
+    );
+    if (
+      candidateReceiverTargets.some((candidate) =>
+        activeReceiverTargets.some((target) => sameTarget(candidate, target)),
+      )
+    ) {
+      locations.push({
+        uri: reference.location.uri,
+        range: reference.location.range,
+      });
+    }
+  }
+
+  return locations;
 }
 
 export function registerDocumentHighlightHandler(
@@ -94,7 +169,17 @@ export function registerDocumentHighlightHandler(
           workspace.global,
           resolutionOptions,
         );
-      if (memberAccess?.receiver && targets.length === 0) return null;
+      if (memberAccess?.receiver && targets.length === 0) {
+        const fallbackHighlights = sameReceiverMemberLocations(
+          index,
+          memberAccess.member.text,
+          memberAccess.receiver.text,
+          memberAccess.receiver.range.start,
+          workspace.global,
+          resolutionOptions,
+        ).map(toHighlight);
+        return fallbackHighlights.length > 0 ? fallbackHighlights : null;
+      }
       const scopedTargets = targets.filter(isScopedTarget);
       const memberTargets = targets.filter(isMemberTarget);
       const narrowedTargets = [...scopedTargets, ...memberTargets];

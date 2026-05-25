@@ -103,6 +103,14 @@ function expectHighlights(result: DocumentHighlight[] | null, ranges: Range[]): 
   })));
 }
 
+function rangeOfToken(text: string, line: number, token: string, occurrence = 0): Range {
+  const start = tokenPosition(text, line, token, occurrence);
+  return {
+    start,
+    end: { line, character: start.character + token.length },
+  };
+}
+
 describe('registerDocumentHighlightHandler', () => {
   it('reindexes an open document when the workspace store misses it', async () => {
     const { connection, handler } = captureDocumentHighlightHandler();
@@ -182,6 +190,40 @@ describe('registerDocumentHighlightHandler', () => {
     expectHighlights(result, [firstLocal.location.range, ...references]);
   });
 
+  it('highlights local variables when they are member receivers', async () => {
+    const uri = 'file:///project/Assets/ReceiverLocalHighlights.hlsl';
+    const text = [
+      'struct InputData { float3 positionWS; float3 normalWS; };',
+      'float4 frag() {',
+      '  InputData inputData;',
+      '  inputData = (InputData)0;',
+      '  inputData.positionWS = 0;',
+      '  inputData.normalWS = inputData.positionWS;',
+      '  return 0;',
+      '}',
+    ].join('\n');
+    const { handler, index } = await createHighlightFixture(uri, 'hlsl', text);
+    const local = index.symbols.find(
+      (symbol) =>
+        symbol.name === 'inputData' &&
+        symbol.kind === 'localVariable',
+    );
+    if (!local) throw new Error('missing inputData local');
+
+    const result = await handler({
+      textDocument: { uri },
+      position: tokenPosition(text, 2, 'inputData'),
+    });
+
+    expectHighlights(result, [
+      local.location.range,
+      rangeOfToken(text, 3, 'inputData'),
+      rangeOfToken(text, 4, 'inputData'),
+      rangeOfToken(text, 5, 'inputData'),
+      rangeOfToken(text, 5, 'inputData', 1),
+    ]);
+  });
+
   it('highlights function declaration and same-document calls', async () => {
     const uri = 'file:///project/Assets/Functions.hlsl';
     const text = [
@@ -218,6 +260,31 @@ describe('registerDocumentHighlightHandler', () => {
     });
 
     expectHighlights(result, [declaration.location.range, typeRef.location.range]);
+  });
+
+  it('highlights struct type references in variable declarations and casts', async () => {
+    const uri = 'file:///project/Assets/StructCastTypes.hlsl';
+    const text = [
+      'struct InputData { float3 positionWS; };',
+      'float4 frag() {',
+      '  InputData inputData;',
+      '  inputData = (InputData)0;',
+      '  return 0;',
+      '}',
+    ].join('\n');
+    const { handler, index } = await createHighlightFixture(uri, 'hlsl', text);
+    const declaration = index.symbols.find((symbol) => symbol.name === 'InputData' && symbol.kind === 'struct');
+    const typeRefs = index.references
+      .filter((reference) => reference.name === 'InputData' && reference.context === 'type')
+      .map((reference) => reference.location.range);
+    if (!declaration || typeRefs.length !== 2) throw new Error('missing InputData type references');
+
+    const result = await handler({
+      textDocument: { uri },
+      position: tokenPosition(text, 2, 'InputData'),
+    });
+
+    expectHighlights(result, [declaration.location.range, ...typeRefs]);
   });
 
   it('highlights macro declaration and macro calls without local variable noise', async () => {
@@ -387,6 +454,31 @@ describe('registerDocumentHighlightHandler', () => {
       textDocument: { uri },
       position: tokenPosition(text, 3, 'positionWS'),
     })).resolves.toBeNull();
+  });
+
+  it('falls back to same resolved receiver member highlights when external member declarations are missing', async () => {
+    const uri = 'file:///project/Assets/ExternalMemberHighlights.hlsl';
+    const text = [
+      'struct Varyings { float4 positionWS; };',
+      'float4 frag(Varyings i) {',
+      '  InputData inputData;',
+      '  inputData = (InputData)0;',
+      '  inputData.positionWS = i.positionWS;',
+      '  inputData.shadowCoord = TransformWorldToShadowCoord(i.positionWS);',
+      '  return inputData.positionWS.x;',
+      '}',
+    ].join('\n');
+    const { handler } = await createHighlightFixture(uri, 'hlsl', text);
+
+    const result = await handler({
+      textDocument: { uri },
+      position: tokenPosition(text, 4, 'positionWS'),
+    });
+
+    expectHighlights(result, [
+      rangeOfToken(text, 4, 'positionWS'),
+      rangeOfToken(text, 6, 'positionWS'),
+    ]);
   });
 
   it('highlights receiver-typed members inside shader HLSL blocks with Unity struct macros', async () => {

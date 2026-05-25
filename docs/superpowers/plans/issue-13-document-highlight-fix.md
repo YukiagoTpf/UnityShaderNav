@@ -158,3 +158,5 @@ Implementation notes:
 - Added current-document symbol highlights for locals, parameters, functions, struct types, macros, and receiver-typed struct members.
 - Added context guards for comments, strings, and non-HLSL ShaderLab areas while preserving HLSLPROGRAM highlights.
 - Kept unresolved member receivers conservative by returning no highlight instead of broad same-name member highlights.
+
+> Note: 2026-05-25 manual validation showed `inputData.positionWS` could still return no highlight when the receiver variable is known locally but the external `InputData.positionWS` member declaration is not currently indexed. The implementation may deviate from the pure "unresolved member => no highlights" rule by adding a narrower fallback: if the receiver resolves to the same local/parameter/variable target, highlight same-document member references with that same receiver target, while still avoiding broad same-name member highlights such as mixing `inputData.positionWS` with `i.positionWS`.
