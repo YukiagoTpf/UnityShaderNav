@@ -64,6 +64,48 @@ describe('collector: global variables', () => {
     expect(vars.find((v) => v.name === '_Color')!.declaredType).toBe('float4');
     expect(vars.find((v) => v.name === 'gSurface')!.declaredType).toBe('Surface');
   });
+
+  it('indexes legacy CG variable declarations with declared type metadata', async () => {
+    const text = [
+      'sampler2D _MainTex;',
+      'fixed _Fixed;',
+      'fixed2 _Fixed2;',
+      'fixed3 _Fixed3;',
+      'fixed4 _Color;',
+      'half _Cutoff;',
+      'half2 _Half2;',
+      'half3 _Half3;',
+      'half4 _Half4;',
+      'float _Float;',
+      'float2 _Float2;',
+      'float3 _Float3;',
+      'float4 _Float4;',
+    ].join('\n');
+    const tree = await parseHlsl(text);
+    const result = collect(tree.rootNode, text, 'file:///test/cg-legacy-globals.hlsl', 0);
+
+    const variables = new Map(
+      result.symbols
+        .filter((symbol) => symbol.kind === 'variable')
+        .map((symbol) => [symbol.name, symbol.declaredType]),
+    );
+
+    expect(variables).toEqual(new Map([
+      ['_MainTex', 'sampler2D'],
+      ['_Fixed', 'fixed'],
+      ['_Fixed2', 'fixed2'],
+      ['_Fixed3', 'fixed3'],
+      ['_Color', 'fixed4'],
+      ['_Cutoff', 'half'],
+      ['_Half2', 'half2'],
+      ['_Half3', 'half3'],
+      ['_Half4', 'half4'],
+      ['_Float', 'float'],
+      ['_Float2', 'float2'],
+      ['_Float3', 'float3'],
+      ['_Float4', 'float4'],
+    ]));
+  });
 });
 
 describe('collector: locals & params', () => {

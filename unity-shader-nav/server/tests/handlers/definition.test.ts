@@ -801,6 +801,57 @@ describe('registerDefinitionHandler', () => {
     expect(parameterMemberResult?.[0].targetRange).toEqual(v2fMember.location.range);
   });
 
+  it('resolves legacy CG global variable usages inside a shader CGPROGRAM block', async () => {
+    const uri = 'file:///t/issue8-cg-legacy.shader';
+    const text = [
+      'Shader "Test/Issue8LegacyCG" {',
+      '  SubShader {',
+      '    Pass {',
+      '      CGPROGRAM',
+      '      sampler2D _MainTex;',
+      '      fixed4 _Color;',
+      '      half _Cutoff;',
+      '      fixed4 frag() : SV_Target {',
+      '        return tex2D(_MainTex, float2(0, 0)) * _Color * _Cutoff;',
+      '      }',
+      '      ENDCG',
+      '    }',
+      '  }',
+      '}',
+    ].join('\n');
+    const index = await indexFile(uri, text);
+    const { handler } = createDefinitionFixture(uri, 'shaderlab', text, index);
+    const expectedTargets = new Map([
+      ['_MainTex', {
+        symbol: index.symbols.find((symbol) => symbol.name === '_MainTex' && symbol.kind === 'variable'),
+        declaredType: 'sampler2D',
+      }],
+      ['_Color', {
+        symbol: index.symbols.find((symbol) => symbol.name === '_Color' && symbol.kind === 'variable'),
+        declaredType: 'fixed4',
+      }],
+      ['_Cutoff', {
+        symbol: index.symbols.find((symbol) => symbol.name === '_Cutoff' && symbol.kind === 'variable'),
+        declaredType: 'half',
+      }],
+    ]);
+
+    for (const [name, expected] of expectedTargets) {
+      expect(expected.symbol).toBeDefined();
+      expect(expected.symbol?.declaredType).toBe(expected.declaredType);
+      if (!expected.symbol) continue;
+
+      const result = await handler({
+        textDocument: { uri },
+        position: tokenPosition(text, 8, name),
+      }) as LocationLink[] | null;
+
+      expect(result).toHaveLength(1);
+      expect(result?.[0].targetUri).toBe(uri);
+      expect(result?.[0].targetRange).toEqual(expected.symbol.location.range);
+    }
+  });
+
   it('resolves issue 9 complex member chain shapes at the definition boundary', async () => {
     const uri = 'file:///t/issue9-chain-shapes.hlsl';
     const text = [

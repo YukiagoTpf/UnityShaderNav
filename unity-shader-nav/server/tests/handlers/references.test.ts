@@ -54,6 +54,18 @@ function contains(range: Range, line: number, character: number): boolean {
   return true;
 }
 
+function tokenPosition(text: string, line: number, token: string, occurrence = 0): { line: number; character: number } {
+  const lines = text.split(/\r?\n/);
+  let character = -1;
+  let from = 0;
+  for (let i = 0; i <= occurrence; i++) {
+    character = lines[line].indexOf(token, from);
+    if (character < 0) throw new Error(`missing token ${token} on line ${line}`);
+    from = character + token.length;
+  }
+  return { line, character };
+}
+
 function expectedScopedLocations(index: FileIndex, name: string, scopeRange: Range): Location[] {
   const declaration = index.symbols.find(
     (symbol) =>
@@ -321,6 +333,77 @@ describe('registerReferencesHandler', () => {
       { uri, range: defRange },
       { uri, range: userRefRange },
     ]);
+  });
+
+  it('returns declaration and usage references for legacy CG variables in shader blocks', async () => {
+    const { connection, handler } = captureReferencesHandler();
+    const uri = 'file:///project/Assets/Issue8Legacy.shader';
+    const text = [
+      'Shader "Test/Issue8LegacyCG" {',
+      '  SubShader {',
+      '    Pass {',
+      '      CGPROGRAM',
+      '      sampler2D _MainTex;',
+      '      fixed4 _Color;',
+      '      half _Cutoff;',
+      '      fixed4 frag() : SV_Target {',
+      '        return tex2D(_MainTex, float2(0, 0)) * _Color * _Cutoff;',
+      '      }',
+      '      ENDCG',
+      '    }',
+      '  }',
+      '}',
+    ].join('\n');
+    const doc = TextDocument.create(uri, 'shaderlab', 1, text);
+    const index = await indexFile(uri, text);
+    const store = new IndexStore();
+    store.set(uri, index);
+    const workspace = {
+      settings: DEFAULT_SETTINGS,
+      store,
+      global: new GlobalSymbolIndex(),
+      globalRefs: new GlobalReferenceIndex(),
+      isInPackages: () => false,
+    };
+    workspace.global.upsert(index);
+    workspace.globalRefs.upsert(index);
+    const documents = {
+      get(requestedUri: string) {
+        return requestedUri === uri ? doc : undefined;
+      },
+    } as never;
+    const manager = {
+      async workspaceForOrCreateFile() {
+        return workspace;
+      },
+    } as never;
+    registerReferencesHandler(connection, documents, manager);
+
+    for (const name of ['_MainTex', '_Color', '_Cutoff']) {
+      const declaration = index.symbols.find(
+        (symbol) => symbol.name === name && symbol.kind === 'variable',
+      );
+      const usage = index.references.find(
+        (reference) =>
+          reference.name === name &&
+          reference.context === 'identifier' &&
+          reference.location.range.start.line === 8,
+      );
+      if (!declaration || !usage) {
+        throw new Error(`missing issue 8 legacy CG declaration or usage for ${name}`);
+      }
+
+      const result = await handler()({
+        textDocument: { uri },
+        position: tokenPosition(text, 8, name),
+        context: { includeDeclaration: true },
+      });
+
+      expect(result).toEqual([
+        { uri, range: declaration.location.range },
+        { uri, range: usage.location.range },
+      ]);
+    }
   });
 
   it('includes package references when the setting is enabled', async () => {
