@@ -1,4 +1,4 @@
-import type { FileIndex, Position, Range, SymbolEntry } from '@unity-shader-nav/shared';
+import type { FileIndex, FunctionSymbolEntry, Position, Range, SymbolEntry } from '@unity-shader-nav/shared';
 import type { GlobalSymbolIndex } from './globalIndex';
 import type { LocationLink, ResolutionOptions } from './symbolResolver';
 import { uriKey } from './uriKey';
@@ -129,15 +129,13 @@ function inferReceiverTypeFromCallAssignment(
 
   const functions = [
     ...index.symbols.filter(
-      (symbol) =>
+      (symbol): symbol is FunctionSymbolEntry =>
         symbol.name === best.callName &&
-        symbol.kind === 'function' &&
-        typeof (symbol as { returnType?: unknown }).returnType === 'string',
+        isFunctionWithReturnType(symbol),
     ),
     ...(global?.lookup(best.callName) ?? []).filter(
-      (symbol) =>
-        symbol.kind === 'function' &&
-        typeof (symbol as { returnType?: unknown }).returnType === 'string' &&
+      (symbol): symbol is FunctionSymbolEntry =>
+        isFunctionWithReturnType(symbol) &&
         isVisible(symbol, options),
     ),
   ];
@@ -157,7 +155,11 @@ function inferReceiverTypeFromCallAssignment(
     return null;
   }
 
-  return (unique[0] as { returnType: string }).returnType;
+  return unique[0].returnType;
+}
+
+function isFunctionWithReturnType(symbol: SymbolEntry): symbol is FunctionSymbolEntry {
+  return symbol.kind === 'function' && typeof (symbol as { returnType?: unknown }).returnType === 'string';
 }
 
 function rootIdentifier(receiver: string): string {
@@ -278,11 +280,12 @@ function inferReceiverExpressionType(
   const expression = parseReceiverExpression(receiver);
   if (!expression) return inferReceiverType(index, global, receiver, refPos, options);
 
-  let currentType = inferReceiverType(index, global, expression.root, refPos, options);
-  if (!currentType) return null;
+  const rootType = inferReceiverType(index, global, expression.root, refPos, options);
+  if (!rootType) return null;
+  let currentType: string = rootType;
 
   for (const field of expression.fields) {
-    const nextMember = structMembersFor(index, global, currentType, field, options)
+    const nextMember: SymbolEntry | undefined = structMembersFor(index, global, currentType, field, options)
       .find((symbol) => symbol.declaredType);
     if (!nextMember?.declaredType) {
       options?.trace?.('member.noNestedType', {
