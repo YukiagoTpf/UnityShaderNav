@@ -21,10 +21,11 @@ function laterThan(a: Position, b: Position): boolean {
 function inferReceiverType(
   index: FileIndex,
   global: GlobalSymbolIndex | null | undefined,
-  receiver: string,
+  receiverTypeName: string,
   refPos: Position,
   options?: ResolutionOptions,
 ): string | null {
+  const receiver = rootIdentifier(receiverTypeName);
   const params = index.symbols.filter(
     (symbol) =>
       symbol.name === receiver &&
@@ -94,6 +95,67 @@ function inferReceiverType(
   return crossFileGlobal?.declaredType ?? null;
 }
 
+function rootIdentifier(receiver: string): string {
+  const match = receiver.match(/[A-Za-z_][A-Za-z0-9_]*/);
+  return match?.[0] ?? receiver;
+}
+
+interface ReceiverExpression {
+  root: string;
+  fields: string[];
+}
+
+function parseReceiverExpression(receiver: string): ReceiverExpression | null {
+  let cursor = 0;
+  const root = readIdentifier(receiver, cursor);
+  if (!root) return null;
+  cursor = root.end;
+  const fields: string[] = [];
+
+  while (cursor < receiver.length) {
+    const ch = receiver[cursor];
+    if (ch === '[') {
+      const next = skipBalanced(receiver, cursor, '[', ']');
+      if (next === cursor) return null;
+      cursor = next;
+      continue;
+    }
+    if (ch === '.') {
+      const field = readIdentifier(receiver, cursor + 1);
+      if (!field) return null;
+      fields.push(field.text);
+      cursor = field.end;
+      continue;
+    }
+    if (/\s/.test(ch)) {
+      cursor++;
+      continue;
+    }
+    return null;
+  }
+
+  return { root: root.text, fields };
+}
+
+function readIdentifier(text: string, start: number): { text: string; end: number } | null {
+  if (!/[A-Za-z_]/.test(text[start] ?? '')) return null;
+  let end = start + 1;
+  while (end < text.length && /[A-Za-z0-9_]/.test(text[end])) end++;
+  return { text: text.slice(start, end), end };
+}
+
+function skipBalanced(text: string, start: number, open: string, close: string): number {
+  let depth = 0;
+  for (let cursor = start; cursor < text.length; cursor++) {
+    if (text[cursor] === open) depth++;
+    if (text[cursor] === close) {
+      depth--;
+      if (depth === 0) return cursor + 1;
+    }
+  }
+  return start;
+}
+
 function isVisible(symbol: SymbolEntry, options?: ResolutionOptions): boolean {
   return !options?.visibleUriKeys || options.visibleUriKeys.has(uriKey(symbol.location.uri));
 }
@@ -117,6 +179,60 @@ function toLink(symbol: SymbolEntry): LocationLink {
   };
 }
 
+function structMembersFor(
+  index: FileIndex,
+  global: GlobalSymbolIndex | null | undefined,
+  parentType: string,
+  member: string,
+  options?: ResolutionOptions,
+): SymbolEntry[] {
+  return [
+    ...index.symbols.filter(
+      (symbol) =>
+        symbol.kind === 'structMember' &&
+        symbol.parentType === parentType &&
+        symbol.name === member,
+    ),
+    ...(global?.lookup(member) ?? []).filter(
+      (symbol) =>
+        symbol.kind === 'structMember' &&
+        symbol.parentType === parentType &&
+        symbol.name === member &&
+        isVisible(symbol, options),
+    ),
+  ];
+}
+
+function inferReceiverExpressionType(
+  index: FileIndex,
+  global: GlobalSymbolIndex | null | undefined,
+  receiver: string,
+  refPos: Position,
+  options?: ResolutionOptions,
+): string | null {
+  const expression = parseReceiverExpression(receiver);
+  if (!expression) return inferReceiverType(index, global, receiver, refPos, options);
+
+  let currentType = inferReceiverType(index, global, expression.root, refPos, options);
+  if (!currentType) return null;
+
+  for (const field of expression.fields) {
+    const nextMember = structMembersFor(index, global, currentType, field, options)
+      .find((symbol) => symbol.declaredType);
+    if (!nextMember?.declaredType) {
+      options?.trace?.('member.noNestedType', {
+        receiver,
+        field,
+        parentType: currentType,
+      });
+      return null;
+    }
+    currentType = nextMember.declaredType;
+  }
+
+  return currentType;
+}
+
 function describeSymbol(symbol: SymbolEntry): Record<string, unknown> {
   return {
     name: symbol.name,
@@ -136,27 +252,13 @@ export function resolveMemberSymbols(
   refPos: Position,
   options?: ResolutionOptions,
 ): SymbolEntry[] {
-  const receiverType = inferReceiverType(index, global, receiver, refPos, options);
+  const receiverType = inferReceiverExpressionType(index, global, receiver, refPos, options);
   if (!receiverType) {
     options?.trace?.('member.noReceiverType', { receiver, member });
     return [];
   }
 
-  const members = [
-    ...index.symbols.filter(
-      (symbol) =>
-        symbol.kind === 'structMember' &&
-        symbol.parentType === receiverType &&
-        symbol.name === member,
-    ),
-    ...(global?.lookup(member) ?? []).filter(
-      (symbol) =>
-        symbol.kind === 'structMember' &&
-        symbol.parentType === receiverType &&
-        symbol.name === member &&
-        isVisible(symbol, options),
-    ),
-  ];
+  const members = structMembersFor(index, global, receiverType, member, options);
 
   const seen = new Set<string>();
   const unique = members.filter((symbol) => {

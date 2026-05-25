@@ -42,6 +42,61 @@ function globalWithSurface(): GlobalSymbolIndex {
   return global;
 }
 
+function globalWithIssue9Types(): GlobalSymbolIndex {
+  const global = new GlobalSymbolIndex();
+  global.upsert({
+    uri: 'file:///t/Types.hlsl',
+    references: [],
+    symbols: [
+      sym({ name: 'Light', kind: 'struct', location: { uri: 'file:///t/Types.hlsl', range: memberRange } }),
+      sym({
+        name: 'color',
+        kind: 'structMember',
+        parentType: 'Light',
+        declaredType: 'float3',
+        location: {
+          uri: 'file:///t/Types.hlsl',
+          range: { start: { line: 1, character: 9 }, end: { line: 1, character: 14 } },
+        },
+      }),
+      sym({ name: 'Brdf', kind: 'struct', location: { uri: 'file:///t/Types.hlsl', range: memberRange } }),
+      sym({
+        name: 'roughness',
+        kind: 'structMember',
+        parentType: 'Brdf',
+        declaredType: 'float',
+        location: {
+          uri: 'file:///t/Types.hlsl',
+          range: { start: { line: 5, character: 8 }, end: { line: 5, character: 17 } },
+        },
+      }),
+      sym({ name: 'Surface', kind: 'struct', location: { uri: 'file:///t/Types.hlsl', range: memberRange } }),
+      sym({
+        name: 'brdfData',
+        kind: 'structMember',
+        parentType: 'Surface',
+        declaredType: 'Brdf',
+        location: {
+          uri: 'file:///t/Types.hlsl',
+          range: { start: { line: 9, character: 7 }, end: { line: 9, character: 15 } },
+        },
+      }),
+      sym({ name: 'Settings', kind: 'struct', location: { uri: 'file:///t/Types.hlsl', range: memberRange } }),
+      sym({
+        name: 'value',
+        kind: 'structMember',
+        parentType: 'Settings',
+        declaredType: 'float',
+        location: {
+          uri: 'file:///t/Types.hlsl',
+          range: { start: { line: 13, character: 8 }, end: { line: 13, character: 13 } },
+        },
+      }),
+    ],
+  });
+  return global;
+}
+
 describe('resolveMember', () => {
   it('resolves a member through a function parameter receiver', () => {
     const idx: FileIndex = {
@@ -142,5 +197,82 @@ describe('resolveMember', () => {
 
     expect(links).toHaveLength(1);
     expect(links[0].targetUri).toBe(uri);
+  });
+
+  it('resolves a member through an array element receiver', () => {
+    const idx: FileIndex = {
+      uri,
+      references: [],
+      symbols: [
+        sym({
+          name: 'lights',
+          kind: 'parameter',
+          declaredType: 'Light',
+          scopeRange: functionScope,
+          location: { uri, range: { start: { line: 5, character: 15 }, end: { line: 5, character: 21 } } },
+        }),
+      ],
+    };
+
+    const links = resolveMember(idx, globalWithIssue9Types(), 'lights[i]', 'color', { line: 8, character: 24 });
+
+    expect(links).toHaveLength(1);
+    expect(links[0].targetRange).toEqual({
+      start: { line: 1, character: 9 },
+      end: { line: 1, character: 14 },
+    });
+  });
+
+  it('resolves a member through a nested field receiver', () => {
+    const idx: FileIndex = {
+      uri,
+      references: [],
+      symbols: [
+        sym({
+          name: 'surface',
+          kind: 'localVariable',
+          declaredType: 'Surface',
+          scopeRange: functionScope,
+          location: { uri, range: { start: { line: 6, character: 10 }, end: { line: 6, character: 17 } } },
+        }),
+      ],
+    };
+
+    const links = resolveMember(
+      idx,
+      globalWithIssue9Types(),
+      'surface.brdfData',
+      'roughness',
+      { line: 9, character: 31 },
+    );
+
+    expect(links).toHaveLength(1);
+    expect(links[0].targetRange).toEqual({
+      start: { line: 5, character: 8 },
+      end: { line: 5, character: 17 },
+    });
+  });
+
+  it('resolves a member through a cbuffer struct global receiver', () => {
+    const idx: FileIndex = {
+      uri,
+      references: [],
+      symbols: [
+        sym({
+          name: 'settings',
+          kind: 'variable',
+          declaredType: 'Settings',
+          location: { uri, range: { start: { line: 3, character: 11 }, end: { line: 3, character: 19 } } },
+        }),
+      ],
+    };
+
+    const links = resolveMember(idx, globalWithIssue9Types(), 'settings', 'value', { line: 7, character: 21 });
+
+    expect(links).toHaveLength(1);
+    expect(links[0].targetRange).toEqual({
+      start: { line: 13, character: 8 },
+      end: { line: 13, character: 13 },
+    });
   });
 });
