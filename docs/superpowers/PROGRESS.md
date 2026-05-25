@@ -33,7 +33,7 @@ GitHub Issues 是当前 backlog：
 |---|---|---|
 | [#1](https://github.com/YukiagoTpf/UnityShaderNav/issues/1) | F12 / References 应按 scope、include chain、canonical target 过滤，避免 name-only 混入其他 shader | Open |
 | [#2](https://github.com/YukiagoTpf/UnityShaderNav/issues/2) | struct 类型和成员跳转：`Customdata customdata;`、`i.positionWS` 等 | Open |
-| [#3](https://github.com/YukiagoTpf/UnityShaderNav/issues/3) | 大项目索引性能、cache 体积、跨进程 cache 写入硬化 | Open |
+| [#3](https://github.com/YukiagoTpf/UnityShaderNav/issues/3) | 大项目索引性能、cache 体积、跨进程 cache 写入硬化 | Fixed locally（待 code review / GitHub close） |
 | [#4](https://github.com/YukiagoTpf/UnityShaderNav/issues/4) | CI 缓存 `.vscode-test/` 下载 | Open |
 | [#5](https://github.com/YukiagoTpf/UnityShaderNav/issues/5) | `clean` 清理 `tests/out`，避免 stale Electron tests | Open |
 | [#6](https://github.com/YukiagoTpf/UnityShaderNav/issues/6) | F5 开发用 runtime watch/dev script | Open |
@@ -83,6 +83,13 @@ GitHub Issues 是当前 backlog：
   - `BUILTIN_SENTINEL_MACROS` 纳入 `macroTableHash()`，旧 cache 会因 fingerprint mismatch 失效，无需 cache schema bump。
   - 验证：server vitest 48 files / 315 tests PASS，`npm run build` PASS。
   - 状态：GitHub issue #7 已按用户要求关闭；未做 Extension Development Host 手动验证，后续真实使用中若复现再 reopen。
+- `78a749d..ef36766 issue-3 performance/cache hardening`
+  - 新增 `npm run bench:issue3`，支持 synthetic `--files` 和真实项目 `--project` smoke，输出 cold scan / warm restore / persist / cache bytes。
+  - `CacheStore` 不再先删除旧 `index.json`，改为同目录 tmp 写入后直接 rename，rename 失败时保留旧 manifest 并清理 tmp。
+  - `walkFiles()`、cache restore、missing-file refresh、full scan、persist snapshot 改为 bounded concurrency；persist 前按 URI 排序，避免并发完成顺序导致 cache JSON 漂移。
+  - Cache JSON 继续保持 monolithic：800 synthetic 文件基线约 2.45 MB，写入不是主瓶颈，暂不引入 shard/compression 复杂度。
+  - benchmark：800 synthetic 文件 cold `296.94ms -> 155.32ms`，warm `99.96ms -> 71.79ms`，persist `25.31ms -> 13.04ms`。
+  - 验证：`npm run test -w @unity-shader-nav/server` PASS（49 files / 323 tests），`npm run build` PASS。
 
 ## 历史实施索引
 

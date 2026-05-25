@@ -38,6 +38,18 @@ Measured again after adding the committed benchmark script, before cache/workspa
 }
 ```
 
+Measured after bounded walking/index/restore/persist and atomic manifest replace:
+
+```json
+{
+  "files": 800,
+  "coldMs": 155.3154,
+  "warmMs": 71.7867,
+  "persistMs": 13.0433,
+  "cacheBytes": 2447732
+}
+```
+
 Real local smoke context: `F:\Project\UnityProject\Pandora` currently contains 1007 shader source files by extension. The implementation benchmark should support both synthetic and real-project smoke usage, but the automated test suite should not depend on that private project path.
 
 ## Cache Format Decision
@@ -367,12 +379,12 @@ Then close issue #3 as requested by the user.
 
 ## Acceptance Checklist
 
-- [ ] Plan reviewed by subagent before implementation.
-- [ ] Benchmark script exists and can run synthetic and real-project smoke modes.
-- [ ] Baseline and after measurements recorded.
-- [ ] File walking/indexing/restore/persist use bounded concurrency.
-- [ ] Cache replace preserves old manifest if final rename fails.
-- [ ] Cache JSON remains monolithic by documented decision.
-- [ ] Regression tests cover cache integrity and workspace behavior.
+- [x] Plan reviewed by subagent before implementation.
+- [x] Benchmark script exists and can run synthetic and real-project smoke modes.
+- [x] Baseline and after measurements recorded.
+- [x] File walking/indexing/restore/persist use bounded concurrency.
+- [x] Cache replace preserves old manifest if final rename fails.
+- [x] Cache JSON remains monolithic by documented decision.
+- [x] Regression tests cover cache integrity and workspace behavior.
 - [ ] Code review completed, accepted findings fixed, review docs landed.
 - [ ] GitHub issue #3 updated and closed.
