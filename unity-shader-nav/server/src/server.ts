@@ -5,6 +5,7 @@ import { registerDocumentHighlightHandler } from './handlers/documentHighlight';
 import { registerDocumentSymbolHandler } from './handlers/documentSymbol';
 import { registerDocuments } from './handlers/documents';
 import { registerReferencesHandler } from './handlers/references';
+import { registerSemanticTokensHandler } from './handlers/semanticTokens';
 import { applyWorkspaceFolderChanges, registerFileWatchers } from './lifecycle/fileWatcher';
 import { applyScopedSettingsAndRebuild, reindexOpenDocuments } from './lifecycle/rebuild';
 import { RequestSuspender } from './lifecycle/requestSuspender';
@@ -77,6 +78,7 @@ onSettingsChanged(connection, async (settings) => {
 registerDefinitionHandler(connection, documents, manager, suspender);
 registerDocumentHighlightHandler(connection, documents, manager, suspender);
 registerDocumentSymbolHandler(connection, documents, manager, suspender);
+registerSemanticTokensHandler(connection, documents, manager, suspender);
 registerReferencesHandler(
   connection,
   documents,

@@ -27,4 +27,15 @@ describe('LSP handshake', () => {
     const result = createInitializeResult();
     expect(result.capabilities.documentHighlightProvider).toBe(true);
   });
+
+  it('advertises semanticTokensProvider', () => {
+    const result = createInitializeResult();
+    expect(result.capabilities.semanticTokensProvider).toMatchObject({
+      legend: {
+        tokenTypes: expect.arrayContaining(['type', 'variable', 'property', 'function', 'macro']),
+        tokenModifiers: [],
+      },
+      full: true,
+    });
+  });
 });
