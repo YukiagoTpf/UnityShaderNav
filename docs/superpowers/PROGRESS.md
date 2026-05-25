@@ -33,7 +33,7 @@ GitHub Issues 是当前 backlog：
 |---|---|---|
 | [#1](https://github.com/YukiagoTpf/UnityShaderNav/issues/1) | F12 / References 应按 scope、include chain、canonical target 过滤，避免 name-only 混入其他 shader | Open |
 | [#2](https://github.com/YukiagoTpf/UnityShaderNav/issues/2) | struct 类型和成员跳转：`Customdata customdata;`、`i.positionWS` 等 | Open |
-| [#3](https://github.com/YukiagoTpf/UnityShaderNav/issues/3) | 大项目索引性能、cache 体积、跨进程 cache 写入硬化 | Fixed locally（待 code review / GitHub close） |
+| [#3](https://github.com/YukiagoTpf/UnityShaderNav/issues/3) | 大项目索引性能、cache 体积、跨进程 cache 写入硬化 | Closed |
 | [#4](https://github.com/YukiagoTpf/UnityShaderNav/issues/4) | CI 缓存 `.vscode-test/` 下载 | Open |
 | [#5](https://github.com/YukiagoTpf/UnityShaderNav/issues/5) | `clean` 清理 `tests/out`，避免 stale Electron tests | Open |
 | [#6](https://github.com/YukiagoTpf/UnityShaderNav/issues/6) | F5 开发用 runtime watch/dev script | Open |

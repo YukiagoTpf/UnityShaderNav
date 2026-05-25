@@ -399,4 +399,4 @@ Then close issue #3 as requested by the user.
 - [x] Cache JSON remains monolithic by documented decision.
 - [x] Regression tests cover cache integrity and workspace behavior.
 - [x] Code review completed, accepted findings fixed, review docs landed.
-- [ ] GitHub issue #3 updated and closed.
+- [x] GitHub issue #3 updated and closed.
