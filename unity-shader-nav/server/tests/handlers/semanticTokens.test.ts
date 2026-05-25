@@ -56,6 +56,27 @@ function decodeTokens(tokens: SemanticTokens): Array<{
   return decoded;
 }
 
+function expectSortedAndNonOverlapping(tokens: Array<{
+  line: number;
+  character: number;
+  length: number;
+}>): void {
+  let previous: { line: number; character: number; length: number } | undefined;
+  for (const token of tokens) {
+    if (!previous) {
+      previous = token;
+      continue;
+    }
+
+    if (token.line === previous.line) {
+      expect(token.character).toBeGreaterThanOrEqual(previous.character + previous.length);
+    } else {
+      expect(token.line).toBeGreaterThan(previous.line);
+    }
+    previous = token;
+  }
+}
+
 describe('registerSemanticTokensHandler', () => {
   it('colors struct types, variables, members, functions, and macros', async () => {
     const { connection, handler } = captureSemanticTokensHandler();
@@ -69,6 +90,10 @@ describe('registerSemanticTokensHandler', () => {
       '  inputData.positionWS = 0;',
       '  return SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, inputData.positionWS);',
       '  return INCLUDED_MACRO(inputData.positionWS);',
+      '}',
+      'float4 LocalExample() {',
+      '  InputData inputData;',
+      '  return float4(inputData.positionWS, 1);',
       '}',
     ].join('\n');
     const includeText = '#define INCLUDED_MACRO(v) v';
@@ -102,6 +127,7 @@ describe('registerSemanticTokensHandler', () => {
     registerSemanticTokensHandler(connection, documents, manager);
 
     const tokens = decodeTokens(await handler()({ textDocument: { uri } }));
+    expectSortedAndNonOverlapping(tokens);
     expect(tokens).toEqual(expect.arrayContaining([
       { line: 0, character: 8, length: 'SAMPLE_TEXTURE2D'.length, type: 'macro' },
       { line: 1, character: 7, length: 'InputData'.length, type: 'type' },
@@ -113,6 +139,9 @@ describe('registerSemanticTokensHandler', () => {
       { line: 4, character: 12, length: 'positionWS'.length, type: 'property' },
       { line: 5, character: 9, length: 'SAMPLE_TEXTURE2D'.length, type: 'macro' },
       { line: 6, character: 9, length: 'INCLUDED_MACRO'.length, type: 'macro' },
+      { line: 9, character: 2, length: 'InputData'.length, type: 'type' },
+      { line: 9, character: 12, length: 'inputData'.length, type: 'variable' },
+      { line: 10, character: 26, length: 'positionWS'.length, type: 'property' },
     ]));
   });
 });
