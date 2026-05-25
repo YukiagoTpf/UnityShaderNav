@@ -1,7 +1,11 @@
 import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import type { CacheFingerprint, ExtensionSettings } from '@unity-shader-nav/shared';
-import { BUILTIN_DECLARATION_MACROS, BUILTIN_REFERENCE_MACROS } from '../macros/builtin';
+import {
+  BUILTIN_DECLARATION_MACROS,
+  BUILTIN_REFERENCE_MACROS,
+  BUILTIN_SENTINEL_MACROS,
+} from '../macros/builtin';
 
 function sha1(value: string): string {
   return createHash('sha1').update(value).digest('hex');
@@ -39,6 +43,11 @@ export function macroTableHash(userMacros: ExtensionSettings['declarationMacros'
       pattern: macro.pattern,
       kind: macro.kind,
       source: 'builtin-reference',
+    })),
+    ...BUILTIN_SENTINEL_MACROS.map((macro) => ({
+      pattern: macro,
+      kind: 'sentinel',
+      source: 'builtin-sentinel',
     })),
     ...userMacros.map((macro) => ({
       pattern: macro.pattern,

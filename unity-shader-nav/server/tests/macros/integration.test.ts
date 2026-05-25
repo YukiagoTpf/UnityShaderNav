@@ -65,6 +65,28 @@ describe('integration: macros end-to-end', () => {
     expect(cb?.kind).toBe('cbuffer');
   });
 
+  it('filters structural cbuffer sentinel references while preserving cbuffer declaration', async () => {
+    const idx = await indexFile(
+      'file:///t/cb.hlsl',
+      fixture('cbuffer-macro.hlsl'),
+      new MacroPatternTable(),
+    );
+
+    expect(idx.symbols.find((s) => s.name === 'UnityPerMaterial')?.kind).toBe('cbuffer');
+    expect(idx.references.some((r) => r.name === 'CBUFFER_END')).toBe(false);
+  });
+
+  it('filters structural instancing buffer sentinel calls and arguments', async () => {
+    const idx = await indexFile(
+      'file:///t/instanced-prop.hlsl',
+      fixture('instanced-prop.hlsl'),
+      new MacroPatternTable(),
+    );
+
+    expect(idx.symbols.find((s) => s.name === '_BaseColor')?.kind).toBe('variable');
+    expect(idx.references.map((r) => `${r.name}:${r.context}`).sort()).toEqual([]);
+  });
+
   it('#pragma kernel CSMain registers CSMain as pragma reference in .compute files', async () => {
     const text = [
       '#pragma kernel CSMain',

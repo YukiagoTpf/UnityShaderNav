@@ -35,3 +35,13 @@ export const BUILTIN_REFERENCE_MACROS: BuiltinMacroPattern[] = [
   { pattern: '#pragma domain $func', kind: 'function-reference' },
   { pattern: '#pragma kernel $func', kind: 'function-reference' },
 ];
+
+export const BUILTIN_SENTINEL_MACROS = [
+  'CBUFFER_END',
+  'UNITY_INSTANCING_BUFFER_START',
+  'UNITY_INSTANCING_BUFFER_END',
+  'UNITY_INSTANCING_CBUFFER_SCOPE_BEGIN',
+  'UNITY_INSTANCING_CBUFFER_SCOPE_END',
+  'UNITY_DOTS_INSTANCING_START',
+  'UNITY_DOTS_INSTANCING_END',
+] as const;

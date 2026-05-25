@@ -350,7 +350,18 @@ function receiverExpression(node: Parser.SyntaxNode): string | undefined {
   return textOf(receiver);
 }
 
-function collectReferences(node: Parser.SyntaxNode, st: CollectorState): void {
+function isSentinelIdentifier(
+  node: Parser.SyntaxNode,
+  table: MacroPatternTable | undefined,
+): boolean {
+  return table?.isSentinel(textOf(node)) === true;
+}
+
+function collectReferences(
+  node: Parser.SyntaxNode,
+  st: CollectorState,
+  table?: MacroPatternTable,
+): void {
   if (node.type === 'call_expression') {
     const callee = node.childForFieldName('function');
     if (callee) {
@@ -359,6 +370,10 @@ function collectReferences(node: Parser.SyntaxNode, st: CollectorState): void {
         nameNode = callee;
       } else if (callee.type === 'field_expression') {
         nameNode = callee.childForFieldName('field');
+      }
+      if (nameNode && isSentinelIdentifier(nameNode, table)) {
+        markNamedDescendants(st, node);
+        return;
       }
       if (nameNode && !st.declarationSites.has(siteKey(nameNode))) {
         st.references.push({
@@ -391,6 +406,7 @@ function collectReferences(node: Parser.SyntaxNode, st: CollectorState): void {
     }
   } else if (node.type === 'identifier') {
     if (!st.declarationSites.has(siteKey(node))) {
+      if (isSentinelIdentifier(node, table)) return;
       st.references.push({
         name: textOf(node),
         location: { uri: st.uri, range: offsetRange(rangeOf(node), st.lineOffset) },
@@ -437,7 +453,7 @@ export function collect(
   // Second pass — references. We re-walk so we can consult declarationSites
   // populated in pass 1.
   for (const node of walk(root)) {
-    collectReferences(node, st);
+    collectReferences(node, st, table);
   }
 
   const result: FileIndex = { uri, symbols: st.symbols, references: st.references };

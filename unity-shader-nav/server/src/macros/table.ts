@@ -1,5 +1,9 @@
 import type { UserDeclarationMacro } from '@unity-shader-nav/shared';
-import { BUILTIN_DECLARATION_MACROS, BUILTIN_REFERENCE_MACROS } from './builtin';
+import {
+  BUILTIN_DECLARATION_MACROS,
+  BUILTIN_REFERENCE_MACROS,
+  BUILTIN_SENTINEL_MACROS,
+} from './builtin';
 import { parsePattern, type CompiledPattern } from './patterns';
 
 export interface CompiledDeclaration {
@@ -14,6 +18,7 @@ export interface CompiledReference {
 export class MacroPatternTable {
   private readonly declByHead = new Map<string, CompiledDeclaration[]>();
   private readonly refByHead = new Map<string, CompiledReference[]>();
+  private readonly sentinelHeads = new Set<string>();
 
   constructor(userMacros: UserDeclarationMacro[] = []) {
     for (const m of BUILTIN_DECLARATION_MACROS) {
@@ -22,6 +27,9 @@ export class MacroPatternTable {
     }
     for (const m of BUILTIN_REFERENCE_MACROS) {
       this.addRef(m.pattern);
+    }
+    for (const m of BUILTIN_SENTINEL_MACROS) {
+      this.sentinelHeads.add(m);
     }
     for (const u of userMacros) {
       this.addUserDecl(u.pattern, u.kind);
@@ -59,5 +67,9 @@ export class MacroPatternTable {
 
   findRef(head: string): CompiledReference[] {
     return this.refByHead.get(head) ?? [];
+  }
+
+  isSentinel(head: string): boolean {
+    return this.sentinelHeads.has(head);
   }
 }

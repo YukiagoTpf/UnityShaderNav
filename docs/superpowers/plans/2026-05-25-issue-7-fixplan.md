@@ -80,11 +80,11 @@ it('filters structural instancing buffer sentinel calls and arguments', async ()
   );
 
   expect(idx.symbols.find((s) => s.name === '_BaseColor')?.kind).toBe('variable');
-  expect(idx.references.map((r) => `${r.name}:${r.context}`).sort()).toEqual([
-    'float4:type',
-  ]);
+  expect(idx.references.map((r) => `${r.name}:${r.context}`).sort()).toEqual([]);
 });
 ```
+
+> Note: During RED/GREEN execution, the existing `UNITY_DEFINE_INSTANCED_PROP(float4, _BaseColor)` declaration macro path already marked `float4` as consumed by the declaration macro call, so `float4:type` was not present even before the sentinel fix. The expected instancing-buffer reference list is therefore empty after filtering the start/end sentinels and their `Props` arguments.
 
 **Step 2: Verify RED**
 
