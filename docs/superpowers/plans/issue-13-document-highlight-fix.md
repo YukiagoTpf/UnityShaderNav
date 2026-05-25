@@ -162,3 +162,24 @@ Implementation notes:
 > Note: 2026-05-25 manual validation showed `inputData.positionWS` could still return no highlight when the receiver variable is known locally but the external `InputData.positionWS` member declaration is not currently indexed. The implementation may deviate from the pure "unresolved member => no highlights" rule by adding a narrower fallback: if the receiver resolves to the same local/parameter/variable target, highlight same-document member references with that same receiver target, while still avoiding broad same-name member highlights such as mixing `inputData.positionWS` with `i.positionWS`.
 
 > Note: 2026-05-25 follow-up manual validation clarified that issue #13 also expects always-on editor semantic coloring, not only cursor-driven `textDocument/documentHighlight` occurrences. The follow-up therefore adds LSP semantic tokens for struct types, variables, parameters, members, functions, and macros so theme highlighting can color constructs such as `InputData`, `inputData.positionWS`, and `o.fogCoord` without requiring the cursor to be on the symbol.
+
+### 2026-05-25 semantic coloring codereview pass
+
+Reviewer: Hooke (`019e5da7-0eac-7dc3-8a46-a9d954dd013e`)
+
+Range reviewed: `9a13b9c5acd0902d42f9ef43cb98031e5b4fb762..87fea3b9695009e42d216666fd0f2d77ad9d47b7`
+
+Conclusion: Changes requested.
+
+Applied changes:
+
+- Fixed indexed external macro calls so semantic tokens classify macros found through `workspace.global.lookup(name)` as `macro` instead of `function`.
+- Added regression coverage for a macro declared in another indexed file and called from the current file.
+- Added direct coverage for the user screenshot shape `InputData inputData;` as a local variable declaration.
+- Added test coverage that decoded semantic tokens are sorted and non-overlapping, matching LSP client requirements.
+
+Verification after fixes:
+
+- `npm run test -w @unity-shader-nav/server -- --run tests/handlers/semanticTokens.test.ts tests/handshake.test.ts`: 2 files / 7 tests passed.
+- `npm run test -w @unity-shader-nav/server`: 48 files / 309 tests passed.
+- `npm run build`: passed.
