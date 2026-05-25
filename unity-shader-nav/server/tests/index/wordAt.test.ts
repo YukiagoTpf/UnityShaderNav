@@ -44,4 +44,34 @@ describe('memberAccessAt', () => {
     expect(result?.member.text).toBe('bar');
     expect(result?.receiver).toBeNull();
   });
+
+  it('returns an array element receiver for member access', () => {
+    const result = memberAccessAt('float3 c = lights[i].color;', { line: 0, character: 22 });
+
+    expect(result?.member.text).toBe('color');
+    expect(result?.receiver?.text).toBe('lights[i]');
+    expect(result?.receiver?.range).toEqual({
+      start: { line: 0, character: 11 },
+      end: { line: 0, character: 20 },
+    });
+  });
+
+  it('returns a nested field receiver for member access', () => {
+    const text = 'float r = surface.brdfData.roughness;';
+    const result = memberAccessAt(text, { line: 0, character: text.indexOf('roughness') + 3 });
+
+    expect(result?.member.text).toBe('roughness');
+    expect(result?.receiver?.text).toBe('surface.brdfData');
+    expect(result?.receiver?.range).toEqual({
+      start: { line: 0, character: 10 },
+      end: { line: 0, character: 26 },
+    });
+  });
+
+  it('keeps direct cbuffer struct receivers unchanged', () => {
+    const result = memberAccessAt('float v = settings.value;', { line: 0, character: 20 });
+
+    expect(result?.member.text).toBe('value');
+    expect(result?.receiver?.text).toBe('settings');
+  });
 });

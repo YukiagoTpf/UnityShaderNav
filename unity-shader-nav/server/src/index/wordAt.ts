@@ -1,6 +1,7 @@
 import type { Position, Range } from '@unity-shader-nav/shared';
 
 const ID_CHAR_RE = /[A-Za-z0-9_]/;
+const ID_START_RE = /[A-Za-z_]/;
 
 export interface WordAt {
   text: string;
@@ -61,14 +62,12 @@ export function memberAccessAt(text: string, pos: Position): MemberAccess | null
   let cursor = member.range.start.character - 1;
   if (cursor < 0 || line[cursor] !== '.') return { member, receiver: null };
 
-  cursor--;
-  const end = cursor + 1;
-  while (cursor >= 0 && ID_CHAR_RE.test(line[cursor])) cursor--;
-  const start = cursor + 1;
+  const end = cursor;
+  const start = receiverExpressionStart(line, end);
   if (start === end) return { member, receiver: null };
 
   const textBeforeDot = line.slice(start, end);
-  if (!/^[A-Za-z_]/.test(textBeforeDot)) return { member, receiver: null };
+  if (!ID_START_RE.test(textBeforeDot[0] ?? '')) return { member, receiver: null };
 
   return {
     member,
@@ -80,4 +79,60 @@ export function memberAccessAt(text: string, pos: Position): MemberAccess | null
       },
     },
   };
+}
+
+function receiverExpressionStart(line: string, end: number): number {
+  let cursor = end - 1;
+  let squareDepth = 0;
+  let parenDepth = 0;
+  let braceDepth = 0;
+
+  while (cursor >= 0) {
+    const ch = line[cursor];
+    if (ch === ']') {
+      squareDepth++;
+      cursor--;
+      continue;
+    }
+    if (ch === ')') {
+      parenDepth++;
+      cursor--;
+      continue;
+    }
+    if (ch === '}') {
+      braceDepth++;
+      cursor--;
+      continue;
+    }
+    if (ch === '[' && squareDepth > 0) {
+      squareDepth--;
+      cursor--;
+      continue;
+    }
+    if (ch === '(' && parenDepth > 0) {
+      parenDepth--;
+      cursor--;
+      continue;
+    }
+    if (ch === '{' && braceDepth > 0) {
+      braceDepth--;
+      cursor--;
+      continue;
+    }
+
+    const insideBalancedGroup = squareDepth > 0 || parenDepth > 0 || braceDepth > 0;
+    if (insideBalancedGroup) {
+      cursor--;
+      continue;
+    }
+
+    if (ID_CHAR_RE.test(ch) || ch === '.') {
+      cursor--;
+      continue;
+    }
+
+    break;
+  }
+
+  return cursor + 1;
 }
