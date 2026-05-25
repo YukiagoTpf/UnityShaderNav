@@ -9,6 +9,8 @@ import type { TextDocument } from 'vscode-languageserver-textdocument';
 import type { Location } from 'vscode-languageserver';
 import {
   collectVisibleUriKeys,
+  memberAccessAt,
+  resolveMemberSymbols,
   resolveReferenceTargets,
   resolveReferenceTargetsForMemberReference,
   resolveReferenceTargetsForName,
@@ -75,13 +77,24 @@ export function registerDocumentHighlightHandler(
         params.textDocument.uri,
       );
       const resolutionOptions = { visibleUriKeys };
-      const targets = resolveReferenceTargets(
-        index,
-        fullText,
-        params.position,
-        workspace.global,
-        resolutionOptions,
-      );
+      const memberAccess = memberAccessAt(fullText, params.position);
+      const targets = memberAccess?.receiver
+        ? resolveMemberSymbols(
+          index,
+          workspace.global,
+          memberAccess.receiver.text,
+          memberAccess.member.text,
+          params.position,
+          resolutionOptions,
+        ).map(symbolToTarget)
+        : resolveReferenceTargets(
+          index,
+          fullText,
+          params.position,
+          workspace.global,
+          resolutionOptions,
+        );
+      if (memberAccess?.receiver && targets.length === 0) return null;
       const scopedTargets = targets.filter(isScopedTarget);
       const memberTargets = targets.filter(isMemberTarget);
       const narrowedTargets = [...scopedTargets, ...memberTargets];

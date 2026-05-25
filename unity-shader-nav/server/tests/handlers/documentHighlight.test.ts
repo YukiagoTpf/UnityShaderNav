@@ -304,4 +304,137 @@ describe('registerDocumentHighlightHandler', () => {
 
     expectHighlights(result, [declaration.location.range, call.location.range]);
   });
+
+  it('highlights receiver-typed struct members without mixing same-name members', async () => {
+    const uri = 'file:///project/Assets/MemberHighlights.hlsl';
+    const text = [
+      'struct InputData { float3 positionWS; };',
+      'struct Varyings { float4 positionWS; };',
+      'float4 frag(Varyings i) {',
+      '  InputData inputData;',
+      '  inputData.positionWS = i.positionWS;',
+      '  return inputData.positionWS.x + i.positionWS.x;',
+      '}',
+    ].join('\n');
+    const { handler, index } = await createHighlightFixture(uri, 'hlsl', text);
+    const inputMember = index.symbols.find(
+      (symbol) =>
+        symbol.name === 'positionWS' &&
+        symbol.kind === 'structMember' &&
+        symbol.parentType === 'InputData',
+    );
+    const inputRefs = index.references
+      .filter((reference) =>
+        reference.name === 'positionWS' &&
+        reference.context === 'member' &&
+        reference.receiver === 'inputData',
+      )
+      .map((reference) => reference.location.range);
+    if (!inputMember || inputRefs.length !== 2) throw new Error('missing InputData.positionWS highlights');
+
+    const result = await handler({
+      textDocument: { uri },
+      position: tokenPosition(text, 4, 'positionWS'),
+    });
+
+    expectHighlights(result, [inputMember.location.range, ...inputRefs]);
+  });
+
+  it('highlights struct member references from the member declaration position', async () => {
+    const uri = 'file:///project/Assets/MemberDeclarationHighlights.hlsl';
+    const text = [
+      'struct InputData { float3 positionWS; };',
+      'struct Varyings { float4 positionWS; };',
+      'float4 frag(InputData inputData) {',
+      '  return inputData.positionWS;',
+      '}',
+    ].join('\n');
+    const { handler, index } = await createHighlightFixture(uri, 'hlsl', text);
+    const inputMember = index.symbols.find(
+      (symbol) =>
+        symbol.name === 'positionWS' &&
+        symbol.kind === 'structMember' &&
+        symbol.parentType === 'InputData',
+    );
+    const inputRef = index.references.find(
+      (reference) =>
+        reference.name === 'positionWS' &&
+        reference.context === 'member' &&
+        reference.receiver === 'inputData',
+    );
+    if (!inputMember || !inputRef) throw new Error('missing InputData.positionWS declaration fixture');
+
+    const result = await handler({
+      textDocument: { uri },
+      position: tokenPosition(text, 0, 'positionWS'),
+    });
+
+    expectHighlights(result, [inputMember.location.range, inputRef.location.range]);
+  });
+
+  it('returns null for unresolved member receivers instead of broad same-name member highlights', async () => {
+    const uri = 'file:///project/Assets/UnresolvedMemberHighlights.hlsl';
+    const text = [
+      'struct InputData { float3 positionWS; };',
+      'struct Varyings { float4 positionWS; };',
+      'float4 frag() {',
+      '  return unknown.positionWS;',
+      '}',
+    ].join('\n');
+    const { handler } = await createHighlightFixture(uri, 'hlsl', text);
+
+    await expect(handler({
+      textDocument: { uri },
+      position: tokenPosition(text, 3, 'positionWS'),
+    })).resolves.toBeNull();
+  });
+
+  it('highlights receiver-typed members inside shader HLSL blocks with Unity struct macros', async () => {
+    const uri = 'file:///project/Assets/MacroStruct.shader';
+    const text = [
+      'Shader "T/MacroStruct" {',
+      '  SubShader {',
+      '    Pass {',
+      '      HLSLPROGRAM',
+      '      struct InputData { float3 positionWS; };',
+      '      struct v2f {',
+      '        UNITY_VERTEX_INPUT_INSTANCE_ID',
+      '        UNITY_VERTEX_OUTPUT_STEREO',
+      '        float4 positionWS : TEXCOORD0;',
+      '      };',
+      '      float4 frag(v2f i) : SV_Target {',
+      '        InputData inputData;',
+      '        inputData.positionWS = i.positionWS.xyz;',
+      '        return float4(inputData.positionWS, 1);',
+      '      }',
+      '      ENDHLSL',
+      '    }',
+      '  }',
+      '}',
+    ].join('\n');
+    const { handler, index } = await createHighlightFixture(uri, 'shaderlab', text);
+    const inputMember = index.symbols.find(
+      (symbol) =>
+        symbol.name === 'positionWS' &&
+        symbol.kind === 'structMember' &&
+        symbol.parentType === 'InputData',
+    );
+    const inputRefs = index.references
+      .filter((reference) =>
+        reference.name === 'positionWS' &&
+        reference.context === 'member' &&
+        reference.receiver === 'inputData',
+      )
+      .map((reference) => reference.location.range);
+    if (!inputMember || inputRefs.length !== 2) {
+      throw new Error('missing shader InputData.positionWS highlights');
+    }
+
+    const result = await handler({
+      textDocument: { uri },
+      position: tokenPosition(text, 12, 'positionWS'),
+    });
+
+    expectHighlights(result, [inputMember.location.range, ...inputRefs]);
+  });
 });
