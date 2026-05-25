@@ -187,6 +187,16 @@ describe('collector: references', () => {
     expect(refs.map((r) => r.location.range.start.character)).toEqual([23, 30, 37]);
   });
 
+  it('records custom type uses in C-style casts', async () => {
+    const text = `struct InputData { float3 positionWS; }; void frag() { InputData inputData; inputData = (InputData)0; }`;
+    const tree = await parseHlsl(text);
+    const result = collect(tree.rootNode, text, 'file:///t/cast-type-refs.hlsl', 0);
+
+    const refs = result.references.filter((r) => r.name === 'InputData' && r.context === 'type');
+    expect(refs).toHaveLength(2);
+    expect(refs.map((r) => r.location.range.start.character)).toEqual([55, 89]);
+  });
+
   it('records direct call assignment type inference facts', async () => {
     const text = [
       'struct Surface { float3 positionWS; };',

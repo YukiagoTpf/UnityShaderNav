@@ -1,11 +1,13 @@
 import {
   createConnection,
   ProposedFeatures,
+  type SemanticTokensOptions,
   TextDocumentSyncKind,
   type Connection,
   type InitializeResult,
 } from 'vscode-languageserver/node';
 import { SERVER_NAME } from '@unity-shader-nav/shared';
+import { SEMANTIC_TOKEN_TYPES } from './handlers/semanticTokens';
 
 let _connection: Connection | undefined;
 
@@ -17,12 +19,22 @@ export function getConnection(): Connection {
 }
 
 export function createInitializeResult(): InitializeResult {
+  const semanticTokensProvider: SemanticTokensOptions = {
+    legend: {
+      tokenTypes: [...SEMANTIC_TOKEN_TYPES],
+      tokenModifiers: [],
+    },
+    full: true,
+  };
+
   return {
     capabilities: {
       textDocumentSync: TextDocumentSyncKind.Incremental,
       definitionProvider: true,
       documentSymbolProvider: true,
       referencesProvider: true,
+      documentHighlightProvider: true,
+      semanticTokensProvider,
     },
     serverInfo: {
       name: SERVER_NAME,
