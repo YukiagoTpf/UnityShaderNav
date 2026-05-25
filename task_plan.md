@@ -10,7 +10,7 @@ Goal: diagnose GitHub issue #9, write and review an issue-specific fix plan, imp
 - [complete] Phase 4: dispatch a plan-reviewer subagent and incorporate any plan issues.
 - [complete] Phase 5: execute the plan with TDD and focused commits.
 - [complete] Phase 6: dispatch code-review subagent, fix accepted findings, and persist review/fix documentation.
-- [in_progress] Phase 7: run final verification and post the relevant summary to GitHub issue #9 without closing it.
+- [complete] Phase 7: run final verification and post the relevant summary to GitHub issue #9 without closing it.
 
 ## Constraints
 

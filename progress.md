@@ -26,3 +26,5 @@
 - Task 5 verification: `npm run build` PASS; fresh `npm run test -w @unity-shader-nav/server` PASS (46 files / 287 tests). One earlier full-server run hit the known timing-sensitive `tests/cache/coldStart.test.ts` threshold, but focused rerun and subsequent full rerun passed.
 - Code-review subagent Socrates requested changes for unsupported receiver false positives and explicit RHS exact-one tests.
 - Review fix RED/GREEN: `tests/index/chainLookup.test.ts` failed on `surface.Make().positionWS` resolving through `surface`, then passed 11/11 after parse failure became a hard no-match.
+- Committed review fixes as `8f917a1 fix(issue-9): address chain lookup review findings`.
+- Commented implementation summary, review gates, verification, and commit list on GitHub issue #9: https://github.com/YukiagoTpf/UnityShaderNav/issues/9#issuecomment-4530837606
