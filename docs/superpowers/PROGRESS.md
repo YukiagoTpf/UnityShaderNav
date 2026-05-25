@@ -37,7 +37,7 @@ GitHub Issues 是当前 backlog：
 | [#4](https://github.com/YukiagoTpf/UnityShaderNav/issues/4) | CI 缓存 `.vscode-test/` 下载 | Open |
 | [#5](https://github.com/YukiagoTpf/UnityShaderNav/issues/5) | `clean` 清理 `tests/out`，避免 stale Electron tests | Open |
 | [#6](https://github.com/YukiagoTpf/UnityShaderNav/issues/6) | F5 开发用 runtime watch/dev script | Open |
-| [#7](https://github.com/YukiagoTpf/UnityShaderNav/issues/7) | 过滤 Unity macro sentinel references | Open |
+| [#7](https://github.com/YukiagoTpf/UnityShaderNav/issues/7) | 过滤 Unity macro sentinel references | Closed（未手动验证，后续使用中如复现再 reopen） |
 | [#8](https://github.com/YukiagoTpf/UnityShaderNav/issues/8) | CG legacy variable declarations 索引 | Open |
 | [#9](https://github.com/YukiagoTpf/UnityShaderNav/issues/9) | Chain lookup L3b/L4：数组、嵌套字段、cbuffer struct、RHS inference | Open |
 | [#10](https://github.com/YukiagoTpf/UnityShaderNav/issues/10) | 更多 Unity PackageManager path forms | Open |
@@ -78,6 +78,11 @@ GitHub Issues 是当前 backlog：
 - `f4c94fd feat(issue-9): wire complex chain lookup handlers`
   - Definition handler 覆盖 #9 四类形状；Find References 侧记录并使用复杂 receiver expression，避免同名 member 混入其他 struct。
   - 暂不支持：跨行 receiver、宏展开 receiver、分支/三元表达式类型推断、overload-aware return type selection、非普通 Unity HLSL member access 的 pointer/reference-like 语法。
+- `9a1cbe9 fix(issue-7): filter Unity macro sentinel references`
+  - `CBUFFER_END`、`UNITY_INSTANCING_BUFFER_START/END` 等 Unity 结构性宏 sentinel 不再作为普通 references 进入索引，避免污染 Find References / definition candidates。
+  - `BUILTIN_SENTINEL_MACROS` 纳入 `macroTableHash()`，旧 cache 会因 fingerprint mismatch 失效，无需 cache schema bump。
+  - 验证：server vitest 48 files / 315 tests PASS，`npm run build` PASS。
+  - 状态：GitHub issue #7 已按用户要求关闭；未做 Extension Development Host 手动验证，后续真实使用中若复现再 reopen。
 
 ## 历史实施索引
 
