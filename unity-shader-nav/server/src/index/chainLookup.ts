@@ -25,7 +25,7 @@ function inferReceiverType(
   refPos: Position,
   options?: ResolutionOptions,
 ): string | null {
-  const receiver = rootIdentifier(receiverTypeName);
+  const receiver = receiverTypeName;
   const params = index.symbols.filter(
     (symbol) =>
       symbol.name === receiver &&
@@ -162,11 +162,6 @@ function isFunctionWithReturnType(symbol: SymbolEntry): symbol is FunctionSymbol
   return symbol.kind === 'function' && typeof (symbol as { returnType?: unknown }).returnType === 'string';
 }
 
-function rootIdentifier(receiver: string): string {
-  const match = receiver.match(/[A-Za-z_][A-Za-z0-9_]*/);
-  return match?.[0] ?? receiver;
-}
-
 interface ReceiverExpression {
   root: string;
   fields: string[];
@@ -278,7 +273,7 @@ function inferReceiverExpressionType(
   options?: ResolutionOptions,
 ): string | null {
   const expression = parseReceiverExpression(receiver);
-  if (!expression) return inferReceiverType(index, global, receiver, refPos, options);
+  if (!expression) return null;
 
   const rootType = inferReceiverType(index, global, expression.root, refPos, options);
   if (!rootType) return null;

@@ -339,4 +339,74 @@ describe('resolveMember', () => {
     expect(links).toHaveLength(1);
     expect(links[0].targetRange).toEqual(memberRange);
   });
+
+  it('does not resolve unsupported call-like receiver expressions through their root identifier', () => {
+    const idx: FileIndex = {
+      uri,
+      references: [],
+      symbols: [
+        sym({
+          name: 'surface',
+          kind: 'parameter',
+          declaredType: 'Surface',
+          scopeRange: functionScope,
+          location: { uri, range: { start: { line: 5, character: 18 }, end: { line: 5, character: 25 } } },
+        }),
+      ],
+    };
+
+    const links = resolveMember(idx, globalWithSurface(), 'surface.Make()', 'positionWS', {
+      line: 10,
+      character: 31,
+    });
+
+    expect(links).toEqual([]);
+  });
+
+  it('does not infer receiver type from a call assignment without a visible function candidate', () => {
+    const idx: FileIndex = {
+      uri,
+      references: [],
+      symbols: [],
+      typeInferences: [{
+        receiver: 'surface',
+        callName: 'MakeMissing',
+        assignmentRange: { start: { line: 8, character: 2 }, end: { line: 8, character: 25 } },
+        scope: 'frag',
+        scopeRange: functionScope,
+      }],
+    };
+
+    const links = resolveMember(idx, globalWithSurface(), 'surface', 'positionWS', { line: 10, character: 22 });
+
+    expect(links).toEqual([]);
+  });
+
+  it('does not infer receiver type from an ambiguous call assignment target', () => {
+    const idx: FileIndex = {
+      uri,
+      references: [],
+      symbols: [{
+        name: 'MakeSurface',
+        kind: 'function',
+        returnType: 'Surface',
+        parameters: [],
+        location: {
+          uri,
+          range: { start: { line: 2, character: 0 }, end: { line: 2, character: 11 } },
+        },
+      } as SymbolEntry],
+      typeInferences: [{
+        receiver: 'surface',
+        callName: 'MakeSurface',
+        assignmentRange: { start: { line: 8, character: 2 }, end: { line: 8, character: 25 } },
+        scope: 'frag',
+        scopeRange: functionScope,
+      }],
+    };
+
+    const links = resolveMember(idx, globalWithSurface(), 'surface', 'positionWS', { line: 10, character: 22 });
+
+    expect(links).toEqual([]);
+  });
 });

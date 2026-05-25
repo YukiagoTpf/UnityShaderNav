@@ -24,3 +24,5 @@
 - Task 5 verification initially exposed TypeScript narrowing issues in `chainLookup.ts`; fixed with explicit function-symbol and nested-type guards.
 - Committed build type fix as `8de130b fix(issue-9): type check chain lookup inference`.
 - Task 5 verification: `npm run build` PASS; fresh `npm run test -w @unity-shader-nav/server` PASS (46 files / 287 tests). One earlier full-server run hit the known timing-sensitive `tests/cache/coldStart.test.ts` threshold, but focused rerun and subsequent full rerun passed.
+- Code-review subagent Socrates requested changes for unsupported receiver false positives and explicit RHS exact-one tests.
+- Review fix RED/GREEN: `tests/index/chainLookup.test.ts` failed on `surface.Make().positionWS` resolving through `surface`, then passed 11/11 after parse failure became a hard no-match.
