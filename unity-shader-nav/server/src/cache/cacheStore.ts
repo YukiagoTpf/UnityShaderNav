@@ -9,6 +9,7 @@ import {
   type FunctionParameter,
   type ReferenceContext,
   type SymbolKind,
+  type TypeInferenceEntry,
 } from '@unity-shader-nav/shared';
 import { fingerprintsEqual } from './fingerprint';
 
@@ -111,6 +112,15 @@ function isReferenceEntry(value: unknown, expectedUri: string): boolean {
     && optionalString(value.receiver);
 }
 
+function isTypeInferenceEntry(value: unknown): value is TypeInferenceEntry {
+  return isRecord(value)
+    && typeof value.receiver === 'string'
+    && typeof value.callName === 'string'
+    && isRange(value.assignmentRange)
+    && optionalString(value.scope)
+    && optionalRange(value.scopeRange);
+}
+
 function isShaderLabStructureNode(value: unknown): boolean {
   return isRecord(value)
     && (value.kind === 'shader' || value.kind === 'subshader' || value.kind === 'pass')
@@ -134,6 +144,13 @@ function isFileIndex(value: unknown, expectedUri: string): value is FileIndex {
     && value.symbols.every((symbol) => isSymbolEntry(symbol, expectedUri))
     && Array.isArray(value.references)
     && value.references.every((reference) => isReferenceEntry(reference, expectedUri))
+    && (
+      value.typeInferences === undefined
+      || (
+        Array.isArray(value.typeInferences)
+        && value.typeInferences.every(isTypeInferenceEntry)
+      )
+    )
     && (value.structure === undefined || isStructureResult(value.structure));
 }
 

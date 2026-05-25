@@ -1,6 +1,6 @@
 # UnityShaderNav 进度快照
 
-更新于：2026-05-24。第一次接手本仓库时先读 [CLAUDE.md](../../CLAUDE.md)，再读本文。
+更新于：2026-05-25。第一次接手本仓库时先读 [CLAUDE.md](../../CLAUDE.md)，再读本文。
 
 ## 当前阶段
 
@@ -68,6 +68,16 @@ GitHub Issues 是当前 backlog：
   - 将 cache schema version 升到 5，拒绝上一轮 parser/collector 修复前写出的 version 4 cache。
   - 诊断结论：成员跳转失败符合旧 cache 仍把 `inputData` 存成 `v2f` struct member 的症状；重建索引后 handler 可将 `inputData.positionWS` 跳到 URP `Input.hlsl` 的 `InputData.positionWS`。
   - 验证：`npm run test -w @unity-shader-nav/server` PASS（46 files / 272 tests），`npm run build` PASS。
+- `052d317 feat(issue-9): parse complex member receivers`
+  - `memberAccessAt()` 现在能保留 `lights[i]`、`surface.brdfData` 这类 receiver expression，供 definition/reference 解析继续推导类型。
+- `31fda71 feat(issue-9): infer array and nested member receivers`
+  - `resolveMember()` 现在支持 array element receivers、nested struct fields，并保留 cbuffer/global struct receiver 覆盖。
+- `811d719 feat(issue-9): infer receiver type from call assignment`
+  - 新增 `FileIndex.typeInferences` assignment facts；cache schema version 升到 6，拒绝 pre-RHS-inference cache。
+  - 仅支持同 scope 中 `receiver = MakeStruct()` 且可见函数候选 exactly one 的窄 RHS return type inference。
+- `f4c94fd feat(issue-9): wire complex chain lookup handlers`
+  - Definition handler 覆盖 #9 四类形状；Find References 侧记录并使用复杂 receiver expression，避免同名 member 混入其他 struct。
+  - 暂不支持：跨行 receiver、宏展开 receiver、分支/三元表达式类型推断、overload-aware return type selection、非普通 Unity HLSL member access 的 pointer/reference-like 语法。
 
 ## 历史实施索引
 

@@ -150,6 +150,23 @@ describe('collector: references', () => {
     expect(uv).toMatchObject({ receiver: 'v' });
   });
 
+  it('records complex receiver expressions for member references', async () => {
+    const text = [
+      'void f(Surface surface, Light lights[4], int i) {',
+      '  float3 c = lights[i].color;',
+      '  float r = surface.brdfData.roughness;',
+      '}',
+    ].join('\n');
+    const tree = await parseHlsl(text);
+    const result = collect(tree.rootNode, text, 'file:///t/member-receiver-complex.hlsl', 0);
+
+    const color = result.references.find((r) => r.name === 'color' && r.context === 'member');
+    const roughness = result.references.find((r) => r.name === 'roughness' && r.context === 'member');
+
+    expect(color).toMatchObject({ receiver: 'lights[i]' });
+    expect(roughness).toMatchObject({ receiver: 'surface.brdfData' });
+  });
+
   it('records ordinary identifier use sites without counting declarations', async () => {
     const text = `float4 f(float4 a, float4 b) { float4 c = a + b; return c; }`;
     const tree = await parseHlsl(text);
@@ -168,6 +185,33 @@ describe('collector: references', () => {
     const refs = result.references.filter((r) => r.name === 'S' && r.context === 'type');
     expect(refs).toHaveLength(3);
     expect(refs.map((r) => r.location.range.start.character)).toEqual([23, 30, 37]);
+  });
+
+  it('records direct call assignment type inference facts', async () => {
+    const text = [
+      'struct Surface { float3 positionWS; };',
+      'Surface MakeSurface() { Surface s; return s; }',
+      'void frag() {',
+      '  surface = MakeSurface();',
+      '  float3 p = surface.positionWS;',
+      '}',
+    ].join('\n');
+    const tree = await parseHlsl(text);
+    const result = collect(tree.rootNode, text, 'file:///t/rhs-inference.hlsl', 0);
+
+    expect(result.typeInferences).toEqual([{
+      receiver: 'surface',
+      callName: 'MakeSurface',
+      assignmentRange: {
+        start: { line: 3, character: 2 },
+        end: { line: 3, character: 25 },
+      },
+      scope: 'frag',
+      scopeRange: {
+        start: { line: 2, character: 12 },
+        end: { line: 5, character: 1 },
+      },
+    }]);
   });
 });
 

@@ -7,7 +7,7 @@ VSCode extension for Unity Shader files (`.shader`, `.hlsl`, `.cginc`, `.hlslinc
 - F12 definitions for functions, variables, parameters, locals, `#include` paths, `#pragma vertex|fragment|kernel` entry points, and macro declarations.
 - Cross-file navigation across user files and Unity `Packages/` resolved from `packages-lock.json`.
 - Multi-candidate Peek for same-name symbols across passes, overload-like branches, or multiple files.
-- Struct member chain lookup for common explicit-type receivers.
+- Struct member chain lookup for explicit receivers, array elements, nested fields, cbuffer/global struct values, and direct call-assignment inference.
 - `#define` navigation from macro usage to the defining directive.
 - Ctrl+Shift+O / Document Symbols outline for ShaderLab blocks, HLSL functions, structs, cbuffer entries, and pragmas.
 - Shift+F12 Find References across indexed user files, with an opt-in switch to include package references.
@@ -25,5 +25,6 @@ VSCode extension for Unity Shader files (`.shader`, `.hlsl`, `.cginc`, `.hlslinc
 
 - Preprocessor conditions are not evaluated; all branches are indexed.
 - Macro bodies are not expanded beyond supported declaration/reference patterns.
+- Chain lookup does not infer multiline receiver expressions, macro-expanded receivers, ternary or branch-dependent receiver types, overload-specific call return types, or pointer/reference-like syntax outside ordinary Unity HLSL member access.
 - ShaderGraph generated code is not indexed as a special source.
 - Surface Shader implicit parameters are not inferred.

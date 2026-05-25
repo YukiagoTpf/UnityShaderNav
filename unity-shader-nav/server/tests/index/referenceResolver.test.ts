@@ -277,4 +277,98 @@ describe('resolveReferenceTargets', () => {
       },
     ]);
   });
+
+  it('targets a struct member through an array receiver expression', () => {
+    const text = 'float3 Read(Light lights[4], int i) { return lights[i].color; }';
+    const idx: FileIndex = {
+      uri,
+      references: [],
+      symbols: [
+        sym({
+          name: 'lights',
+          kind: 'parameter',
+          declaredType: 'Light',
+          scopeRange: scope(0, 0, 0, 65),
+          location: { uri, range: range(0, 18, 24) },
+        }),
+      ],
+    };
+    const global = new GlobalSymbolIndex();
+    global.upsert({
+      uri: 'file:///project/Assets/Light.hlsl',
+      references: [],
+      symbols: [{
+        name: 'color',
+        kind: 'structMember',
+        parentType: 'Light',
+        location: {
+          uri: 'file:///project/Assets/Light.hlsl',
+          range: range(2, 9, 14),
+        },
+      }],
+    });
+
+    const targets = resolveReferenceTargets(idx, text, { line: 0, character: 59 }, global);
+
+    expect(targets).toEqual([{
+      name: 'color',
+      kind: 'structMember',
+      parentType: 'Light',
+      uri: 'file:///project/Assets/Light.hlsl',
+      range: range(2, 9, 14),
+    }]);
+  });
+
+  it('targets a struct member through a nested receiver expression', () => {
+    const text = 'float Read(Surface surface) { return surface.brdfData.roughness; }';
+    const idx: FileIndex = {
+      uri,
+      references: [],
+      symbols: [
+        sym({
+          name: 'surface',
+          kind: 'parameter',
+          declaredType: 'Surface',
+          scopeRange: scope(0, 0, 0, 66),
+          location: { uri, range: range(0, 19, 26) },
+        }),
+      ],
+    };
+    const global = new GlobalSymbolIndex();
+    global.upsert({
+      uri: 'file:///project/Assets/Surface.hlsl',
+      references: [],
+      symbols: [
+        {
+          name: 'brdfData',
+          kind: 'structMember',
+          parentType: 'Surface',
+          declaredType: 'Brdf',
+          location: {
+            uri: 'file:///project/Assets/Surface.hlsl',
+            range: range(2, 8, 16),
+          },
+        },
+        {
+          name: 'roughness',
+          kind: 'structMember',
+          parentType: 'Brdf',
+          location: {
+            uri: 'file:///project/Assets/Surface.hlsl',
+            range: range(6, 8, 17),
+          },
+        },
+      ],
+    });
+
+    const targets = resolveReferenceTargets(idx, text, { line: 0, character: 56 }, global);
+
+    expect(targets).toEqual([{
+      name: 'roughness',
+      kind: 'structMember',
+      parentType: 'Brdf',
+      uri: 'file:///project/Assets/Surface.hlsl',
+      range: range(6, 8, 17),
+    }]);
+  });
 });

@@ -740,6 +740,72 @@ describe('registerReferencesHandler', () => {
     ]);
   });
 
+  it('filters complex member receiver references to the matching receiver type', async () => {
+    const { connection, handler } = captureReferencesHandler();
+    const uri = 'file:///project/Assets/Issue9MemberReferences.hlsl';
+    const text = [
+      'struct Light { float3 color; };',
+      'struct Other { float3 color; };',
+      'float3 ReadLight(Light lights[4], int i) {',
+      '  return lights[i].color;',
+      '}',
+      'float3 ReadOther(Other other) {',
+      '  return other.color;',
+      '}',
+    ].join('\n');
+    const doc = TextDocument.create(uri, 'hlsl', 1, text);
+    const index = await indexFile(uri, text);
+    const store = new IndexStore();
+    store.set(uri, index);
+    const workspace = {
+      settings: DEFAULT_SETTINGS,
+      store,
+      global: new GlobalSymbolIndex(),
+      globalRefs: new GlobalReferenceIndex(),
+      isInPackages: () => false,
+    };
+    workspace.global.upsert(index);
+    workspace.globalRefs.upsert(index);
+    const documents = {
+      get(requestedUri: string) {
+        return requestedUri === uri ? doc : undefined;
+      },
+    } as never;
+    const manager = {
+      async workspaceForOrCreateFile() {
+        return workspace;
+      },
+    } as never;
+    const lightMember = index.symbols.find(
+      (symbol) =>
+        symbol.name === 'color' &&
+        symbol.kind === 'structMember' &&
+        symbol.parentType === 'Light',
+    );
+    const lightReference = index.references.find(
+      (reference) =>
+        reference.name === 'color' &&
+        reference.context === 'member' &&
+        reference.location.range.start.line === 3,
+    );
+    if (!lightMember || !lightReference) {
+      throw new Error('missing Light.color fixture locations');
+    }
+
+    registerReferencesHandler(connection, documents, manager);
+
+    const result = await handler()({
+      textDocument: { uri },
+      position: { line: 3, character: 20 },
+      context: { includeDeclaration: true },
+    });
+
+    expect(result).toEqual([
+      { uri, range: lightMember.location.range },
+      { uri, range: lightReference.location.range },
+    ]);
+  });
+
   it('filters member references from a struct member declaration position', async () => {
     const { connection, handler } = captureReferencesHandler();
     const uri = 'file:///project/Assets/MemberDeclarationReferences.hlsl';

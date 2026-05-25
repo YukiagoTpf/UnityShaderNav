@@ -184,6 +184,24 @@ describe('CacheStore', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
+  it('rejects pre-rhs-inference cache manifests', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'usn-cache-pre-rhs-inference-'));
+    const store = new CacheStore(dir);
+
+    await writeFile(join(dir, 'index.json'), JSON.stringify({
+      version: 5,
+      workspaceFolderUri: 'file:///x',
+      unityProjectRoot: '/x',
+      createdAt: 123,
+      fingerprint: { grammarVersion: 'g', settingsHash: 's', macroTableHash: 'm' },
+      files: [],
+    }), 'utf8');
+
+    expect(await store.load()).toBeNull();
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
   it('returns null when fingerprint mismatches', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'usn-cache-fp-'));
     const store = new CacheStore(dir);
@@ -310,6 +328,55 @@ describe('CacheStore', () => {
     }));
 
     expect((await store.load(fingerprint))?.files).toEqual([file]);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('skips cached file records with malformed type inference facts', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'usn-cache-bad-type-inference-'));
+    const store = new CacheStore(dir);
+    const file = validFile();
+
+    await writeRawManifest(dir, validManifest({
+      files: [
+        {
+          ...file,
+          index: {
+            ...file.index,
+            typeInferences: [{
+              receiver: 'surface',
+              callName: 'MakeSurface',
+              assignmentRange: { start: { line: 0 } },
+            }],
+          },
+        } as never,
+        {
+          ...file,
+          index: {
+            ...file.index,
+            typeInferences: [{
+              receiver: 'surface',
+              callName: 'MakeSurface',
+              assignmentRange: range,
+            }],
+          },
+        },
+      ],
+    }));
+
+    expect((await store.load(fingerprint))?.files).toEqual([
+      {
+        ...file,
+        index: {
+          ...file.index,
+          typeInferences: [{
+            receiver: 'surface',
+            callName: 'MakeSurface',
+            assignmentRange: range,
+          }],
+        },
+      },
+    ]);
 
     await rm(dir, { recursive: true, force: true });
   });
