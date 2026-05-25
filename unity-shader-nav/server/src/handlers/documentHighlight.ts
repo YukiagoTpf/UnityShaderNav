@@ -38,6 +38,10 @@ function isSimpleIdentifier(value: string): boolean {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
 }
 
+function isVariableReceiverTarget(target: ReturnType<typeof resolveReferenceTargetsForName>[number]): boolean {
+  return target.kind === 'localVariable' || target.kind === 'parameter' || target.kind === 'variable';
+}
+
 function toHighlight(location: Location): DocumentHighlight {
   return {
     range: location.range,
@@ -59,7 +63,7 @@ function receiverTargets(
     position,
     global,
     resolutionOptions,
-  );
+  ).filter(isVariableReceiverTarget);
 }
 
 function sameReceiverMemberLocations(

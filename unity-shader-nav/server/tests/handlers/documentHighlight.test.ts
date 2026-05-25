@@ -481,6 +481,24 @@ describe('registerDocumentHighlightHandler', () => {
     ]);
   });
 
+  it('does not fall back when the unresolved member receiver is not a variable', async () => {
+    const uri = 'file:///project/Assets/NonVariableReceiverHighlights.hlsl';
+    const text = [
+      'struct InputData { };',
+      'float4 frag() {',
+      '  InputData.positionWS;',
+      '  InputData.positionWS;',
+      '  return 0;',
+      '}',
+    ].join('\n');
+    const { handler } = await createHighlightFixture(uri, 'hlsl', text);
+
+    await expect(handler({
+      textDocument: { uri },
+      position: tokenPosition(text, 2, 'positionWS'),
+    })).resolves.toBeNull();
+  });
+
   it('highlights receiver-typed members inside shader HLSL blocks with Unity struct macros', async () => {
     const uri = 'file:///project/Assets/MacroStruct.shader';
     const text = [
