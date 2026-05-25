@@ -13,6 +13,7 @@
     "test": "npm run build && tsc -p tests/tsconfig.json && npm run test:package-layout && node tests/out/runTest.js && npm run test --workspaces --if-present",
     "test:package-layout": "mocha tests/out/client/package-layout.test.js --ui tdd --timeout 60000",
     "clean": "rimraf client/out server/out shared/out client/tsconfig.tsbuildinfo server/tsconfig.tsbuildinfo shared/tsconfig.tsbuildinfo",
+    "bench:issue3": "node scripts/benchmark-index-cache.mjs",
     "package:vsix": "npm run clean && npm run build && node scripts/package-vsix.mjs"
   },
   "devDependencies": {

@@ -26,6 +26,18 @@ Measured before behavior changes on 2026-05-25 after `npm run build`, using a te
 }
 ```
 
+Measured again after adding the committed benchmark script, before cache/workspace behavior changes:
+
+```json
+{
+  "files": 800,
+  "coldMs": 296.94,
+  "warmMs": 99.9647,
+  "persistMs": 25.3146,
+  "cacheBytes": 2447717
+}
+```
+
 Real local smoke context: `F:\Project\UnityProject\Pandora` currently contains 1007 shader source files by extension. The implementation benchmark should support both synthetic and real-project smoke usage, but the automated test suite should not depend on that private project path.
 
 ## Cache Format Decision
