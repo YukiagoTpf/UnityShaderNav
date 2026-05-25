@@ -11,3 +11,16 @@
 - Wrote `docs/superpowers/plans/2026-05-25-issue-9-fixplan.md`.
 - Plan-review subagent Noether requested changes: separate RHS inference metadata from `SymbolEntry`, bump cache version for persisted `FileIndex` shape changes, add final review commit step, and fix a misleading Task 4 commit message.
 - Updated the fix plan with `FileIndex.typeInferences`, `CACHE_VERSION` handling, exact-one visible function return inference, and final review artifact commit steps.
+- Committed reviewed plan as `96222b5 docs(plans): add issue 9 chain lookup fix plan`.
+- Task 1 RED/GREEN: `tests/index/wordAt.test.ts` failed on array/nested receivers, then passed 9/9 after `memberAccessAt()` began preserving complex same-line receiver expressions.
+- Committed Task 1 as `052d317 feat(issue-9): parse complex member receivers`.
+- Task 2 RED/GREEN: `tests/index/chainLookup.test.ts` failed on `lights[i].color` and `surface.brdfData.roughness`, then passed 7/7 after receiver-chain type walking.
+- Committed Task 2 as `31fda71 feat(issue-9): infer array and nested member receivers`.
+- Task 3 RED/GREEN: collector/cache/chain tests failed on missing RHS assignment facts, cache v5 acceptance, malformed type inference validation, and unknown receiver inference; after `FileIndex.typeInferences`, cache v6, and exact-one call return inference, 3 files / 42 tests passed.
+- Committed Task 3 as `811d719 feat(issue-9): infer receiver type from call assignment`.
+- Task 4 RED/GREEN: handler/reference focused tests failed because collector stored undefined for `lights[i]` receiver; after recording field/subscript receiver expressions, 4 files / 62 tests passed.
+- Committed Task 4 as `f4c94fd feat(issue-9): wire complex chain lookup handlers`.
+- Documented unsupported chain shapes in README and the issue #9 fix plan, and updated `docs/superpowers/PROGRESS.md`.
+- Task 5 verification initially exposed TypeScript narrowing issues in `chainLookup.ts`; fixed with explicit function-symbol and nested-type guards.
+- Committed build type fix as `8de130b fix(issue-9): type check chain lookup inference`.
+- Task 5 verification: `npm run build` PASS; fresh `npm run test -w @unity-shader-nav/server` PASS (46 files / 287 tests). One earlier full-server run hit the known timing-sensitive `tests/cache/coldStart.test.ts` threshold, but focused rerun and subsequent full rerun passed.

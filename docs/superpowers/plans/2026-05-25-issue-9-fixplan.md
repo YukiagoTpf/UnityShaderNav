@@ -254,6 +254,8 @@ Add a note to this plan and, if user-facing enough, README:
 - Overload-aware return type selection.
 - Pointer/reference-like syntax not present in ordinary Unity HLSL.
 
+> Note: 2026-05-25 implementation documents the supported #9 shapes as array element receivers, nested struct fields, cbuffer/global struct values, and narrow direct call-assignment inference. Unsupported shapes are intentionally bounded to keep chain lookup a lightweight resolver rather than a full HLSL type checker.
+
 **Step 2: Run final verification**
 
 ```bash
@@ -324,12 +326,12 @@ Post a comment containing:
 
 ## Acceptance Checklist
 
-- [ ] Failing tests were observed before each production behavior change.
-- [ ] Array receivers resolve by element/base receiver type: `lights[i].color`.
-- [ ] Nested fields resolve by walking struct member declared types: `surface.brdfData.roughness`.
-- [ ] Cbuffer/global struct values resolve through existing global variable collection: `settings.value`.
-- [ ] RHS call assignment inference works only for the documented narrow shape.
-- [ ] Existing parameter, local, and file/global receiver behavior remains covered.
-- [ ] Find References still filters struct members by resolved receiver type.
-- [ ] Unsupported shapes are documented.
+- [x] Failing tests were observed before each production behavior change.
+- [x] Array receivers resolve by element/base receiver type: `lights[i].color`.
+- [x] Nested fields resolve by walking struct member declared types: `surface.brdfData.roughness`.
+- [x] Cbuffer/global struct values resolve through existing global variable collection: `settings.value`.
+- [x] RHS call assignment inference works only for the documented narrow shape.
+- [x] Existing parameter, local, and file/global receiver behavior remains covered.
+- [x] Find References still filters struct members by resolved receiver type.
+- [x] Unsupported shapes are documented.
 - [ ] GitHub issue #9 is updated but left open for user verification.
