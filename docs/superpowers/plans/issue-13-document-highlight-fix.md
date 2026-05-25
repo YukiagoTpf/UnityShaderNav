@@ -136,3 +136,25 @@ Applied changes:
 - Added open-document store-miss reindexing requirement and regression test.
 - Changed unresolved member behavior to conservative empty highlights.
 - Clarified that commands run from `unity-shader-nav/`.
+
+### 2026-05-25 codereview pass
+
+Reviewer: Hume (`019e5d4b-4d42-72f1-b155-e88f6831a0e5`)
+
+Range: `8f73fa6b440776e74009e60c4ee913e5d5f3609b..8ae2ef9707c0ca74ea76c98c08d6d2edc7b5ef49`
+
+Conclusion: Approved. No Critical, Important, or Minor findings.
+
+Verification before review:
+
+- `npm run test -w @unity-shader-nav/server -- --run tests/handlers/documentHighlight.test.ts tests/handlers/references.test.ts tests/handlers/definition.test.ts tests/handshake.test.ts`: 4 files / 53 tests passed.
+- `npm run test -w @unity-shader-nav/server`: 47 files / 302 tests passed.
+- `npm run build`: passed.
+
+Implementation notes:
+
+- Added `textDocument/documentHighlight` capability and handler registration.
+- Extracted shared reference matching helpers so document highlights and Find References use the same target/context filtering rules.
+- Added current-document symbol highlights for locals, parameters, functions, struct types, macros, and receiver-typed struct members.
+- Added context guards for comments, strings, and non-HLSL ShaderLab areas while preserving HLSLPROGRAM highlights.
+- Kept unresolved member receivers conservative by returning no highlight instead of broad same-name member highlights.
