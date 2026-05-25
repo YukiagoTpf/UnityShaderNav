@@ -50,6 +50,18 @@ Measured after bounded walking/index/restore/persist and atomic manifest replace
 }
 ```
 
+Measured after code-review fix for globally bounded walking:
+
+```json
+{
+  "files": 800,
+  "coldMs": 157.801,
+  "warmMs": 68.4072,
+  "persistMs": 11.9173,
+  "cacheBytes": 2447737
+}
+```
+
 Real local smoke context: `F:\Project\UnityProject\Pandora` currently contains 1007 shader source files by extension. The implementation benchmark should support both synthetic and real-project smoke usage, but the automated test suite should not depend on that private project path.
 
 ## Cache Format Decision
@@ -386,5 +398,5 @@ Then close issue #3 as requested by the user.
 - [x] Cache replace preserves old manifest if final rename fails.
 - [x] Cache JSON remains monolithic by documented decision.
 - [x] Regression tests cover cache integrity and workspace behavior.
-- [ ] Code review completed, accepted findings fixed, review docs landed.
+- [x] Code review completed, accepted findings fixed, review docs landed.
 - [ ] GitHub issue #3 updated and closed.

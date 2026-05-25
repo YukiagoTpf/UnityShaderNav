@@ -88,8 +88,8 @@ GitHub Issues 是当前 backlog：
   - `CacheStore` 不再先删除旧 `index.json`，改为同目录 tmp 写入后直接 rename，rename 失败时保留旧 manifest 并清理 tmp。
   - `walkFiles()`、cache restore、missing-file refresh、full scan、persist snapshot 改为 bounded concurrency；persist 前按 URI 排序，避免并发完成顺序导致 cache JSON 漂移。
   - Cache JSON 继续保持 monolithic：800 synthetic 文件基线约 2.45 MB，写入不是主瓶颈，暂不引入 shard/compression 复杂度。
-  - benchmark：800 synthetic 文件 cold `296.94ms -> 155.32ms`，warm `99.96ms -> 71.79ms`，persist `25.31ms -> 13.04ms`。
-  - 验证：`npm run test -w @unity-shader-nav/server` PASS（49 files / 323 tests），`npm run build` PASS。
+  - benchmark：800 synthetic 文件最终 cold `296.94ms -> 157.80ms`，warm `99.96ms -> 68.41ms`，persist `25.31ms -> 11.92ms`。
+  - 验证：`npm run test -w @unity-shader-nav/server` PASS（49 files / 324 tests），`npm run build` PASS。
 
 ## 历史实施索引
 
