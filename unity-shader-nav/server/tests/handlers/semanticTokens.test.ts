@@ -60,6 +60,7 @@ describe('registerSemanticTokensHandler', () => {
   it('colors struct types, variables, members, functions, and macros', async () => {
     const { connection, handler } = captureSemanticTokensHandler();
     const uri = 'file:///project/Assets/Semantic.hlsl';
+    const includeUri = 'file:///project/Assets/Includes/Macros.hlsl';
     const text = [
       '#define SAMPLE_TEXTURE2D(tex, sampler, uv) tex.Sample(sampler, uv)',
       'struct InputData { float3 positionWS; };',
@@ -67,16 +68,21 @@ describe('registerSemanticTokensHandler', () => {
       '  inputData = (InputData)0;',
       '  inputData.positionWS = 0;',
       '  return SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, inputData.positionWS);',
+      '  return INCLUDED_MACRO(inputData.positionWS);',
       '}',
     ].join('\n');
+    const includeText = '#define INCLUDED_MACRO(v) v';
     const doc = TextDocument.create(uri, 'hlsl', 1, text);
     const index = await indexFile(uri, text);
+    const includeIndex = await indexFile(includeUri, includeText);
     const store = new IndexStore();
     store.set(uri, index);
     const global = new GlobalSymbolIndex();
     const globalRefs = new GlobalReferenceIndex();
     global.upsert(index);
+    global.upsert(includeIndex);
     globalRefs.upsert(index);
+    globalRefs.upsert(includeIndex);
     const documents = {
       get(requestedUri: string) {
         return requestedUri === uri ? doc : undefined;
@@ -106,6 +112,7 @@ describe('registerSemanticTokensHandler', () => {
       { line: 3, character: 15, length: 'InputData'.length, type: 'type' },
       { line: 4, character: 12, length: 'positionWS'.length, type: 'property' },
       { line: 5, character: 9, length: 'SAMPLE_TEXTURE2D'.length, type: 'macro' },
+      { line: 6, character: 9, length: 'INCLUDED_MACRO'.length, type: 'macro' },
     ]));
   });
 });

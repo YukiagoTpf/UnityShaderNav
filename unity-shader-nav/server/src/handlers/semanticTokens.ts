@@ -30,6 +30,10 @@ interface TokenRange {
   tokenType: SemanticTokenType;
 }
 
+interface SymbolLookup {
+  lookup(name: string): SymbolEntry[];
+}
+
 const TOKEN_PRIORITY: Record<SemanticTokenType, number> = {
   macro: 0,
   type: 1,
@@ -114,12 +118,22 @@ function compareTokens(a: TokenRange, b: TokenRange): number {
     || TOKEN_PRIORITY[a.tokenType] - TOKEN_PRIORITY[b.tokenType];
 }
 
-function semanticTokensForIndex(index: FileIndex): SemanticTokens {
+function isMacroSymbol(symbol: SymbolEntry): boolean {
+  return symbol.kind === 'macro';
+}
+
+function semanticTokensForIndex(index: FileIndex, global?: SymbolLookup): SemanticTokens {
   const macroNames = new Set(
     index.symbols
-      .filter((symbol) => symbol.kind === 'macro')
+      .filter(isMacroSymbol)
       .map((symbol) => symbol.name),
   );
+  for (const reference of index.references) {
+    if (reference.context !== 'call' && reference.context !== 'pragma') continue;
+    if (macroNames.has(reference.name)) continue;
+    if (global?.lookup(reference.name).some(isMacroSymbol)) macroNames.add(reference.name);
+  }
+
   const seen = new Set<string>();
   const tokens: TokenRange[] = [];
   for (const symbol of index.symbols) tokens.push(symbolToken(symbol));
@@ -171,7 +185,7 @@ export function registerSemanticTokensHandler(
       }
       if (!index) return { data: [] };
 
-      return semanticTokensForIndex(index);
+      return semanticTokensForIndex(index, workspace.global);
     };
 
     if (!suspender) return resolveRequest();
