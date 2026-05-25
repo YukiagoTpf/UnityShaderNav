@@ -332,12 +332,21 @@ function collectMacroDeclaration(
   });
 }
 
-function receiverName(node: Parser.SyntaxNode): string | undefined {
+function receiverExpression(node: Parser.SyntaxNode): string | undefined {
   const receiver =
     node.childForFieldName('argument') ??
     node.childForFieldName('object') ??
     node.namedChild(0);
-  if (!receiver || receiver.type !== 'identifier') return undefined;
+  if (
+    !receiver ||
+    (
+      receiver.type !== 'identifier' &&
+      receiver.type !== 'field_expression' &&
+      receiver.type !== 'subscript_expression'
+    )
+  ) {
+    return undefined;
+  }
   return textOf(receiver);
 }
 
@@ -368,7 +377,7 @@ function collectReferences(node: Parser.SyntaxNode, st: CollectorState): void {
         name: textOf(fid),
         location: { uri: st.uri, range: offsetRange(rangeOf(fid), st.lineOffset) },
         context: 'member',
-        receiver: receiverName(node),
+        receiver: receiverExpression(node),
       });
       st.declarationSites.add(siteKey(fid));
     }

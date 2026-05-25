@@ -801,6 +801,77 @@ describe('registerDefinitionHandler', () => {
     expect(parameterMemberResult?.[0].targetRange).toEqual(v2fMember.location.range);
   });
 
+  it('resolves issue 9 complex member chain shapes at the definition boundary', async () => {
+    const uri = 'file:///t/issue9-chain-shapes.hlsl';
+    const text = [
+      'struct Light {',
+      '  float3 color;',
+      '};',
+      'struct Brdf {',
+      '  float roughness;',
+      '};',
+      'struct Surface {',
+      '  Brdf brdfData;',
+      '  float3 positionWS;',
+      '};',
+      'struct Settings {',
+      '  float value;',
+      '};',
+      'Surface MakeSurface() { Surface s; return s; }',
+      'cbuffer Params {',
+      '  Settings settings;',
+      '};',
+      'float4 frag(Surface surface, Light lights[4], int i) {',
+      '  surface = MakeSurface();',
+      '  untypedSurface = MakeSurface();',
+      '  float3 c = lights[i].color;',
+      '  float r = surface.brdfData.roughness;',
+      '  float v = settings.value;',
+      '  float3 p = untypedSurface.positionWS;',
+      '  return float4(c, r + v + p.x);',
+      '}',
+    ].join('\n');
+    const index = await indexFile(uri, text);
+    const { handler } = createDefinitionFixture(uri, 'hlsl', text, index);
+    const lightColor = index.symbols.find(
+      (symbol) => symbol.name === 'color' && symbol.kind === 'structMember' && symbol.parentType === 'Light',
+    );
+    const brdfRoughness = index.symbols.find(
+      (symbol) => symbol.name === 'roughness' && symbol.kind === 'structMember' && symbol.parentType === 'Brdf',
+    );
+    const settingsValue = index.symbols.find(
+      (symbol) => symbol.name === 'value' && symbol.kind === 'structMember' && symbol.parentType === 'Settings',
+    );
+    const surfacePosition = index.symbols.find(
+      (symbol) => symbol.name === 'positionWS' && symbol.kind === 'structMember' && symbol.parentType === 'Surface',
+    );
+    if (!lightColor || !brdfRoughness || !settingsValue || !surfacePosition) {
+      throw new Error('missing issue 9 fixture members');
+    }
+
+    const arrayResult = await handler({
+      textDocument: { uri },
+      position: tokenPosition(text, 20, 'color'),
+    }) as LocationLink[] | null;
+    const nestedResult = await handler({
+      textDocument: { uri },
+      position: tokenPosition(text, 21, 'roughness'),
+    }) as LocationLink[] | null;
+    const cbufferResult = await handler({
+      textDocument: { uri },
+      position: tokenPosition(text, 22, 'value'),
+    }) as LocationLink[] | null;
+    const rhsResult = await handler({
+      textDocument: { uri },
+      position: tokenPosition(text, 23, 'positionWS'),
+    }) as LocationLink[] | null;
+
+    expect(arrayResult?.[0].targetRange).toEqual(lightColor.location.range);
+    expect(nestedResult?.[0].targetRange).toEqual(brdfRoughness.location.range);
+    expect(cbufferResult?.[0].targetRange).toEqual(settingsValue.location.range);
+    expect(rhsResult?.[0].targetRange).toEqual(surfacePosition.location.range);
+  });
+
   it('returns null for generic identifiers inside hlsl line comments', async () => {
     const uri = 'file:///t/comment.hlsl';
     const text = [
