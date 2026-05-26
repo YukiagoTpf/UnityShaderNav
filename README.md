@@ -35,7 +35,22 @@ UnityShaderNav activates for:
 Standalone HLSL files get same-file navigation. Full cross-file navigation
 requires a Unity project root containing `Assets/` and `ProjectSettings/`.
 
-## Quick Start From Source
+## Install
+
+### Option 1: Download the VSIX from Releases
+
+1. Open the [latest release](https://github.com/YukiagoTpf/UnityShaderNav/releases/latest).
+2. Download `unity-shader-nav-*.vsix` from the release assets.
+3. In VS Code, open the Extensions view.
+4. Choose `...` -> `Install from VSIX...`.
+5. Select the downloaded VSIX file.
+
+After installation, open a Unity project and then open a `.shader`, `.hlsl`,
+`.cginc`, `.hlslinc`, or `.compute` file.
+
+### Option 2: Build from Source
+
+Use this path if you want to develop the extension or package a local build.
 
 Requirements:
 
@@ -49,7 +64,7 @@ npm install
 npm run build
 ```
 
-To run the extension in development:
+To run the extension from source:
 
 1. Open `unity-shader-nav/` in VS Code.
 2. Press F5 and choose the extension launch configuration.
