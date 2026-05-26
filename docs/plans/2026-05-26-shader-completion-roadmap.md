@@ -56,7 +56,8 @@ Recommended module shape:
   - Separates HLSL block, ShaderLab block, comment/string, member access, call expression, include path, and ordinary identifier contexts.
   - Starts conservative and single-line where the existing helpers are single-line.
   - Must not reuse `isGenericDefinitionContext` as the only gate. That helper correctly rejects ShaderLab regions for navigation, but #17 needs ShaderLab state completions outside HLSL blocks.
-  - Suggested context vocabulary: `hlslCode`, `shaderLabCode`, `comment`, `string`, `includePath`, `memberAccess`, and `call`.
+  - Suggested base context vocabulary: `hlslCode`, `shaderLabCode`, `comment`, `string`, `includePath`, `memberAccess`, and `call`.
+  - #17 may extend this with coarse built-in-only contexts such as `semanticPosition` and `shaderLabStateValue` for safer filtering.
   - #15 should return no project-symbol suggestions for `shaderLabCode`; #17 can later populate that context with ShaderLab catalog entries.
 
 - `server/src/suggestions/projectSymbols.ts`
@@ -104,7 +105,7 @@ export interface ShaderParameter {
 
 export interface ShaderSuggestion {
   name: string;
-  kind: SymbolKind | 'keyword' | 'semantic' | 'state' | 'function';
+  kind: SymbolKind | 'keyword' | 'semantic' | 'state' | 'function' | 'type';
   source: ShaderSuggestionSource;
   detail?: string;
   documentation?: string;
@@ -205,7 +206,9 @@ Implementation boundaries:
 - Keep the initial catalog intentionally small and high-signal.
 - Add context filtering before volume:
   - HLSL expressions get functions/types/macros/semantics where appropriate.
-  - ShaderLab regions outside HLSL blocks get ShaderLab states/values.
+  - HLSL semantic positions get semantic suggestions.
+  - ShaderLab regions outside HLSL blocks get ShaderLab state keywords.
+  - ShaderLab state value positions get state values.
   - Comments and strings get nothing.
 - Prefer catalog maintainability over exhaustive coverage.
 
