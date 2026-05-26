@@ -1,30 +1,113 @@
 # UnityShaderNav
 
-VSCode extension for Unity Shader files (`.shader`, `.hlsl`, `.cginc`, `.hlslinc`, `.compute`) that provides code navigation for ShaderLab + HLSL projects.
+UnityShaderNav is a Visual Studio Code extension for navigating Unity shader
+projects. It understands ShaderLab wrappers, HLSL/CG include files, Unity
+Packages, declaration macros, and the kinds of symbol ambiguity that are common
+in URP/HDRP projects.
 
-## Features
+The extension focuses on fast code navigation:
 
-- F12 definitions for functions, variables, parameters, locals, `#include` paths, `#pragma vertex|fragment|kernel` entry points, and macro declarations.
-- Cross-file navigation across user files and Unity `Packages/` resolved from `packages-lock.json`.
-- Multi-candidate Peek for same-name symbols across passes, overload-like branches, or multiple files.
-- Struct member chain lookup for explicit receivers, array elements, nested fields, cbuffer/global struct values, and direct call-assignment inference.
-- `#define` navigation from macro usage to the defining directive.
-- Ctrl+Shift+O / Document Symbols outline for ShaderLab blocks, HLSL functions, structs, cbuffer entries, and pragmas.
-- Shift+F12 Find References across indexed user files, with an opt-in switch to include package references.
-- Incremental indexing, rebuild-on-project-metadata changes, and cache persistence under `Library/UnityShaderNavCache/`.
+- Go to Definition for functions, locals, parameters, structs, struct members,
+  macros, `#include` paths, and shader entry points.
+- Find References across indexed user files, with an option to include package
+  references.
+- Document Symbols and semantic coloring for ShaderLab and HLSL files.
+- Unity Package resolution through `Packages/packages-lock.json`.
+- Persistent project-local indexing under `Library/UnityShaderNavCache/`.
 
-## Settings
+## Status
 
-- `unityShaderNav.projectRoot`: explicit Unity project root. Empty means autodetect from `Assets/` + `ProjectSettings/`.
-- `unityShaderNav.includeDirectories`: extra include search paths.
-- `unityShaderNav.excludePatterns`: glob patterns skipped during user-file indexing.
-- `unityShaderNav.declarationMacros`: custom macro patterns that declare symbols.
-- `unityShaderNav.findReferences.includePackages`: include `Packages/` references in Shift+F12 results. Defaults to `false`.
+This project is in early public-preview shape. The core language server is
+working and covered by unit and VS Code integration tests, but Marketplace
+publishing, icon polish, CI cache tuning, and a few Unity path edge cases are
+still tracked in [GitHub Issues](https://github.com/YukiagoTpf/UnityShaderNav/issues).
+
+## Supported Files
+
+UnityShaderNav activates for:
+
+- `.shader`
+- `.hlsl`
+- `.cginc`
+- `.hlslinc`
+- `.compute`
+
+Standalone HLSL files get same-file navigation. Full cross-file navigation
+requires a Unity project root containing `Assets/` and `ProjectSettings/`.
+
+## Quick Start From Source
+
+Requirements:
+
+- VS Code 1.85 or newer
+- Node.js 18 or newer
+- npm
+
+```powershell
+cd unity-shader-nav
+npm install
+npm run build
+```
+
+To run the extension in development:
+
+1. Open `unity-shader-nav/` in VS Code.
+2. Press F5 and choose the extension launch configuration.
+3. In the Extension Development Host, open a Unity project.
+4. Open a `.shader`, `.hlsl`, `.cginc`, `.hlslinc`, or `.compute` file.
+
+To package a local VSIX:
+
+```powershell
+cd unity-shader-nav
+npm run package:vsix
+```
+
+## Configuration
+
+Common settings:
+
+```jsonc
+{
+  "unityShaderNav.projectRoot": "",
+  "unityShaderNav.includeDirectories": [],
+  "unityShaderNav.excludePatterns": ["**/Library/**", "**/Temp/**", "**/Logs/**"],
+  "unityShaderNav.declarationMacros": [],
+  "unityShaderNav.findReferences.includePackages": false
+}
+```
+
+See [Configuration](docs/configuration.md) for the full explanation and examples.
+
+## Documentation
+
+- [User Guide](docs/usage.md)
+- [Configuration](docs/configuration.md)
+- [Development Guide](docs/development.md)
+- [Architecture](docs/architecture.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Roadmap](docs/roadmap.md)
+- [Technical Spec](docs/technical-spec.md)
+- [Architecture Decision Records](docs/adr/)
 
 ## Known Limits
 
-- Preprocessor conditions are not evaluated; all branches are indexed.
-- Macro bodies are not expanded beyond supported declaration/reference patterns.
-- Chain lookup does not infer multiline receiver expressions, macro-expanded receivers, ternary or branch-dependent receiver types, overload-specific call return types, or pointer/reference-like syntax outside ordinary Unity HLSL member access.
-- ShaderGraph generated code is not indexed as a special source.
-- Surface Shader implicit parameters are not inferred.
+- Preprocessor conditions are not evaluated; multiple valid definitions can be
+  returned through VS Code Peek Definition.
+- Macro bodies are not expanded. Built-in and user-configured declaration
+  patterns cover common Unity macro declarations.
+- Surface Shader implicit parameters and ShaderGraph generated code are not
+  indexed as special sources.
+- Chain lookup intentionally stays conservative for multiline receivers,
+  macro-expanded receivers, branch-dependent types, and overload-specific return
+  type inference.
+
+## Contributing
+
+Bug reports, focused repro cases, and small pull requests are welcome. Please
+start with [CONTRIBUTING.md](CONTRIBUTING.md), then check the current
+[issue tracker](https://github.com/YukiagoTpf/UnityShaderNav/issues).
+
+## License
+
+UnityShaderNav is released under the [MIT License](LICENSE).

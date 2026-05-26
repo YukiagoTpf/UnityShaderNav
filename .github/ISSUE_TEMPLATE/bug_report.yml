@@ -1,0 +1,37 @@
+name: Bug report
+description: Report incorrect Unity shader navigation behavior.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: shader-shape
+    attributes:
+      label: Shader shape
+      description: Paste the smallest ShaderLab/HLSL snippet that reproduces the issue.
+      render: hlsl
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What did VS Code or UnityShaderNav do?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should happen instead?
+    validations:
+      required: true
+  - type: input
+    id: unity-version
+    attributes:
+      label: Unity version / render pipeline
+      placeholder: "2022.3 URP 14"
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context
+      description: Include relevant settings, package-lock entries, or Output > UnityShaderNav logs.
