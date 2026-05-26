@@ -1,5 +1,7 @@
 # UnityShaderNav
 
+[English](README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md)
+
 UnityShaderNav is a Visual Studio Code extension for navigating Unity shader
 projects. It understands ShaderLab wrappers, HLSL/CG include files, Unity
 Packages, declaration macros, and the kinds of symbol ambiguity that are common
