@@ -20,6 +20,13 @@
 - `docs/roadmap.md` — 当前方向摘要；实际 backlog 以 GitHub Issues 为准。
 - GitHub Issues — bug、feature、fix plan、实现总结和验证记录的主入口。
 
+## 当前发布状态
+
+- 最新发布版本：`v0.0.4`。
+- Release 地址：https://github.com/YukiagoTpf/UnityShaderNav/releases/tag/v0.0.4
+- 最新 VSIX 产物：`unity-shader-nav/client/unity-shader-nav-0.0.4.vsix`。
+- `client/package.json` 当前插件版本为 `0.0.4`，并使用 `client/images/icon.png` 作为 VS Code Marketplace 图标。
+
 ## 已知坑
 
 - **路径渲染幻觉**：harness 在显示 tool 输出（Read / Grep / Bash stdout）时，可能把路径里的字面内容渲染得不可信。判断是真污染还是显示幻觉，用 `od -c` 或 `cat | hexdump` 看 raw bytes。
