@@ -50,6 +50,7 @@ const freshnessChecks = [
 
 const requiredVsixEntries = [
   'extension/README.md',
+  'extension/LICENSE.txt',
   'extension/out/extension.js',
   'extension/out/server/server.js',
   'extension/out/grammars/tree-sitter-hlsl.wasm',
@@ -68,8 +69,8 @@ try {
 
   await assertFreshBuildOutputs(monorepoRoot);
   if (args.prepareExtensionRoot) {
-    await stageReadme();
-    console.log('[package-vsix] staged README.md for VSCE packaging');
+    await stageExtensionRootFiles();
+    console.log('[package-vsix] staged README.md and LICENSE for VSCE packaging');
     process.exit(0);
   }
   if (args.checkOutput) process.exit(0);
@@ -154,7 +155,7 @@ async function packageVsix() {
   const packageJson = JSON.parse(await readFile(resolve(clientRoot, 'package.json'), 'utf8'));
   const vsixPath = resolve(clientRoot, `${packageJson.name}-${packageJson.version}.vsix`);
   await rm(vsixPath, { force: true });
-  const restoreReadme = await stageReadme();
+  const restoreExtensionRootFiles = await stageExtensionRootFiles();
 
   const npxArgs = [
     '--no-install',
@@ -171,13 +172,21 @@ async function packageVsix() {
     await run(command, commandArgs, clientRoot);
     return vsixPath;
   } finally {
-    await restoreReadme();
+    await restoreExtensionRootFiles();
   }
 }
 
-async function stageReadme() {
-  const source = findReadmeSource();
-  const target = resolve(clientRoot, 'README.md');
+async function stageExtensionRootFiles() {
+  const restoreReadme = await stageFile(findRepoFileSource('README.md'), resolve(clientRoot, 'README.md'));
+  const restoreLicense = await stageFile(findRepoFileSource('LICENSE'), resolve(clientRoot, 'LICENSE'));
+
+  return async () => {
+    await restoreReadme();
+    await restoreLicense();
+  };
+}
+
+async function stageFile(source, target) {
   let previous;
   try {
     previous = await readFile(target);
@@ -196,14 +205,14 @@ async function stageReadme() {
   };
 }
 
-function findReadmeSource() {
+function findRepoFileSource(name) {
   const candidates = [
-    resolve(monorepoRoot, 'README.md'),
-    resolve(dirname(monorepoRoot), 'README.md'),
+    resolve(monorepoRoot, name),
+    resolve(dirname(monorepoRoot), name),
   ];
   const source = candidates.find((candidate) => existsSync(candidate));
   if (!source) {
-    throw new Error(`README.md is missing; checked ${candidates.map((candidate) => relative(monorepoRoot, candidate)).join(', ')}`);
+    throw new Error(`${name} is missing; checked ${candidates.map((candidate) => relative(monorepoRoot, candidate)).join(', ')}`);
   }
   return source;
 }
