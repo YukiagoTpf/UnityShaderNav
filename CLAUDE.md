@@ -30,7 +30,6 @@
 ## 已知坑
 
 - **路径渲染幻觉**：harness 在显示 tool 输出（Read / Grep / Bash stdout）时，可能把路径里的字面内容渲染得不可信。判断是真污染还是显示幻觉，用 `od -c` 或 `cat | hexdump` 看 raw bytes。
-- **Windows 沙箱**：如果某些 Codex 工具在本机 sandbox 下无法运行 PowerShell 命令，优先用普通 shell 命令复现和验证，不要绕过 git/CI 保护。
 
 ## 项目入口
 
