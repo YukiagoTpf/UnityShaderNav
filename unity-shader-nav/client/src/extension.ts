@@ -1,6 +1,7 @@
 import { ExtensionContext } from 'vscode';
 import { LanguageClient } from 'vscode-languageclient/node';
 import { createLanguageClient } from './client';
+import { setupInactiveRegions } from './inactiveRegions';
 import { StatusBar } from './statusBar';
 import { setupFileWatchers } from './watcher';
 
@@ -17,6 +18,7 @@ export async function activate(context: ExtensionContext): Promise<void> {
   });
   await client.start();
   setupFileWatchers(client, context);
+  setupInactiveRegions(client, context);
 }
 
 export async function deactivate(): Promise<void> {

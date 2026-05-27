@@ -13,6 +13,8 @@ const SETTINGS_SECTIONS = [
   'unityShaderNav.excludePatterns',
   'unityShaderNav.declarationMacros',
   'unityShaderNav.findReferences.includePackages',
+  'unityShaderNav.dimInactiveBranches.enabled',
+  'unityShaderNav.dimInactiveBranches.opacity',
 ];
 
 export function createLanguageClient(context: ExtensionContext): LanguageClient {
