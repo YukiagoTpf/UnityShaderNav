@@ -9,6 +9,7 @@ import type { TextDocument } from 'vscode-languageserver-textdocument';
 import type { FileIndex, Range, ReferenceEntry, SymbolEntry, SymbolKind } from '@unity-shader-nav/shared';
 import type { RequestSuspender } from '../lifecycle/requestSuspender';
 import type { WorkspaceManager } from '../workspace';
+import { scanShaderLabTokens } from '../parser/shaderlab/tokenScanner';
 
 export const SEMANTIC_TOKEN_TYPES = [
   'type',
@@ -17,6 +18,12 @@ export const SEMANTIC_TOKEN_TYPES = [
   'property',
   'function',
   'macro',
+  'keyword',
+  'string',
+  'number',
+  'operator',
+  'decorator',
+  'enumMember',
 ] as const;
 
 const TOKEN_TYPE_INDEX = new Map<string, number>(
@@ -28,6 +35,7 @@ type SemanticTokenType = typeof SEMANTIC_TOKEN_TYPES[number];
 interface TokenRange {
   range: Range;
   tokenType: SemanticTokenType;
+  source: 'index' | 'lexical';
 }
 
 interface SymbolLookup {
@@ -35,12 +43,18 @@ interface SymbolLookup {
 }
 
 const TOKEN_PRIORITY: Record<SemanticTokenType, number> = {
-  macro: 0,
-  type: 1,
-  property: 2,
-  function: 3,
-  parameter: 4,
-  variable: 5,
+  enumMember: 0,
+  macro: 1,
+  type: 2,
+  property: 3,
+  function: 4,
+  keyword: 5,
+  decorator: 6,
+  string: 7,
+  number: 8,
+  parameter: 9,
+  variable: 10,
+  operator: 11,
 };
 
 function symbolTokenType(kind: SymbolKind): SemanticTokenType {
@@ -86,6 +100,7 @@ function symbolToken(symbol: SymbolEntry): TokenRange {
   return {
     range: symbol.location.range,
     tokenType: symbolTokenType(symbol.kind),
+    source: 'index',
   };
 }
 
@@ -98,6 +113,7 @@ function referenceToken(
   return {
     range: reference.location.range,
     tokenType,
+    source: 'index',
   };
 }
 
@@ -118,11 +134,24 @@ function compareTokens(a: TokenRange, b: TokenRange): number {
     || TOKEN_PRIORITY[a.tokenType] - TOKEN_PRIORITY[b.tokenType];
 }
 
+function rangesOverlap(a: Range, b: Range): boolean {
+  if (a.start.line !== b.start.line || a.end.line !== b.end.line) return false;
+  return a.start.character < b.end.character && b.start.character < a.end.character;
+}
+
+function isShaderLabUri(uri: string): boolean {
+  return /\.shader(?:$|[?#])/i.test(uri);
+}
+
 function isMacroSymbol(symbol: SymbolEntry): boolean {
   return symbol.kind === 'macro';
 }
 
-function semanticTokensForIndex(index: FileIndex, global?: SymbolLookup): SemanticTokens {
+function semanticTokensForIndex(
+  index: FileIndex,
+  global?: SymbolLookup,
+  text?: string,
+): SemanticTokens {
   const macroNames = new Set(
     index.symbols
       .filter(isMacroSymbol)
@@ -141,13 +170,25 @@ function semanticTokensForIndex(index: FileIndex, global?: SymbolLookup): Semant
     const token = referenceToken(reference, macroNames);
     if (token) tokens.push(token);
   }
+  if (text && isShaderLabUri(index.uri)) {
+    for (const token of scanShaderLabTokens(text)) {
+      tokens.push({
+        range: token.range,
+        tokenType: token.tokenType,
+        source: 'lexical',
+      });
+    }
+  }
 
   const builder = new SemanticTokensBuilder();
+  const accepted: TokenRange[] = [];
   for (const token of tokens.sort(compareTokens)) {
     if (token.range.start.line !== token.range.end.line) continue;
     const key = tokenKey(token);
     if (seen.has(key)) continue;
+    if (accepted.some((existing) => rangesOverlap(existing.range, token.range))) continue;
     seen.add(key);
+    accepted.push(token);
 
     const tokenType = TOKEN_TYPE_INDEX.get(token.tokenType);
     if (tokenType === undefined) continue;
@@ -176,8 +217,8 @@ export function registerSemanticTokensHandler(
       if (!workspace) return { data: [] };
 
       let index = workspace.store.get(params.textDocument.uri);
+      const document = documents.get(params.textDocument.uri);
       if (!index && typeof workspace.reindex === 'function') {
-        const document = documents.get(params.textDocument.uri);
         if (document) {
           await workspace.reindex(document.uri, document.getText());
           index = workspace.store.get(params.textDocument.uri);
@@ -185,7 +226,7 @@ export function registerSemanticTokensHandler(
       }
       if (!index) return { data: [] };
 
-      return semanticTokensForIndex(index, workspace.global);
+      return semanticTokensForIndex(index, workspace.global, document?.getText());
     };
 
     if (!suspender) return resolveRequest();
