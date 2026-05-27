@@ -1,4 +1,8 @@
-import { CompletionItemKind, type CompletionItem } from 'vscode-languageserver/node';
+import {
+  CompletionItemKind,
+  type CompletionItem,
+  type SignatureInformation,
+} from 'vscode-languageserver/node';
 import type { ShaderSuggestion, ShaderSuggestionKind } from './types';
 
 export function signatureLabelOf(suggestion: ShaderSuggestion): string {
@@ -51,5 +55,21 @@ export function toCompletionItem(suggestion: ShaderSuggestion): CompletionItem {
     documentation: suggestion.documentation,
     insertText: suggestion.insertText,
     sortText: suggestion.sortText,
+  };
+}
+
+export function isFunctionSuggestion(suggestion: ShaderSuggestion): boolean {
+  return suggestion.kind === 'function';
+}
+
+export function toSignatureInformation(suggestion: ShaderSuggestion): SignatureInformation | null {
+  if (!isFunctionSuggestion(suggestion)) return null;
+  return {
+    label: signatureLabelOf(suggestion),
+    documentation: suggestion.documentation,
+    parameters: suggestion.parameters?.map((parameter) => ({
+      label: `${parameter.type} ${parameter.name}`,
+      documentation: parameter.documentation,
+    })) ?? [],
   };
 }

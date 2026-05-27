@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FileIndex, FunctionSymbolEntry, SymbolEntry } from '@unity-shader-nav/shared';
 import { IndexStore } from '../../src/index';
-import { collectVisibleProjectSuggestions } from '../../src/suggestions';
+import { collectVisibleProjectFunctionSuggestions, collectVisibleProjectSuggestions } from '../../src/suggestions';
 import { uriKey } from '../../src/index/uriKey';
 
 const mainUri = 'file:///t/main.hlsl';
@@ -166,5 +166,59 @@ describe('collectVisibleProjectSuggestions', () => {
 
     expect(suggestions.filter((item) => item.name === '_Color')).toHaveLength(1);
     expect(suggestions.filter((item) => item.name === 'Lighting')).toHaveLength(2);
+  });
+
+  it('collects visible function candidates by exact name for signature help', () => {
+    const main: FileIndex = {
+      uri: mainUri,
+      references: [],
+      symbols: [
+        fn('Lighting', mainUri, 1, [{ type: 'float3', name: 'normalWS' }]),
+        symbol({ name: 'Lighting', kind: 'variable', declaredType: 'float4' }),
+      ],
+    };
+    const include: FileIndex = {
+      uri: includeUri,
+      references: [],
+      symbols: [fn('Lighting', includeUri, 2, [{ type: 'half3', name: 'normalWS' }])],
+    };
+    const hidden: FileIndex = {
+      uri: otherUri,
+      references: [],
+      symbols: [fn('Lighting', otherUri, 3, [{ type: 'float4', name: 'normalWS' }])],
+    };
+
+    const suggestions = collectVisibleProjectFunctionSuggestions({
+      index: main,
+      store: storeOf([main, include, hidden]),
+      visibleUriKeys: new Set([uriKey(mainUri), uriKey(includeUri)]),
+      position: { line: 10, character: 0 },
+      name: 'Lighting',
+    });
+
+    expect(suggestions).toHaveLength(2);
+    expect(suggestions.map((item) => item.parameters?.[0]?.type)).toEqual(['float3', 'half3']);
+  });
+
+  it('dedupes function candidates by concrete symbol identity only', () => {
+    const index: FileIndex = {
+      uri: mainUri,
+      references: [],
+      symbols: [
+        fn('Lighting', mainUri, 1, [{ type: 'float3', name: 'normalWS' }]),
+        fn('Lighting', mainUri, 2, [{ type: 'float3', name: 'normalWS' }]),
+        fn('Other', mainUri, 3),
+      ],
+    };
+
+    const suggestions = collectVisibleProjectFunctionSuggestions({
+      index,
+      store: storeOf([index]),
+      visibleUriKeys: new Set([uriKey(mainUri)]),
+      position: { line: 10, character: 0 },
+      name: 'Lighting',
+    });
+
+    expect(suggestions).toHaveLength(2);
   });
 });

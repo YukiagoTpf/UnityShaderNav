@@ -35,6 +35,14 @@ describe('LSP handshake', () => {
     });
   });
 
+  it('advertises signatureHelpProvider', () => {
+    const result = createInitializeResult();
+    expect(result.capabilities.signatureHelpProvider).toMatchObject({
+      triggerCharacters: ['(', ','],
+      retriggerCharacters: [','],
+    });
+  });
+
   it('advertises semanticTokensProvider', () => {
     const result = createInitializeResult();
     expect(result.capabilities.semanticTokensProvider).toMatchObject({

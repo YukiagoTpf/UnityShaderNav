@@ -10,7 +10,8 @@ UnityShaderNav provides practical VS Code navigation for Unity shader projects:
 
 - Go to Definition for ShaderLab/HLSL symbols.
 - Find References for project-authored shader code.
-- Conservative completion for project-indexed symbols in HLSL/CG code.
+- Conservative completion and signature help for project-indexed symbols in
+  HLSL/CG code.
 - Document Symbols for fast file outline navigation.
 - Document Highlight and semantic coloring for common shader symbols.
 - Cross-file navigation through `#include` chains and resolved Unity Packages.
@@ -98,6 +99,11 @@ Completion uses the same project index and include visibility rules. It suggests
 project functions, variables, parameters, structs, macros, and receiver-aware
 struct members in HLSL/CG code, but it intentionally avoids exhaustive Unity or
 HLSL built-in vocabulary.
+
+Signature help is also project-index-backed and conservative. It shows indexed
+project function signatures for visible free-function calls and may return
+multiple candidates when preprocessor or overload-like ambiguity exists. Built-in
+Unity/HLSL function signatures are intentionally not promised by this layer.
 
 ## Scope and Visibility
 

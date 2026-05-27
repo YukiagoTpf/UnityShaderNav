@@ -13,3 +13,8 @@ cbuffer UnityPerMaterial {
 };
 
 #pragma vertex main
+
+float4 combine(float4 a, float4 b) { return a + b; }
+float4 useCombine() {
+    return combine(helper(float4(1,1,1,1)), float4(0,0,0,0));
+}

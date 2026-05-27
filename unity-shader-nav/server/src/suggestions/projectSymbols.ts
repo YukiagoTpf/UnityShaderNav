@@ -77,6 +77,10 @@ function dedupeKey(symbol: SymbolEntry): string {
   return [symbol.name, symbol.kind, symbol.parentType ?? ''].join('|');
 }
 
+function identityKey(symbol: SymbolEntry): string {
+  return rangeKey(symbol);
+}
+
 export function symbolToSuggestion(symbol: SymbolEntry, sourceRank: number): ShaderSuggestion {
   const suggestion: ShaderSuggestion = {
     name: symbol.name,
@@ -116,6 +120,37 @@ export function collectVisibleProjectSuggestions(input: CollectProjectSuggestion
   const suggestions: ShaderSuggestion[] = [];
   for (const candidate of ordered) {
     const key = dedupeKey(candidate.symbol);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    suggestions.push(symbolToSuggestion(candidate.symbol, candidate.rank));
+  }
+  return suggestions;
+}
+
+export function collectVisibleProjectFunctionSuggestions(
+  input: CollectProjectSuggestionsInput & { name: string },
+): ShaderSuggestion[] {
+  const ordered: Array<{ symbol: FunctionSymbolEntry; rank: number }> = [];
+  for (const symbol of input.index.symbols) {
+    if (symbol.kind === 'function' && symbol.name === input.name) {
+      ordered.push({ symbol: symbol as FunctionSymbolEntry, rank: 1 });
+    }
+  }
+  for (const visibleKey of input.store.uris()) {
+    if (uriKey(input.index.uri) === visibleKey || !input.visibleUriKeys.has(visibleKey)) continue;
+    const visibleIndex = input.store.get(visibleKey);
+    if (!visibleIndex) continue;
+    for (const symbol of visibleIndex.symbols) {
+      if (symbol.kind === 'function' && symbol.name === input.name) {
+        ordered.push({ symbol: symbol as FunctionSymbolEntry, rank: 2 });
+      }
+    }
+  }
+
+  const seen = new Set<string>();
+  const suggestions: ShaderSuggestion[] = [];
+  for (const candidate of ordered) {
+    const key = identityKey(candidate.symbol);
     if (seen.has(key)) continue;
     seen.add(key);
     suggestions.push(symbolToSuggestion(candidate.symbol, candidate.rank));

@@ -37,6 +37,10 @@ export function createInitializeResult(): InitializeResult {
       completionProvider: {
         triggerCharacters: ['.'],
       },
+      signatureHelpProvider: {
+        triggerCharacters: ['(', ','],
+        retriggerCharacters: [','],
+      },
       semanticTokensProvider,
     },
     serverInfo: {

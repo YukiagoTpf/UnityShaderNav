@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { CompletionItemKind } from 'vscode-languageserver/node';
-import { signatureLabelOf, toCompletionItem } from '../../src/suggestions';
+import {
+  isFunctionSuggestion,
+  signatureLabelOf,
+  toCompletionItem,
+  toSignatureInformation,
+} from '../../src/suggestions';
 
 describe('suggestion formatting', () => {
   it('formats functions as LSP function completion items', () => {
@@ -60,5 +65,40 @@ describe('suggestion formatting', () => {
       insertText: 'helper',
       sortText: '1_helper',
     });
+  });
+
+  it('formats function suggestions as signature information', () => {
+    const signature = toSignatureInformation({
+      name: 'Lighting',
+      kind: 'function',
+      source: 'project',
+      documentation: 'Applies project lighting.',
+      returnType: 'float4',
+      parameters: [
+        { name: 'normalWS', type: 'float3', documentation: 'World normal.' },
+        { name: 'roughness', type: 'half' },
+      ],
+    });
+
+    expect(signature).toMatchObject({
+      label: 'float4 Lighting(float3 normalWS, half roughness)',
+      documentation: 'Applies project lighting.',
+      parameters: [
+        { label: 'float3 normalWS', documentation: 'World normal.' },
+        { label: 'half roughness' },
+      ],
+    });
+  });
+
+  it('ignores non-function suggestions for signature help', () => {
+    const variable = {
+      name: '_Color',
+      kind: 'variable' as const,
+      source: 'project' as const,
+      declaredType: 'float4',
+    };
+
+    expect(isFunctionSuggestion(variable)).toBe(false);
+    expect(toSignatureInformation(variable)).toBeNull();
   });
 });

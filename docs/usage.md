@@ -34,6 +34,16 @@ Enable package references with:
 }
 ```
 
+### Completion And Signature Help
+
+Completion and signature help are backed by the project index. In HLSL/CG code,
+UnityShaderNav can suggest indexed project symbols and show signatures for
+visible project functions.
+
+The behavior is intentionally conservative: ambiguous overload-like or
+preprocessor-dependent functions may appear as multiple signature candidates,
+and built-in Unity/HLSL function signatures are not provided yet.
+
 ### Document Symbols
 
 Use Ctrl+Shift+O to view ShaderLab blocks, passes, pragmas, functions, structs,
