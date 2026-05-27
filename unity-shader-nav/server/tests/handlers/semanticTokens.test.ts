@@ -8,6 +8,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { GlobalReferenceIndex, GlobalSymbolIndex, IndexStore } from '../../src/index';
 import { registerSemanticTokensHandler, SEMANTIC_TOKEN_TYPES } from '../../src/handlers/semanticTokens';
 import { indexFile } from '../../src/parser/hlsl/fileIndexer';
+import { MacroPatternTable } from '../../src/macros';
 
 function captureSemanticTokensHandler(): {
   connection: Connection;
@@ -77,6 +78,17 @@ function expectSortedAndNonOverlapping(tokens: Array<{
   }
 }
 
+function tokenTexts(
+  text: string,
+  tokens: Array<{ line: number; character: number; length: number; type: string }>,
+): Array<{ text: string; type: string }> {
+  const lines = text.split(/\r?\n/);
+  return tokens.map((token) => ({
+    text: lines[token.line].slice(token.character, token.character + token.length),
+    type: token.type,
+  }));
+}
+
 describe('registerSemanticTokensHandler', () => {
   it('colors struct types, variables, members, functions, and macros', async () => {
     const { connection, handler } = captureSemanticTokensHandler();
@@ -142,6 +154,100 @@ describe('registerSemanticTokensHandler', () => {
       { line: 9, character: 2, length: 'InputData'.length, type: 'type' },
       { line: 9, character: 12, length: 'inputData'.length, type: 'variable' },
       { line: 10, character: 26, length: 'positionWS'.length, type: 'property' },
+    ]));
+  });
+
+  it('colors ShaderLab wrapper syntax, properties, tags, preprocessor, and HLSL symbols', async () => {
+    const { connection, handler } = captureSemanticTokensHandler();
+    const uri = 'file:///project/Assets/Mixed.shader';
+    const text = [
+      'Shader "Custom/Mixed" {',
+      '  Properties {',
+      '    [Header(Main)] [Space]',
+      '    _BaseMap ("Base Map", 2D) = "white" {}',
+      '    _Tint ("Tint", Color) = (1, 0.5, 0, 1)',
+      '    _Roughness ("Roughness", Range(0, 1)) = 0.5',
+      '  }',
+      '  SubShader {',
+      '    Tags { "LightMode"="UniversalForward" "RenderType"="Opaque" }',
+      '    LOD 100',
+      '    Pass {',
+      '      Name "Forward"',
+      '      Cull Back',
+      '      ZWrite On',
+      '      HLSLPROGRAM',
+      '      #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"',
+      '      #pragma vertex vert',
+      '      #define SAMPLE_ALBEDO(tex, uv) tex.Sample(sampler##tex, uv)',
+      '      TEXTURE2D(_BaseMap);',
+      '      SAMPLER(sampler_BaseMap);',
+      '      CBUFFER_START(UnityPerMaterial)',
+      '      float4 _Tint;',
+      '      CBUFFER_END',
+      '      struct Attributes { float3 positionOS : POSITION; };',
+      '      float4 vert(Attributes input) : SV_POSITION { return float4(input.positionOS, 1); }',
+      '      ENDHLSL',
+      '    }',
+      '  }',
+      '}',
+    ].join('\n');
+    const doc = TextDocument.create(uri, 'shaderlab', 1, text);
+    const index = await indexFile(uri, text, new MacroPatternTable());
+    const store = new IndexStore();
+    store.set(uri, index);
+    const global = new GlobalSymbolIndex();
+    const globalRefs = new GlobalReferenceIndex();
+    global.upsert(index);
+    globalRefs.upsert(index);
+    const documents = {
+      get(requestedUri: string) {
+        return requestedUri === uri ? doc : undefined;
+      },
+    } as never;
+    const workspace = {
+      store,
+      global,
+      globalRefs,
+    };
+    const manager = {
+      async workspaceForOrCreateFile(requestedUri: string) {
+        return requestedUri === uri ? workspace : undefined;
+      },
+    } as never;
+
+    registerSemanticTokensHandler(connection, documents, manager);
+
+    const tokens = decodeTokens(await handler()({ textDocument: { uri } }));
+    expectSortedAndNonOverlapping(tokens);
+    expect(tokenTexts(text, tokens)).toEqual(expect.arrayContaining([
+      { text: 'Shader', type: 'keyword' },
+      { text: 'Properties', type: 'keyword' },
+      { text: 'Header', type: 'decorator' },
+      { text: '_BaseMap', type: 'property' },
+      { text: 'Base Map', type: 'string' },
+      { text: '2D', type: 'type' },
+      { text: 'Color', type: 'type' },
+      { text: 'Range', type: 'type' },
+      { text: 'LightMode', type: 'property' },
+      { text: 'UniversalForward', type: 'string' },
+      { text: 'LOD', type: 'keyword' },
+      { text: 'Cull', type: 'keyword' },
+      { text: 'ZWrite', type: 'keyword' },
+      { text: 'HLSLPROGRAM', type: 'keyword' },
+      { text: '#include', type: 'keyword' },
+      { text: 'Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl', type: 'string' },
+      { text: '#pragma', type: 'keyword' },
+      { text: 'vert', type: 'function' },
+      { text: 'SAMPLE_ALBEDO', type: 'macro' },
+      { text: 'TEXTURE2D', type: 'macro' },
+      { text: 'SAMPLER', type: 'macro' },
+      { text: 'CBUFFER_START', type: 'macro' },
+      { text: 'UnityPerMaterial', type: 'variable' },
+      { text: 'Attributes', type: 'type' },
+      { text: 'POSITION', type: 'enumMember' },
+      { text: 'SV_POSITION', type: 'enumMember' },
+      { text: 'positionOS', type: 'property' },
+      { text: 'ENDHLSL', type: 'keyword' },
     ]));
   });
 });
