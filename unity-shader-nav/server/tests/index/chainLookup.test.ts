@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FileIndex, Range, SymbolEntry } from '@unity-shader-nav/shared';
 import { GlobalSymbolIndex } from '../../src/index/globalIndex';
-import { resolveMember } from '../../src/index/chainLookup';
+import { inferReceiverTypeForCompletion, resolveMember } from '../../src/index/chainLookup';
 
 const uri = 'file:///t/main.hlsl';
 const memberRange: Range = { start: { line: 1, character: 11 }, end: { line: 1, character: 21 } };
@@ -241,6 +241,29 @@ describe('resolveMember', () => {
       start: { line: 1, character: 9 },
       end: { line: 1, character: 14 },
     });
+  });
+
+  it('exposes receiver type inference for completion without resolving a known member', () => {
+    const idx: FileIndex = {
+      uri,
+      references: [],
+      symbols: [
+        sym({
+          name: 'lights',
+          kind: 'parameter',
+          declaredType: 'Light',
+          scopeRange: functionScope,
+          location: { uri, range: { start: { line: 5, character: 15 }, end: { line: 5, character: 21 } } },
+        }),
+      ],
+    };
+
+    expect(inferReceiverTypeForCompletion(
+      idx,
+      globalWithIssue9Types(),
+      'lights[i]',
+      { line: 8, character: 24 },
+    )).toBe('Light');
   });
 
   it('resolves a member through a nested field receiver', () => {

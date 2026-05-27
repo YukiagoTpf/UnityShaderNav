@@ -10,6 +10,7 @@ UnityShaderNav provides practical VS Code navigation for Unity shader projects:
 
 - Go to Definition for ShaderLab/HLSL symbols.
 - Find References for project-authored shader code.
+- Conservative completion for project-indexed symbols in HLSL/CG code.
 - Document Symbols for fast file outline navigation.
 - Document Highlight and semantic coloring for common shader symbols.
 - Cross-file navigation through `#include` chains and resolved Unity Packages.
@@ -20,7 +21,7 @@ semantics.
 ## Non-Goals
 
 - Shader compilation, preview, or diagnostics.
-- Formatting or completion.
+- Formatting or exhaustive compiler-grade completion.
 - Full C preprocessor expansion.
 - Rider-style shader context selection.
 - ShaderGraph generated-code modeling.
@@ -92,6 +93,11 @@ shader code often contains:
 The resolver prefers local and include-visible targets when possible. When more
 than one target remains valid, the server returns all candidates and lets VS Code
 show Peek Definition.
+
+Completion uses the same project index and include visibility rules. It suggests
+project functions, variables, parameters, structs, macros, and receiver-aware
+struct members in HLSL/CG code, but it intentionally avoids exhaustive Unity or
+HLSL built-in vocabulary.
 
 ## Scope and Visibility
 

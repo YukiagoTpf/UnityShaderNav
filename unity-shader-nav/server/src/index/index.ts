@@ -1,7 +1,7 @@
 export { IndexStore } from './indexStore';
 export { GlobalSymbolIndex } from './globalIndex';
 export { GlobalReferenceIndex } from './globalReferences';
-export { resolveMember, resolveMemberSymbols } from './chainLookup';
+export { inferReceiverTypeForCompletion, resolveMember, resolveMemberSymbols } from './chainLookup';
 export { resolveDefinition, resolveDefinitionSymbols } from './symbolResolver';
 export {
   resolveReferenceTargets,

@@ -34,6 +34,9 @@ export function createInitializeResult(): InitializeResult {
       documentSymbolProvider: true,
       referencesProvider: true,
       documentHighlightProvider: true,
+      completionProvider: {
+        triggerCharacters: ['.'],
+      },
       semanticTokensProvider,
     },
     serverInfo: {

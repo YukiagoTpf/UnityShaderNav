@@ -1,5 +1,6 @@
 import { getConnection, createInitializeResult } from './connection';
 import { loadSettings, onSettingsChanged } from './config';
+import { registerCompletionHandler } from './handlers/completion';
 import { registerDefinitionHandler } from './handlers/definition';
 import { registerDocumentHighlightHandler } from './handlers/documentHighlight';
 import { registerDocumentSymbolHandler } from './handlers/documentSymbol';
@@ -76,6 +77,7 @@ onSettingsChanged(connection, async (settings) => {
 });
 
 registerDefinitionHandler(connection, documents, manager, suspender);
+registerCompletionHandler(connection, documents, manager, suspender);
 registerDocumentHighlightHandler(connection, documents, manager, suspender);
 registerDocumentSymbolHandler(connection, documents, manager, suspender);
 registerSemanticTokensHandler(connection, documents, manager, suspender);

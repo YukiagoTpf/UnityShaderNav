@@ -28,6 +28,13 @@ describe('LSP handshake', () => {
     expect(result.capabilities.documentHighlightProvider).toBe(true);
   });
 
+  it('advertises completionProvider', () => {
+    const result = createInitializeResult();
+    expect(result.capabilities.completionProvider).toMatchObject({
+      triggerCharacters: ['.'],
+    });
+  });
+
   it('advertises semanticTokensProvider', () => {
     const result = createInitializeResult();
     expect(result.capabilities.semanticTokensProvider).toMatchObject({

@@ -296,6 +296,16 @@ function inferReceiverExpressionType(
   return currentType;
 }
 
+export function inferReceiverTypeForCompletion(
+  index: FileIndex,
+  global: GlobalSymbolIndex | null | undefined,
+  receiver: string,
+  refPos: Position,
+  options?: ResolutionOptions,
+): string | null {
+  return inferReceiverExpressionType(index, global, receiver, refPos, options);
+}
+
 function describeSymbol(symbol: SymbolEntry): Record<string, unknown> {
   return {
     name: symbol.name,
