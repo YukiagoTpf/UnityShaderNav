@@ -11,6 +11,8 @@ UnityShaderNav は、Unity Shader プロジェクト向けの Visual Studio Code
 - インデックス済み HLSL/CG コードの保守的な補完とシグネチャヘルプ、および厳選された Unity/HLSL/ShaderLab 組み込み語彙。
 - ShaderLab ラッパー、Properties、Tags、render states、プリプロセッサ行、
   HLSL シンボル向けの Document Symbols とセマンティックカラーリング。
+- 非アクティブおよび variant 依存の `#if`/`#ifdef` プリプロセッサ分岐を保守的に
+  ディム表示します（表示のみで、ナビゲーションには影響しません）。
 - `Packages/packages-lock.json` による Unity Package の解決。
 - `Library/UnityShaderNavCache/` 配下へのプロジェクトローカルなインデックスキャッシュ。
 
