@@ -35,8 +35,8 @@ handling. Important modules:
   project symbols, formats LSP completion/signature items, and filters curated
   built-in shader vocabulary.
 - `handlers`: implements definition, references, document symbols, document
-  highlights, completion, signature help, semantic tokens, and open-document
-  behavior.
+  highlights, completion, signature help, semantic tokens, inactive-region
+  dimming, and open-document behavior.
 - `workspace`: detects Unity roots, scans files, watches changes, and manages
   persistent cache.
 
@@ -51,7 +51,12 @@ The index is intentionally pragmatic:
   assignment facts rather than a full type system.
 - Completion and signature help reuse the same index and include-visibility
   rules as navigation, then merge curated built-ins only after project symbols.
-- Preprocessor conditions are not evaluated.
+- Preprocessor conditions are not evaluated for navigation, references, or
+  completion. A separate presentation-only layer does apply conservative
+  preprocessor branch dimming (inactive and variant-gated `#if`/`#ifdef`/
+  `#ifndef` branches are visually dimmed via client decorations), but it never
+  changes index results. See
+  [ADR-0005](adr/0005-conservative-preprocessor-branch-dimming.md).
 
 ## Package Resolution
 

@@ -45,6 +45,25 @@ describe('loadSettings', () => {
 
     expect(settings.debug.definitionTrace).toBe(true);
   });
+
+  it('defaults dimInactiveBranches when no configuration is provided', async () => {
+    const settings = await loadSettings(connectionWithConfiguration({}));
+
+    expect(settings.dimInactiveBranches).toEqual(
+      DEFAULT_SETTINGS.dimInactiveBranches,
+    );
+    expect(settings.dimInactiveBranches).toEqual({ enabled: true, opacity: 0.55 });
+  });
+
+  it('merges a partial dimInactiveBranches override with defaults', async () => {
+    const settings = await loadSettings(connectionWithConfiguration({
+      dimInactiveBranches: { enabled: false },
+    }));
+
+    // overridden field applies, missing field keeps its default
+    expect(settings.dimInactiveBranches.enabled).toBe(false);
+    expect(settings.dimInactiveBranches.opacity).toBe(0.55);
+  });
 });
 
 describe('onSettingsChanged', () => {

@@ -7,6 +7,15 @@ and uses semantic versioning for extension releases once public publishing start
 
 ## Unreleased
 
+### Added
+
+- Conservative preprocessor branch dimming: inactive and variant-dependent
+  `#if`/`#ifdef`/`#ifndef` branches in shader/HLSL files are visually dimmed via
+  client decorations. This is presentation-only and does not change navigation,
+  references, or completion. Configurable through
+  `unityShaderNav.dimInactiveBranches.enabled` and `.opacity`. See
+  [ADR-0005](docs/adr/0005-conservative-preprocessor-branch-dimming.md).
+
 ## 0.0.6 - 2026-05-27
 
 ### Added

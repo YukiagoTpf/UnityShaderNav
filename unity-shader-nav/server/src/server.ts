@@ -5,6 +5,7 @@ import { registerDefinitionHandler } from './handlers/definition';
 import { registerDocumentHighlightHandler } from './handlers/documentHighlight';
 import { registerDocumentSymbolHandler } from './handlers/documentSymbol';
 import { registerDocuments } from './handlers/documents';
+import { registerInactiveRegionsHandler } from './handlers/inactiveRegions';
 import { registerReferencesHandler } from './handlers/references';
 import { registerSemanticTokensHandler } from './handlers/semanticTokens';
 import { registerSignatureHelpHandler } from './handlers/signatureHelp';
@@ -87,6 +88,13 @@ registerReferencesHandler(
   connection,
   documents,
   manager,
+  suspender,
+);
+registerInactiveRegionsHandler(
+  connection,
+  documents,
+  manager,
+  (uri) => loadSettings(connection, uri),
   suspender,
 );
 registerFileWatchers(connection, manager, suspender, openDocuments);

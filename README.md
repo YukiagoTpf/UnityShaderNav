@@ -17,6 +17,8 @@ The extension focuses on fast code navigation:
   curated Unity/HLSL/ShaderLab built-in vocabulary.
 - Document Symbols and semantic coloring for ShaderLab wrappers, Properties,
   Tags, render states, preprocessor lines, and HLSL symbols.
+- Conservative dimming of inactive and variant-dependent `#if`/`#ifdef`
+  preprocessor branches (presentation only; navigation is unaffected).
 - Unity Package resolution through `Packages/packages-lock.json`.
 - Persistent project-local indexing under `Library/UnityShaderNavCache/`.
 

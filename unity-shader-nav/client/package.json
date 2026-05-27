@@ -101,6 +101,20 @@
           "scope": "resource",
           "default": false,
           "description": "Log detailed definition-resolution diagnostics to the UnityShaderNav output channel."
+        },
+        "unityShaderNav.dimInactiveBranches.enabled": {
+          "type": "boolean",
+          "scope": "resource",
+          "default": true,
+          "description": "Dim inactive and variant-dependent preprocessor branches in shader/HLSL files."
+        },
+        "unityShaderNav.dimInactiveBranches.opacity": {
+          "type": "number",
+          "scope": "resource",
+          "default": 0.55,
+          "minimum": 0.1,
+          "maximum": 1,
+          "description": "Opacity applied to dimmed preprocessor branches (0.1–1)."
         }
       }
     }

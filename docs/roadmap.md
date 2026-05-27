@@ -45,7 +45,12 @@ fixtures and careful UX boundaries before becoming implementation issues:
 These are larger product directions that may require new architecture,
 integration points, or explicit non-goal revisions:
 
-- Preprocessor-aware context and variant modeling.
+- Preprocessor-aware context and variant modeling. A conservative first pass is
+  delivered: presentation-only dimming of inactive and variant-gated `#if`
+  branches via client decorations
+  ([issue #22](https://github.com/YukiagoTpf/UnityShaderNav/issues/22),
+  [ADR-0005](adr/0005-conservative-preprocessor-branch-dimming.md)). Full
+  compiler-accurate variant modeling remains future work.
 - Shader diagnostics or compiler integration.
 - C# to shader cross-language navigation.
 - ShaderGraph generated-code modeling.
