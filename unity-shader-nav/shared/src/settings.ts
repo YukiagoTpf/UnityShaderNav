@@ -14,6 +14,7 @@ export interface ExtensionSettings {
   declarationMacros: UserDeclarationMacro[];
   findReferences: { includePackages: boolean };
   debug: { definitionTrace: boolean };
+  dimInactiveBranches: { enabled: boolean; opacity: number };
 }
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
@@ -23,4 +24,5 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   declarationMacros: [],
   findReferences: { includePackages: false },
   debug: { definitionTrace: false },
+  dimInactiveBranches: { enabled: true, opacity: 0.55 },
 };

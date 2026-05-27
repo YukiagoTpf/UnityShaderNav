@@ -1,9 +1,10 @@
 import type { Connection } from 'vscode-languageserver/node';
 import { DEFAULT_SETTINGS, type ExtensionSettings } from '@unity-shader-nav/shared';
 
-type PartialSettings = Partial<Omit<ExtensionSettings, 'findReferences'>> & {
+type PartialSettings = Partial<Omit<ExtensionSettings, 'findReferences' | 'debug' | 'dimInactiveBranches'>> & {
   findReferences?: Partial<ExtensionSettings['findReferences']>;
   debug?: Partial<ExtensionSettings['debug']>;
+  dimInactiveBranches?: Partial<ExtensionSettings['dimInactiveBranches']>;
 };
 
 function mergeSettings(rawValue: unknown): ExtensionSettings {
@@ -18,6 +19,10 @@ function mergeSettings(rawValue: unknown): ExtensionSettings {
     debug: {
       ...DEFAULT_SETTINGS.debug,
       ...(raw.debug ?? {}),
+    },
+    dimInactiveBranches: {
+      ...DEFAULT_SETTINGS.dimInactiveBranches,
+      ...(raw.dimInactiveBranches ?? {}),
     },
   };
 }
