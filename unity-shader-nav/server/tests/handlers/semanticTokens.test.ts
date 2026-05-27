@@ -257,4 +257,74 @@ describe('registerSemanticTokensHandler', () => {
       { text: 'ENDHLSL', type: 'keyword' },
     ]));
   });
+
+  it('preserves HLSL semantic tokens for identifiers that look like ShaderLab keywords', async () => {
+    const { connection, handler } = captureSemanticTokensHandler();
+    const uri = 'file:///project/Assets/KeywordCollision.shader';
+    const text = [
+      'Shader "Custom/KeywordCollision" {',
+      '  SubShader {',
+      '    Pass {',
+      '      HLSLPROGRAM',
+      '      float4 Name(float4 Pass) : SV_Target {',
+      '        return Pass;',
+      '      }',
+      '      ENDHLSL',
+      '    }',
+      '  }',
+      '}',
+    ].join('\n');
+    const doc = TextDocument.create(uri, 'shaderlab', 1, text);
+    const index = await indexFile(uri, text);
+    const store = new IndexStore();
+    store.set(uri, index);
+    const global = new GlobalSymbolIndex();
+    const globalRefs = new GlobalReferenceIndex();
+    global.upsert(index);
+    globalRefs.upsert(index);
+    const documents = {
+      get(requestedUri: string) {
+        return requestedUri === uri ? doc : undefined;
+      },
+    } as never;
+    const workspace = {
+      store,
+      global,
+      globalRefs,
+    };
+    const manager = {
+      async workspaceForOrCreateFile(requestedUri: string) {
+        return requestedUri === uri ? workspace : undefined;
+      },
+    } as never;
+
+    registerSemanticTokensHandler(connection, documents, manager);
+
+    const tokens = decodeTokens(await handler()({ textDocument: { uri } }));
+    const rendered = tokenTexts(text, tokens);
+    expect(rendered).toEqual(expect.arrayContaining([
+      { text: 'Name', type: 'function' },
+      { text: 'Pass', type: 'parameter' },
+      { text: 'SV_Target', type: 'enumMember' },
+    ]));
+    expect(rendered).not.toContainEqual({ text: 'Name', type: 'keyword' });
+    expect(tokens).not.toContainEqual({
+      line: 4,
+      character: 13,
+      length: 'Name'.length,
+      type: 'keyword',
+    });
+    expect(tokens).not.toContainEqual({
+      line: 4,
+      character: 26,
+      length: 'Pass'.length,
+      type: 'keyword',
+    });
+    expect(tokens).not.toContainEqual({
+      line: 5,
+      character: 15,
+      length: 'Pass'.length,
+      type: 'keyword',
+    });
+  });
 });

@@ -135,6 +135,34 @@ function maskComments(line: string, state: CommentState): string {
   return chars.join('');
 }
 
+function maskStrings(line: string): string {
+  const chars = line.split('');
+  let inString = false;
+
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i];
+    const next = chars[i + 1];
+
+    if (inString) {
+      chars[i] = ' ';
+      if (ch === '\\' && next !== undefined) {
+        chars[i + 1] = ' ';
+        i++;
+        continue;
+      }
+      if (ch === '"') inString = false;
+      continue;
+    }
+
+    if (ch === '"') {
+      chars[i] = ' ';
+      inString = true;
+    }
+  }
+
+  return chars.join('');
+}
+
 function countChar(text: string, ch: string): number {
   let count = 0;
   for (const c of text) {
@@ -186,14 +214,14 @@ export function scanShaderLabTokens(text: string): ShaderLabLexicalToken[] {
     }
   }
 
-  function scanProperties(lineNo: number, code: string): void {
-    for (const match of code.matchAll(/\[\s*([A-Za-z_][A-Za-z0-9_]*)/g)) {
+  function scanProperties(lineNo: number, code: string, codeNoStrings: string): void {
+    for (const match of codeNoStrings.matchAll(/\[\s*([A-Za-z_][A-Za-z0-9_]*)/g)) {
       const name = match[1];
       const start = (match.index ?? 0) + match[0].indexOf(name);
       push(lineNo, start, start + name.length, 'decorator');
     }
 
-    const propertyMatch = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(/.exec(code);
+    const propertyMatch = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(/.exec(codeNoStrings);
     if (propertyMatch) {
       const name = propertyMatch[1];
       const start = propertyMatch[0].indexOf(name);
@@ -202,11 +230,11 @@ export function scanShaderLabTokens(text: string): ShaderLabLexicalToken[] {
 
     scanStrings(lineNo, code, 'string');
 
-    for (const match of code.matchAll(propertyTypeRe)) {
+    for (const match of codeNoStrings.matchAll(propertyTypeRe)) {
       push(lineNo, match.index ?? 0, (match.index ?? 0) + match[0].length, 'type');
     }
 
-    for (const match of code.matchAll(NUMBER_RE)) {
+    for (const match of codeNoStrings.matchAll(NUMBER_RE)) {
       push(lineNo, match.index ?? 0, (match.index ?? 0) + match[0].length, 'number');
     }
   }
@@ -224,8 +252,8 @@ export function scanShaderLabTokens(text: string): ShaderLabLexicalToken[] {
     }
   }
 
-  function scanHlslLexical(lineNo: number, code: string): void {
-    const directive = /#\s*(include|pragma|define)\b/.exec(code);
+  function scanHlslLexical(lineNo: number, code: string, codeNoStrings: string): void {
+    const directive = /#\s*(include|pragma|define|if|ifdef|ifndef|else|elif|endif)\b/.exec(codeNoStrings);
     if (directive) {
       const start = directive.index;
       const end = start + directive[0].length;
@@ -254,13 +282,13 @@ export function scanShaderLabTokens(text: string): ShaderLabLexicalToken[] {
       }
     }
 
-    for (const match of code.matchAll(WORD_RE)) {
+    for (const match of codeNoStrings.matchAll(WORD_RE)) {
       const tokenType = BUILTIN_TOKEN_TYPES.get(match[0]);
       if (!tokenType) continue;
       push(lineNo, match.index ?? 0, (match.index ?? 0) + match[0].length, tokenType);
     }
 
-    for (const match of code.matchAll(SWIZZLE_RE)) {
+    for (const match of codeNoStrings.matchAll(SWIZZLE_RE)) {
       const start = (match.index ?? 0) + 1;
       push(lineNo, start, start + match[0].length - 1, 'property');
     }
@@ -274,6 +302,7 @@ export function scanShaderLabTokens(text: string): ShaderLabLexicalToken[] {
 
   for (let lineNo = 0; lineNo < lines.length; lineNo++) {
     const code = maskComments(lines[lineNo], commentState);
+    const codeNoStrings = maskStrings(code);
     const block = blocks.find((candidate) => (
       candidate.startLine <= lineNo && lineNo <= candidate.endLine
     ));
@@ -281,30 +310,30 @@ export function scanShaderLabTokens(text: string): ShaderLabLexicalToken[] {
       && block.contentStartLine <= lineNo
       && lineNo <= block.contentEndLine;
 
-    scanShaderLabKeywords(lineNo, code);
-
     if (inHlslContent) {
-      scanHlslLexical(lineNo, code);
+      scanHlslLexical(lineNo, code, codeNoStrings);
       continue;
     }
 
-    const hasProperties = /\bProperties\b/.test(code);
-    const hasTags = /\bTags\b/.test(code);
+    scanShaderLabKeywords(lineNo, codeNoStrings);
+
+    const hasProperties = /\bProperties\b/.test(codeNoStrings);
+    const hasTags = /\bTags\b/.test(codeNoStrings);
     const inProperties = propertiesDepth > 0 || hasProperties;
     const inTags = tagsDepth > 0 || hasTags;
 
     if (inTags) {
       scanTags(lineNo, code);
     } else if (inProperties) {
-      scanProperties(lineNo, code);
+      scanProperties(lineNo, code, codeNoStrings);
     }
 
     if (hasProperties || propertiesDepth > 0) {
-      propertiesDepth += countChar(code, '{') - countChar(code, '}');
+      propertiesDepth += countChar(codeNoStrings, '{') - countChar(codeNoStrings, '}');
       if (propertiesDepth < 0) propertiesDepth = 0;
     }
     if (hasTags || tagsDepth > 0) {
-      tagsDepth += countChar(code, '{') - countChar(code, '}');
+      tagsDepth += countChar(codeNoStrings, '{') - countChar(codeNoStrings, '}');
       if (tagsDepth < 0) tagsDepth = 0;
     }
   }
