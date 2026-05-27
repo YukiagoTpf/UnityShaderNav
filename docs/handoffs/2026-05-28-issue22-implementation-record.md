@@ -113,4 +113,13 @@
 
 ## 收尾
 
-(待开始)
+- **最终全量验证**(merge 前门禁,main 树 == 此次验证的分支 tip):`npm test` 退出码 0 —
+  package-layout 9 + electron 28 + vitest 475 全过。
+- **Issue #22**:已评论实现总结 + 验收对照 + 验证结果,并标注 F5 手动验证待人工执行(headless 跑不了);
+  issue **保持 open**,人工验证通过后再关闭(不在自动化里 overstate)。评论:#issuecomment-4556860518。
+- **分支**:`feat/issue-22-dim-inactive-branches` 已 push 到 origin。
+- **Merge**:`git merge --no-ff` 进 main(merge commit `811c617`),`git push origin main`(`b68d2c1..811c617`)。
+  注:仓库有「PR required」保护规则,本次以 admin 身份 bypass 直推(应用户「merge 回 main」明确要求)。
+- **分支 commit 序**(8 个):`605cd04`→`3c6ab8a`→`53a4f9e`→`b411588`→`e41f897`→`2f703c8`→`761269c`→`cd7cc06`。
+
+**状态:6 个 Task + review + 修复全部完成并合并。唯一遗留 = 人工 F5 验证(见 issue #22)。**
