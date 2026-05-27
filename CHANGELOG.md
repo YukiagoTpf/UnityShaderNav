@@ -7,6 +7,12 @@ and uses semantic versioning for extension releases once public publishing start
 
 ## Unreleased
 
+### Added
+
+- Improved ShaderLab and Unity HLSL semantic coloring for `.shader` files,
+  including Properties, Tags, render states, preprocessor lines, macro-style
+  declarations, shader semantics, built-ins, members, and swizzles.
+
 ## 0.0.5 - 2026-05-27
 
 ### Added

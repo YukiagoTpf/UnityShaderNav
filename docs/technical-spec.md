@@ -13,7 +13,8 @@ UnityShaderNav provides practical VS Code navigation for Unity shader projects:
 - Conservative completion and signature help for project-indexed symbols and a
   curated Unity/HLSL/ShaderLab built-in vocabulary.
 - Document Symbols for fast file outline navigation.
-- Document Highlight and semantic coloring for common shader symbols.
+- Document Highlight and semantic coloring for ShaderLab wrapper syntax and
+  common HLSL symbols.
 - Cross-file navigation through `#include` chains and resolved Unity Packages.
 
 The project optimizes for useful editor behavior over full shader compilation
@@ -107,6 +108,14 @@ project function signatures for visible free-function calls and may return
 multiple candidates when preprocessor or overload-like ambiguity exists.
 Built-in functions participate in signature help only when the catalog includes
 parameter metadata.
+
+Semantic coloring combines index-derived HLSL tokens with lexical ShaderLab
+tokens. The index remains the source for project symbols such as functions,
+variables, parameters, structs, struct members, and macros. The lexical pass
+fills visible ShaderLab and highlight-only HLSL gaps: ShaderLab blocks,
+Properties, Tags, render states, preprocessor directives, include paths,
+macro-style declaration heads, shader semantics, and swizzles. Highlight-only
+tokens do not participate in Go to Definition or Find References.
 
 Built-in vocabulary entries live in
 `server/src/suggestions/builtins/catalog.ts`. Every entry needs a category.

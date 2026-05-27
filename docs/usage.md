@@ -55,7 +55,14 @@ and cbuffer entries in the current file.
 ### Semantic Coloring
 
 The language server provides semantic tokens for common HLSL and ShaderLab
-symbols, including types, variables, parameters, members, functions, and macros.
+syntax. In `.shader` files this includes ShaderLab block keywords, Properties
+entries, Tags keys and values, render-state directives, HLSL preprocessor
+directives and include paths, macro-style declarations, shader semantics,
+members, functions, swizzles, and indexed project symbols.
+
+Semantic coloring depends on the active VS Code theme. Themes with semantic
+highlighting disabled or sparse semantic token rules may show less visible
+separation between token categories.
 
 ## Project Detection
 

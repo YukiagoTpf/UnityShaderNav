@@ -15,7 +15,8 @@ The extension focuses on fast code navigation:
   references.
 - Conservative completion and signature help for indexed HLSL/CG code, plus a
   curated Unity/HLSL/ShaderLab built-in vocabulary.
-- Document Symbols and semantic coloring for ShaderLab and HLSL files.
+- Document Symbols and semantic coloring for ShaderLab wrappers, Properties,
+  Tags, render states, preprocessor lines, and HLSL symbols.
 - Unity Package resolution through `Packages/packages-lock.json`.
 - Persistent project-local indexing under `Library/UnityShaderNavCache/`.
 
