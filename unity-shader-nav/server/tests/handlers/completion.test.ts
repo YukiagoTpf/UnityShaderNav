@@ -60,6 +60,106 @@ function itemNames(items: CompletionItem[] | null): string[] {
 }
 
 describe('registerCompletionHandler', () => {
+  it('returns built-in completions in HLSL expression context', async () => {
+    const uri = 'file:///t/main.hlsl';
+    const text = 'float4 main() { return nor; }';
+    const index = await indexFile(uri, text);
+    const handler = captureCompletion(uri, 'hlsl', text, completionWorkspace([index]));
+
+    const result = await handler({
+      textDocument: { uri },
+      position: { line: 0, character: text.indexOf('nor') + 'nor'.length },
+    });
+
+    expect(result?.find((item) => item.label === 'normalize')).toMatchObject({
+      kind: CompletionItemKind.Function,
+      detail: 'T normalize(T x)',
+    });
+  });
+
+  it('returns built-in ShaderLab completions in outer ShaderLab code', async () => {
+    const uri = 'file:///t/main.shader';
+    const text = 'Shader "T/Test" { SubShader { Pass { Bl } } }';
+    const index = await indexFile(uri, text);
+    const handler = captureCompletion(uri, 'shaderlab', text, completionWorkspace([index]));
+
+    const result = await handler({
+      textDocument: { uri },
+      position: { line: 0, character: text.indexOf('Bl') + 'Bl'.length },
+    });
+
+    expect(itemNames(result)).toContain('Blend');
+    expect(itemNames(result)).not.toContain('normalize');
+  });
+
+  it('prefers project completions over duplicate built-ins', async () => {
+    const uri = 'file:///t/main.hlsl';
+    const text = [
+      'float4 normalize(float4 v) { return v; }',
+      'float4 main(float4 v) { return nor; }',
+    ].join('\n');
+    const index = await indexFile(uri, text);
+    const handler = captureCompletion(uri, 'hlsl', text, completionWorkspace([index]));
+
+    const result = await handler({
+      textDocument: { uri },
+      position: { line: 1, character: 34 },
+    });
+    const matches = result?.filter((item) => item.label === 'normalize') ?? [];
+
+    expect(matches).toHaveLength(1);
+    expect(matches[0]?.detail).toBe('float4 normalize(float4 v)');
+  });
+
+  it('preserves overload-like project function completions while filtering built-in duplicates', async () => {
+    const uri = 'file:///t/main.hlsl';
+    const text = [
+      'float4 Lighting(float4 v) { return v; }',
+      'half4 Lighting(half4 v) { return v; }',
+      'float4 main(float4 v) { return Lig; }',
+    ].join('\n');
+    const index = await indexFile(uri, text);
+    const handler = captureCompletion(uri, 'hlsl', text, completionWorkspace([index]));
+
+    const result = await handler({
+      textDocument: { uri },
+      position: { line: 2, character: 34 },
+    });
+    const matches = result?.filter((item) => item.label === 'Lighting') ?? [];
+
+    expect(matches.map((item) => item.detail)).toEqual([
+      'float4 Lighting(float4 v)',
+      'half4 Lighting(half4 v)',
+    ]);
+  });
+
+  it('keeps project and built-in expression completions after ternary colons', async () => {
+    const uri = 'file:///t/main.hlsl';
+    const text = [
+      'float4 helper(float4 v) { return v; }',
+      'float4 main(bool useA, float4 a) {',
+      '  return useA ? a : hel;',
+      '  return useA ? a : nor;',
+      '}',
+    ].join('\n');
+    const index = await indexFile(uri, text);
+    const handler = captureCompletion(uri, 'hlsl', text, completionWorkspace([index]));
+
+    const projectResult = await handler({
+      textDocument: { uri },
+      position: { line: 2, character: 23 },
+    });
+    const builtinResult = await handler({
+      textDocument: { uri },
+      position: { line: 3, character: 23 },
+    });
+
+    expect(itemNames(projectResult)).toContain('helper');
+    expect(itemNames(projectResult)).not.toContain('SV_Target');
+    expect(itemNames(builtinResult)).toContain('normalize');
+    expect(itemNames(builtinResult)).not.toContain('SV_Target');
+  });
+
   it('returns same-file function completions filtered by prefix', async () => {
     const uri = 'file:///t/main.hlsl';
     const text = [
@@ -138,7 +238,7 @@ describe('registerCompletionHandler', () => {
     }
   });
 
-  it('rejects comments, strings, and shaderlab outer code', async () => {
+  it('rejects comments and strings', async () => {
     const uri = 'file:///t/main.shader';
     const text = [
       'Shader "T/Test" {',
@@ -153,8 +253,6 @@ describe('registerCompletionHandler', () => {
     const index = await indexFile(uri, text);
     const handler = captureCompletion(uri, 'shaderlab', text, completionWorkspace([index]));
 
-    await expect(handler({ textDocument: { uri }, position: { line: 1, character: 17 } }))
-      .resolves.toEqual([]);
     await expect(handler({ textDocument: { uri }, position: { line: 4, character: 8 } }))
       .resolves.toEqual([]);
     await expect(handler({ textDocument: { uri }, position: { line: 5, character: 40 } }))
@@ -183,6 +281,8 @@ describe('registerCompletionHandler', () => {
       .toContain('color');
     expect(itemNames(await handler({ textDocument: { uri }, position: { line: 6, character: 20 } })))
       .toContain('roughness');
+    expect(itemNames(await handler({ textDocument: { uri }, position: { line: 4, character: 10 } })))
+      .not.toContain('normalize');
   });
 
   it('waits on RequestSuspender', async () => {

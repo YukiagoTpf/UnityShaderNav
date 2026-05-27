@@ -56,6 +56,63 @@ function captureSignatureHelp(
 }
 
 describe('registerSignatureHelpHandler', () => {
+  it('returns built-in function signature help when no project function exists', async () => {
+    const uri = 'file:///t/main.hlsl';
+    const text = 'float4 main(float4 a, float4 b) { return lerp(';
+    const index = await indexFile(uri, text);
+    const handler = captureSignatureHelp(uri, 'hlsl', text, signatureWorkspace([index]));
+
+    const result = await handler({
+      textDocument: { uri },
+      position: { line: 0, character: text.length },
+    });
+
+    expect(result).toMatchObject({
+      activeSignature: 0,
+      activeParameter: 0,
+      signatures: [{ label: 'T lerp(T x, T y, T s)' }],
+    });
+  });
+
+  it('prefers project function signatures over duplicate built-ins', async () => {
+    const uri = 'file:///t/main.hlsl';
+    const text = [
+      'float4 lerp(float4 a, float4 b) { return a + b; }',
+      'float4 main(float4 a, float4 b) { return lerp(',
+    ].join('\n');
+    const index = await indexFile(uri, text);
+    const handler = captureSignatureHelp(uri, 'hlsl', text, signatureWorkspace([index]));
+
+    const result = await handler({
+      textDocument: { uri },
+      position: { line: 1, character: text.split('\n')[1].length },
+    });
+
+    expect(result?.signatures.map((signature) => signature.label)).toEqual([
+      'float4 lerp(float4 a, float4 b)',
+    ]);
+  });
+
+  it('does not create signatures for built-ins without parameter metadata', async () => {
+    const uri = 'file:///t/main.hlsl';
+    const text = 'float4 main() { return float4(';
+    const index = await indexFile(uri, text);
+    const handler = captureSignatureHelp(uri, 'hlsl', text, signatureWorkspace([index]));
+
+    await expect(handler({ textDocument: { uri }, position: { line: 0, character: text.length } }))
+      .resolves.toBeNull();
+  });
+
+  it('does not return built-in signatures in ShaderLab outer code', async () => {
+    const uri = 'file:///t/main.shader';
+    const text = 'Shader "T/Test" { SubShader { Pass { lerp( } } }';
+    const index = await indexFile(uri, text);
+    const handler = captureSignatureHelp(uri, 'shaderlab', text, signatureWorkspace([index]));
+
+    await expect(handler({ textDocument: { uri }, position: { line: 0, character: text.indexOf('lerp(') + 5 } }))
+      .resolves.toBeNull();
+  });
+
   it('returns same-file function signature help', async () => {
     const uri = 'file:///t/main.hlsl';
     const text = [

@@ -35,6 +35,18 @@ describe('suggestionContextAt', () => {
     expect(ctx('float4 main() { return ', 0, 23).prefix.text).toBe('');
   });
 
+  it('distinguishes semantic positions from ternary expressions', () => {
+    const semanticText = 'struct V { float4 positionCS : SV_';
+    const semantic = ctx(semanticText, 0, semanticText.length);
+    expect(semantic.kind).toBe('semanticPosition');
+    expect(semantic.prefix.text).toBe('SV_');
+
+    const ternaryText = 'float4 main(bool useA) { return useA ? a : nor';
+    const ternary = ctx(ternaryText, 0, ternaryText.length);
+    expect(ternary.kind).toBe('hlslCode');
+    expect(ternary.prefix.text).toBe('nor');
+  });
+
   it('detects member receivers and member prefixes', () => {
     const afterDot = ctx('float3 c = surface.', 0, 19);
     expect(afterDot.member).toMatchObject({

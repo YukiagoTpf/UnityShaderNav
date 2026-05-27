@@ -13,8 +13,8 @@ The extension focuses on fast code navigation:
   macros, `#include` paths, and shader entry points.
 - Find References across indexed user files, with an option to include package
   references.
-- Conservative project-symbol completion and signature help for indexed HLSL/CG
-  code.
+- Conservative completion and signature help for indexed HLSL/CG code, plus a
+  curated Unity/HLSL/ShaderLab built-in vocabulary.
 - Document Symbols and semantic coloring for ShaderLab and HLSL files.
 - Unity Package resolution through `Packages/packages-lock.json`.
 - Persistent project-local indexing under `Library/UnityShaderNavCache/`.
@@ -117,8 +117,8 @@ See [Configuration](docs/configuration.md) for the full explanation and examples
   patterns cover common Unity macro declarations.
 - Surface Shader implicit parameters and ShaderGraph generated code are not
   indexed as special sources.
-- Completion and signature help are project-index-backed and do not yet provide
-  exhaustive Unity or HLSL built-in vocabulary.
+- Built-in completion and signature help are curated and non-exhaustive.
+  Project symbols are preferred when names collide with built-ins.
 - Chain lookup intentionally stays conservative for multiline receivers,
   macro-expanded receivers, branch-dependent types, and overload-specific return
   type inference.

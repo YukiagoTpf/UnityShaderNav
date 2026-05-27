@@ -9,11 +9,28 @@ import { collectVisibleUriKeys } from '../index';
 import type { RequestSuspender } from '../lifecycle/requestSuspender';
 import type { WorkspaceManager } from '../workspace';
 import {
+  collectBuiltinSuggestions,
   collectMemberSuggestions,
   collectVisibleProjectSuggestions,
   suggestionContextAt,
   toCompletionItem,
 } from '../suggestions';
+import type { ShaderSuggestion } from '../suggestions';
+
+function mergeProjectAndBuiltinSuggestions(
+  projectSuggestions: ShaderSuggestion[],
+  builtinSuggestions: ShaderSuggestion[],
+): ShaderSuggestion[] {
+  const projectNames = new Set(projectSuggestions.map((suggestion) => suggestion.name));
+  const seenBuiltinNames = new Set<string>();
+  const visibleBuiltins: ShaderSuggestion[] = [];
+  for (const suggestion of builtinSuggestions) {
+    if (projectNames.has(suggestion.name) || seenBuiltinNames.has(suggestion.name)) continue;
+    seenBuiltinNames.add(suggestion.name);
+    visibleBuiltins.push(suggestion);
+  }
+  return [...projectSuggestions, ...visibleBuiltins];
+}
 
 export function registerCompletionHandler(
   connection: Connection,
@@ -31,7 +48,7 @@ export function registerCompletionHandler(
 
       const fullText = doc.getText();
       const context = suggestionContextAt(fullText, params.position, doc.languageId, params.textDocument.uri);
-      if (context.kind === 'comment' || context.kind === 'string' || context.kind === 'shaderLabCode') {
+      if (context.kind === 'comment' || context.kind === 'string') {
         return [];
       }
 
@@ -58,12 +75,17 @@ export function registerCompletionHandler(
           context.member.memberPrefix.text,
           params.position,
         )
-        : collectVisibleProjectSuggestions({
-          index,
-          store: workspace.store,
-          visibleUriKeys,
-          position: params.position,
-        }).filter((suggestion) => suggestion.name.startsWith(context.prefix.text));
+        : mergeProjectAndBuiltinSuggestions(
+          context.kind === 'hlslCode'
+            ? collectVisibleProjectSuggestions({
+              index,
+              store: workspace.store,
+              visibleUriKeys,
+              position: params.position,
+            }).filter((suggestion) => suggestion.name.startsWith(context.prefix.text))
+            : [],
+          collectBuiltinSuggestions(context),
+        );
 
       return suggestions.map(toCompletionItem);
     };

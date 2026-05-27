@@ -7,6 +7,8 @@ const ID_START_RE = /[A-Za-z_]/;
 export type SuggestionContextKind =
   | 'hlslCode'
   | 'shaderLabCode'
+  | 'semanticPosition'
+  | 'shaderLabStateValue'
   | 'comment'
   | 'string';
 
@@ -186,6 +188,35 @@ function memberContextAt(lineText: string, prefix: CompletionPrefix): Suggestion
   };
 }
 
+function isSemanticPosition(lineText: string, prefix: CompletionPrefix): boolean {
+  const beforePrefix = lineText.slice(0, prefix.range.start.character).trimEnd();
+  if (!beforePrefix.endsWith(':')) return false;
+
+  const beforeColon = beforePrefix.slice(0, -1).trimEnd();
+  const boundary = Math.max(
+    beforeColon.lastIndexOf(';'),
+    beforeColon.lastIndexOf('{'),
+    beforeColon.lastIndexOf('}'),
+    beforeColon.lastIndexOf(','),
+  );
+  const segment = beforeColon.slice(boundary + 1).trim();
+  if (segment.includes('?')) return false;
+
+  if (/^[A-Za-z_][A-Za-z0-9_<>,\s*&]*\s+[A-Za-z_][A-Za-z0-9_]*(?:\s*\[[^\]]*\])?$/.test(segment)) {
+    return true;
+  }
+
+  return /^[A-Za-z_][A-Za-z0-9_<>,\s*&]*\s+[A-Za-z_][A-Za-z0-9_]*\s*\([^)]*\)$/.test(segment);
+}
+
+const SHADERLAB_STATE_VALUE_CONTEXTS = new Set(['Blend', 'Cull', 'ZWrite', 'ZTest', 'Offset', 'ColorMask']);
+
+function isShaderLabStateValuePosition(lineText: string, prefix: CompletionPrefix): boolean {
+  const beforePrefix = lineText.slice(0, prefix.range.start.character).trimEnd();
+  const match = /\b([A-Za-z][A-Za-z0-9_]*)$/.exec(beforePrefix);
+  return match ? SHADERLAB_STATE_VALUE_CONTEXTS.has(match[1]) : false;
+}
+
 export function suggestionContextAt(
   text: string,
   pos: Position,
@@ -198,10 +229,15 @@ export function suggestionContextAt(
   const lexical = lexicalContextAt(text, pos);
   if (lexical !== 'code') return { kind: lexical, prefix };
 
-  const kind: SuggestionContextKind = isShaderLabDocument(languageId, uri)
+  const baseKind: SuggestionContextKind = isShaderLabDocument(languageId, uri)
     && !isInsideShaderLabHlslBlock(text, pos)
     ? 'shaderLabCode'
     : 'hlslCode';
+  const kind: SuggestionContextKind = baseKind === 'hlslCode' && isSemanticPosition(lineText, prefix)
+    ? 'semanticPosition'
+    : baseKind === 'shaderLabCode' && isShaderLabStateValuePosition(lineText, prefix)
+      ? 'shaderLabStateValue'
+      : baseKind;
 
   return {
     kind,

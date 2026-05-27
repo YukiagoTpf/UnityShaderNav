@@ -38,11 +38,14 @@ Enable package references with:
 
 Completion and signature help are backed by the project index. In HLSL/CG code,
 UnityShaderNav can suggest indexed project symbols and show signatures for
-visible project functions.
+visible project functions. It also includes a curated built-in vocabulary for
+common HLSL intrinsics, common Unity/URP helper names and macros, common
+semantics, and common ShaderLab states and values.
 
 The behavior is intentionally conservative: ambiguous overload-like or
 preprocessor-dependent functions may appear as multiple signature candidates,
-and built-in Unity/HLSL function signatures are not provided yet.
+the built-in vocabulary is not exhaustive, and project symbols are preferred
+when names collide with built-ins.
 
 ### Document Symbols
 

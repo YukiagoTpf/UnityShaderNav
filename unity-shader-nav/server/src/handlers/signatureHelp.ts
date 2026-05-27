@@ -10,6 +10,7 @@ import type { RequestSuspender } from '../lifecycle/requestSuspender';
 import type { WorkspaceManager } from '../workspace';
 import {
   callContextAt,
+  collectBuiltinFunctionSuggestions,
   collectVisibleProjectFunctionSuggestions,
   suggestionContextAt,
   toSignatureInformation,
@@ -50,13 +51,18 @@ export function registerSignatureHelpHandler(
         workspace.includeCtx,
         params.textDocument.uri,
       );
-      const signatures = collectVisibleProjectFunctionSuggestions({
+      const projectSuggestions = collectVisibleProjectFunctionSuggestions({
         index,
         store: workspace.store,
         visibleUriKeys,
         position: params.position,
         name: call.calleeName,
-      })
+      });
+      const builtinSuggestions = projectSuggestions.some((suggestion) => suggestion.name === call.calleeName)
+        ? []
+        : collectBuiltinFunctionSuggestions(call.calleeName, context);
+
+      const signatures = [...projectSuggestions, ...builtinSuggestions]
         .map(toSignatureInformation)
         .filter((signature): signature is NonNullable<typeof signature> => signature !== null);
 

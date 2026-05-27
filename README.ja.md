@@ -8,7 +8,7 @@ UnityShaderNav は、Unity Shader プロジェクト向けの Visual Studio Code
 
 - 関数、ローカル変数、引数、struct、struct メンバー、マクロ、`#include` パス、shader エントリポイントへの Go to Definition。
 - インデックス済みのユーザーファイル内での Find References。必要に応じて package 内の参照も含められます。
-- インデックス済み HLSL/CG プロジェクトシンボルの保守的な補完とシグネチャヘルプ。
+- インデックス済み HLSL/CG コードの保守的な補完とシグネチャヘルプ、および厳選された Unity/HLSL/ShaderLab 組み込み語彙。
 - ShaderLab と HLSL ファイル向けの Document Symbols とセマンティックカラーリング。
 - `Packages/packages-lock.json` による Unity Package の解決。
 - `Library/UnityShaderNavCache/` 配下へのプロジェクトローカルなインデックスキャッシュ。
@@ -103,7 +103,7 @@ npm run package:vsix
 - プリプロセッサ条件は評価しません。複数の有効な定義がある場合は、VS Code の Peek Definition に複数候補として返します。
 - マクロ本体は展開しません。組み込みおよびユーザー設定の declaration patterns により、一般的な Unity マクロ宣言を扱います。
 - Surface Shader の暗黙パラメータや ShaderGraph 生成コードは、特別なソースとしてインデックスしません。
-- 補完とシグネチャヘルプはプロジェクトインデックスをもとにしており、Unity や HLSL の組み込み語彙を網羅するものではありません。
+- 組み込み補完とシグネチャヘルプは厳選された非網羅的な語彙です。プロジェクトシンボルと組み込み名が衝突する場合は、プロジェクトシンボルを優先します。
 - Chain lookup は、複数行 receiver、マクロ展開 receiver、分岐依存の型、overload-specific return type inference などに対して保守的に動作します。
 
 ## コントリビュート
