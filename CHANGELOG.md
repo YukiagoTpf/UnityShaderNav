@@ -7,6 +7,8 @@ and uses semantic versioning for extension releases once public publishing start
 
 ## Unreleased
 
+## 0.0.6 - 2026-05-27
+
 ### Added
 
 - Improved ShaderLab and Unity HLSL semantic coloring for `.shader` files,
