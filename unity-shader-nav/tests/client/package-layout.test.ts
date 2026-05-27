@@ -118,6 +118,7 @@ suite('packaged server layout', () => {
       const vsixPath = path.join(tempRoot, 'extension.vsix');
       fs.writeFileSync(vsixPath, zipWithCentralDirectoryEntries([
         'extension/README.md',
+        'extension/LICENSE.txt',
         'extension/package.json',
         'extension/tsconfig.tsbuildinfo',
         'extension/out/extension.js',
@@ -197,6 +198,7 @@ suite('packaged server layout', () => {
       assert.strictEqual(verifyResult.status, 0, verifyResult.stderr);
     } finally {
       fs.rmSync(path.resolve(clientRoot, 'README.md'), { force: true });
+      fs.rmSync(path.resolve(clientRoot, 'LICENSE'), { force: true });
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }
   });
