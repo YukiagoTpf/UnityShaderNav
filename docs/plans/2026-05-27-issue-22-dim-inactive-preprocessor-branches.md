@@ -729,3 +729,21 @@ git commit -m "docs(issue-22): plan preprocessor branch dimming"
 
 The per-task `feat`/`test`/`docs(issue-22): document ...` commits are for the
 future execution of this plan, not for this plan-writing change.
+
+---
+
+## Review Notes (Codex, 2026-05-28)
+
+- **P1 - `#undef` 的语义过于保守，和 issue #22 的验收项有冲突。** 计划现在明确要求 `#define X` 后 `#undef X`，再遇到 `#ifdef X` 时返回 `UNKNOWN` 并保持可见。但 issue 的验收项是“recognizes simple file-local `#define` and `#undef` state while scanning a shader/HLSL preprocessing flow”。在同一个预处理流里，本地 `#undef X` 后、下一次本地 `#define X` 前，`X` 应该是确定未定义；`#ifdef X` 应 dim 为 inactive，`#ifndef X` 应保持可见。建议把宏状态从单个 `defined: Set<string>` 扩展成三态/双集合：`defined` + `locallyUndefed`（或 `Map<name, 'defined' | 'undefed'>`）。仅对“从未在本地出现过”的名字返回 `UNKNOWN`；对本地 `#undef` 过且未重新定义的名字返回 `FALSE`。
+
+- **P1 - `defined(A) || defined(B)` 的四值逻辑会 false-dim。** 当前 OR 规则是“没有 TRUE、没有全 FALSE、只要有 VARIANT 就返回 VARIANT”。这会让 `defined(VARIANT_KEYWORD) || defined(UNKNOWN_FROM_INCLUDE)` 返回 `VARIANT` 并 dim，但 `UNKNOWN_FROM_INCLUDE` 可能在真实编译流里为 true，此时整个分支并不依赖 variant。保守 OR 应该把 `VARIANT || UNKNOWN` 视为 `UNKNOWN`（保持可见）；只有 `VARIANT || FALSE`、`VARIANT || VARIANT` 这类所有非-variant 输入都确定为 false 的组合，才可以返回 `VARIANT`。
+
+- **P1 - `.shader` 按 block 独立分析会漏掉 `HLSLINCLUDE` 到 Pass 的预处理上下文。** 计划说对 `.shader` 每个 HLSL/CG block 单独收集 pragma 和宏状态，但 ADR-0001 已记录 `HLSLINCLUDE` 块内符号对后续 Pass 可见；Unity 的实际作者心智里，`HLSLINCLUDE` 里的 shared code/宏也会影响后续 program block。这样会漏掉至少两类用例：`HLSLINCLUDE` 里 `#pragma multi_compile _ FOO_ON`，后续 `HLSLPROGRAM` 里 `#ifdef FOO_ON` 不会被识别为 variant；`HLSLINCLUDE` 里 `#define BAR_ON`，后续 `#ifndef BAR_ON` 也不会 dim。建议明确 `.shader` 的“预处理流/编译单元”模型，并增加跨 `HLSLINCLUDE` -> `HLSLPROGRAM` 的测试；如果第一版故意不支持，也应写进 Non-Goals/ADR，避免实现者按当前描述误判为已覆盖。
+
+- **P2 - `contentEndLine` 是 inclusive，计划文字容易诱发 off-by-one。** 当前 `scanBlocks` 和 `fileIndexer` 的真实用法是 `lines.slice(block.contentStartLine, block.contentEndLine + 1)`，并且测试断言 `contentStartLine <= line <= contentEndLine`。计划的 Context 里写“exclusive of the directive lines”可以理解，但 Task 3 的 `contentStartLine..contentEndLine` 没有强调 inclusive。建议直接写明：`contentEndLine` 是最后一行内容的 0-based inclusive 行号；如果用 `slice`，end 必须是 `contentEndLine + 1`。
+
+- **P2 - 自定义 request 缺少 document version / stale-response 处理。** 计划说 pull request “version handling for free”，但 `unityShaderNav/inactiveRegions` 不是标准 semantic tokens 请求，参数也只有 URI。用户快速编辑时，较旧请求可能晚于较新请求返回并覆盖 decorations。建议在 params 里带 `textDocument.version`，server 回传它，client 应用 decorations 前检查 `editor.document.version` 仍匹配；或至少在 client 维护 per-document request sequence，只允许最后一次响应落地。
+
+- **P2 - “dimmed clause 不 descend” 仍需要扫描嵌套 directive 深度。** 计划说 dimmed clause 发出整段 range，且不进入其嵌套 directive。实现时仍必须 lexical-scan 这段 body 里的 `#if/#endif` depth，才能找到当前 frame 对应的同级 `#elif/#else/#endif`。否则 dimmed 父分支里出现嵌套 `#if ... #else ... #endif` 时，walker 很容易把嵌套的 `#else/#endif` 当成父分支边界。建议把这点写成算法步骤，并加一个“dimmed parent contains nested if/else/endif”的回归测试。
+
+- **P3 - protocol 结果只传 `Range[]`，和“保留 reason 方便未来拆 presentation”的理由不完全一致。** analyzer 内部有 `reason: 'inactive' | 'variant'`，但 Task 4 的 `InactiveRegionsResult` 丢掉了 reason。第一版统一样式当然可以只用 ranges；不过如果设计理由是未来不用重新推导即可拆分 inactive/variant 样式，建议现在就让协议返回 `{ range, reason }[]`，client 第一版仍统一渲染即可。否则就把“未来 split 不用 re-derive”改成“server analyzer 已保留 distinction，未来需要扩展协议”。
