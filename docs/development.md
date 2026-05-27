@@ -24,9 +24,18 @@ npm run build
 ## Run in VS Code
 
 1. Open `unity-shader-nav/` in VS Code.
-2. Press F5.
-3. In the Extension Development Host, open a Unity project.
-4. Rebuild after source edits and run `Developer: Reload Window` in the host.
+2. In a terminal, run `npm run watch`.
+3. Wait for the initial `[watch-runtime] build ok` message.
+4. Press F5.
+5. In the Extension Development Host, open a Unity project.
+6. After source edits, wait for the next `[watch-runtime] build ok` message, then run `Developer: Reload Window` in the Extension Development Host.
+
+`npm run watch` maintains the Extension Development Host runtime layout under
+`client/out/`, including the bundled client entry, copied server output,
+grammar wasm, and `web-tree-sitter` runtime files.
+
+Use `npm run watch:typecheck` only when you want TypeScript watch mode without
+refreshing the Extension Development Host runtime layout.
 
 The output channel is named `UnityShaderNav`.
 

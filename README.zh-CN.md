@@ -61,9 +61,11 @@ npm run build
 从源码运行扩展：
 
 1. 用 VS Code 打开 `unity-shader-nav/`。
-2. 按 F5，并选择扩展启动配置。
-3. 在 Extension Development Host 中打开 Unity 项目。
-4. 打开 `.shader`、`.hlsl`、`.cginc`、`.hlslinc` 或 `.compute` 文件。
+2. 在终端运行 `npm run watch`，等待出现 `[watch-runtime] build ok`。
+3. 按 F5，并选择扩展启动配置。
+4. 在 Extension Development Host 中打开 Unity 项目。
+5. 打开 `.shader`、`.hlsl`、`.cginc`、`.hlslinc` 或 `.compute` 文件。
+6. 修改源码后，等待下一次 `[watch-runtime] build ok`，然后重新加载 Extension Development Host 窗口。
 
 本地打包 VSIX：
 

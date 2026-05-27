@@ -61,9 +61,11 @@ npm run build
 ソースから拡張機能を実行する手順:
 
 1. VS Code で `unity-shader-nav/` を開きます。
-2. F5 を押し、拡張機能の起動構成を選択します。
-3. Extension Development Host で Unity プロジェクトを開きます。
-4. `.shader`、`.hlsl`、`.cginc`、`.hlslinc`、または `.compute` ファイルを開きます。
+2. ターミナルで `npm run watch` を実行し、`[watch-runtime] build ok` が表示されるまで待ちます。
+3. F5 を押し、拡張機能の起動構成を選択します。
+4. Extension Development Host で Unity プロジェクトを開きます。
+5. `.shader`、`.hlsl`、`.cginc`、`.hlslinc`、または `.compute` ファイルを開きます。
+6. ソースを編集したら、次の `[watch-runtime] build ok` を待ってから Extension Development Host のウィンドウを再読み込みします。
 
 ローカルで VSIX をパッケージする場合:
 

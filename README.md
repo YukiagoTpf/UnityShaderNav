@@ -72,9 +72,11 @@ npm run build
 To run the extension from source:
 
 1. Open `unity-shader-nav/` in VS Code.
-2. Press F5 and choose the extension launch configuration.
-3. In the Extension Development Host, open a Unity project.
-4. Open a `.shader`, `.hlsl`, `.cginc`, `.hlslinc`, or `.compute` file.
+2. In a terminal, run `npm run watch` and wait for `[watch-runtime] build ok`.
+3. Press F5 and choose the extension launch configuration.
+4. In the Extension Development Host, open a Unity project.
+5. Open a `.shader`, `.hlsl`, `.cginc`, `.hlslinc`, or `.compute` file.
+6. After source edits, wait for `[watch-runtime] build ok`, then reload the Extension Development Host window.
 
 To package a local VSIX:
 

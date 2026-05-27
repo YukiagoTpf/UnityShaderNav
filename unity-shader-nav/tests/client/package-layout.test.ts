@@ -204,6 +204,50 @@ suite('packaged server layout', () => {
   });
 });
 
+suite('runtime watch workflow', () => {
+  test('root scripts expose the runtime watcher', () => {
+    const root = monorepoRoot();
+    const rootPackage = JSON.parse(
+      fs.readFileSync(path.resolve(root, 'package.json'), 'utf8'),
+    ) as { scripts?: Record<string, string> };
+    const scripts = rootPackage.scripts ?? {};
+
+    assert.strictEqual(scripts.watch, 'node scripts/watch-runtime.mjs');
+    assert.strictEqual(scripts['dev:watch'], 'node scripts/watch-runtime.mjs');
+    assert.strictEqual(scripts['watch:typecheck'], 'npm run watch --workspaces --if-present');
+  });
+
+  test('one-shot runtime build produces the extension development host layout', function () {
+    this.timeout(120000);
+
+    const root = monorepoRoot();
+    const result = spawnSync(
+      process.execPath,
+      [path.resolve(root, 'scripts/watch-runtime.mjs'), '--once'],
+      { cwd: root, encoding: 'utf8', timeout: 60000 },
+    );
+
+    assert.strictEqual(
+      result.status,
+      0,
+      result.error?.message || result.stderr || result.stdout,
+    );
+
+    for (const relative of [
+      'client/out/extension.js',
+      'client/out/server/server.js',
+      'client/out/grammars/tree-sitter-hlsl.wasm',
+      'client/out/server/node_modules/web-tree-sitter/tree-sitter.js',
+      'client/out/server/node_modules/web-tree-sitter/tree-sitter.wasm',
+    ]) {
+      assert.ok(
+        fs.existsSync(path.resolve(root, relative)),
+        `expected runtime layout file ${relative} to exist after --once build`,
+      );
+    }
+  });
+});
+
 function zipWithCentralDirectoryEntries(entries: string[]): Buffer {
   const records = entries.map((entry) => {
     const name = Buffer.from(entry, 'utf8');
