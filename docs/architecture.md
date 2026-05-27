@@ -31,8 +31,12 @@ handling. Important modules:
   patterns.
 - `include` and `packages`: resolve relative includes and Unity Package paths.
 - `index`: stores symbols, references, visibility, and chain lookup data.
+- `suggestions`: classifies completion/signature contexts, enumerates visible
+  project symbols, formats LSP completion/signature items, and filters curated
+  built-in shader vocabulary.
 - `handlers`: implements definition, references, document symbols, document
-  highlights, semantic tokens, and open-document behavior.
+  highlights, completion, signature help, semantic tokens, and open-document
+  behavior.
 - `workspace`: detects Unity roots, scans files, watches changes, and manages
   persistent cache.
 
@@ -45,6 +49,8 @@ The index is intentionally pragmatic:
 - Cross-file search is constrained by include-chain visibility where possible.
 - Struct member navigation infers receiver type from declarations and narrow
   assignment facts rather than a full type system.
+- Completion and signature help reuse the same index and include-visibility
+  rules as navigation, then merge curated built-ins only after project symbols.
 - Preprocessor conditions are not evaluated.
 
 ## Package Resolution

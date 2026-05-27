@@ -23,8 +23,8 @@ The extension focuses on fast code navigation:
 
 This project is in early public-preview shape. The core language server is
 working and covered by unit and VS Code integration tests, but Marketplace
-publishing, icon polish, CI cache tuning, and a few Unity path edge cases are
-still tracked in [GitHub Issues](https://github.com/YukiagoTpf/UnityShaderNav/issues).
+publishing, release automation, CI cache tuning, and a few Unity path edge cases
+are still tracked in [GitHub Issues](https://github.com/YukiagoTpf/UnityShaderNav/issues).
 
 ## Supported Files
 

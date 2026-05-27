@@ -10,10 +10,12 @@ summarizes the broad direction without duplicating issue implementation plans.
 - Cache VS Code test downloads in CI.
 - Clean stale compiled Electron test output during `npm run clean`.
 - Support additional Unity PackageManager path forms.
-- Add a VS Code extension icon and packaging polish.
+- Tighten release packaging and GitHub release automation.
 
 ## Candidate Future Work
 
+- Expand the curated Unity/HLSL built-in completion vocabulary from real shader
+  authoring feedback.
 - ShaderLab Properties to HLSL variable navigation.
 - Hover information for functions, structs, variables, and macros.
 - Workspace symbol search.

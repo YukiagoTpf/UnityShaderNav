@@ -7,8 +7,17 @@ and uses semantic versioning for extension releases once public publishing start
 
 ## Unreleased
 
+## 0.0.5 - 2026-05-27
+
 ### Added
 
+- Project-index-backed completion for shader symbols, including functions,
+  globals, locals, parameters, structs, struct members, macros, and
+  include-visible symbols.
+- Signature help for indexed shader functions, with conservative active
+  parameter detection and multiple candidates when ambiguity remains.
+- A curated Unity/HLSL/ShaderLab built-in vocabulary for completion, plus
+  built-in function signatures where catalog metadata is available.
 - Public project documentation for users and contributors.
 - `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md`, and open-source-oriented docs
   under `docs/`.
@@ -16,10 +25,18 @@ and uses semantic versioning for extension releases once public publishing start
 
 ### Changed
 
+- Completion and signature help are now documented as supported conservative
+  editor features rather than future work.
 - Removed historical implementation plans and local agent progress logs from the
   tracked documentation tree. Git history and GitHub Issues remain the source of
   record for old execution details.
 - Moved the original technical specification to `docs/technical-spec.md`.
+
+## 0.0.4 - 2026-05-26
+
+### Added
+
+- VS Code Marketplace icon asset and packaging metadata.
 
 ## 0.0.3 - 2026-05-25
 

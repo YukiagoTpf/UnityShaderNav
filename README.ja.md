@@ -15,7 +15,7 @@ UnityShaderNav は、Unity Shader プロジェクト向けの Visual Studio Code
 
 ## ステータス
 
-このプロジェクトは現在、初期の public preview 段階です。コア language server は動作しており、ユニットテストと VS Code 統合テストでカバーされています。一方で、Marketplace への公開、拡張機能アイコン、CI キャッシュ調整、一部の Unity パスのエッジケースは、まだ [GitHub Issues](https://github.com/YukiagoTpf/UnityShaderNav/issues) で追跡しています。
+このプロジェクトは現在、初期の public preview 段階です。コア language server は動作しており、ユニットテストと VS Code 統合テストでカバーされています。一方で、Marketplace への公開、release 自動化、CI キャッシュ調整、一部の Unity パスのエッジケースは、まだ [GitHub Issues](https://github.com/YukiagoTpf/UnityShaderNav/issues) で追跡しています。
 
 ## 対応ファイル
 

@@ -58,6 +58,24 @@ _Avoid_: symbol record, symbol info
 **Chain lookup**:
 struct 成员 F12（如 `surface.positionWS`）的解析过程——先推导 `surface` 的声明类型，再在该 struct 内查字段。MVP 阶段支持到 L3（含函数返回值），详见 spec §5。
 
+### 补全与签名
+
+**Suggestion context**:
+补全/签名帮助请求位置的粗粒度上下文分类，例如 HLSL code、ShaderLab code、semantic position、ShaderLab state value、comment、string。用于避免把 ShaderLab 状态词塞进普通 HLSL 表达式，或在注释/字符串里返回建议。
+_Avoid_: completion mode, parser state
+
+**Project-index suggestion**:
+从当前文件索引、include-visible 文件索引、作用域信息和 chain lookup 推导出的补全项。它复用导航的可见性规则，优先级高于内置词汇。
+_Avoid_: autocomplete symbol, completion cache
+
+**Built-in vocabulary**:
+维护在代码中的精选 Unity/HLSL/ShaderLab 词表，用于补全和部分内置函数签名帮助。它不是编译器完整标准库，也不应该假装覆盖所有 pipeline/package 版本。
+_Avoid_: standard library, compiler symbols
+
+**Signature help**:
+LSP 的函数调用参数提示。UnityShaderNav 只在能保守识别单行 free-function call 和候选函数元数据时返回，遇到 overload-like 或预处理歧义时可以返回多个候选。
+_Avoid_: hover, function docs
+
 ## Flagged ambiguities
 
 **"Package"**:
