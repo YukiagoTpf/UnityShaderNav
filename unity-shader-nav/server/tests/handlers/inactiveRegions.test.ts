@@ -64,6 +64,13 @@ const HLSL_TEXT = [
   '#endif',
 ].join('\n');
 
+const HLSL_INACTIVE_TEXT = [
+  '#define BAR_ON', // 0
+  '#ifndef BAR_ON', // 1  BAR_ON definitely defined -> ifndef dims as inactive
+  'int x = 1;',     // 2
+  '#endif',         // 3
+].join('\n');
+
 const SHADER_TEXT = [
   'Shader "X" {',          // 0
   'HLSLINCLUDE',           // 1
@@ -102,6 +109,30 @@ describe('registerInactiveRegionsHandler', () => {
       {
         range: { start: { line: 2, character: 0 }, end: { line: 2, character: 0 } },
         reason: 'variant',
+      },
+    ]);
+  });
+
+  it('returns an inactive region for a definitely-false branch and echoes the version', async () => {
+    const { connection, getHandler } = fakeConnection();
+    const uri = 'file:///t/inactive.hlsl';
+    const documents = documentsWith(uri, 'hlsl', 11, HLSL_INACTIVE_TEXT);
+
+    registerInactiveRegionsHandler(
+      connection,
+      documents,
+      {} as never,
+      settingsGetter(enabledSettings),
+      new RequestSuspender({ timeoutMs: 1000 }),
+    );
+
+    const result = await getHandler()({ textDocument: { uri, version: 11 } });
+
+    expect(result.version).toBe(11);
+    expect(result.regions).toEqual([
+      {
+        range: { start: { line: 2, character: 0 }, end: { line: 2, character: 0 } },
+        reason: 'inactive',
       },
     ]);
   });
