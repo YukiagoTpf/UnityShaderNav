@@ -37,9 +37,14 @@ Current behavior:
 - `server/src/parser/shaderlab/blockScanner.ts` `scanBlocks(text): ScanResult`
   returns `{ blocks: ShaderLabBlock[] }` for the HLSL/CG blocks inside a
   `.shader` file. Each `ShaderLabBlock` (type in `shared/src/structure.ts`)
-  exposes `contentStartLine`/`contentEndLine` (0-based, exclusive of the
-  directive lines: `startLine+1 .. endLine-1`), confirmed present. The scanner
-  is comment-aware. Standalone `.hlsl`/`.cginc`/`.compute` files are all-HLSL.
+  exposes `contentStartLine`/`contentEndLine`, both **0-based and inclusive**:
+  `contentStartLine` is the first content line (`startLine+1`) and
+  `contentEndLine` is the **last** content line (`endLine-1`), so the block body
+  is `lines[contentStartLine] .. lines[contentEndLine]` inclusive. Existing
+  callers use `lines.slice(contentStartLine, contentEndLine + 1)` and
+  `contentStartLine <= line <= contentEndLine` — match that convention (the
+  slice end is `contentEndLine + 1`). The scanner is comment-aware. Standalone
+  `.hlsl`/`.cginc`/`.compute` files are all-HLSL.
 - `server/src/parser/preproc/scanDefines.ts` already scans `#define NAME` line
   by line and is comment-aware via a local `stripComments(lineText,
   inBlockComment)` helper (handles `//` and `/* */`, including multi-line block
@@ -87,9 +92,13 @@ rendering and triggering; two new settings; tests; and docs/ADR.
 1. **Pull request, not server push.** The semantic-tokens handler is already a
    pull handler and proves the pattern (resolve index, read document text,
    return result). A custom request `unityShaderNav/inactiveRegions` reuses
-   `RequestSuspender` and version handling for free and avoids wiring a push
-   into the `reindex` pipeline. Server push (like `unityShaderNav/mode`) was
-   considered and rejected for the first pass to keep the change localized.
+   `RequestSuspender` and avoids wiring a push into the `reindex` pipeline.
+   Server push (like `unityShaderNav/mode`) was considered and rejected for the
+   first pass to keep the change localized. **Caveat:** unlike the built-in
+   semantic-tokens request, a custom `onRequest` gets **no** automatic document
+   version / refresh handling, so the protocol carries `textDocument.version`
+   and the client guards against stale responses (see Task 4 Step 2 and Task 5
+   Step 1).
 2. **Client decorations, not semantic-token modifiers.** Only decorations can
    dim a whole region (including comments/blank lines/nested directives) at a
    configurable opacity. This is also how Rider/C++ "inactive region" dimming
@@ -98,12 +107,27 @@ rendering and triggering; two new settings; tests; and docs/ADR.
    dimmed presentation**, as the issue allows. The analyzer still tracks the
    distinction internally (`reason: 'inactive' | 'variant'`) so a later issue
    can split the presentation without re-deriving it.
-4. **Conservatism = bias against false dimming.** A guard macro that is neither
-   locally defined nor a known Unity variant keyword is treated as `UNKNOWN`
-   and left **visible** (it may be defined in an unscanned include). We only dim
-   branches we can justify: definitely-false branches and variant-gated
-   branches. This honors the "handled conservatively" acceptance criterion and
-   the cross-file non-goal.
+4. **Conservatism = bias against false dimming.** A guard macro that has never
+   appeared in the local flow and is not a known Unity variant keyword is
+   treated as `UNKNOWN` and left **visible** (it may be defined in an unscanned
+   include). We only dim branches we can justify: definitely-false branches
+   (incl. a name explicitly `#undef`'d locally) and variant-gated branches. This
+   honors the "handled conservatively" acceptance criterion and the cross-file
+   non-goal. In the four-valued logic, `UNKNOWN` therefore **dominates**
+   `VARIANT` (a branch that *might* be active via an unknown macro must not be
+   dimmed as variant-only).
+5. **`.shader` preprocessing-unit model.** Unity textually prepends
+   `HLSLINCLUDE`/`CGINCLUDE` block bodies to every program block in scope, and
+   ADR-0001 records that include-block symbols are visible to all subsequent
+   passes. So the analyzer does **not** treat each block in total isolation:
+   (a) Unity variant keywords are collected **file-wide** across all HLSL/CG
+   blocks, and (b) each `HLSLPROGRAM`/`CGPROGRAM` block's `#define`/`#undef`
+   flow is **seeded** by the definite macro state accumulated from the
+   `HLSLINCLUDE`/`CGINCLUDE` blocks that precede it in document order. A program
+   block's own defines stay local to that block (they do not leak into sibling
+   program blocks / other passes). Precise multi-`SubShader` scoping and defines
+   that are themselves inside include-block conditionals are approximated, not
+   modeled exactly — documented in ADR-0005.
 
 ---
 
@@ -178,19 +202,28 @@ export type CondValue = 'TRUE' | 'FALSE' | 'VARIANT' | 'UNKNOWN';
 
 export interface MacroState {
   defined: ReadonlySet<string>;   // locally #define'd and still in effect
+  undefed: ReadonlySet<string>;   // locally #undef'd and not since re-defined
   variants: ReadonlySet<string>;  // Unity variant keywords from pragmas
 }
 ```
 
-`evalDefined(name, state): CondValue`:
+`evalDefined(name, state): CondValue` (order matters — explicit local state
+beats variant inference, which beats absence):
 - `state.defined.has(name)` → `TRUE`
+- else `state.undefed.has(name)` → `FALSE`
 - else `state.variants.has(name)` → `VARIANT`
-- else → `UNKNOWN` (never `FALSE` from absence — could come from an include)
+- else → `UNKNOWN` (absence alone is never `FALSE` — could come from an include)
 
-`#undef` removes a name from `defined`; a subsequently-checked `#ifdef` on an
-undef'd-and-never-variant name therefore evaluates `UNKNOWN`, not `FALSE`
-(conservative). `FALSE` arises from negation of a `TRUE` atom (e.g. `#ifndef X`
-after `#define X`), not from absence.
+This is the corrected `#undef` semantics (review P1): a local `#undef X` is
+authoritative for the rest of the local flow (it removes whatever an include may
+have defined), so a later `#ifdef X` is **definitely inactive** (`FALSE` → dim)
+and a later `#ifndef X` stays **visible** (`TRUE`), until X is re-`#define`'d. A
+name that has *never* appeared locally (neither defined nor undef'd) and is not
+a variant keyword stays `UNKNOWN` → visible. `#define X` adds X to `defined` and
+clears it from `undefed`; `#undef X` adds X to `undefed` and clears it from
+`defined` (both only while in definite scope — see Task 3). `FALSE` therefore
+arises from a local `#undef`, or from negating a `TRUE` atom (e.g. `#ifndef X`
+after `#define X`).
 
 `evalCondition(kind, exprText, state): CondValue` supports the issue's subset:
 
@@ -204,21 +237,31 @@ after `#define X`), not from absence.
 - anything else (arithmetic, `#if 1`, macros with args, unsupported operators)
   → `UNKNOWN`
 
-Four-valued logic helpers (kept conservative):
+Four-valued logic helpers (kept conservative). **`UNKNOWN` dominates `VARIANT`**
+after the absorbing definite value is checked — this is the review-P1 fix that
+prevents false dimming: e.g. `defined(VARIANT_KW) || defined(UNKNOWN_FROM_INCLUDE)`
+must be `UNKNOWN` (keep visible), because the unknown operand may be true at
+compile time and then the branch does not depend on the variant. The same
+pattern bites `and` (`VARIANT && UNKNOWN` → `UNKNOWN`), so both tables put
+`UNKNOWN` ahead of `VARIANT`:
 
 ```
 not:   TRUE→FALSE, FALSE→TRUE, VARIANT→VARIANT, UNKNOWN→UNKNOWN
 
-and:   FALSE if any operand FALSE
-       else TRUE if all operands TRUE
-       else VARIANT if any operand VARIANT
-       else UNKNOWN
+and:   FALSE   if any operand FALSE        // absorbing for AND
+       else UNKNOWN if any operand UNKNOWN  // can't decide ⇒ keep visible
+       else VARIANT if any operand VARIANT  // all non-variant operands are TRUE
+       else TRUE                            // all TRUE
 
-or:    TRUE if any operand TRUE
-       else FALSE if all operands FALSE
-       else VARIANT if any operand VARIANT
-       else UNKNOWN
+or:    TRUE    if any operand TRUE         // absorbing for OR
+       else UNKNOWN if any operand UNKNOWN  // can't decide ⇒ keep visible
+       else VARIANT if any operand VARIANT  // all non-variant operands are FALSE
+       else FALSE                           // all FALSE
 ```
+
+So `VARIANT` is only produced when every operand that is *not* `VARIANT` is the
+non-absorbing definite value (`TRUE` for `and`, `FALSE` for `or`) — i.e. the
+branch genuinely toggles with the variant alone.
 
 Keep the expression parser deliberately small: tokenize on `defined`, `(`, `)`,
 `!`, `&&`, `||`, and identifiers. If parsing hits any token outside this set, or
@@ -229,11 +272,15 @@ Do not implement a general C expression evaluator.
 
 Table-driven over `CondValue` outcomes:
 
-- `defined`/`variant`/`unknown`/`undef`'d name across `ifdef`/`ifndef`/
-  `if defined`/`if !defined`.
-- `defined(A) && defined(B)` with combinations of TRUE/VARIANT/UNKNOWN/FALSE
-  operands → matches the `and` table.
-- `defined(A) || defined(B)` likewise → matches the `or` table.
+- A name in each of the four `MacroState` buckets — `defined` (`TRUE`),
+  `undefed` (`FALSE`), `variants` (`VARIANT`), absent (`UNKNOWN`) — across
+  `ifdef`/`ifndef`/`if defined`/`if !defined` (verify `ifndef` of an `undefed`
+  name is `TRUE`, and `ifdef` of an `undefed` name is `FALSE`).
+- `defined(A) && defined(B)` over all operand combinations → matches the `and`
+  table; **explicitly** assert `VARIANT && UNKNOWN → UNKNOWN` and
+  `VARIANT && TRUE → VARIANT`.
+- `defined(A) || defined(B)` likewise → matches the `or` table; **explicitly**
+  assert `VARIANT || UNKNOWN → UNKNOWN` and `VARIANT || FALSE → VARIANT`.
 - Unsupported expressions (`#if A > 2`, `#if FOO(1)`, `#if 1`) → `UNKNOWN`.
 
 **Step 3: Verify**
@@ -271,20 +318,46 @@ export interface AnalyzeOptions {
 export function analyzeInactiveRegions(text: string, options: AnalyzeOptions): DimmedRegion[];
 ```
 
-For `.shader`, run `scanBlocks(text)` and analyze each block's content range
-(`contentStartLine..contentEndLine`), offsetting line numbers into file
-coordinates. For HLSL files, analyze the whole text as one region. `#pragma`
-variant keywords are collected per analyzed region via `scanVariantKeywords` on
-that region's text (so block-local pragmas apply to that block); for the
-whole-file HLSL case it is the whole file.
+**HLSL files** (`.hlsl`/`.cginc`/`.compute`): analyze the whole text as one
+region; `scanVariantKeywords(text)` over the whole file.
+
+**`.shader` files** (review-P1 preprocessing-unit model — do *not* analyze each
+block in total isolation):
+
+1. Run `scanBlocks(text)`; iterate the returned blocks in document order. Each
+   block's content lines are `contentStartLine .. contentEndLine` **inclusive**
+   (0-based); when slicing use `lines.slice(contentStartLine, contentEndLine + 1)`
+   and add `contentStartLine` back to every emitted line number so ranges are in
+   file coordinates.
+2. **Variant keywords are file-wide:** run `scanVariantKeywords` over the union
+   of all HLSL/CG block bodies (or over the whole file text) and pass that one
+   `variants` set into every block's analysis. This captures the common case
+   where `HLSLINCLUDE` declares `#pragma multi_compile _ FOO_ON` and a later
+   `HLSLPROGRAM` uses `#ifdef FOO_ON`. (Collecting variants file-wide only ever
+   makes more branches dim *as variant* and never causes a false dim, because
+   `evalDefined` checks `defined`/`undefed` before `variants`.)
+3. **Definite define state seeds program blocks from preceding include blocks:**
+   maintain a running "shared base" (`baseDefined`/`baseUndefed`). When the
+   iterated block is `HLSLINCLUDE`/`CGINCLUDE`, fold its **top-level definite**
+   `#define`/`#undef` into the shared base after analyzing it. When the block is
+   `HLSLPROGRAM`/`CGPROGRAM`, **seed** its analysis `defined`/`undefed` from the
+   shared base but keep the block's own defines local (they do not mutate the
+   shared base, so one pass's defines never leak into another pass). This
+   handles `HLSLINCLUDE` `#define BAR_ON` → later `HLSLPROGRAM` `#ifndef BAR_ON`
+   dimming. Multi-`SubShader` scoping and include-block defines nested inside
+   conditionals are approximated, not exact (documented in ADR-0005).
 
 **Step 2: Branch walk algorithm**
 
 Walk lines top-to-bottom (comment-aware, reuse the shared strip helper).
 Maintain:
 
-- `defined: Set<string>` — definite macros. Seeded empty.
-- `variants: Set<string>` — from Task 1.
+- `defined: Set<string>` and `undefed: Set<string>` — definite macro state,
+  **seeded** from the shared base (Step 1: empty for HLSL files / the first
+  block; the include-accumulated base for later `.shader` program blocks). They
+  are mutually exclusive: `#define X` adds to `defined` + removes from `undefed`;
+  `#undef X` adds to `undefed` + removes from `defined`.
+- `variants: Set<string>` — the file-wide set from Task 1 (Step 1.2).
 - A stack of branch frames. Each frame records, for the currently-open clause:
   `dimmed: boolean`; `clauseDefinite: boolean` (this open clause is *definitely*
   active — i.e. it was entered with `CondValue == TRUE` from a `NONE_TAKEN`
@@ -293,7 +366,7 @@ Maintain:
   UNKNOWN_PENDING }`; and the body start line.
 - `definiteScope: boolean` — derived as "the stack is empty (top level) OR every
   open frame has `clauseDefinite === true`." Only `#define`/`#undef` directives
-  encountered while `definiteScope` is true mutate `defined`. Crucially,
+  encountered while `definiteScope` is true mutate `defined`/`undefed`. Crucially,
   **VISIBLE is not the same as definite**: a clause kept visible because its
   `CondValue` was `UNKNOWN` (the `UNKNOWN_PENDING` path, or an `#else`/`#elif`
   after an unknown) is `clauseDefinite = false`, so `#define`s inside it do NOT
@@ -352,12 +425,20 @@ condition or `VARIANT_PENDING` chain; otherwise `inactive`.
 - When a clause is **dimmed**, emit one `DimmedRegion` covering the body lines of
   that clause — from the line **after** the opening directive through the line
   **before** the next clause directive (`#elif`/`#else`) or the closing
-  `#endif`. Do **not** descend into a dimmed clause's nested directives; the
-  whole body (including any nested `#if`/comments/blank lines) is dimmed as one
-  range. This makes nesting fall out for free and keeps directive lines
-  themselves un-dimmed for readability.
+  `#endif`. "Do not descend" means do not *classify* the nested directives, but
+  the walker **must still lexically track `#if`/`#endif` nesting depth while
+  skipping the dimmed body** so it stops at the *matching-depth* sibling
+  `#elif`/`#else`/`#endif` and not at a nested one. Concretely: increment a depth
+  counter on every nested `#if`/`#ifdef`/`#ifndef` inside the skipped body and
+  decrement on every `#endif`; a `#elif`/`#else`/`#endif` only closes the dimmed
+  clause when the counter is back at the clause's own depth. Without this, a
+  dimmed parent containing a nested `#if … #else … #endif` would wrongly treat
+  the nested `#else`/`#endif` as the parent's boundary. The whole body (nested
+  directives, comments, blank lines) is dimmed as one range; directive lines
+  themselves stay un-dimmed for readability.
 - When a clause is **visible**, continue scanning its body so nested directives
-  are evaluated, and so `#define`/`#undef` update `defined` when `definiteScope`.
+  are evaluated, and so `#define`/`#undef` update `defined`/`undefed` when
+  `definiteScope`.
 - Merge adjacent dimmed regions only if it simplifies output; not required.
 - Skip emitting empty ranges (clause with no body lines).
 
@@ -369,9 +450,13 @@ Use small inline HLSL snippets. Required cases:
   `#ifdef BAR_ON ... #endif` → no dimmed region over the body.
 - **Variant-dependent branch dims:** `#pragma multi_compile _ FOO_ON` then
   `#ifdef FOO_ON ... #endif` → body dimmed with `reason: 'variant'`.
-- **`#undef`:** `#define X` … `#undef X` … `#ifdef X` → body of the later
-  `#ifdef X` is **visible** (UNKNOWN after undef, conservative), while
-  `#ifndef X` after `#define X` (before undef) dims as `inactive`.
+- **`#undef`:** `#define X` … `#undef X` … `#ifdef X` → the later `#ifdef X`
+  body dims as `inactive` (X is `FALSE` after the local `#undef`), and a
+  following `#ifndef X` stays **visible** (`TRUE`). Separately, `#ifndef X`
+  placed *after* `#define X` (before any undef) dims as `inactive`. Add a case
+  where X is then re-`#define`'d and `#ifdef X` becomes visible again.
+- **Never-seen macro stays visible:** `#ifdef NEVER_SEEN ... #endif` with no
+  local define/undef and not a variant keyword → no dimmed region (`UNKNOWN`).
 - **`#ifndef` of a defined macro dims** as `inactive`.
 - **`#if defined(X)` / `#if !defined(X)`** mirror `#ifdef`/`#ifndef`.
 - **`defined(A) && defined(B)`** and **`defined(A) || defined(B)`** with mixed
@@ -382,10 +467,28 @@ Use small inline HLSL snippets. Required cases:
 - **Nested branches:** a nested `#ifdef` inside a dimmed parent is fully dimmed
   (single region over the parent body); a nested `#ifdef FOO_ON` inside a
   **visible** branch dims only its own variant body.
+- **Dimmed parent with nested `#if`/`#else`/`#endif` (boundary regression):** a
+  dimmed parent clause whose body contains a complete nested
+  `#if … #else … #endif` is emitted as **one** range over the whole parent body,
+  and the parent's own `#else`/`#endif` is correctly located at matching depth
+  (the nested `#else`/`#endif` is not mistaken for the parent boundary).
+- **`mix of && / ||` false-dim guard:** `#if defined(FOO_ON) || defined(NEVER_SEEN)`
+  with `FOO_ON` variant stays **visible** (`VARIANT || UNKNOWN → UNKNOWN`),
+  while `#if defined(FOO_ON) || defined(X)` after `#undef X` dims as `variant`
+  (`VARIANT || FALSE → VARIANT`).
 - **Unknown/complex expressions** (`#if SOMETHING_FROM_INCLUDE`, `#if 1`) stay
   visible (no false dimming).
 - **ShaderLab:** dimming is computed inside `HLSLPROGRAM`/`CGPROGRAM` blocks and
   reported in file coordinates; directives outside any block are ignored.
+- **`HLSLINCLUDE` variant → `HLSLPROGRAM` (file-wide variants):** a `.shader`
+  with `#pragma multi_compile _ FOO_ON` in an `HLSLINCLUDE` block and
+  `#ifdef FOO_ON` in a later `HLSLPROGRAM` block → the program branch dims as
+  `variant`.
+- **`HLSLINCLUDE` define → `HLSLPROGRAM` (include-seeded state):** `#define BAR_ON`
+  in an `HLSLINCLUDE` block makes a later `HLSLPROGRAM`'s `#ifndef BAR_ON` dim as
+  `inactive` and `#ifdef BAR_ON` stay visible; a `#define` made *inside one*
+  `HLSLPROGRAM` does **not** affect a *sibling* `HLSLPROGRAM` (no cross-pass
+  leak).
 
 **Step 5: Verify**
 
@@ -433,9 +536,24 @@ documented request method name and params/result types:
 import type { Range } from './symbols';
 
 export const INACTIVE_REGIONS_REQUEST = 'unityShaderNav/inactiveRegions';
-export interface InactiveRegionsParams { textDocument: { uri: string }; }
-export interface InactiveRegionsResult { regions: Range[]; }
+export type DimReason = 'inactive' | 'variant';
+export interface InactiveRegion { range: Range; reason: DimReason; }
+export interface InactiveRegionsParams {
+  // version lets the client drop stale responses (review P2)
+  textDocument: { uri: string; version: number };
+}
+export interface InactiveRegionsResult {
+  version: number;               // echo of the requested document version
+  regions: InactiveRegion[];     // carries reason so a future issue can split
+                                 // inactive vs variant presentation without
+                                 // re-deriving (review P3)
+}
 ```
+
+The protocol carries `reason` per region (not a bare `Range[]`) to match design
+decision 3 — v1 renders both reasons identically, but the distinction is already
+on the wire. `version` is echoed so the client can discard a response that
+arrived after the document moved on.
 
 `Range` (and `Position`) are already defined and exported from
 `shared/src/symbols.ts` and re-exported through `protocol.ts` via `export *
@@ -449,8 +567,11 @@ consume `@unity-shader-nav/shared`'s `Range`.
 suspender)` modeled on `registerSemanticTokensHandler`:
 
 - Register `connection.onRequest(INACTIVE_REGIONS_REQUEST, handler)`.
+- Echo the requested `params.textDocument.version` back in every result
+  (including the early-return / disabled cases) so the client can drop stale
+  responses.
 - Resolve settings for the document scope; if `dimInactiveBranches.enabled` is
-  false, return `{ regions: [] }`.
+  false, return `{ version, regions: [] }`.
 - Resolve the document text via `documents.get(uri)?.getText()` (the analyzer
   only needs text; no index is required — but still gate on
   `workspaceForOrCreateFile` returning a workspace to match existing behavior,
@@ -460,9 +581,11 @@ suspender)` modeled on `registerSemanticTokensHandler`:
   `semanticTokens.ts` has the same check as a private `isShaderLabUri(uri)`
   function but does **not** export it — copy the one-line regex test (or, if you
   prefer to share it, export it from a small util; not required for this issue).
-- Run `analyzeInactiveRegions(text, { isShaderLab })`, map `DimmedRegion[]` to
-  `regions: Range[]`, return `{ regions }`.
-- Wrap in `suspender.run(...)` like the other handlers.
+- Run `analyzeInactiveRegions(text, { isShaderLab })`; map `DimmedRegion[]`
+  straight to `InactiveRegion[]` (the `{ range, reason }` shape already matches),
+  and return `{ version, regions }`.
+- Wrap in `suspender.run(...)` like the other handlers (default to
+  `{ version, regions: [] }` on the suspender's `null`).
 
 **Step 4: Register in `server.ts`**
 
@@ -503,9 +626,11 @@ the captured handler with a fake `documents.get(uri)` and a fake `manager` (only
 needed if the handler keeps the `workspaceForOrCreateFile` lookup — see Step 3's
 text-only decision; if text-only, `manager` can be a minimal stub).
 Assert:
-- enabled=true returns variant/inactive ranges for a known fixture.
-- enabled=false returns `{ regions: [] }`.
-- A `.hlsl` URI analyzes the whole file; a `.shader` URI only inside blocks.
+- enabled=true returns `regions` with the expected `range` + `reason`
+  (`variant`/`inactive`) for a known fixture, and echoes the requested `version`.
+- enabled=false returns `{ version, regions: [] }`.
+- A `.hlsl` URI analyzes the whole file; a `.shader` URI only inside blocks
+  (incl. an `HLSLINCLUDE` pragma/define feeding a later `HLSLPROGRAM`).
 
 **Step 6: Verify**
 
@@ -554,10 +679,18 @@ Create `client/src/inactiveRegions.ts` exporting
   fight semantic tokens, so do not use `color` for dimming.
 - A `refresh(editor)` that: returns early if the editor's languageId is not
   `shaderlab`/`hlsl` or if `dimInactiveBranches.enabled` is false (clear
-  decorations in that case); otherwise sends
+  decorations in that case); otherwise captures
+  `requestedVersion = editor.document.version` and sends
   `client.sendRequest(INACTIVE_REGIONS_REQUEST, { textDocument: { uri:
-  editor.document.uri.toString() } })`, converts `regions` to `vscode.Range`,
-  and calls `editor.setDecorations(type, ranges)`.
+  editor.document.uri.toString(), version: requestedVersion } })`. **Stale-guard
+  (review P2):** before applying, drop the response if
+  `editor.document.version !== requestedVersion` (the doc moved on) — and the
+  server echoes `result.version`, so also drop if `result.version !==
+  requestedVersion`. Only the latest in-flight request per document may land
+  (keep a per-URI "latest requested version" and ignore older completions).
+  Then convert `regions[].range` to `vscode.Range[]` and call
+  `editor.setDecorations(type, ranges)`. (v1 ignores `regions[].reason` and
+  renders all dimmed ranges with the single decoration type.)
 - Trigger `refresh` on: `window.onDidChangeActiveTextEditor`,
   `window.onDidChangeVisibleTextEditors`, and a debounced
   `workspace.onDidChangeTextDocument` (≈300 ms) for the affected editor, plus
@@ -632,11 +765,25 @@ Expected: client `tsc` + bundle succeed with the new module.
 
 Write `docs/adr/0005-conservative-preprocessor-branch-dimming.md` (follow the
 ADR-0003 structure: Context / Decision / Why not … / Consequences). Record:
-- presentation-only, not variant evaluation; four-valued conservative logic;
-- variant keywords from `multi_compile*`/`shader_feature*` pragmas;
-- UNKNOWN (incl. cross-file) stays visible — bias against false dimming;
-- merged inactive/variant presentation for v1 with internal `reason` retained;
-- pull request + client decoration delivery (push rejected for first pass).
+- presentation-only, not variant evaluation; four-valued conservative logic
+  where **`UNKNOWN` dominates `VARIANT`** (a branch that might be active via an
+  unknown/include macro is never dimmed as variant-only);
+- variant keywords from `multi_compile*`/`shader_feature*` pragmas, collected
+  **file-wide** for `.shader`;
+- local `#undef` is **authoritative `FALSE`** for the rest of the flow; only a
+  name that never appeared locally (and isn't a variant keyword) stays `UNKNOWN`
+  → visible — bias against false dimming;
+- `.shader` preprocessing-unit model: `HLSLINCLUDE`/`CGINCLUDE` blocks seed
+  later program blocks' definite define state (matches ADR-0001's "include
+  symbols visible to all passes"); program-block defines don't leak across
+  passes; **approximations**: multi-`SubShader` scoping and include-block defines
+  nested inside conditionals are not modeled exactly;
+- merged inactive/variant presentation for v1, but the protocol already carries
+  `reason` per region so a later issue can split presentation without
+  re-deriving;
+- pull request + client decoration delivery (push rejected for first pass), with
+  explicit `textDocument.version` echo + client stale-response guard because a
+  custom request gets no built-in version handling.
 
 **Step 2: architecture.md**
 
@@ -699,7 +846,7 @@ Ensure no build output under `client/out`, `server/out`, `shared/out`, or
 
 | Issue acceptance criterion | Covered by |
 | --- | --- |
-| Recognize file-local `#define`/`#undef` state | Task 2 (`MacroState`, undef), Task 3 (`definiteScope`) |
+| Recognize file-local `#define`/`#undef` state | Task 2 (`MacroState.defined`/`undefed`; `#undef`→`FALSE`), Task 3 (`definiteScope`, include-seeded base) |
 | `multi_compile*` / `shader_feature*` pragmas → variant keywords | Task 1 |
 | Definitely-defined branch stays visible | Task 3 (`TRUE`→VISIBLE) + test |
 | Variant-dependent branch dims | Task 3 (`VARIANT`→DIM) + test |
@@ -712,8 +859,11 @@ Ensure no build output under `client/out`, `server/out`, `shared/out`, or
 
 No full C preprocessor expansion, no Unity variant enumeration, no material/
 global keyword reading, no platform/backend define modeling, no URP/HDRP define
-simulation, no cross-file include-chain macro precision (cross-file macros stay
-`UNKNOWN` → visible).
+simulation, no cross-file include-chain macro precision (cross-`#include` macros
+stay `UNKNOWN` → visible). Within a `.shader`, same-file `HLSLINCLUDE`/`CGINCLUDE`
+→ program define/pragma propagation **is** handled (see design decision 5), but
+precise multi-`SubShader` scoping and include-block defines nested inside
+conditionals are approximated, not exact.
 
 ---
 
@@ -733,6 +883,31 @@ future execution of this plan, not for this plan-writing change.
 ---
 
 ## Review Notes (Codex, 2026-05-28)
+
+> **Resolution (2026-05-28, all notes评估后采纳):** 全部 7 条经核对均成立(P1 的
+> HLSLINCLUDE 论据已对照 ADR-0001 第 26 行确认;`contentEndLine` inclusive 已对照
+> `fileIndexer.ts` / `tokenScanner.ts` 确认),已并入计划:
+> - **P1 `#undef`** → `MacroState` 增加 `undefed` 集,`#undef X` 后 `#ifdef X`
+>   判为 `FALSE`(dim)、`#ifndef X` 判为 `TRUE`(visible)。见设计决策 4、Task 2、
+>   Task 3。
+> - **P1 `||` false-dim**(及对称的 `&&`)→ 四值逻辑改为 **`UNKNOWN` 优先于
+>   `VARIANT`**;`VARIANT || UNKNOWN`/`VARIANT && UNKNOWN` 均判 `UNKNOWN`(保持
+>   可见)。见 Task 2 的 and/or 表。
+> - **P1 HLSLINCLUDE** → 新增设计决策 5:variant keyword **全文件收集**,程序块的
+>   define 状态由其前序 `HLSLINCLUDE`/`CGINCLUDE` 块**种子注入**;多 SubShader /
+>   include 内条件 define 标注为近似(写入 ADR-0005 与 Non-Goals)。见 Task 3 Step 1
+>   + 两个新回归测试。
+> - **P2 `contentEndLine` inclusive** → Context + Task 3 明确 inclusive 与
+>   `slice(.., end + 1)`。
+> - **P2 version/stale** → 协议 params/result 带 `textDocument.version`,server
+>   回传、client 落 decoration 前校验且只允许最后一次响应生效。见设计决策 1、
+>   Task 4 Step 2/3、Task 5 Step 1。
+> - **P2 dimmed body depth scan** → Task 3 Step 3 明确跳过 dimmed body 时仍按
+>   `#if`/`#endif` 深度计数寻找同级边界 + 新增「dimmed parent 含嵌套 if/else/endif」
+>   回归测试。
+> - **P3 protocol 保留 reason** → `InactiveRegionsResult.regions` 改为
+>   `{ range, reason }[]`,v1 客户端仍统一渲染。见 Task 4 Step 2。
+
 
 - **P1 - `#undef` 的语义过于保守，和 issue #22 的验收项有冲突。** 计划现在明确要求 `#define X` 后 `#undef X`，再遇到 `#ifdef X` 时返回 `UNKNOWN` 并保持可见。但 issue 的验收项是“recognizes simple file-local `#define` and `#undef` state while scanning a shader/HLSL preprocessing flow”。在同一个预处理流里，本地 `#undef X` 后、下一次本地 `#define X` 前，`X` 应该是确定未定义；`#ifdef X` 应 dim 为 inactive，`#ifndef X` 应保持可见。建议把宏状态从单个 `defined: Set<string>` 扩展成三态/双集合：`defined` + `locallyUndefed`（或 `Map<name, 'defined' | 'undefed'>`）。仅对“从未在本地出现过”的名字返回 `UNKNOWN`；对本地 `#undef` 过且未重新定义的名字返回 `FALSE`。
 
