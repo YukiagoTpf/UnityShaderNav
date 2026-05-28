@@ -16,7 +16,8 @@ The extension focuses on fast code navigation:
 - Hover for declarations of indexed shader symbols (functions, structs,
   members, variables, parameters, macros) and selected built-ins.
 - Conservative completion and signature help for indexed HLSL/CG code, plus a
-  curated Unity/HLSL/ShaderLab built-in vocabulary.
+  curated Unity/HLSL/ShaderLab/URP/HDRP built-in vocabulary covering common
+  intrinsics, helper macros, render states, and semantics.
 - Document Symbols and semantic coloring for ShaderLab wrappers, Properties,
   Tags, render states, preprocessor lines, and HLSL symbols.
 - Conservative dimming of inactive and variant-dependent `#if`/`#ifdef`

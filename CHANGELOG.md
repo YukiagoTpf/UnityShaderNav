@@ -26,6 +26,11 @@ and uses semantic versioning for extension releases once public publishing start
   PackageCache directory, matching Unity's transport-agnostic cache layout
   (issue #10). Subpath `?path=` git packages remain unresolved pending
   verification against a real Unity project.
+- feat: expand the curated built-in vocabulary used by completion, signature
+  help, and hover with common HLSL intrinsics and types, UnityCG legacy
+  sampler/matrix helpers, URP/SRP Core helpers and instancing macros,
+  HDRP-specific helpers, additional ShaderLab states, blend/op/stencil
+  values, and additional shader semantics (issue #21).
 
 ## 0.0.6 - 2026-05-27
 
