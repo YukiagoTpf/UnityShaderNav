@@ -3,6 +3,7 @@ import { scanBlocks } from './blockScanner';
 
 const PROPERTY_TYPES = new Set<ShaderLabPropertyType>([
   '2D',
+  '2DArray',
   '3D',
   'Cube',
   'CubeArray',

@@ -53,7 +53,7 @@ export interface TypeInferenceEntry {
 }
 
 export type ShaderLabPropertyType =
-  | '2D' | '3D' | 'Cube' | 'CubeArray'
+  | '2D' | '2DArray' | '3D' | 'Cube' | 'CubeArray'
   | 'Color' | 'Vector' | 'Float' | 'Range' | 'Int';
 
 export interface ShaderLabPropertyEntry {

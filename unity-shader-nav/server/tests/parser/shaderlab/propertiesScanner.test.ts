@@ -117,6 +117,7 @@ describe('scanProperties', () => {
       '    _F ("F", 3D) = "white" {}',
       '    _G ("G", Cube) = "white" {}',
       '    _H ("H", CubeArray) = "white" {}',
+      '    _I ("I", 2DArray) = "white" {}',
       '  }',
       '}',
     );
@@ -130,6 +131,7 @@ describe('scanProperties', () => {
       ['_F', '3D'],
       ['_G', 'Cube'],
       ['_H', 'CubeArray'],
+      ['_I', '2DArray'],
     ]);
   });
 
