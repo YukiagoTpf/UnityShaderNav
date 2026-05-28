@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { Connection, Hover, HoverParams } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
-import type { FileIndex, FunctionSymbolEntry, SymbolEntry } from '@unity-shader-nav/shared';
+import type { FileIndex, FunctionSymbolEntry } from '@unity-shader-nav/shared';
 import { GlobalSymbolIndex, IndexStore } from '../../src/index';
 import { registerHoverHandler } from '../../src/handlers/hover';
 import { indexFile } from '../../src/parser/hlsl/fileIndexer';
@@ -293,6 +293,56 @@ describe('registerHoverHandler — project symbols', () => {
     expect(value).toContain('float4 Helper()');
   });
 
+  it('narrows a local variable hover to the in-scope declaration vs outer global', async () => {
+    // Same name `value` declared twice: a file-global, and a local inside main().
+    // Inside main()'s scope, hover should hit the local; outside, it should hit the global.
+    const uri = 'file:///t/scope.hlsl';
+    const text = [
+      'float value = 1.0;',           // line 0: global
+      'float main() {',               // line 1
+      '  float value = 2.0;',         // line 2: local
+      '  return value;',              // line 3: use — picks local
+      '}',                            // line 4
+      'float other() { return value; }', // line 5: use — picks global
+    ].join('\n');
+    const idx: FileIndex = {
+      uri,
+      references: [],
+      symbols: [
+        {
+          name: 'value',
+          kind: 'variable',
+          declaredType: 'float',
+          location: { uri, range: { start: { line: 0, character: 6 }, end: { line: 0, character: 11 } } },
+        },
+        {
+          name: 'value',
+          kind: 'localVariable',
+          declaredType: 'float',
+          scopeRange: { start: { line: 1, character: 0 }, end: { line: 4, character: 1 } },
+          location: { uri, range: { start: { line: 2, character: 8 }, end: { line: 2, character: 13 } } },
+        },
+      ],
+    };
+    const { handler } = makeFixture(uri, 'hlsl', text, idx);
+
+    const insideScope = await handler({
+      textDocument: { uri },
+      position: tokenPosition(text, 3, 'value'),
+    });
+    expect(insideScope).not.toBeNull();
+    // Local at line 2 → footer shows :3 (1-based line number).
+    expect((insideScope?.contents as { value: string }).value).toContain('`scope.hlsl`:3');
+
+    const outsideScope = await handler({
+      textDocument: { uri },
+      position: tokenPosition(text, 5, 'value'),
+    });
+    expect(outsideScope).not.toBeNull();
+    // Global at line 0 → footer shows :1.
+    expect((outsideScope?.contents as { value: string }).value).toContain('`scope.hlsl`:1');
+  });
+
   it('falls through to plain word resolution when member resolution returns empty', async () => {
     // `unknown.x` — receiver type cannot be inferred, so resolveMemberSymbols
     // returns []. Hover must NOT return null; it must fall through to wordAt
@@ -451,7 +501,3 @@ describe('registerHoverHandler — guards and empty cases', () => {
     }
   });
 });
-
-// Reference the type so the linter does not flag SymbolEntry as unused — it's
-// used implicitly through indexFile() but TypeScript needs the import path.
-type _Unused = SymbolEntry;

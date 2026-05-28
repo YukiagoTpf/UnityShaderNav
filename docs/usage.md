@@ -27,7 +27,9 @@ Pause the mouse over (or press `Ctrl+K Ctrl+I` on) an indexed shader symbol to
 see a declaration-style summary and source location. Hover covers project
 functions, structs, struct members, variables, parameters, and macros, plus
 selected built-ins from the curated catalog. Ambiguous symbols are listed
-without picking a winner, matching Go to Definition behavior.
+without ranking, matching Go to Definition behavior; very large candidate sets
+are truncated with a `… and N more candidates` footer to keep the bubble
+readable.
 
 ### Find References
 

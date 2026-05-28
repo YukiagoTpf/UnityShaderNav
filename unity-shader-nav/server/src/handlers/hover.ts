@@ -69,6 +69,9 @@ export function registerHoverHandler(
             workspaceRootUri: workspace.folderUri,
           }));
           const contents = formatHoverCandidates(inputs);
+          // Defensive: formatHoverCandidates only returns an empty value when
+          // given zero inputs (guarded above), but keep the check so a future
+          // formatter change cannot silently surface an empty hover bubble.
           if (contents.value.length === 0) return null;
           return { contents, range: memberAccess.member.range };
         }
