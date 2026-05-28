@@ -64,6 +64,22 @@ Unity package includes are resolved from `Packages/packages-lock.json`. This
 avoids scanning stale package cache folders and matches Unity's resolved package
 state. See [ADR-0002](adr/0002-manifest-driven-package-indexing.md).
 
+### Supported `packages-lock.json` source forms
+
+| `source`   | Required fields              | Resolved location                                                  |
+| ---------- | ---------------------------- | ------------------------------------------------------------------ |
+| `embedded` | `version: "file:<dir>"`      | `Packages/<dir>` under the project root                            |
+| `local`    | `version: "file:<path>"`     | `<path>` (absolute) or `Packages/<path>` (relative)                |
+| `registry` | `version`, optional `hash`   | `Library/PackageCache/<name>@<hash \|\| version>`                  |
+| `builtin`  | `version`                    | `Library/PackageCache/<name>@<version>`                            |
+| `git`      | `version: "git+<scheme>..."`, `hash` | `Library/PackageCache/<name>@<hash>` for `git+https`, `git+http`, and `git+ssh` |
+
+Unknown sources, `git` entries without a `hash`, and git URLs that contain a
+`?path=` subdirectory are skipped with a console warning rather than being
+guessed. The `?path=` subdir form has not been validated against a real Unity
+project yet and is tracked for a follow-up; entries using it currently fall
+back to the unresolved-skip path.
+
 ## Cache
 
 The workspace index is persisted under `Library/UnityShaderNavCache/` with a

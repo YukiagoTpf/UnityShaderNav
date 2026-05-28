@@ -22,6 +22,10 @@ and uses semantic versioning for extension releases once public publishing start
   rendered as stacked candidates without picking a winner.
 - feat: bridge ShaderLab Properties ↔ HLSL declarations for F12 navigation
   in both directions (issue #20).
+- fix: resolve `git+ssh://` and `git+http://` Unity package URLs to the
+  PackageCache directory, matching Unity's transport-agnostic cache layout
+  (issue #10). Subpath `?path=` git packages remain unresolved pending
+  verification against a real Unity project.
 
 ## 0.0.6 - 2026-05-27
 
