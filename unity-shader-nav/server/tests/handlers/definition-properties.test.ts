@@ -224,6 +224,36 @@ describe('property bridge unit (propertyAt / findPropertyCandidatesForName)', ()
     const idx: FileIndex = { uri: 'file:///t/empty.shader', symbols: [], references: [] };
     expect(propertyAt(idx, { line: 0, character: 0 })).toBeNull();
   });
+
+  it('case 9b: handler returns null for a cursor inside Tags { ... }', async () => {
+    // Handler-level companion to case 9. The unit pin on
+    // isGenericDefinitionContext is a contract test on the gate — this case
+    // exercises the actual handler so a future refactor that inlines or
+    // short-circuits the gate cannot silently let a Tags cursor through.
+    const uri = 'file:///t/case9b.shader';
+    const text = [
+      'Shader "T/Case9b" {',
+      '  Properties {',
+      '    _Foo ("Foo", Float) = 0',
+      '  }',
+      '  SubShader {',
+      '    Tags { "RenderType" = "Opaque" }',
+      '    Pass { HLSLPROGRAM float _Foo; ENDHLSL }',
+      '  }',
+      '}',
+    ].join('\n');
+    const idx = await indexFile(uri, text, makeTable());
+    const { handler } = createPairFixture({ uri, languageId: 'shaderlab', text, idx });
+
+    // Cursor on `RenderType` inside the Tags block.
+    const tagsLine = 5;
+    const renderTypeCol = text.split('\n')[tagsLine].indexOf('RenderType');
+    const result = await handler({
+      textDocument: { uri },
+      position: { line: tagsLine, character: renderTypeCol + 2 },
+    });
+    expect(result).toBeNull();
+  });
 });
 
 describe('registerDefinitionHandler — properties bridge', () => {
@@ -422,6 +452,46 @@ describe('registerDefinitionHandler — properties bridge', () => {
       position: tokenPos(text, 2, '2D'),
     });
     expect(result).toBeNull();
+  });
+
+  it('case 5b: cursor on identifier-shaped type token (Color) returns no property link', async () => {
+    // Regression sister to case 5: `Color` is a valid identifier under wordAt,
+    // so it survives word resolution and reaches findPropertyCandidatesForName.
+    // The scanner must not have indexed `Color` as a property name (it's a
+    // type, captured by group 4, not group 2). Without this assertion a
+    // regression in the property regex could turn `Color` into a phantom
+    // property and surface every shader's _BaseColor property here.
+    const uri = 'file:///t/case5b.shader';
+    const text = [
+      'Shader "T/Case5b" {',
+      '  Properties {',
+      '    _BaseColor ("Tint", Color) = (1,1,1,1)',
+      '  }',
+      '  SubShader { Pass { HLSLPROGRAM float4 _BaseColor; ENDHLSL } }',
+      '}',
+    ].join('\n');
+    const idx = await indexFile(uri, text, makeTable());
+    const { handler } = createPairFixture({ uri, languageId: 'shaderlab', text, idx });
+
+    const result = (await handler({
+      textDocument: { uri },
+      position: tokenPos(text, 2, 'Color'),
+    })) as LocationLink[] | null;
+
+    // Either null (lexical gate rejects — properties block is outside HLSL)
+    // OR a non-null result that contains no link whose targetSelectionRange
+    // matches the `Color` token. We assert the property scanner did not pick
+    // `Color` up as a property name regardless of which path the handler took.
+    if (result !== null) {
+      const colorTokenLine = 2;
+      const colorStart = text.split('\n')[colorTokenLine].indexOf('Color');
+      const offending = result.filter(
+        (l) =>
+          l.targetSelectionRange.start.line === colorTokenLine
+          && l.targetSelectionRange.start.character === colorStart,
+      );
+      expect(offending).toHaveLength(0);
+    }
   });
 
   // Case 6: reverse, HLSL identifier → property in same shader.
