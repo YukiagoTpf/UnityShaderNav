@@ -1,0 +1,11 @@
+{
+  "dependencies": {
+    "com.example.priv": {
+      "version": "git+ssh://git@example.com/foo.git",
+      "depth": 0,
+      "source": "git",
+      "dependencies": {},
+      "hash": "feedface"
+    }
+  }
+}

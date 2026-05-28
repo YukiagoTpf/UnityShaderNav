@@ -14,6 +14,14 @@ describe('parsePackagesLock', () => {
     expect(data['com.unity.render-pipelines.core'].source).toBe('builtin');
     expect(data['com.example.urp'].version).toBe('file:com.example.urp');
   });
+
+  it('extracts git+ssh dependency entries with source, version and hash', () => {
+    const data = parsePackagesLock(fixtures('git-ssh.json'));
+
+    expect(data['com.example.priv'].source).toBe('git');
+    expect(data['com.example.priv'].version).toBe('git+ssh://git@example.com/foo.git');
+    expect(data['com.example.priv'].hash).toBe('feedface');
+  });
 });
 
 describe('resolvePackagePhysicalPath', () => {
@@ -75,10 +83,26 @@ describe('resolvePackagePhysicalPath', () => {
     )).toBeNull();
   });
 
-  it('git+ssh returns null', () => {
+  it('git+ssh with hash maps to Library/PackageCache/<name>@<hash>', () => {
     expect(resolvePackagePhysicalPath(
       'com.example.priv',
-      { version: 'git+ssh://git@example.com/foo.git', source: 'git', hash: 'abc' },
+      { version: 'git+ssh://git@example.com/foo.git', source: 'git', hash: 'feedface' },
+      projectRoot,
+    )).toBe(join(projectRoot, 'Library', 'PackageCache', 'com.example.priv@feedface'));
+  });
+
+  it('git+http (no s) with hash maps to Library/PackageCache/<name>@<hash>', () => {
+    expect(resolvePackagePhysicalPath(
+      'com.example.insecure',
+      { version: 'git+http://example.com/foo.git', source: 'git', hash: 'cafebabe' },
+      projectRoot,
+    )).toBe(join(projectRoot, 'Library', 'PackageCache', 'com.example.insecure@cafebabe'));
+  });
+
+  it('git+ssh with ?path= subdir still returns null pending Unity verification', () => {
+    expect(resolvePackagePhysicalPath(
+      'com.example.priv-mono',
+      { version: 'git+ssh://git@example.com/foo.git?path=packages/bar', source: 'git', hash: 'abc' },
       projectRoot,
     )).toBeNull();
   });
