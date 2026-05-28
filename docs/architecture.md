@@ -72,13 +72,15 @@ state. See [ADR-0002](adr/0002-manifest-driven-package-indexing.md).
 | `local`    | `version: "file:<path>"`     | `<path>` (absolute) or `Packages/<path>` (relative)                |
 | `registry` | `version`, optional `hash`   | `Library/PackageCache/<name>@<hash \|\| version>`                  |
 | `builtin`  | `version`                    | `Library/PackageCache/<name>@<version>`                            |
-| `git`      | `version: "git+<scheme>..."`, `hash` | `Library/PackageCache/<name>@<hash>` for `git+https`, `git+http`, and `git+ssh` |
+| `git`      | `version: "<scheme>..."`, `hash` | `Library/PackageCache/<name>@<hash[:10]>` for `git+https`, `git+http`, `git+ssh`, and bare `https://...?path=` subpath URLs |
 
-Unknown sources, `git` entries without a `hash`, and git URLs that contain a
-`?path=` subdirectory are skipped with a console warning rather than being
-guessed. The `?path=` subdir form has not been validated against a real Unity
-project yet and is tracked for a follow-up; entries using it currently fall
-back to the unresolved-skip path.
+Unity 2022.3 truncates the lockfile `hash` (a 40-character commit SHA) to the
+first 10 characters when naming the cache directory, so the resolver does the
+same. `?path=` subpath git packages share this naming convention — Unity
+extracts only the requested subdirectory into the cache folder, so the resolved
+path still points at the package root. Verified against Unity 2022.3.53f1c1
+(issue #25). Unknown sources and `git` entries without a `hash` are skipped
+with a console warning rather than being guessed.
 
 ## Cache
 

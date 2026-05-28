@@ -29,8 +29,13 @@ and uses semantic versioning for extension releases once public publishing start
   in both directions (issue #20).
 - fix: resolve `git+ssh://` and `git+http://` Unity package URLs to the
   PackageCache directory, matching Unity's transport-agnostic cache layout
-  (issue #10). Subpath `?path=` git packages remain unresolved pending
-  verification against a real Unity project.
+  (issue #10).
+- fix: resolve `?path=` subpath git packages to
+  `Library/PackageCache/<name>@<hash[:10]>` and truncate the lockfile commit
+  hash to the same 10 characters Unity uses for all git package cache
+  directories. Verified against Unity 2022.3.53f1c1; previously these entries
+  were skipped and non-`?path=` git entries with a real 40-character hash
+  pointed at a non-existent directory (issue #25).
 - feat: expand the curated built-in vocabulary used by completion, signature
   help, and hover with common HLSL intrinsics and types, UnityCG legacy
   sampler/matrix helpers, URP/SRP Core helpers and instancing macros,

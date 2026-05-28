@@ -75,12 +75,32 @@ describe('resolvePackagePhysicalPath', () => {
     )).toBeNull();
   });
 
-  it('git with path subdir returns null', () => {
+  it('git with ?path= subdir maps to Library/PackageCache/<name>@<hash[:10]>', () => {
+    // Unity extracts only the subdir into the cache folder; the directory name
+    // itself does not encode the subpath. Verified against Unity 2022.3 (issue #25).
     expect(resolvePackagePhysicalPath(
-      'com.example.mono',
-      { version: 'git+https://example.com#main?path=packages/foo', source: 'git', hash: 'abc' },
+      'com.cysharp.unitask',
+      {
+        version: 'https://github.com/Cysharp/UniTask.git?path=src/UniTask/Assets/Plugins/UniTask#2.5.5',
+        source: 'git',
+        hash: 'cdf88c6a6ac8c9b7e6e5d3c0a360a4af29641c24',
+      },
       projectRoot,
-    )).toBeNull();
+    )).toBe(join(projectRoot, 'Library', 'PackageCache', 'com.cysharp.unitask@cdf88c6a6a'));
+  });
+
+  it('git with a real 40-char hash truncates the cache directory hash to 10 chars', () => {
+    // Verified against Unity 2022.3 (issue #25). Existing short-hash fixtures
+    // happened to pass because `slice(0, 10)` is a no-op on strings of length ≤10.
+    expect(resolvePackagePhysicalPath(
+      'com.unity.test-framework',
+      {
+        version: 'https://github.com/needle-mirror/com.unity.test-framework.git#1.1.33',
+        source: 'git',
+        hash: '07e70135879aba310eac100ad9c43c356160107e',
+      },
+      projectRoot,
+    )).toBe(join(projectRoot, 'Library', 'PackageCache', 'com.unity.test-framework@07e7013587'));
   });
 
   it('git+ssh with hash maps to Library/PackageCache/<name>@<hash>', () => {
@@ -99,12 +119,12 @@ describe('resolvePackagePhysicalPath', () => {
     )).toBe(join(projectRoot, 'Library', 'PackageCache', 'com.example.insecure@cafebabe'));
   });
 
-  it('git+ssh with ?path= subdir still returns null pending Unity verification', () => {
+  it('git+ssh with ?path= subdir resolves the same way as https', () => {
     expect(resolvePackagePhysicalPath(
       'com.example.priv-mono',
       { version: 'git+ssh://git@example.com/foo.git?path=packages/bar', source: 'git', hash: 'abc' },
       projectRoot,
-    )).toBeNull();
+    )).toBe(join(projectRoot, 'Library', 'PackageCache', 'com.example.priv-mono@abc'));
   });
 
   it('local relative file paths resolve relative to Packages/', () => {

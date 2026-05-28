@@ -58,12 +58,13 @@ export function resolvePackagePhysicalPath(
 
   if (source === 'git') {
     if (!entry.hash) return null;
-    // Unity stores ?path= subdir packages under a cache directory whose name
-    // encodes the subpath; the exact form has not been verified against a
-    // real Unity project yet, so refuse to guess and let PackageResolver
-    // skip+warn until a follow-up issue confirms the layout.
-    if (/\?path=/.test(entry.version)) return null;
-    return join(projectRoot, 'Library', 'PackageCache', `${name}@${entry.hash}`);
+    // Unity 2022.3 stores all git packages — including `?path=` subpath
+    // packages — under `Library/PackageCache/<name>@<hash[:10]>`. For `?path=`
+    // entries Unity extracts only the requested subdirectory into that cache
+    // folder, so the resolved path still points at the package root. Verified
+    // empirically against Unity 2022.3.53f1c1 (issue #25).
+    const dirHash = entry.hash.slice(0, 10);
+    return join(projectRoot, 'Library', 'PackageCache', `${name}@${dirHash}`);
   }
 
   return null;
