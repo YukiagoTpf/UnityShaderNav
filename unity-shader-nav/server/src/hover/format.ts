@@ -115,14 +115,38 @@ function renderFunctionSignature(fn: FunctionSymbolEntry): string {
   return `${returnType} ${fn.name}(${params})`;
 }
 
+function safeFileURLToPath(uri: string): string | undefined {
+  try {
+    return fileURLToPath(uri);
+  } catch {
+    return undefined;
+  }
+}
+
+function uriBasename(uri: string): string {
+  const withoutQuery = uri.replace(/[?#].*$/, '');
+  const lastSlash = withoutQuery.lastIndexOf('/');
+  const tail = lastSlash >= 0 ? withoutQuery.slice(lastSlash + 1) : withoutQuery;
+  try {
+    return decodeURIComponent(tail);
+  } catch {
+    return tail;
+  }
+}
+
 function renderFooter(symbol: SymbolEntry, workspaceRootUri: string | undefined): string {
-  const absPath = fileURLToPath(symbol.location.uri);
+  const absPath = safeFileURLToPath(symbol.location.uri);
   let display: string;
-  if (workspaceRootUri) {
-    const rootPath = fileURLToPath(workspaceRootUri);
-    const prefix = rootPath.endsWith(path.sep) ? rootPath : rootPath + path.sep;
-    if (absPath.startsWith(prefix)) {
-      display = absPath.slice(prefix.length);
+  if (absPath === undefined) {
+    // Non-file URI (or a URI that node refuses to parse on this platform):
+    // fall back to a basename derived from the URI itself rather than
+    // crashing the hover.
+    display = uriBasename(symbol.location.uri);
+  } else if (workspaceRootUri) {
+    const rootPath = safeFileURLToPath(workspaceRootUri);
+    if (rootPath !== undefined) {
+      const prefix = rootPath.endsWith(path.sep) ? rootPath : rootPath + path.sep;
+      display = absPath.startsWith(prefix) ? absPath.slice(prefix.length) : path.basename(absPath);
     } else {
       display = path.basename(absPath);
     }
