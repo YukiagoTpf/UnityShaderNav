@@ -5,7 +5,7 @@
 // Modes:
 //   node scripts/watch-runtime.mjs --once   run one runtime build and exit
 //   node scripts/watch-runtime.mjs          build once, then watch + rebuild
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import chokidar from 'chokidar';
@@ -13,8 +13,35 @@ import chokidar from 'chokidar';
 const monorepoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
+// Module-scope handles so the SIGINT/SIGTERM shutdown handler can terminate
+// the in-flight child process and stop any queued rebuild work.
+let activeBuild = null;
+let shuttingDown = false;
+
 function log(message) {
   console.log(`[watch-runtime] ${message}`);
+}
+
+// Kill the currently running build child tree, if any. On Windows the child
+// was launched through cmd.exe (shell: true) which forks node.exe and possibly
+// other tools; child.kill() only signals the shell, so use taskkill /T /F to
+// reap the whole tree. On POSIX a SIGTERM to the shell is sufficient.
+function killActiveBuild() {
+  const child = activeBuild;
+  if (!child) {
+    return;
+  }
+  if (process.platform === 'win32' && typeof child.pid === 'number') {
+    spawnSync('taskkill', ['/T', '/F', '/PID', String(child.pid)], {
+      stdio: 'ignore',
+    });
+  } else {
+    try {
+      child.kill('SIGTERM');
+    } catch {
+      // Child may have already exited between the null-check and signal.
+    }
+  }
 }
 
 // Run the root build script. Resolves with the child exit code. npm.cmd on
@@ -28,15 +55,38 @@ function runBuild() {
       stdio: 'inherit',
       shell: true,
     });
+    activeBuild = child;
     child.on('error', (err) => {
       log(`build failed to start: ${err.message}`);
+      if (activeBuild === child) {
+        activeBuild = null;
+      }
       resolvePromise(1);
     });
-    child.on('exit', (code) => resolvePromise(code ?? 1));
+    child.on('exit', (code) => {
+      if (activeBuild === child) {
+        activeBuild = null;
+      }
+      resolvePromise(code ?? 1);
+    });
   });
 }
 
 async function runOnce() {
+  // Mirror the watch-mode shutdown semantics so Ctrl+C during `--once`
+  // doesn't leave the build child writing files after the parent exits.
+  const onceShutdown = () => {
+    if (shuttingDown) {
+      return;
+    }
+    shuttingDown = true;
+    log('stopping');
+    killActiveBuild();
+    process.exit(1);
+  };
+  process.on('SIGINT', onceShutdown);
+  process.on('SIGTERM', onceShutdown);
+
   const code = await runBuild();
   if (code === 0) {
     log('build ok');
@@ -77,6 +127,9 @@ async function watch() {
   let debounceTimer = null;
 
   async function rebuild() {
+    if (shuttingDown) {
+      return;
+    }
     if (building) {
       // A build is already running; queue exactly one follow-up.
       rebuildQueued = true;
@@ -88,11 +141,14 @@ async function watch() {
       log('rebuilding');
       const code = await runBuild();
       log(code === 0 ? 'build ok' : `build failed (exit ${code})`);
-    } while (rebuildQueued);
+    } while (rebuildQueued && !shuttingDown);
     building = false;
   }
 
   function scheduleRebuild(changedPath) {
+    if (shuttingDown) {
+      return;
+    }
     log(`changed ${changedPath}`);
     if (debounceTimer) {
       clearTimeout(debounceTimer);
@@ -116,7 +172,16 @@ async function watch() {
     .on('ready', () => log('watching for changes (Ctrl+C to stop)'));
 
   const shutdown = () => {
+    if (shuttingDown) {
+      return;
+    }
+    shuttingDown = true;
     log('stopping');
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
+    killActiveBuild();
     void watcher.close().finally(() => process.exit(0));
   };
   process.on('SIGINT', shutdown);
