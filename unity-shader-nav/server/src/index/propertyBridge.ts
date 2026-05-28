@@ -7,10 +7,10 @@ import type { IndexStore } from './indexStore';
 
 /**
  * Return the property entry whose name token covers the cursor position, or
- * null. Mirrors `findPropertyAt(idx.properties, position)` but operates directly
- * on the cached `FileIndex.properties` array so the definition handler can run
- * the predicate without re-scanning. Both endpoints are inclusive so the cursor
- * just past the last character still resolves to the entry.
+ * null. Operates directly on the cached `FileIndex.properties` array so the
+ * definition handler can run the predicate without re-scanning. Both endpoints
+ * are inclusive so the cursor just past the last character still resolves to
+ * the entry.
  */
 export function propertyAt(
   idx: FileIndex,

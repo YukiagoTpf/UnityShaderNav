@@ -794,3 +794,61 @@ describe('registerDefinitionHandler — properties bridge', () => {
     }
   });
 });
+
+describe('propertyAt geometry', () => {
+  // Geometry coverage for the bridge's cursor predicate. Migrated from the
+  // scanner test file when the duplicate `findPropertyAt` export was removed.
+  function makeIdx(line: number, nameStart: number, name: string): FileIndex {
+    return {
+      uri: 'file:///t/geom.shader',
+      symbols: [],
+      references: [],
+      properties: [
+        {
+          name,
+          nameRange: {
+            start: { line, character: nameStart },
+            end: { line, character: nameStart + name.length },
+          },
+          declarationRange: {
+            start: { line, character: 0 },
+            end: { line, character: nameStart + name.length + 20 },
+          },
+          type: '2D',
+        },
+      ],
+    };
+  }
+
+  const line = 2;
+  const nameStart = 4;
+  const name = '_MainTex';
+  const nameEnd = nameStart + name.length;
+  const idx = makeIdx(line, nameStart, name);
+
+  it('matches a cursor inside the property name', () => {
+    expect(propertyAt(idx, { line, character: nameStart + 2 })?.name).toBe(name);
+  });
+
+  it('matches a cursor at the start of the property name', () => {
+    expect(propertyAt(idx, { line, character: nameStart })?.name).toBe(name);
+  });
+
+  it('matches a cursor at the end of the property name (inclusive)', () => {
+    expect(propertyAt(idx, { line, character: nameEnd })?.name).toBe(name);
+  });
+
+  it('returns null for a cursor past the name on the same line', () => {
+    expect(propertyAt(idx, { line, character: nameEnd + 1 })).toBeNull();
+  });
+
+  it('returns null for a cursor on an adjacent line', () => {
+    expect(propertyAt(idx, { line: line - 1, character: nameStart + 1 })).toBeNull();
+    expect(propertyAt(idx, { line: line + 1, character: nameStart + 1 })).toBeNull();
+  });
+
+  it('returns null when FileIndex.properties is undefined', () => {
+    const empty: FileIndex = { uri: 'file:///t/empty.hlsl', symbols: [], references: [] };
+    expect(propertyAt(empty, { line: 0, character: 0 })).toBeNull();
+  });
+});

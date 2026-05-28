@@ -1,4 +1,4 @@
-import type { Position, Range, ShaderLabPropertyEntry, ShaderLabPropertyType } from '@unity-shader-nav/shared';
+import type { Range, ShaderLabPropertyEntry, ShaderLabPropertyType } from '@unity-shader-nav/shared';
 import { scanBlocks } from './blockScanner';
 
 const PROPERTY_TYPES = new Set<ShaderLabPropertyType>([
@@ -169,21 +169,3 @@ export function scanProperties(text: string): ShaderLabPropertyEntry[] {
   return entries;
 }
 
-/**
- * Return the property entry whose name token covers (line, character), or
- * null. Match is inclusive on both endpoints so the cursor on either side of
- * the name still resolves to the entry.
- */
-export function findPropertyAt(
-  entries: readonly ShaderLabPropertyEntry[],
-  position: Position,
-): ShaderLabPropertyEntry | null {
-  for (const entry of entries) {
-    const { start, end } = entry.nameRange;
-    if (position.line !== start.line) continue;
-    if (position.character < start.character) continue;
-    if (position.character > end.character) continue;
-    return entry;
-  }
-  return null;
-}

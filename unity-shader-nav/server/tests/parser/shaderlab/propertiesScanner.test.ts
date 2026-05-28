@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  findPropertyAt,
-  scanProperties,
-} from '../../../src/parser/shaderlab/propertiesScanner';
+import { scanProperties } from '../../../src/parser/shaderlab/propertiesScanner';
 
 function shader(...lines: string[]): string {
   return lines.join('\n');
@@ -282,61 +279,3 @@ describe('scanProperties', () => {
   });
 });
 
-describe('findPropertyAt', () => {
-  const text = shader(
-    'Shader "Test/Find" {',
-    '  Properties {',
-    '    _MainTex ("Base Map", 2D) = "white" {}',
-    '  }',
-    '}',
-  );
-  const entries = scanProperties(text);
-  const propLine = '    _MainTex ("Base Map", 2D) = "white" {}';
-  const nameStart = propLine.indexOf('_MainTex');
-  const nameEnd = nameStart + '_MainTex'.length;
-
-  it('matches a cursor inside the property name', () => {
-    const hit = findPropertyAt(entries, { line: 2, character: nameStart + 2 });
-    expect(hit?.name).toBe('_MainTex');
-  });
-
-  it('matches a cursor at the start of the property name', () => {
-    const hit = findPropertyAt(entries, { line: 2, character: nameStart });
-    expect(hit?.name).toBe('_MainTex');
-  });
-
-  it('matches a cursor at the end of the property name', () => {
-    const hit = findPropertyAt(entries, { line: 2, character: nameEnd });
-    expect(hit?.name).toBe('_MainTex');
-  });
-
-  it('returns null for a cursor on the type token', () => {
-    const typeStart = propLine.indexOf('2D');
-    expect(
-      findPropertyAt(entries, { line: 2, character: typeStart }),
-    ).toBeNull();
-  });
-
-  it('returns null for a cursor on the display string', () => {
-    const stringStart = propLine.indexOf('Base Map');
-    expect(
-      findPropertyAt(entries, { line: 2, character: stringStart }),
-    ).toBeNull();
-  });
-
-  it('returns null for a cursor on the default literal', () => {
-    const literalStart = propLine.indexOf('"white"');
-    expect(
-      findPropertyAt(entries, { line: 2, character: literalStart }),
-    ).toBeNull();
-  });
-
-  it('returns null for a cursor on an adjacent line', () => {
-    expect(
-      findPropertyAt(entries, { line: 1, character: nameStart + 1 }),
-    ).toBeNull();
-    expect(
-      findPropertyAt(entries, { line: 3, character: nameStart + 1 }),
-    ).toBeNull();
-  });
-});
