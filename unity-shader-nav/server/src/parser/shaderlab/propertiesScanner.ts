@@ -185,4 +185,3 @@ export function scanProperties(text: string): ShaderLabPropertyEntry[] {
 
   return entries;
 }
-

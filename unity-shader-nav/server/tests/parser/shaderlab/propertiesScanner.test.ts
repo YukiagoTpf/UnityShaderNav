@@ -356,4 +356,3 @@ describe('scanProperties', () => {
     expect(entries[0].type).toBe('2D');
   });
 });
-
