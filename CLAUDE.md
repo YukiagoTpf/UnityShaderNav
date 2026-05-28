@@ -22,10 +22,11 @@
 
 ## 当前发布状态
 
-- 最新发布版本：`v0.0.6`。
-- Release 地址：https://github.com/YukiagoTpf/UnityShaderNav/releases/tag/v0.0.6
-- 最新 VSIX 产物：`unity-shader-nav/client/unity-shader-nav-0.0.6.vsix`。
-- `client/package.json` 当前插件版本为 `0.0.6`，并使用 `client/images/icon.png` 作为 VS Code Marketplace 图标。
+- 最新发布版本：`v0.0.7`。
+- Release 地址：https://github.com/YukiagoTpf/UnityShaderNav/releases/tag/v0.0.7
+- 最新 VSIX 产物：`unity-shader-nav/client/unity-shader-nav-0.0.7.vsix`。
+- `client/package.json` 当前插件版本为 `0.0.7`，并使用 `client/images/icon.png` 作为 VS Code Marketplace 图标。
+- 0.0.7 亮点：Workspace symbol search（Ctrl+T，#19）；`?path=` git package 解析 + git 包目录 hash 截 10 字符（#25）。
 
 ## 已知坑
 

@@ -7,6 +7,8 @@ and uses semantic versioning for extension releases once public publishing start
 
 ## Unreleased
 
+## 0.0.7 - 2026-05-28
+
 ### Added
 
 - feat: workspace symbol search (Ctrl+T) across indexed shader symbols —
