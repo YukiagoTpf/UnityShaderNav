@@ -8,6 +8,7 @@ UnityShaderNav は、Unity Shader プロジェクト向けの Visual Studio Code
 
 - 関数、ローカル変数、引数、struct、struct メンバー、マクロ、`#include` パス、shader エントリポイントへの Go to Definition。
 - インデックス済みのユーザーファイル内での Find References。必要に応じて package 内の参照も含められます。
+- インデックス済みシェーダーシンボル（関数、struct、メンバー、変数、引数、マクロ）と一部の組み込み関数の宣言サマリーをホバーで表示します。
 - インデックス済み HLSL/CG コードの保守的な補完とシグネチャヘルプ、および厳選された Unity/HLSL/ShaderLab 組み込み語彙。
 - ShaderLab ラッパー、Properties、Tags、render states、プリプロセッサ行、
   HLSL シンボル向けの Document Symbols とセマンティックカラーリング。

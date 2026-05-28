@@ -21,6 +21,14 @@ When multiple definitions are valid, UnityShaderNav returns all candidates and
 lets VS Code show Peek Definition. This is expected for preprocessor branches,
 overload-like HLSL shapes, and repeated pass entry point names.
 
+### Hover
+
+Pause the mouse over (or press `Ctrl+K Ctrl+I` on) an indexed shader symbol to
+see a declaration-style summary and source location. Hover covers project
+functions, structs, struct members, variables, parameters, and macros, plus
+selected built-ins from the curated catalog. Ambiguous symbols are listed
+without picking a winner, matching Go to Definition behavior.
+
 ### Find References
 
 Use Shift+F12 to find references in indexed user files. Package references are

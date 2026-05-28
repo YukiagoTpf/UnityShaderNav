@@ -35,8 +35,8 @@ handling. Important modules:
   project symbols, formats LSP completion/signature items, and filters curated
   built-in shader vocabulary.
 - `handlers`: implements definition, references, document symbols, document
-  highlights, completion, signature help, semantic tokens, inactive-region
-  dimming, and open-document behavior.
+  highlights, hover, completion, signature help, semantic tokens,
+  inactive-region dimming, and open-document behavior.
 - `workspace`: detects Unity roots, scans files, watches changes, and manages
   persistent cache.
 

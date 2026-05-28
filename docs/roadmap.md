@@ -17,6 +17,11 @@ summarizes the broad direction without duplicating issue implementation plans.
 These low-risk, high-value editor improvements are now tracked as GitHub Issues:
 
 - [Add hover information for shader symbols](https://github.com/YukiagoTpf/UnityShaderNav/issues/18).
+  A first pass is in progress on `issue-18-hover-information` (targeting
+  `v0.0.7-dev`): declaration-style hover for indexed project symbols
+  (functions, structs, members, variables, parameters, macros) and selected
+  built-ins, with the same visibility and multi-candidate behavior as
+  Go to Definition.
 - [Add workspace symbol search for indexed shader symbols](https://github.com/YukiagoTpf/UnityShaderNav/issues/19).
 - [Navigate from ShaderLab Properties to HLSL declarations](https://github.com/YukiagoTpf/UnityShaderNav/issues/20).
 - [Expand curated Unity/HLSL built-in completion and signature vocabulary](https://github.com/YukiagoTpf/UnityShaderNav/issues/21).
