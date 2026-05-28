@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "com.example.future": {
+      "version": "1.0.0",
+      "depth": 0,
+      "source": "something-new",
+      "dependencies": {}
+    }
+  }
+}

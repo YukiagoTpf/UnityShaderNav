@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { copyFile, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { PackageResolver } from '../../src/packages';
@@ -40,6 +40,10 @@ async function makeFakeProject(): Promise<string> {
 }
 
 describe('PackageResolver', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('builds map after load()', async () => {
     const root = await makeFakeProject();
     const resolver = new PackageResolver(root);
@@ -71,5 +75,25 @@ describe('PackageResolver', () => {
 
     expect(resolver.resolveIncludePath('Packages/com.example.embedded/Foo.hlsl'))
       .toBe(join(root, 'Packages', 'com.example.embedded', 'Foo.hlsl'));
+  });
+
+  it('skips unknown source entries and warns instead of guessing a path', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-unknown-'));
+    await mkdir(join(root, 'Packages'), { recursive: true });
+    await copyFile(
+      join(__dirname, 'fixtures/packages-lock-samples/unknown-source.json'),
+      join(root, 'Packages', 'packages-lock.json'),
+    );
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const resolver = new PackageResolver(root);
+    await resolver.load();
+
+    expect(resolver.getPath('com.example.future')).toBeUndefined();
+    expect(resolver.allPaths()).toEqual([]);
+    expect(warn).toHaveBeenCalledTimes(1);
+    const [message] = warn.mock.calls[0];
+    expect(message).toContain('com.example.future');
+    expect(message).toContain('something-new');
   });
 });
