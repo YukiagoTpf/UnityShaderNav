@@ -44,11 +44,16 @@ export function findPropertyCandidatesForName(
   store: Pick<IndexStore, 'uris' | 'get'>,
 ): PropertyCandidate[] {
   const out: PropertyCandidate[] = [];
-  for (const uri of store.uris()) {
-    const idx = store.get(uri);
+  for (const storeUri of store.uris()) {
+    const idx = store.get(storeUri);
     if (!idx?.properties) continue;
+    // Emit `idx.uri`, not the store's iterator key. `IndexStore` keys go
+    // through `uriKey` which lowercases the Windows drive letter, so
+    // returning `storeUri` would round-trip a different casing than every
+    // other LocationLink in the same response (which all use
+    // `symbol.location.uri` / `idx.uri`).
     for (const entry of idx.properties) {
-      if (entry.name === name) out.push({ uri, entry });
+      if (entry.name === name) out.push({ uri: idx.uri, entry });
     }
   }
   return out;

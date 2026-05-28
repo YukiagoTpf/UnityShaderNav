@@ -164,6 +164,33 @@ describe('property bridge unit (propertyAt / findPropertyCandidatesForName)', ()
     expect(hits).toHaveLength(2);
   });
 
+  it('findPropertyCandidatesForName preserves the original URI casing', () => {
+    // Regression: IndexStore keys go through uriKey which lowercases the
+    // Windows drive letter, so the iterator's storeUri uses `f:` while
+    // idx.uri keeps `F:`. Property links must round-trip the same casing
+    // as every other LocationLink (which uses symbol.location.uri).
+    const originalUri = 'file:///F:/Project/Mixed.shader';
+    const store = new IndexStore();
+    const idx: FileIndex = {
+      uri: originalUri,
+      symbols: [],
+      references: [],
+      properties: [
+        {
+          name: '_Mixed',
+          nameRange: { start: { line: 1, character: 4 }, end: { line: 1, character: 10 } },
+          declarationRange: { start: { line: 1, character: 0 }, end: { line: 1, character: 32 } },
+          type: 'Float',
+        },
+      ],
+    };
+    store.set(originalUri, idx);
+
+    const hits = findPropertyCandidatesForName('_Mixed', store);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].uri).toBe(originalUri); // exact string equality — not case-folded
+  });
+
   // Case 9: lexical gate regressions, exercised by directly calling
   // isGenericDefinitionContext. The handler path is covered elsewhere.
   it('case 9: isGenericDefinitionContext rejects Tags / Pass header / comment / string in .shader', () => {
