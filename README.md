@@ -20,6 +20,9 @@ The extension focuses on fast code navigation:
   intrinsics, helper macros, render states, and semantics.
 - Document Symbols and semantic coloring for ShaderLab wrappers, Properties,
   Tags, render states, preprocessor lines, and HLSL symbols.
+- Workspace symbol search (Ctrl+T / Cmd+T) across indexed shader functions,
+  structs, struct members, cbuffers, macros, and globals. Package symbols are
+  excluded by default and follow `findReferences.includePackages`.
 - Conservative dimming of inactive and variant-dependent `#if`/`#ifdef`
   preprocessor branches (presentation only; navigation is unaffected).
 - Unity Package resolution through `Packages/packages-lock.json`.

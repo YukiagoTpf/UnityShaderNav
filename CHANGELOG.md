@@ -9,6 +9,11 @@ and uses semantic versioning for extension releases once public publishing start
 
 ### Added
 
+- feat: workspace symbol search (Ctrl+T) across indexed shader symbols —
+  functions, structs, struct members, cbuffers, macros, and globals are
+  reachable through VS Code's "Go to Symbol in Workspace" panel. Results
+  honor the existing `findReferences.includePackages` policy and skip
+  parameters and local variables (issue #19).
 - Conservative preprocessor branch dimming: inactive and variant-dependent
   `#if`/`#ifdef`/`#ifndef` branches in shader/HLSL files are visually dimmed via
   client decorations. This is presentation-only and does not change navigation,

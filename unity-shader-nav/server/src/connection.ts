@@ -33,6 +33,7 @@ export function createInitializeResult(): InitializeResult {
       definitionProvider: true,
       hoverProvider: true,
       documentSymbolProvider: true,
+      workspaceSymbolProvider: true,
       referencesProvider: true,
       documentHighlightProvider: true,
       completionProvider: {

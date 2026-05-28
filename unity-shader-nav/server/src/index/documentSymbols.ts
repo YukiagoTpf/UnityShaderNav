@@ -9,15 +9,7 @@ import type {
   ShaderLabStructureNode,
   SymbolEntry,
 } from '@unity-shader-nav/shared';
-
-const SYMBOL_KIND_MAP: Record<string, LspSymbolKind> = {
-  function: LspSymbolKind.Function,
-  variable: LspSymbolKind.Variable,
-  struct: LspSymbolKind.Struct,
-  structMember: LspSymbolKind.Field,
-  macro: LspSymbolKind.Constant,
-  cbuffer: LspSymbolKind.Struct,
-};
+import { SYMBOL_KIND_MAP } from './symbolKindMap';
 
 function rangeOfLines(startLine: number, endLine: number): Range {
   return {

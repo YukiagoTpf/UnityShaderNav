@@ -10,6 +10,7 @@ import { registerInactiveRegionsHandler } from './handlers/inactiveRegions';
 import { registerReferencesHandler } from './handlers/references';
 import { registerSemanticTokensHandler } from './handlers/semanticTokens';
 import { registerSignatureHelpHandler } from './handlers/signatureHelp';
+import { registerWorkspaceSymbolHandler } from './handlers/workspaceSymbol';
 import { applyWorkspaceFolderChanges, registerFileWatchers } from './lifecycle/fileWatcher';
 import { applyScopedSettingsAndRebuild, reindexOpenDocuments } from './lifecycle/rebuild';
 import { RequestSuspender } from './lifecycle/requestSuspender';
@@ -85,6 +86,7 @@ registerCompletionHandler(connection, documents, manager, suspender);
 registerSignatureHelpHandler(connection, documents, manager, suspender);
 registerDocumentHighlightHandler(connection, documents, manager, suspender);
 registerDocumentSymbolHandler(connection, documents, manager, suspender);
+registerWorkspaceSymbolHandler(connection, manager, suspender);
 registerSemanticTokensHandler(connection, documents, manager, suspender);
 registerReferencesHandler(
   connection,

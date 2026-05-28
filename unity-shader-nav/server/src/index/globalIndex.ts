@@ -47,4 +47,10 @@ export class GlobalSymbolIndex {
   uris(): IterableIterator<string> {
     return this.byUri.keys();
   }
+
+  *entries(): IterableIterator<SymbolEntry> {
+    for (const entries of this.byUri.values()) {
+      for (const entry of entries) yield entry;
+    }
+  }
 }
