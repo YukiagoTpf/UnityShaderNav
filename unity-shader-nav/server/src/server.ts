@@ -5,6 +5,7 @@ import { registerDefinitionHandler } from './handlers/definition';
 import { registerDocumentHighlightHandler } from './handlers/documentHighlight';
 import { registerDocumentSymbolHandler } from './handlers/documentSymbol';
 import { registerDocuments } from './handlers/documents';
+import { registerHoverHandler } from './handlers/hover';
 import { registerInactiveRegionsHandler } from './handlers/inactiveRegions';
 import { registerReferencesHandler } from './handlers/references';
 import { registerSemanticTokensHandler } from './handlers/semanticTokens';
@@ -79,6 +80,7 @@ onSettingsChanged(connection, async (settings) => {
 });
 
 registerDefinitionHandler(connection, documents, manager, suspender);
+registerHoverHandler(connection, documents, manager, suspender);
 registerCompletionHandler(connection, documents, manager, suspender);
 registerSignatureHelpHandler(connection, documents, manager, suspender);
 registerDocumentHighlightHandler(connection, documents, manager, suspender);

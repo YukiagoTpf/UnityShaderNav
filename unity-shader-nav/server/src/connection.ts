@@ -31,6 +31,7 @@ export function createInitializeResult(): InitializeResult {
     capabilities: {
       textDocumentSync: TextDocumentSyncKind.Incremental,
       definitionProvider: true,
+      hoverProvider: true,
       documentSymbolProvider: true,
       referencesProvider: true,
       documentHighlightProvider: true,
