@@ -48,7 +48,7 @@ npm run build
 npm run watch
 npm run test -w @unity-shader-nav/server
 npm test
-node tests/out/runTest.js
+npm run test:electron
 npm run bench:issue3 -- --files 800
 npm run package:vsix
 ```

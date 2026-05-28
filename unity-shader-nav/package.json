@@ -14,6 +14,7 @@
     "watch:typecheck": "node scripts/watch-typecheck.mjs",
     "test": "npm run build && npm run compile:tests && npm run test:package-layout && node tests/out/runTest.js && npm run test --workspaces --if-present",
     "compile:tests": "rimraf tests/out && tsc -p tests/tsconfig.json",
+    "test:electron": "npm run compile:tests && node tests/out/runTest.js",
     "test:package-layout": "mocha tests/out/client/package-layout.test.js --ui tdd --timeout 60000",
     "clean": "rimraf client/out server/out shared/out tests/out client/tsconfig.tsbuildinfo server/tsconfig.tsbuildinfo shared/tsconfig.tsbuildinfo",
     "bench:issue3": "node scripts/benchmark-index-cache.mjs",
