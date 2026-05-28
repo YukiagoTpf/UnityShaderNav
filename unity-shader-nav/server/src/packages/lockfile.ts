@@ -58,8 +58,11 @@ export function resolvePackagePhysicalPath(
 
   if (source === 'git') {
     if (!entry.hash) return null;
+    // Unity stores ?path= subdir packages under a cache directory whose name
+    // encodes the subpath; the exact form has not been verified against a
+    // real Unity project yet, so refuse to guess and let PackageResolver
+    // skip+warn until a follow-up issue confirms the layout.
     if (/\?path=/.test(entry.version)) return null;
-    if (entry.version.startsWith('git+ssh://')) return null;
     return join(projectRoot, 'Library', 'PackageCache', `${name}@${entry.hash}`);
   }
 
