@@ -69,7 +69,16 @@ Current state (verified against the tree):
   Re-use as-is.
 - Lexical guard: `isGenericDefinitionContext(text, position, languageId, uri)`
   in `server/src/parser/lexical/context.ts` is what `definition.ts` uses to
-  reject hovers in comments / strings / non-shader code. Reuse it as-is.
+  reject definition requests. It returns `false` in two distinct cases:
+  (a) the cursor is in a `//` or `/* */` comment or inside a string literal
+  (via `lexicalContextAt`), AND (b) the cursor is in a `.shader` file but
+  **outside** every `HLSLPROGRAM`/`HLSLINCLUDE`/`CGPROGRAM`/`CGINCLUDE` block
+  (via `isShaderLabDocument` + `isInsideShaderLabHlslBlock`). So hover in the
+  ShaderLab declarative section (Properties block, SubShader/Pass header
+  lines, `Tags { ... }`) also returns `null`. This is correct v1 behavior
+  (issue 18 is scoped to indexed shader symbols, not ShaderLab keywords) but
+  call it out so a future "hover broken on `Tags`" report is not misfiled.
+  Reuse the function as-is.
 - Initialize: `server/src/connection.ts` `createInitializeResult` returns the
   capability advertisement. Adding hover requires `hoverProvider: true`.
 - Settings: `shared/src/settings.ts` (`ExtensionSettings` / `DEFAULT_SETTINGS`),
@@ -103,26 +112,38 @@ Current state (verified against the tree):
 3. **Multi-candidate presentation = stacked.** When
    `resolveDefinitionSymbols` returns more than one survivor after scope and
    visibility filtering, hover renders them stacked in the same `MarkupContent`
-   with a `---` separator and a small `(N candidates)` header. This matches
-   ADR-0001 "multi-candidate peek for ambiguous symbols" — definition uses a
-   peek UI for the same situation, hover uses concatenation. **Cap at 5
-   entries** to bound payload size; append a final `… and M more candidates`
-   line when truncated.
+   with a `---` separator and a small `(N candidates)` header. This honors the
+   same "don't pick a winner" spirit as ADR-0001 "multi-candidate peek for
+   ambiguous symbols" — definition uses the Peek UI to show every candidate;
+   hover concatenates instead because there is no Peek UI in a hover bubble.
+   **Cap at 5 entries** to bound MarkupContent payload size (a hover bubble
+   with 20+ candidates is unreadable, not because ADR-0001 says so — it
+   doesn't); append a final `… and M more candidates` line when truncated. If
+   the cap ever needs to change, record it as a small follow-up ADR rather
+   than retconning ADR-0001.
 4. **Markdown, not plain text.** Return
    `{ contents: { kind: MarkupKind.Markdown, value } }`. Code blocks are fenced
    with ` ```hlsl ` so VS Code applies HLSL syntax highlighting to the
    declaration line — this is what makes hover read like a header file
    declaration rather than a raw string.
 5. **Source-location footer, no extra disk I/O.** The footer is a single line
-   `_in_ `path/relative/to/workspaceRoot.ext:line` rendered from
-   `symbol.location.uri` + `+1` for human-readable line numbers. If
-   `workspace.rootUri` is known the path is made workspace-relative; otherwise
-   the URI's basename is used. Hover never reads the target file's text — the
-   declaration line shown in the fenced code block is **synthesized** from
-   `SymbolEntry` fields (`returnType`, `name`, `parameters`, `declaredType`,
-   `parentType`), not extracted from the source. This is faster and avoids a
-   second async filesystem hit per hover, at the cost of not showing leading
-   attributes / comments. Acceptable for v1.
+   ``_in_ `path/relative/to/folder.ext`:line`` rendered from
+   `symbol.location.uri` + `+1` for human-readable line numbers. The URI is
+   converted to a filesystem path via `fileURLToPath` from `node:url`
+   (already used in `workspace/workspaceManager.ts:71`) — **not**
+   hand-rolled `decodeURIComponent`, which would leave the leading slash on
+   Windows drive letters (`/F:/...`). If `workspace.folderUri` (the actual
+   public field; there is no `rootUri`) is known, the path is made
+   workspace-relative by stripping `fileURLToPath(workspace.folderUri)`;
+   otherwise the path's basename is used. The relative path is wrapped in
+   inline-code backticks so any underscores or asterisks in path segments
+   (e.g. `Common_Macros.hlsl`) cannot accidentally start a markdown italic
+   span. Hover never reads the target file's text — the declaration line
+   shown in the fenced code block is **synthesized** from `SymbolEntry`
+   fields (`returnType`, `name`, `parameters`, `declaredType`, `parentType`),
+   not extracted from the source. This is faster and avoids a second async
+   filesystem hit per hover, at the cost of not showing leading attributes /
+   comments. Acceptable for v1.
 6. **No new setting.** A `unityShaderNav.hover.enabled` flag is tempting but
    buys little: VS Code already lets the user disable hover globally per
    language (`editor.hover.enabled`) and per provider (clicking the hover gear).
@@ -138,6 +159,14 @@ Current state (verified against the tree):
    access) so VS Code underlines exactly the identifier the hover describes.
    Without this, VS Code falls back to the host language's word boundary which
    may include the dot.
+9. **Hovering the declaration itself is allowed.** When the cursor lies on
+   the identifier of a declaration (e.g. on `Helper` in `float4 Helper(...)
+   { ... }`), `resolveDefinitionSymbols` returns the same symbol whose
+   `location.range` *is* the cursor's word range. Hover renders the same
+   card it would for a *use* of that symbol. This matches the behavior of
+   VS Code's built-in TypeScript hover, and `definition.ts` does not special-
+   case it either. Pin the behavior with a test so a future change is
+   intentional.
 
 ---
 
@@ -194,12 +223,23 @@ export function formatHoverCandidates(inputs: HoverInput[], maxCandidates?: numb
   body extraction is a follow-up).
 - `cbuffer`: ` ```hlsl\ncbuffer ${name}\n``` `.
 
-Append a single-line footer `\n\n_in_ ${relativePathOrBasename}:${line+1}`
+Append a single-line footer ``\n\n_in_ `${relativePathOrBasename}`:${line+1}``
 where `line` is `symbol.location.range.start.line` (0-based, so `+1` for human
-reading). When `workspaceRootUri` is provided and `symbol.location.uri`
-startsWith it, strip the prefix; otherwise emit just `basename(uri)`. URI
-decoding: use `decodeURIComponent` on the path component so `Tab%20s.hlsl`
-displays as `Tab s.hlsl`.
+reading). Conversion rules:
+
+1. `absPath = fileURLToPath(symbol.location.uri)` (from `node:url`) — handles
+   percent-decoding *and* the Windows drive-letter leading slash. Do **not**
+   `decodeURIComponent` the URL path manually.
+2. If `workspaceRootUri` is provided: `rootPath = fileURLToPath(workspaceRootUri)`;
+   if `absPath` starts with `rootPath + path.sep`, strip the prefix and the
+   separator. Use forward slashes in the output (`path.replaceAll(path.sep,
+   '/')`) for display consistency across OSes.
+3. Otherwise emit `path.basename(absPath)`.
+
+Wrap the resulting path in backtick inline-code so markdown italic/bold
+markers inside path segments (rare `_`, `*`) cannot break formatting; the
+trailing `:${line+1}` stays outside the backticks so VS Code's
+"file:line"-style detection can still pick it up if it wants to.
 
 `formatHoverCandidate` for `BuiltinEntry`:
 
@@ -209,8 +249,15 @@ displays as `Tab s.hlsl`.
 - Otherwise: fenced block with `entry.detail ?? entry.name`.
 - Append `entry.documentation` as a plain paragraph after the fenced block (no
   fenced wrapping — it is prose).
-- Append a final line `_built-in (${entry.category})_` so the source is
-  unambiguous.
+- Append a final line `_${categoryLabel(entry.category)}_` so the source is
+  unambiguous. `categoryLabel` is a small fixed map:
+  - `'hlsl'      → 'HLSL built-in'`
+  - `'unitycg'   → 'Unity built-in'`
+  - `'urp'       → 'URP built-in'`
+  - `'shaderlab' → 'ShaderLab built-in'`
+  - `'semantic'  → 'HLSL semantic'`
+  This avoids leaking the internal enum spelling (`_built-in (unitycg)_`)
+  and gives `POSITION` a cleaner footer (`_HLSL semantic_`).
 
 `formatHoverCandidates(inputs, maxCandidates = 5)`:
 
@@ -233,11 +280,14 @@ Cover:
   the footer.
 - `workspaceRootUri` strip: same-prefix → relative path; different host →
   basename only.
-- URI-encoded path → footer shows decoded path.
+- URI-encoded path → footer shows decoded path via `fileURLToPath`
+  (`file:///F:/Tab%20s.hlsl` → ``in `Tab s.hlsl`:N``, NOT `/F:/Tab%20s.hlsl`).
+- Windows drive-letter URI → no leading `/` in the output.
 - Built-in function entry → fenced signature + documentation paragraph +
-  `_built-in (hlsl)_` line.
+  `_HLSL built-in_` line (category `'hlsl'`).
 - Built-in non-function entry → fenced `detail ?? name` + documentation +
-  `_built-in (...)_` line.
+  human label line; assert one case per `BuiltinCategory` value to pin the
+  `categoryLabel` map.
 - `formatHoverCandidates`: 0 inputs → empty string; 1 input → identical to
   single; 2 inputs → header + `---` separator; 7 inputs with cap 5 → header
   reads `5 candidates` (the shown count), separator-joined block, then
@@ -296,25 +346,31 @@ two handlers remain easy to diff):
    - `symbols = resolveMemberSymbols(idx, workspace.global, receiver.text,
      member.text, position, { visibleUriKeys })`.
    - If `symbols.length > 0`: format with `formatHoverCandidates(symbols.map(s
-     => ({ source: 'project', symbol: s, workspaceRootUri: workspace.rootUri })))`
-     and return `{ contents, range: memberAccess.member.range }`.
-   - **Fall through** to plain word resolution when member resolution is
-     empty: a member-access cursor may still hover the receiver name when no
-     receiver-type inference applies — but issue 18 explicitly scopes hover to
-     "indexed project symbols", and member-on-empty cleanly maps to "no
-     hover". So when member resolution returns empty, return `null` rather
-     than falling through. (Definition also returns `null` for empty member
-     resolution at this position.)
+     => ({ source: 'project', symbol: s, workspaceRootUri:
+     workspace.folderUri })))` and return `{ contents, range:
+     memberAccess.member.range }`.
+   - If `symbols.length === 0`: **fall through to plain word resolution**
+     (steps 8+). This matches `handlers/definition.ts:130-150`, which logs
+     `member.result { links: 0 }` and proceeds to `wordAt` /
+     `resolveDefinition` unconditionally. Hover must keep parity (acceptance
+     criterion 3) — diverging here would mean hover misses cases that
+     "go-to-definition" still resolves on the same cursor. The plain-word
+     resolver may or may not return something useful for a member-position
+     cursor, but the index, not the handler, decides.
 8. `word = wordAt(fullText, params.position)`; return `null` if no word.
 9. `projectSymbols = resolveDefinitionSymbols(idx, word.text, position,
    workspace.global, { visibleUriKeys })`.
-10. If `projectSymbols.length > 0`: format and return as above with
+10. If `projectSymbols.length > 0`: format with
+    `formatHoverCandidates(projectSymbols.map(s => ({ source: 'project',
+    symbol: s, workspaceRootUri: workspace.folderUri })))` and return with
     `range: word.range`.
 11. Otherwise consult the built-in catalog: `BUILTIN_ENTRIES.filter(entry =>
     entry.name === word.text)`. If a match exists, return
     `formatHoverCandidates(matches.map(entry => ({ source: 'builtin',
-    entry })))` with `range: word.range`. Built-in matches are typically
-    unique on name, but the formatter handles arrays anyway.
+    entry })))` with `range: word.range`. The catalog is unique-on-name today
+    (verified in `suggestions/builtins/catalog.ts`) but the formatter handles
+    arrays so future duplicates render stacked rather than silently picking
+    one — see Non-Goals.
 12. Otherwise return `null`.
 
 Wrap the body in `suspender ? suspender.run(...) : ...` exactly like
@@ -370,6 +426,19 @@ inherently cross-file):
   string → `null`. Driven by `isGenericDefinitionContext` already, but assert
   explicitly so a regression in the guard does not silently surface hovers in
   comments.
+- **ShaderLab declarative section guard:** in a `.shader` file, cursor on an
+  identifier inside `Properties { ... }` or a `Tags { ... }` block (outside
+  any `HLSLPROGRAM`/`CGPROGRAM` block) → `null`. Pins the second branch of
+  `isGenericDefinitionContext` (the `!isInsideShaderLabHlslBlock` check).
+- **Hovering the declaration itself:** cursor on the function name in
+  `float4 Foo() { ... }` → hover returns the function card (design
+  decision 9). Pins the behavior; any future "suppress on self-hover"
+  change will need to update this test deliberately.
+- **Member resolution empty → falls through:** receiver type cannot be
+  inferred (e.g. `unknown.x`); hover at `x` exercises the fall-through to
+  `wordAt(...)` + `resolveDefinitionSymbols('x', ...)`. Whatever the index
+  returns for the bare name `x` is what hover should return — assert parity
+  with calling `resolveDefinitionSymbols` directly on the same fixture.
 - **No-match:** unknown identifier with no project or built-in match →
   `null`.
 
@@ -388,28 +457,33 @@ Expected: hover suite passes; whole server suite stays green.
 ### Task 3: Client Integration Test
 
 **Files:**
-- Create: `unity-shader-nav/tests/electron/hover.test.ts` (or extend the
-  closest existing electron test file if naming convention demands)
-- Possibly modify: `unity-shader-nav/tests/electron/<existing fixture
-  workspace>` to add a hover fixture, OR add a small fixture pair under
-  `unity-shader-nav/tests/electron/fixtures/hover/` if no existing workspace
-  fits.
+- Create: `unity-shader-nav/tests/integration/client/hover.test.ts` (matching
+  the existing layout — there is no `tests/electron/` directory; the
+  integration suites live in `tests/integration/client/`, driven by Mocha and
+  bootstrapped by `unity-shader-nav/tests/runTest.ts`).
+- Use the existing `withWorkspaceFolder` helper at
+  `tests/integration/client/helpers/workspace.ts` for fixture setup, the same
+  way `definition.test.ts` and `completion.test.ts` do. Reuse one of the
+  existing fixture folders under `tests/integration/client/fixtures/` if a
+  suitable one already contains a function declaration + call site;
+  otherwise add a minimal new fixture.
 
 **Step 1: Smoke test**
 
-Single Mocha test that:
+Single Mocha test (`suite/test` style, mirroring `definition.test.ts`) that:
 
 1. Opens a fixture `.hlsl` (or `.shader`) document with a known function and
-   call site.
-2. Calls `vscode.commands.executeCommand<vscode.Hover[]>('vscode.executeHoverProvider',
-   uri, position)` at the call-site identifier.
+   call site via `withWorkspaceFolder`.
+2. Polls
+   `vscode.commands.executeCommand<vscode.Hover[]>('vscode.executeHoverProvider',
+   uri, position)` at the call-site identifier — use the same retry loop
+   pattern as `definition.test.ts`'s `waitForDefinitions` so the test does
+   not race the indexer on cold open.
 3. Asserts the returned array is non-empty and the first hover's
    `contents[0]` (or `.value` on `MarkdownString`) contains the function name
    and the fenced ` ```hlsl ` marker. Do **not** snapshot the entire payload —
    the formatter has its own unit tests; this test only proves the request
    flows through the client+server wiring.
-
-Use the existing electron test bootstrap; do not invent a new harness.
 
 **Step 2: Verify**
 
@@ -527,6 +601,16 @@ Ensure no build output under `client/out`, `server/out`, `shared/out`, or
 - **No built-in entries that do not exist in the catalog.** If a name is a
   real HLSL intrinsic but missing from `BUILTIN_ENTRIES`, hover returns
   `null` for it (treated identically to "unknown identifier").
+- **No deduping of built-in catalog duplicates.** `BUILTIN_ENTRIES` is
+  unique-on-name today (verified in `suggestions/builtins/catalog.ts`), but
+  the loader does not enforce it. If duplicates ever appear, hover renders
+  *all* matches stacked rather than picking one — same conservatism as
+  multi-candidate project symbols.
+- **No hover in ShaderLab declarative sections.** Cursor inside `Properties
+  { ... }`, `Tags { ... }`, or any `.shader` region outside `HLSLPROGRAM` /
+  `CGPROGRAM` / `HLSLINCLUDE` / `CGINCLUDE` returns `null` because
+  `isGenericDefinitionContext` rejects it. ShaderLab keyword hover is a
+  separate concern and is not in scope for v1.
 
 ---
 
@@ -543,3 +627,38 @@ git commit -m "docs(issue-18): plan hover information"
 The per-task `feat(issue-18)` / `test(issue-18)` / `docs(issue-18): document
 ...` commits are for the future execution of this plan, not for this
 plan-writing change.
+
+---
+
+## Review Notes (independent reviewer, 2026-05-28)
+
+> **Resolution (2026-05-28, all notes 评估后采纳):** 10 条经核对全部成立,已折回
+> 本计划:
+> - **P1 `workspace.rootUri` 不存在** → 改用 `workspace.folderUri`(见
+>   `workspace/workspace.ts:34`);设计决策 5 与 Task 2 Step 7/10 同步更新。
+> - **P1 member-empty 应 fall through** → Task 2 Step 7 改为"member 解析为空
+>   时落到 `wordAt` + `resolveDefinitionSymbols`",与
+>   `definition.ts:130-150` 行为对齐(验收准则 3 要求一致的可见性模型)。
+> - **P2 `fileURLToPath` 替代 `decodeURIComponent`** → 设计决策 5 与 Task 1
+>   Step 1 改用 `fileURLToPath(symbol.location.uri)`,正确处理 Windows 盘符
+>   leading slash,沿用 `workspace/workspaceManager.ts:71` 的现有约定。
+> - **P2 集成测试路径** → Task 3 改到 `tests/integration/client/hover.test.ts`,
+>   复用 `withWorkspaceFolder` helper 和 `definition.test.ts` 的 `waitFor*`
+>   retry 模式。
+> - **P2 `isGenericDefinitionContext` 也拦截 ShaderLab 声明段** → Context
+>   bullet 写明两个分支,Task 2 Step 4 新增"hover 进 Properties/Tags →
+>   null"测试,Non-Goals 也补一条。
+> - **P2 hover 声明位本身的边界** → 新增设计决策 9 显式接受该行为,Task 2
+>   Step 4 加 "Hovering the declaration itself" 回归测试。
+> - **P3 cap=5 的依据** → 设计决策 3 改写为"hover MarkupContent payload
+>   size",不再绑 ADR-0001;后续调整建议另起 follow-up ADR。
+> - **P3 markdown 注入风险** → 源位 footer 改用 inline-code backtick 包路径
+>   (设计决策 5、Task 1 Step 1),`_member of_` 行同样用 backtick 包
+>   `parentType`,避免少见路径(`Foo _ Bar.hlsl` 等)被 markdown 误解析。
+> - **P3 built-in category 文案** → Task 1 Step 1 新增 `categoryLabel` 映射
+>   表(`unitycg → "Unity built-in"` 等),避免直接渲染内部 enum 名。
+> - **P3 BUILTIN_ENTRIES 唯一性** → Non-Goals 新增"重复 catalog 条目不去重,
+>   直接 stacked 渲染"。
+>
+> 原始 review 留档:
+> `docs/plans/2026-05-28-issue-18-hover-information-review.md`。
