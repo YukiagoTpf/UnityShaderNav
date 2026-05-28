@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { indexFile } from '../../../src/parser/hlsl/fileIndexer';
+import { scanProperties } from '../../../src/parser/shaderlab/propertiesScanner';
 import { MacroPatternTable } from '../../../src/macros';
 
 describe('fileIndexer: pure .hlsl', () => {
@@ -115,5 +116,65 @@ describe('fileIndexer: .shader multi-pass', () => {
 
     expect(pragmaRefs.map((r) => r.name)).toEqual(['vert']);
     expect(pragmaRefs[0]?.location.range.start).toEqual({ line: 8, character: 21 });
+  });
+});
+
+describe('fileIndexer: .shader Properties attachment', () => {
+  it('attaches Properties entries matching scanProperties for a .shader with a Properties block', async () => {
+    const text = [
+      'Shader "T/Props" {',
+      '  Properties {',
+      '    _MainTex ("Base Map", 2D) = "white" {}',
+      '    _BaseColor ("Tint", Color) = (1,1,1,1)',
+      '  }',
+      '  SubShader {',
+      '    Pass {',
+      '      HLSLPROGRAM',
+      '      float4 _BaseColor;',
+      '      ENDHLSL',
+      '    }',
+      '  }',
+      '}',
+    ].join('\n');
+
+    const idx = await indexFile('file:///t/props.shader', text);
+    const expected = scanProperties(text);
+
+    expect(idx.properties).toBeDefined();
+    expect(idx.properties).toHaveLength(expected.length);
+    expect(idx.properties).toEqual(expected);
+  });
+
+  it('leaves properties undefined for a .shader without a Properties block', async () => {
+    const text = [
+      'Shader "T/NoProps" {',
+      '  SubShader {',
+      '    Pass {',
+      '      HLSLPROGRAM',
+      '      float4 _BaseColor;',
+      '      void frag() {}',
+      '      ENDHLSL',
+      '    }',
+      '  }',
+      '}',
+    ].join('\n');
+
+    const idx = await indexFile('file:///t/noprops.shader', text);
+    expect(idx.properties).toBeUndefined();
+  });
+
+  it('does not run the Properties scanner for non-.shader extensions', async () => {
+    // Text that *would* parse as a Properties block if mis-routed to the
+    // .shader branch — confirms the scanner is gated by extension.
+    const text = [
+      'Shader "T/Misrouted" {',
+      '  Properties {',
+      '    _MainTex ("Base Map", 2D) = "white" {}',
+      '  }',
+      '}',
+    ].join('\n');
+
+    const idx = await indexFile('file:///t/misrouted.hlsl', text);
+    expect(idx.properties).toBeUndefined();
   });
 });

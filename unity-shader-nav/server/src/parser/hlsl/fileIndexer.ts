@@ -8,6 +8,7 @@ import { scanPragmaLines } from '../../macros/matcher';
 import { scanIncludes } from '../include/lineScanner';
 import { scanDefines } from '../preproc/scanDefines';
 import { scanBlocks } from '../shaderlab/blockScanner';
+import { scanProperties } from '../shaderlab/propertiesScanner';
 import { scanStructure } from '../shaderlab/structureScanner';
 
 const HLSL_EXTS = new Set(['.hlsl', '.cginc', '.hlslinc', '.compute']);
@@ -131,6 +132,8 @@ export async function indexFile(
       }
     }
     merged.structure = scanStructure(text);
+    const properties = scanProperties(text);
+    if (properties.length > 0) merged.properties = properties;
     return merged;
   }
 
