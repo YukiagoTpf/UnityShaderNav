@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: unity-shader-nav
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+          cache-dependency-path: unity-shader-nav/package-lock.json
+
+      - name: Cache VS Code test runtime
+        uses: actions/cache@v4
+        with:
+          # The Electron integration tests download a VS Code build into
+          # unity-shader-nav/.vscode-test/ on first run. The cache key
+          # rotates when the lockfile changes so a @vscode/test-electron
+          # bump invalidates a stale binary.
+          path: unity-shader-nav/.vscode-test
+          key: vscode-test-${{ runner.os }}-${{ hashFiles('unity-shader-nav/package-lock.json') }}
+          restore-keys: |
+            vscode-test-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Electron runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            xvfb \
+            libnss3 \
+            libgbm1 \
+            libasound2t64 \
+            libgtk-3-0 \
+            libatk-bridge2.0-0 \
+            libdrm2 \
+            libxkbcommon0 \
+            libxcomposite1 \
+            libxdamage1 \
+            libxrandr2 \
+            libxshmfence1
+        working-directory: .
+
+      - name: Run tests
+        run: xvfb-run -a npm test
