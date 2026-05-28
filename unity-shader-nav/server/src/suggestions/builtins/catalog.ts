@@ -299,6 +299,33 @@ export const BUILTIN_ENTRIES = [
     detail: 'URP sampler declaration macro',
     documentation: 'Declares a sampler state.',
   },
+  // === URP/SRP Core texture sampling and declaration macros ===
+  { name: 'SAMPLE_TEXTURE2D_LOD', kind: 'macro', category: 'urp', detail: 'URP texture sampling macro', documentation: 'Samples a Texture2D at an explicit mip level.' },
+  { name: 'SAMPLE_TEXTURE2D_GRAD', kind: 'macro', category: 'urp', detail: 'URP texture sampling macro', documentation: 'Samples a Texture2D using explicit derivatives.' },
+  { name: 'SAMPLE_TEXTURE2D_ARRAY', kind: 'macro', category: 'urp', detail: 'URP texture sampling macro', documentation: 'Samples a Texture2DArray slice.' },
+  { name: 'SAMPLE_TEXTURECUBE', kind: 'macro', category: 'urp', detail: 'URP texture sampling macro', documentation: 'Samples a TextureCube using a direction vector.' },
+  { name: 'TEXTURECUBE', kind: 'macro', category: 'urp', detail: 'URP texture declaration macro', documentation: 'Declares a TextureCube resource.' },
+  { name: 'TEXTURE2D_ARRAY', kind: 'macro', category: 'urp', detail: 'URP texture declaration macro', documentation: 'Declares a Texture2DArray resource.' },
+  { name: 'TEXTURE2D_PARAM', kind: 'macro', category: 'urp', detail: 'URP texture parameter macro', documentation: 'Declares a Texture2D function parameter together with its sampler.' },
+  { name: 'TEXTURE2D_ARGS', kind: 'macro', category: 'urp', detail: 'URP texture argument macro', documentation: 'Forwards a Texture2D and its sampler as function arguments.' },
+  // === URP/SRP Core transformation helpers ===
+  { name: 'TransformObjectToWorld', kind: 'function', category: 'urp', returnType: 'float3', parameters: [{ type: 'float3', name: 'positionOS' }], documentation: 'Transforms an object-space position to world space.' },
+  { name: 'TransformObjectToHClip', kind: 'function', category: 'urp', returnType: 'float4', parameters: [{ type: 'float3', name: 'positionOS' }], documentation: 'Transforms an object-space position to homogeneous clip space.' },
+  { name: 'TransformWorldToHClip', kind: 'function', category: 'urp', returnType: 'float4', parameters: [{ type: 'float3', name: 'positionWS' }], documentation: 'Transforms a world-space position to homogeneous clip space.' },
+  { name: 'TransformObjectToWorldNormal', kind: 'function', category: 'urp', returnType: 'float3', parameters: [{ type: 'float3', name: 'normalOS' }], documentation: 'Transforms an object-space normal to world space.' },
+  { name: 'TransformWorldToView', kind: 'function', category: 'urp', returnType: 'float3', parameters: [{ type: 'float3', name: 'positionWS' }], documentation: 'Transforms a world-space position to view space.' },
+  { name: 'GetWorldSpaceViewDir', kind: 'function', category: 'urp', returnType: 'float3', parameters: [{ type: 'float3', name: 'positionWS' }], documentation: 'Returns the unnormalized world-space view direction from a position.' },
+  { name: 'GetWorldSpaceNormalizeViewDir', kind: 'function', category: 'urp', returnType: 'float3', parameters: [{ type: 'float3', name: 'positionWS' }], documentation: 'Returns the normalized world-space view direction from a position.' },
+  { name: 'GetVertexPositionInputs', kind: 'function', category: 'urp', returnType: 'VertexPositionInputs', parameters: [{ type: 'float3', name: 'positionOS' }], documentation: 'Computes URP vertex position values (object, world, view, clip, NDC).' },
+  { name: 'GetVertexNormalInputs', kind: 'function', category: 'urp', returnType: 'VertexNormalInputs', parameters: [{ type: 'float3', name: 'normalOS' }], documentation: 'Computes URP vertex normal/tangent/bitangent in world space.' },
+  // === URP lighting helpers ===
+  { name: 'GetMainLight', kind: 'function', category: 'urp', returnType: 'Light', parameters: [], documentation: 'Returns the main directional light data for the current fragment.' },
+  { name: 'GetAdditionalLight', kind: 'function', category: 'urp', returnType: 'Light', parameters: [{ type: 'uint', name: 'lightIndex' }, { type: 'float3', name: 'positionWS' }], documentation: 'Returns the additional light data at the given index for a world-space position.' },
+  // === Unity instancing and stereo helpers ===
+  { name: 'UNITY_SETUP_INSTANCE_ID', kind: 'macro', category: 'urp', detail: 'Unity instancing macro', documentation: 'Sets up the per-instance ID for the current vertex/fragment.' },
+  { name: 'UNITY_TRANSFER_INSTANCE_ID', kind: 'macro', category: 'urp', detail: 'Unity instancing macro', documentation: 'Forwards the instance ID from vertex to fragment input.' },
+  { name: 'UNITY_VERTEX_INPUT_INSTANCE_ID', kind: 'macro', category: 'urp', detail: 'Unity instancing macro', documentation: 'Declares the instance ID input field on a vertex input struct.' },
+  { name: 'UNITY_VERTEX_OUTPUT_STEREO', kind: 'macro', category: 'urp', detail: 'Unity stereo macro', documentation: 'Declares the stereo eye index output field on a vertex output struct.' },
   {
     name: 'CBUFFER_START',
     kind: 'macro',
