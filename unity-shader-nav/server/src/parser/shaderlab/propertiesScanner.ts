@@ -145,8 +145,12 @@ export function scanProperties(text: string): ShaderLabPropertyEntry[] {
 
         // Locate the name in the raw line starting AFTER the decorator run, so
         // we never collide with a decorator that happens to share characters
-        // with the identifier.
-        const searchFrom = decoratorRun.length;
+        // with the identifier. The regex's outer `\s*` is NOT part of capture
+        // group 1, so we must add the leading-whitespace width back in — else
+        // an indented `[Toggle(_Foo)] _Foo …` would resolve to the `_Foo`
+        // inside the decorator argument.
+        const leadingWs = rawLine.match(/^\s*/)?.[0].length ?? 0;
+        const searchFrom = leadingWs + decoratorRun.length;
         const nameStart = rawLine.indexOf(name, searchFrom);
         if (nameStart >= 0) {
           // Declaration range: column 0 through the last non-whitespace glyph

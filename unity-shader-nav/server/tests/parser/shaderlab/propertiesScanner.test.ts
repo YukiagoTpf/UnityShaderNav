@@ -151,6 +151,43 @@ describe('scanProperties', () => {
     expect(entry.nameRange.start.character).toBeGreaterThan(line.indexOf('['));
   });
 
+  it('nameRange skips decorator argument with same identifier when indented', () => {
+    const text = shader(
+      'Shader "Test/Deco" {',
+      '  Properties {',
+      '    [Toggle(_Foo)] _Foo ("Foo", Float) = 0',
+      '  }',
+      '}',
+    );
+    const entries = scanProperties(text);
+    expect(entries).toHaveLength(1);
+    const entry = entries[0];
+    expect(entry.name).toBe('_Foo');
+    const line = '    [Toggle(_Foo)] _Foo ("Foo", Float) = 0';
+    const closeBracket = line.indexOf(']');
+    const secondFoo = line.indexOf('_Foo', closeBracket);
+    expect(entry.nameRange.start.character).toBe(secondFoo);
+    expect(entry.nameRange.start.character).toBeGreaterThan(closeBracket);
+  });
+
+  it('nameRange skips decorator with same identifier in [_Foo]', () => {
+    const text = shader(
+      'Shader "Test/Deco2" {',
+      '  Properties {',
+      '    [_Foo] _Foo ("Foo", Float) = 0',
+      '  }',
+      '}',
+    );
+    const entries = scanProperties(text);
+    expect(entries).toHaveLength(1);
+    const entry = entries[0];
+    expect(entry.name).toBe('_Foo');
+    const line = '    [_Foo] _Foo ("Foo", Float) = 0';
+    const closeBracket = line.indexOf(']');
+    expect(entry.nameRange.start.character).toBeGreaterThan(closeBracket);
+    expect(entry.nameRange.start.character).toBe(line.indexOf('_Foo', closeBracket));
+  });
+
   it('handles multiple leading decorators', () => {
     const text = shader(
       'Shader "Test/Decos" {',
