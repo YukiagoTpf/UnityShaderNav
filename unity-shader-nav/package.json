@@ -11,7 +11,7 @@
     "build": "npm run build --workspaces --if-present",
     "watch": "node scripts/watch-runtime.mjs",
     "dev:watch": "node scripts/watch-runtime.mjs",
-    "watch:typecheck": "npm run watch --workspaces --if-present",
+    "watch:typecheck": "node scripts/watch-typecheck.mjs",
     "test": "npm run build && npm run compile:tests && npm run test:package-layout && node tests/out/runTest.js && npm run test --workspaces --if-present",
     "compile:tests": "rimraf tests/out && tsc -p tests/tsconfig.json",
     "test:package-layout": "mocha tests/out/client/package-layout.test.js --ui tdd --timeout 60000",
