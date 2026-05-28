@@ -22,6 +22,7 @@ const CATEGORY_LABEL: Record<BuiltinCategory, string> = {
   hlsl: 'HLSL built-in',
   unitycg: 'Unity built-in',
   urp: 'URP built-in',
+  hdrp: 'HDRP built-in',
   shaderlab: 'ShaderLab built-in',
   semantic: 'HLSL semantic',
 };
