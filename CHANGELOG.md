@@ -20,6 +20,8 @@ and uses semantic versioning for extension releases once public publishing start
   declaration-style summary and source location, reusing the same local-scope
   and include-visibility rules as Go to Definition. Ambiguous symbols are
   rendered as stacked candidates without picking a winner.
+- feat: bridge ShaderLab Properties ↔ HLSL declarations for F12 navigation
+  in both directions (issue #20).
 
 ## 0.0.6 - 2026-05-27
 

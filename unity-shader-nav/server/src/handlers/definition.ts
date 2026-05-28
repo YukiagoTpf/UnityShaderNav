@@ -8,7 +8,16 @@ import type {
 import type { TextDocument } from 'vscode-languageserver-textdocument';
 import { pathToFileURL } from 'node:url';
 import { resolveInclude } from '../include';
-import { collectVisibleUriKeys, memberAccessAt, resolveDefinition, resolveMember, wordAt } from '../index';
+import {
+  collectVisibleUriKeys,
+  findPropertyCandidatesForName,
+  memberAccessAt,
+  propertyAt,
+  resolveDefinition,
+  resolveDefinitionSymbols,
+  resolveMember,
+  wordAt,
+} from '../index';
 import type { RequestSuspender } from '../lifecycle/requestSuspender';
 import { scanIncludes } from '../parser/include/lineScanner';
 import { isGenericDefinitionContext } from '../parser/lexical/context';
@@ -100,6 +109,48 @@ export function registerDefinitionHandler(
         references: idx.references.length,
       });
 
+      // Forward direction (issue 20): cursor on a ShaderLab property name →
+      // resolve the HLSL/CG declaration(s) of the same identifier. Runs BEFORE
+      // `isGenericDefinitionContext` because the gate currently rejects every
+      // non-HLSL cursor inside a `.shader` file. `idx.properties` is populated
+      // at index time (Task 3) — no rescan here.
+      const propertyHit = propertyAt(idx, params.position);
+      if (propertyHit) {
+        trace('property.hit', { name: propertyHit.name });
+        const propertyVisibleUriKeys = await collectVisibleUriKeys(
+          workspace.store,
+          workspace.includeCtx,
+          params.textDocument.uri,
+        );
+        // Filter to `variable` / `cbuffer` kinds only. Properties are uniform-
+        // style data; the matching HLSL sibling is either a plain global
+        // (`float _BumpScale;`), a cbuffer member, or a macro-synthesized
+        // global. The macro matcher emits `symbolKind: 'variable'` for the
+        // `TEXTURE2D($name)` family per `macros/matcher.ts:7` and
+        // `macros/builtin.ts:10`, so they pass this filter. Functions, struct
+        // members, parameters, locals, and macro-name symbols are dropped —
+        // a `void _Foo()` next to a property `_Foo` is a name collision, not
+        // a bridge target.
+        const propertySymbols = resolveDefinitionSymbols(
+          idx,
+          propertyHit.name,
+          params.position,
+          workspace.global,
+          { visibleUriKeys: propertyVisibleUriKeys, trace },
+        ).filter((symbol) => symbol.kind === 'variable' || symbol.kind === 'cbuffer');
+        if (propertySymbols.length === 0) {
+          trace('property.forward', { links: 0 });
+          return null;
+        }
+        trace('property.forward', { links: propertySymbols.length });
+        return propertySymbols.map((symbol) => ({
+          targetUri: symbol.location.uri,
+          targetRange: symbol.location.range,
+          targetSelectionRange: symbol.location.range,
+          originSelectionRange: propertyHit.nameRange,
+        }));
+      }
+
       if (!isGenericDefinitionContext(fullText, params.position, doc.languageId, params.textDocument.uri)) {
         trace('context.rejected', {});
         return null;
@@ -156,18 +207,36 @@ export function registerDefinitionHandler(
         workspace.global,
         resolutionOptions,
       );
-      if (links.length === 0) {
+
+      // Reverse direction (issue 20): an HLSL identifier may also match a
+      // property name in any indexed `.shader`. Visibility is intentionally
+      // bypassed (design decision 3) — every workspace shader whose Properties
+      // block declares the same name surfaces as a candidate.
+      const propertyCandidates = findPropertyCandidatesForName(word.text, workspace.store);
+      const propertyLinks: LocationLink[] = propertyCandidates.map((cand) => ({
+        targetUri: cand.uri,
+        targetRange: cand.entry.declarationRange,
+        targetSelectionRange: cand.entry.nameRange,
+        originSelectionRange: word.range,
+      }));
+
+      if (links.length === 0 && propertyLinks.length === 0) {
         trace('definition.result', { links: 0 });
         return null;
       }
-      trace('definition.result', { links: links.length });
+      trace('definition.result', {
+        links: links.length + propertyLinks.length,
+        hlsl: links.length,
+        properties: propertyLinks.length,
+      });
 
-      return links.map((link) => ({
+      const hlslLinks: LocationLink[] = links.map((link) => ({
         targetUri: link.targetUri,
         targetRange: link.targetRange,
         targetSelectionRange: link.targetSelectionRange,
         originSelectionRange: word.range,
       }));
+      return [...hlslLinks, ...propertyLinks];
     };
 
     return suspender ? suspender.run(resolveRequest) : resolveRequest();

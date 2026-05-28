@@ -21,6 +21,13 @@ When multiple definitions are valid, UnityShaderNav returns all candidates and
 lets VS Code show Peek Definition. This is expected for preprocessor branches,
 overload-like HLSL shapes, and repeated pass entry point names.
 
+F12 on a ShaderLab property name (for example `_MainTex` in `Properties { ... }`)
+jumps to the HLSL/CG declaration of the same name, when one is visible from the
+current shader. F12 on the HLSL declaration or reference also surfaces the
+matching property entry. When several declarations share the name, VS Code's
+Peek menu lists every candidate without picking one — the resolver remains
+conservative (see [ADR-0001](adr/0001-multi-candidate-peek-for-ambiguous-symbols.md)).
+
 ### Hover
 
 Pause the mouse over (or press `Ctrl+K Ctrl+I` on) an indexed shader symbol to
