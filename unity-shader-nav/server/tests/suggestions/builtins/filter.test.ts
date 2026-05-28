@@ -77,4 +77,42 @@ describe('built-in suggestion filtering', () => {
     expect(result).not.toContain('SV_Target');
     expect(result).not.toContain('Off');
   });
+
+  it('surfaces URP and HDRP entries together in generic HLSL code', () => {
+    const result = names('float4 main() { return ', 0, 23);
+
+    expect(result).toEqual(expect.arrayContaining([
+      'SAMPLE_TEXTURE2D_LOD',
+      'TransformObjectToHClip',
+      'GetMainLight',
+      'GetShadowFade',
+      'MainLightRealtimeShadow',
+    ]));
+  });
+
+  it('returns blend factor values after the Blend state name', () => {
+    const shader = 'Shader "T/Test" { SubShader { Pass { Blend  } } }';
+    const result = names(shader, 0, 44, 'shaderlab', 'file:///t/test.shader');
+
+    expect(result).toEqual(expect.arrayContaining([
+      'Zero',
+      'One',
+      'SrcAlpha',
+      'OneMinusSrcAlpha',
+    ]));
+    expect(result).not.toContain('normalize');
+  });
+
+  it('returns blend operation values after the BlendOp state name', () => {
+    const shader = 'Shader "T/Test" { SubShader { Pass { BlendOp  } } }';
+    const result = names(shader, 0, 46, 'shaderlab', 'file:///t/test.shader');
+
+    expect(result).toEqual(expect.arrayContaining([
+      'Add',
+      'Sub',
+      'RevSub',
+      'Min',
+      'Max',
+    ]));
+  });
 });
