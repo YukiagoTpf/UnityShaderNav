@@ -214,7 +214,7 @@ suite('runtime watch workflow', () => {
 
     assert.strictEqual(scripts.watch, 'node scripts/watch-runtime.mjs');
     assert.strictEqual(scripts['dev:watch'], 'node scripts/watch-runtime.mjs');
-    assert.strictEqual(scripts['watch:typecheck'], 'npm run watch --workspaces --if-present');
+    assert.strictEqual(scripts['watch:typecheck'], 'node scripts/watch-typecheck.mjs');
   });
 
   test('one-shot runtime build produces the extension development host layout', function () {
