@@ -9,37 +9,51 @@ import {
 const SUPPORTED_LANGUAGES = new Set(['shaderlab', 'hlsl']);
 const DEBOUNCE_MS = 300;
 
-function getConfig() {
-  return vscode.workspace.getConfiguration('unityShaderNav');
+function getConfig(uri: vscode.Uri | undefined) {
+  return vscode.workspace.getConfiguration('unityShaderNav', uri);
 }
 
-function isEnabled(): boolean {
-  return getConfig().get<boolean>('dimInactiveBranches.enabled', true);
+function isEnabled(uri: vscode.Uri | undefined): boolean {
+  return getConfig(uri).get<boolean>('dimInactiveBranches.enabled', true);
 }
 
-function getOpacity(): number {
-  return getConfig().get<number>('dimInactiveBranches.opacity', 0.55);
+function getOpacity(uri: vscode.Uri | undefined): number {
+  return getConfig(uri).get<number>('dimInactiveBranches.opacity', 0.55);
 }
 
-function createDecorationType(): vscode.TextEditorDecorationType {
+function createDecorationType(opacity: number): vscode.TextEditorDecorationType {
   return vscode.window.createTextEditorDecorationType({
     // `opacity` is injected as inline CSS; `!important` is required so it wins
     // against VS Code's own token/theme styles. Do NOT set `color` (it would
     // replace the text color and fight semantic tokens).
-    opacity: `${getOpacity()} !important`,
+    opacity: `${opacity} !important`,
     isWholeLine: true,
     rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed,
   });
 }
 
 export function setupInactiveRegions(client: LanguageClient, context: vscode.ExtensionContext): void {
-  let decorationType = createDecorationType();
+  // Per-URI decoration types and the opacity they were created with. Resource-
+  // scoped config means two open files can resolve different opacity values.
+  const decorationTypes = new Map<string, vscode.TextEditorDecorationType>();
+  const decorationOpacities = new Map<string, number>();
   // Per-URI latest requested document version, so only the newest in-flight
   // request lands (review P2 stale-guard).
   const latestRequested = new Map<string, number>();
   const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-  context.subscriptions.push({ dispose: () => decorationType.dispose() });
+  function getOrCreateDecoration(uri: vscode.Uri): vscode.TextEditorDecorationType {
+    const key = uri.toString();
+    const opacity = getOpacity(uri);
+    const existing = decorationTypes.get(key);
+    const existingOpacity = decorationOpacities.get(key);
+    if (existing && existingOpacity === opacity) return existing;
+    if (existing) existing.dispose();
+    const created = createDecorationType(opacity);
+    decorationTypes.set(key, created);
+    decorationOpacities.set(key, opacity);
+    return created;
+  }
 
   function refresh(editor: vscode.TextEditor | undefined): void {
     if (!editor) return;
@@ -47,11 +61,14 @@ export function setupInactiveRegions(client: LanguageClient, context: vscode.Ext
     const { document } = editor;
     const uri = document.uri.toString();
 
-    if (!SUPPORTED_LANGUAGES.has(document.languageId) || !isEnabled()) {
-      editor.setDecorations(decorationType, []);
+    if (!SUPPORTED_LANGUAGES.has(document.languageId) || !isEnabled(document.uri)) {
+      const existing = decorationTypes.get(uri);
+      if (existing) editor.setDecorations(existing, []);
       latestRequested.delete(uri);
       return;
     }
+
+    const decorationType = getOrCreateDecoration(document.uri);
 
     const requestedVersion = document.version;
     latestRequested.set(uri, requestedVersion);
@@ -113,16 +130,30 @@ export function setupInactiveRegions(client: LanguageClient, context: vscode.Ext
     }),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (!event.affectsConfiguration('unityShaderNav.dimInactiveBranches')) return;
-      // Recreate the decoration type so an opacity change takes effect.
-      const old = decorationType;
-      decorationType = createDecorationType();
-      old.dispose();
+      // Re-resolve opacity for each visible editor's URI. If it changed for a
+      // cached entry, dispose it so the next refresh recreates lazily.
+      const seen = new Set<string>();
+      for (const editor of vscode.window.visibleTextEditors) {
+        const key = editor.document.uri.toString();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (!decorationTypes.has(key)) continue;
+        const newOpacity = getOpacity(editor.document.uri);
+        if (decorationOpacities.get(key) !== newOpacity) {
+          decorationTypes.get(key)?.dispose();
+          decorationTypes.delete(key);
+          decorationOpacities.delete(key);
+        }
+      }
       refreshVisible();
     }),
     {
       dispose: () => {
         for (const timer of debounceTimers.values()) clearTimeout(timer);
         debounceTimers.clear();
+        for (const decoration of decorationTypes.values()) decoration.dispose();
+        decorationTypes.clear();
+        decorationOpacities.clear();
       },
     },
   );
