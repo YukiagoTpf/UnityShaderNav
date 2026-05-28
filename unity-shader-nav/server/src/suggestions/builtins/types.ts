@@ -1,6 +1,6 @@
 import type { ShaderParameter, ShaderSuggestion } from '../types';
 
-export const BUILTIN_CATEGORIES = ['hlsl', 'unitycg', 'urp', 'shaderlab', 'semantic'] as const;
+export const BUILTIN_CATEGORIES = ['hlsl', 'unitycg', 'urp', 'hdrp', 'shaderlab', 'semantic'] as const;
 
 export type BuiltinCategory = typeof BUILTIN_CATEGORIES[number];
 

@@ -14,6 +14,31 @@ const SHADERLAB_STATE_VALUE_NAMES = new Set([
   'Less',
   'Greater',
   'Equal',
+  'Never',
+  'GEqual',
+  'NotEqual',
+  'Zero',
+  'One',
+  'SrcColor',
+  'SrcAlpha',
+  'DstColor',
+  'DstAlpha',
+  'OneMinusSrcColor',
+  'OneMinusSrcAlpha',
+  'OneMinusDstColor',
+  'OneMinusDstAlpha',
+  'Add',
+  'Sub',
+  'RevSub',
+  'Min',
+  'Max',
+  'Replace',
+  'Keep',
+  'Invert',
+  'IncrSat',
+  'DecrSat',
+  'IncrWrap',
+  'DecrWrap',
 ]);
 
 function isShaderLabStateValue(entry: BuiltinEntry): boolean {
@@ -30,7 +55,7 @@ export function collectBuiltinSuggestions(context: SuggestionContext): ShaderSug
   const entries = BUILTIN_ENTRIES.filter((entry) => {
     switch (context.kind) {
       case 'hlslCode':
-        return entry.name.length > 0 && ['hlsl', 'unitycg', 'urp'].includes(entry.category);
+        return entry.name.length > 0 && ['hlsl', 'unitycg', 'urp', 'hdrp'].includes(entry.category);
       case 'semanticPosition':
         return entry.kind === 'semantic';
       case 'shaderLabCode':

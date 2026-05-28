@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BUILTIN_ENTRIES,
   collectBuiltinSuggestions,
   suggestionContextAt,
 } from '../../../src/suggestions';
@@ -77,9 +76,5 @@ describe('built-in suggestion filtering', () => {
 
     expect(result).not.toContain('SV_Target');
     expect(result).not.toContain('Off');
-  });
-
-  it('keeps the initial catalog free of HDRP entries', () => {
-    expect(BUILTIN_ENTRIES.some((entry) => entry.category === 'hdrp')).toBe(false);
   });
 });

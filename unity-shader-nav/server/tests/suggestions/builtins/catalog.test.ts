@@ -84,12 +84,11 @@ describe('built-in suggestion catalog', () => {
     }
   });
 
-  it('uses only valid categories and excludes HDRP from the initial catalog', () => {
+  it('uses only valid categories', () => {
     const categories = new Set(BUILTIN_CATEGORIES);
 
     for (const entry of BUILTIN_ENTRIES) {
       expect(categories.has(entry.category)).toBe(true);
-      expect(entry.category).not.toBe('hdrp');
     }
   });
 });

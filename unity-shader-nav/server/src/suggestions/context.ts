@@ -209,7 +209,19 @@ function isSemanticPosition(lineText: string, prefix: CompletionPrefix): boolean
   return /^[A-Za-z_][A-Za-z0-9_<>,\s*&]*\s+[A-Za-z_][A-Za-z0-9_]*\s*\([^)]*\)$/.test(segment);
 }
 
-const SHADERLAB_STATE_VALUE_CONTEXTS = new Set(['Blend', 'Cull', 'ZWrite', 'ZTest', 'Offset', 'ColorMask']);
+const SHADERLAB_STATE_VALUE_CONTEXTS = new Set([
+  'Blend',
+  'BlendOp',
+  'Cull',
+  'ZWrite',
+  'ZTest',
+  'Offset',
+  'ColorMask',
+  'AlphaToMask',
+  'Lighting',
+  'Fog',
+  'Conservative',
+]);
 
 function isShaderLabStateValuePosition(lineText: string, prefix: CompletionPrefix): boolean {
   const beforePrefix = lineText.slice(0, prefix.range.start.character).trimEnd();
