@@ -31,6 +31,9 @@ and uses semantic versioning for extension releases once public publishing start
   sampler/matrix helpers, URP/SRP Core helpers and instancing macros,
   HDRP-specific helpers, additional ShaderLab states, blend/op/stencil
   values, and additional shader semantics (issue #21).
+- chore: add a GitHub Actions CI workflow that runs the full test chain
+  on Linux under xvfb and caches the `.vscode-test/` download keyed on
+  the lockfile (issue #4).
 
 ## 0.0.6 - 2026-05-27
 

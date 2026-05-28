@@ -62,6 +62,23 @@ npm run package:vsix
 - Add fixtures that describe the shader shape being fixed. Small, explicit
   fixtures are easier to maintain than copied production shaders.
 
+## CI
+
+GitHub Actions runs the same `npm test` chain on every push and pull
+request to `main` (`.github/workflows/ci.yml`). The Electron integration
+tests run on `ubuntu-latest` under `xvfb` with the Electron runtime apt
+packages preinstalled.
+
+`unity-shader-nav/.vscode-test/` is cached via `actions/cache@v4`. The
+cache key is `vscode-test-<runner-os>-<hash of unity-shader-nav/package-lock.json>`,
+so the cache automatically invalidates whenever the lockfile changes
+(including transitive bumps to `@vscode/test-electron`, which is what
+controls the downloaded VS Code build).
+
+To force a refresh without changing dependencies, bump the cache key
+suffix in the workflow. Locally `.vscode-test/` is managed by
+`@vscode/test-electron` and does not require manual maintenance.
+
 ## Issue Fix Workflow
 
 For a bug fix:
