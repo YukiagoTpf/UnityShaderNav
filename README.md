@@ -13,6 +13,8 @@ The extension focuses on fast code navigation:
   macros, `#include` paths, and shader entry points.
 - Find References across indexed user files, with an option to include package
   references.
+- Hover for declarations of indexed shader symbols (functions, structs,
+  members, variables, parameters, macros) and selected built-ins.
 - Conservative completion and signature help for indexed HLSL/CG code, plus a
   curated Unity/HLSL/ShaderLab built-in vocabulary.
 - Document Symbols and semantic coloring for ShaderLab wrappers, Properties,

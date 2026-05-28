@@ -15,6 +15,11 @@ and uses semantic versioning for extension releases once public publishing start
   references, or completion. Configurable through
   `unityShaderNav.dimInactiveBranches.enabled` and `.opacity`. See
   [ADR-0005](docs/adr/0005-conservative-preprocessor-branch-dimming.md).
+- Hover information for indexed shader symbols (functions, structs, members,
+  variables, parameters, macros, selected built-ins). Hover shows a
+  declaration-style summary and source location, reusing the same local-scope
+  and include-visibility rules as Go to Definition. Ambiguous symbols are
+  rendered as stacked candidates without picking a winner.
 
 ## 0.0.6 - 2026-05-27
 
