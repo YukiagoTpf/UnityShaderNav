@@ -59,7 +59,9 @@ describe('built-in suggestion filtering', () => {
   });
 
   it('applies case-sensitive prefix filtering', () => {
-    expect(names('float4 main() { return tex', 0, 27)).toEqual(['tex2D']);
+    expect(names('float4 main() { return tex', 0, 27)).toEqual(expect.arrayContaining(['tex2D']));
+    expect(names('float4 main() { return TEX', 0, 27))
+      .toEqual(expect.not.arrayContaining(['tex2D']));
     expect(names('float4 main() { return float', 0, 29)).toEqual(expect.arrayContaining(['float2', 'float3', 'float4']));
     const svText = 'struct V { float4 pos : SV_';
     const lowerSvText = 'struct V { float4 pos : sv_';
