@@ -52,6 +52,21 @@ export interface TypeInferenceEntry {
   scopeRange?: Range;
 }
 
+export type ShaderLabPropertyType =
+  | '2D' | '3D' | 'Cube' | 'CubeArray'
+  | 'Color' | 'Vector' | 'Float' | 'Range' | 'Int';
+
+export interface ShaderLabPropertyEntry {
+  /** Identifier as written, e.g. "_MainTex". Case-sensitive. */
+  name: string;
+  /** Range of the name token only (used as F12 origin selection range). */
+  nameRange: Range;
+  /** Range covering the full declaration line (name through default literal). */
+  declarationRange: Range;
+  /** Whitelisted type; null for unrecognised types (still indexed by name). */
+  type: ShaderLabPropertyType | null;
+}
+
 export interface FileIndex {
   uri: string;
   symbols: SymbolEntry[];
@@ -59,4 +74,6 @@ export interface FileIndex {
   typeInferences?: TypeInferenceEntry[];
   /** Only populated for .shader files. */
   structure?: StructureResult;
+  /** Only populated for .shader files. */
+  properties?: ShaderLabPropertyEntry[];
 }
