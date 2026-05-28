@@ -47,11 +47,16 @@ a thin patch into `handlers/definition.ts`. The flow is:
      workspace.store, visibleUriKeys)` and append any property entries as
      extra `LocationLink`s. This is the *append* path — HLSL definitions still
      come first, Properties join the candidate list.
-5. `parser/lexical/context.ts` `isGenericDefinitionContext` is extended with
-   a single targeted exception: if the cursor is on a property-name token
-   inside a `Properties { ... }` block, the function returns `true` even
-   though the cursor is outside any HLSL block. This is the *only* place the
-   ShaderLab declarative gate is relaxed.
+5. `parser/lexical/context.ts` is **not** modified (revised after review
+   P1.4). Running the property scanner inside the lexical gate on every
+   F12 / hover request would double-scan a `.shader` file on every
+   keystroke. Instead, the definition handler runs the property cursor
+   check *before* `isGenericDefinitionContext`, against the already-built
+   `idx.properties` — which is computed once per reindex by Task 3 and
+   cached in the file index. When the cursor hits a property name, the
+   handler resolves and returns immediately, skipping the lexical gate
+   entirely. The gate retains its existing behavior (rejects every
+   non-HLSL cursor in `.shader`) for all other code paths.
 
 **Tech Stack:** TypeScript, npm workspaces (`shared` / `server` / `client`),
 `vscode-languageserver` (server), Vitest (server unit tests), Mocha +
@@ -189,20 +194,24 @@ Current state (verified against the tree, 2026-05-28):
    noise; the next step would be filtering to shaders whose HLSL blocks
    contain a declaration of the same symbol, which is a one-pass index
    lookup on the shader's own `FileIndex.symbols`.
-4. **Property-name *cursor* gate is a positive predicate, not a relaxed
-   global gate.** `isGenericDefinitionContext` currently rejects every
-   `.shader` cursor that is outside an HLSL block. The temptation is to
-   relax it ("return true if inside `Properties { ... }`"). Don't:
-   that would make `Tags { ... }` strings, `Pass { Name "X" }`, and every
-   ShaderLab keyword eligible for F12, producing many empty results and
-   confusing the user. The new branch returns `true` *only* when the
-   cursor lies on a token that the property scanner recognises as a
-   property name — i.e., the scanner is the authority and the lexical
-   gate consults it. Implementation: in
-   `isGenericDefinitionContext`, before the existing HLSL-block check,
-   call `propertyNameAt(text, pos)` (a new pure helper that reuses the
-   scanner) and return `true` if it matched. The comment/string guard
-   still runs for both branches.
+4. **Property-name F12 lives in the handler, not in the lexical gate.**
+   (Revised after review P1.2 + P1.4.) The handler runs
+   `propertyAt(idx, pos)` against the cached `idx.properties` *before*
+   `isGenericDefinitionContext` is called. On match it resolves and
+   returns; otherwise it falls through to the existing lexical gate and
+   the existing path. This has three benefits over the
+   "extend `isGenericDefinitionContext`" alternative:
+   (a) no per-request rescan — `idx.properties` is built once per
+   reindex by Task 3, the cursor predicate is O(properties.length);
+   (b) hover (issue 18) keeps rejecting ShaderLab declarative cursors
+   unchanged (its non-goal is preserved without coupling to this PR);
+   (c) the property scanner is the sole authority on what counts as a
+   property-name token, so `Tags { ... }` strings, `Pass { Name "X" }`,
+   etc. cannot accidentally become F12 origins. The handler's own
+   comment-context guard runs *after* the property check — but the
+   scanner already excluded strings/comments at index time via
+   `maskComments` + `maskStrings`, so cursor-in-string is impossible by
+   construction (a property-name token cannot start inside a string).
 5. **No new setting.** The bridge is always-on. Property-name F12 has no
    surprising side effects: when no HLSL declaration matches the cursor
    property, the handler returns `null` and VS Code falls back to its
@@ -216,11 +225,15 @@ Current state (verified against the tree, 2026-05-28):
    covers the multi-candidate UX. If the inverse-visibility heuristic in
    design decision 3 changes later, *that* gets its own ADR — not this
    patch.
-7. **`displayName` and `defaultLiteral` are extracted but not used.**
-   The scanner captures them so a follow-up hover/outline feature can
-   render `_MainTex ("Base Map", 2D) = "white"` style summaries without
-   re-parsing. They cost one extra regex group each; storing them now
-   avoids a second touch on the same scanner later.
+7. **No speculative fields.** Earlier drafts captured `displayName` and
+   `defaultLiteral` "for a future hover feature." CLAUDE.md and the
+   surrounding shared types (`SymbolEntry`, `StructureResult`) discourage
+   storing data nothing consumes. The scanner extracts them transiently to
+   validate the regex match, but only `name`, `nameRange`,
+   `declarationRange`, and `type` survive into `ShaderLabPropertyEntry`.
+   When issue 18's "no hover in ShaderLab declarative sections" exclusion
+   is relaxed, the scanner gains the fields then — one touch per
+   consumer, not one touch per anticipated consumer.
 8. **Property scanner is a pure function over text, not a tree-sitter
    pass.** Properties syntax is line-oriented, decorator-prefixed, and
    nests no further than one level. A regex-based scanner is right-sized
@@ -271,10 +284,6 @@ export interface ShaderLabPropertyEntry {
   declarationRange: Range;
   /** Whitelisted type; null for unrecognised types (still indexed by name). */
   type: ShaderLabPropertyType | null;
-  /** Display name string between the outer parens, with quotes stripped. */
-  displayName?: string;
-  /** Raw default-value text after `=` (verbatim, no parsing). Optional. */
-  defaultLiteral?: string;
 }
 ```
 
@@ -372,19 +381,26 @@ Scan loop:
      decorator text** when a decorator happens to start with the same
      identifier characters.
    - `declarationRange`: from line start to the last non-whitespace
-     character in the matched line.
-   - `displayName`: capture 3 (no quote stripping needed; regex already
-     excludes quotes).
+     character in the matched line. CRLF tolerance: `\s*(?:\/\/.*)?$`
+     consumes a trailing `\r`, so the declaration's `end.character` lands
+     on the last visible glyph regardless of line ending.
    - `type`: capture 4 if it is in `PROPERTY_TYPES`, else `null`.
-   - `defaultLiteral`: capture 5 (trimmed; may be undefined).
+
+The display name (capture 3) and default literal (capture 5) participate
+in the match (so a malformed `_X (` without a quoted display name fails
+to match and the entry is dropped) but are not stored — see design
+decision 7.
 
 **Step 3: Tests (Vitest, inline strings)**
 
 Cover:
 - Empty file → `[]`.
-- File with no Properties block → `[]`.
+- File with no Properties block → `[]` (regression for review P2.2).
+- Shader with `SubShader { Pass { HLSLPROGRAM ... ENDHLSL } }` but **no**
+  `Properties { ... }` block at all → `[]`; `propertiesDepth` never
+  positive (review P2.2).
 - Single `_MainTex ("Base Map", 2D) = "white" {}` → one entry, `type='2D'`,
-  `displayName='Base Map'`, `defaultLiteral='"white" {}'`.
+  `nameRange` covers `_MainTex` only.
 - Multiple properties in one block, names and ranges asserted exactly.
 - Each whitelisted type (`Color`, `Vector`, `Float`, `Range(0,1)`, `Int`,
   `3D`, `Cube`, `CubeArray`).
@@ -401,6 +417,12 @@ Cover:
 - Properties block closed by `}` on a separate line → `propertiesDepth`
   returns to 0 and a subsequent identifier on a later line is **not**
   picked up.
+- **CRLF input** (review P2.4): same input as the "Single" case but with
+  `\r\n` line endings → identical entries; `declarationRange.end.character`
+  is the index of the last visible glyph, not the trailing `\r`.
+- **Non-ASCII display name** (review P3.3):
+  `_MainTex ("テクスチャ", 2D) = "white" {}` → entry produced with
+  expected name and type. Locks in JS regex code-point safety.
 - `findPropertyAt`: cursor on the name → matched entry; cursor on the
   type token, the display string, or the default literal → `null`; cursor
   on an adjacent line → `null`.
@@ -504,17 +526,12 @@ export interface PropertyCandidate {
 export function findPropertyCandidatesForName(
   name: string,
   store: Pick<IndexStore, 'uris' | 'get'>,
-  visibleUriKeys?: ReadonlySet<string>,
 ): PropertyCandidate[] {
+  // Design decision 3: reverse direction bypasses include-visibility and
+  // surfaces every indexed .shader whose Properties block contains a
+  // same-name entry. The user disambiguates via VS Code Peek (ADR-0001).
   const out: PropertyCandidate[] = [];
   for (const uri of store.uris()) {
-    if (visibleUriKeys && !visibleUriKeys.has(uriKey(uri))) {
-      // Skip non-visible only for the same-name match path. The reverse
-      // direction (HLSL ref → Property) explicitly passes `undefined` so
-      // the bridge can surface properties from any indexed shader. See
-      // design decision 3.
-      continue;
-    }
     const idx = store.get(uri);
     if (!idx?.properties) continue;
     for (const entry of idx.properties) {
@@ -532,60 +549,51 @@ export { propertyAt, findPropertyCandidatesForName } from './propertyBridge';
 export type { PropertyCandidate } from './propertyBridge';
 ```
 
-**Step 2: Extend the lexical gate**
+**Step 2: Do NOT extend the lexical gate**
 
-In `parser/lexical/context.ts`, add a property-name predicate. The
-predicate **must not** rescan the entire file on every cursor query when
-called from a hot path — but `isGenericDefinitionContext` already runs
-`scanBlocks` per call today, so one additional `scanProperties` call is
-the same order of magnitude. Acceptable; revisit only if perf
-regresses (see Verification).
-
-```ts
-import { scanProperties, findPropertyAt } from '../shaderlab/propertiesScanner';
-
-function isShaderLabPropertyNameAt(text: string, pos: Position): boolean {
-  const entries = scanProperties(text);
-  return findPropertyAt(entries, pos) !== null;
-}
-
-export function isGenericDefinitionContext(
-  text: string,
-  pos: Position,
-  languageId: string | undefined,
-  uri: string,
-): boolean {
-  if (isShaderLabDocument(languageId, uri) && !isInsideShaderLabHlslBlock(text, pos)) {
-    // Relaxation: allow F12 specifically on property-name tokens, nowhere
-    // else outside HLSL/CG blocks. Comment/string guard below still applies.
-    if (!isShaderLabPropertyNameAt(text, pos)) return false;
-  }
-
-  return lexicalContextAt(text, pos) === 'code';
-}
-```
+`parser/lexical/context.ts` is left unchanged. The cursor predicate lives
+in the handler and reads `idx.properties` directly — no rescan, no
+coupling to hover. See design decision 4.
 
 **Step 3: Patch `handlers/definition.ts`**
 
-Add a new branch between the lexical-context gate (currently `~line 103`)
-and the `memberAccess` branch (`~line 116`). Pseudocode:
+The property cursor check runs **before** `isGenericDefinitionContext`,
+so cursors on property names — which the gate currently rejects — are
+served. The reverse branch still runs *after* the gate, because by then
+we're necessarily inside an HLSL block (otherwise the gate would have
+returned and we'd never reach the reverse branch). Pseudocode for the
+forward branch (placed between `idx` load and the existing
+`isGenericDefinitionContext` call at definition.ts:103):
 
 ```ts
-// 1) Forward: cursor on property name → HLSL declarations
+// 1) Forward: cursor on property name → HLSL declarations.
+//    Runs BEFORE isGenericDefinitionContext so the gate's blanket reject
+//    of non-HLSL ShaderLab cursors does not fire. `idx.properties` is
+//    already populated by Task 3, no rescan.
 const propertyHit = propertyAt(idx, params.position);
 if (propertyHit) {
   trace('property.hit', { name: propertyHit.name });
+  // visibleUriKeys must be computed for the forward direction so include-
+  // visible HLSL declarations are reachable (acceptance criterion: tests
+  // cover include-visible declarations).
+  const visibleUriKeys = await collectVisibleUriKeys(
+    workspace.store,
+    workspace.includeCtx,
+    params.textDocument.uri,
+  );
   const symbols = resolveDefinitionSymbols(
     idx,
     propertyHit.name,
     params.position,
     workspace.global,
-    resolutionOptions,
+    { visibleUriKeys, trace },
   ).filter((s) => s.kind === 'variable' || s.kind === 'cbuffer');
-  // Cross-shader name collisions (e.g. two shaders both declare _MainTex
-  // and one happens to also have a top-level HLSL `float _MainTex;`) are
-  // already conservative because resolveDefinitionSymbols uses the
-  // visibility set rooted at this shader file.
+  // Filter rationale: Properties are uniform-style data, so the HLSL
+  // sibling should be a `variable` (incl. `TEXTURE2D($name)` which the
+  // macro matcher emits with symbolKind='variable' per macros/matcher.ts:7
+  // and macros/builtin.ts:10) or a `cbuffer` member. `function` and
+  // `macro` matches are dropped — a `void _Foo()` next to a property
+  // `_Foo` is a name collision, not a bridge target. Documented in tests.
   if (symbols.length === 0) {
     trace('property.forward', { links: 0 });
     return null;
@@ -608,8 +616,6 @@ that produces `links`):
 const propertyCandidates = findPropertyCandidatesForName(
   word.text,
   workspace.store,
-  // visibility is intentionally undefined here — see design decision 3
-  undefined,
 );
 const propertyLinks: LocationLink[] = propertyCandidates.map((cand) => ({
   targetUri: cand.uri,
@@ -637,9 +643,13 @@ never double-fires (forward + reverse).
 
 **Step 4: Server-unit tests** (`definition-properties.test.ts`)
 
-Pattern: fork `definition.test.ts`'s `createDefinitionFixture` to take a
-*pair* of files (shader + hlsl) so both indices live in the same
-`IndexStore`, and so `workspace.global.upsert` is called for each.
+Pattern: fork `definition.test.ts`'s `createDefinitionFixture` (lines
+14-51) to take a *pair* of files (shader + hlsl) so both indices live
+in the same `IndexStore`, and so `workspace.global.upsert` is called for
+each. **Mirror the fixture shape exactly** (no `settings` field —
+`definition.ts:40` reads it defensively; no `reindex` either — included
+defensively at `definition.ts:90-93`). Review P1.3 calls out that any
+deviation breaks the handler.
 
 Cases:
 1. **Forward, same-file declaration.** Shader has `Properties { _MainTex
@@ -684,6 +694,32 @@ Cases:
 10. **Comment between Properties block and a property line.** A `//
     legacy_prop ("...", 2D) = "white" {}` line must not be picked up
     as a property entry. Confirms the scanner respects line comments.
+11. **Property name collides with HLSL function** (review P2.1). Shader
+    has property `_Foo ("...", Float) = 0` and the HLSL block declares
+    both `float _Foo;` and `void _Foo() {}`. Forward F12 on the property
+    name → exactly one link, to the variable. The function is suppressed
+    by the kind filter; the test pins this behavior so it cannot regress
+    silently.
+12. **Property name collides with HLSL parameter scope** (review P2.3).
+    Shader has property `_MainTex ("...", 2D) = "white" {}` plus an HLSL
+    block with `void f(float _MainTex) { ... }`. Forward F12 on the
+    property name → only globals returned; the parameter is invisible
+    because its `scopeRange` does not contain the property line's
+    position (the position is outside every HLSL block).
+13. **Forward, `TEXTURE2D($name)` macro target** (review P1.1
+    verification). Shader has property `_MainTex ("Base", 2D) = "white"
+    {}` and HLSL block `TEXTURE2D(_MainTex);`. Assert the SymbolEntry
+    produced by the macro matcher has `kind === 'variable'` *and* the
+    forward F12 link reaches it. Locks the filter against a future
+    macro-table refactor that changes the synthesized symbol kind.
+14. **Reverse-direction visibility bypass** (review P2.6). Two shaders
+    A.shader and B.shader both declare `_MainTex`. Cursor on `_MainTex`
+    inside C.hlsl (an include used by *only* A.shader). The
+    `collectVisibleUriKeys` set rooted at C.hlsl does not include B.shader.
+    Assert that both A's and B's property entries appear in the result —
+    confirming `findPropertyCandidatesForName` is called with
+    `visibleUriKeys: undefined` and bypasses visibility. A future
+    refactor that accidentally tightens this filter will fail this test.
 
 **Step 5: Verify**
 
@@ -829,7 +865,10 @@ Append to `CHANGELOG.md` under the unreleased / next-version block:
 No build/test impact. `git diff CHANGELOG.md docs/usage.md` shows the
 documentation deltas only.
 
-**Commit:** `docs(issue-20): document Properties ↔ HLSL navigation`
+**Commit:** `docs(issue-20): document user-facing Properties navigation`
+
+(Distinct from the two plan-authoring `docs(issue-20)` commits below — see
+review P3.5.)
 
 ---
 
@@ -895,12 +934,12 @@ Acceptance map:
 
 ## Risks
 
-- **Perf:** `isGenericDefinitionContext` now calls `scanProperties` once
-  per F12 request (and once per hover request, after #18 lands). For a
-  large `.shader` file this is one regex pass per non-comment line. The
-  scanner is O(N) over text; benchmark in Task 4 Step 5 only if a real
-  shader (e.g. URP `Lit.shader`) shows a regression — otherwise accept
-  the cost.
+- **Perf:** After review P1.4, the property scanner runs **once per
+  reindex** (inside `fileIndexer.indexFile`, Task 3) and the result is
+  cached on `FileIndex.properties`. The handler's `propertyAt(idx, pos)`
+  is O(properties.length) per request — typically <50 entries even for
+  large URP shaders. The lexical gate is unchanged. No new per-keystroke
+  cost is introduced.
 - **Cross-shader noise:** The reverse direction's name-only matching
   (design decision 3) can surface a property from an unrelated shader
   that happens to share the name (`_MainTex` is *everywhere*). VS Code
@@ -940,7 +979,79 @@ plan-writing changes.
 
 ---
 
-## Review Notes
+## Review Notes (independent reviewer, 2026-05-28)
 
-_(Reviewer subagent output and the line-by-line resolution will be appended
-here in the second plan-authoring commit.)_
+> **Resolution (2026-05-28):** 15 findings (4 P1, 6 P2, 5 P3) were
+> reviewed against the codebase; 12 were adopted into the plan, 3 were
+> acknowledged-and-deferred with explicit rationale below.
+>
+> **P1 — adopted in full:**
+> - **P1.1 `TEXTURE2D` symbol-kind verification.** Confirmed via
+>   `macros/matcher.ts:7` (`symbolKind: 'variable' | 'cbuffer'`) and
+>   `macros/builtin.ts:10` (`TEXTURE2D($name)` → `kind: 'variable'`). Task
+>   4 case 13 added to lock this in. The variable/cbuffer filter is
+>   correct; rationale and citation moved into the handler-patch comment.
+> - **P1.2 lexical-gate ordering.** Resolved by *not* extending the
+>   lexical gate at all — see P1.4. The string-vs-property ordering
+>   concern dissolves because the property scanner runs at index time
+>   (where strings are masked) and the cursor predicate only consults
+>   the cached entries.
+> - **P1.3 fixture shape.** Task 4 Step 4 now explicitly says "mirror
+>   `definition.test.ts` lines 14-51 exactly," calling out the absent
+>   `settings`/`reindex` fields.
+> - **P1.4 per-request rescan.** Resolved by relocating the cursor
+>   predicate from `parser/lexical/context.ts` into the definition
+>   handler, reading `idx.properties` directly. Design decision 4 and
+>   the Architecture section rewritten. Net result: zero added cost on
+>   the F12/hover hot path; one regex pass per `did-change` (already a
+>   reindex boundary). See also Risks section update.
+>
+> **P2 — adopted:**
+> - **P2.1 function-name collision test** → Task 4 case 11.
+> - **P2.2 no-Properties-block regression test** → Task 2 test list.
+> - **P2.3 parameter-scope collision test** → Task 4 case 12.
+> - **P2.4 CRLF test** → Task 2 test list + scanner-spec note about
+>   `\s*(?:\/\/.*)?$` consuming `\r`.
+> - **P2.5 drop `displayName`/`defaultLiteral`.** Adopted: the speculative
+>   fields are removed from `ShaderLabPropertyEntry`; the scanner regex
+>   still uses them to *validate* the declaration shape but does not
+>   store them. Design decision 7 rewritten to record this principle.
+> - **P2.6 visibility-bypass assertion** → Task 4 case 14;
+>   `findPropertyCandidatesForName` signature simplified to drop the
+>   unused `visibleUriKeys` parameter (the dead parameter would have
+>   *invited* the regression case 14 guards against).
+>
+> **P3:**
+> - **P3.1 reverse-direction noise on real Unity projects.**
+>   Acknowledged, **deferred**. The plan documents the trade-off in
+>   design decision 3 with an explicit follow-up trigger ("Revisit if
+>   real-world feedback shows noise; next step is filtering to shaders
+>   whose `FileIndex.symbols` contains a same-name declaration"). Pulling
+>   this forward would conflict with acceptance criterion 4 ("Ambiguous
+>   same-name candidates return multiple locations instead of guessing")
+>   — the criterion explicitly requests breadth over precision. Once
+>   the feature ships and we see real complaints, the follow-up is a
+>   one-pass filter; that ADR-worthy decision should wait for real
+>   evidence.
+> - **P3.2 micro-benchmark.** Acknowledged, **deferred**. The P1.4
+>   restructure removed the per-request cost the benchmark was
+>   instrumenting; the remaining cost (one regex sweep per reindex) is
+>   below the existing tree-sitter parse cost on the same `.shader`. No
+>   new benchmark needed unless future profiling shows otherwise.
+> - **P3.3 non-ASCII display name test** → Task 2 test list.
+> - **P3.4 `HLSLPROGRAM` directive line not in skip range.**
+>   Acknowledged, **deferred** — the cited edge case (a property
+>   declaration on the same physical line as `ENDHLSL`) requires
+>   malformed input that no real shader produces; the scanner does not
+>   crash on it, just may emit a spurious entry that downstream code
+>   tolerates. Not worth a Task 2 case for v1; would be reopened if
+>   anyone reports it.
+> - **P3.5 commit-message disambiguation.** Adopted: Task 6's commit is
+>   relabelled `docs(issue-20): document user-facing Properties
+>   navigation`, distinct from the two plan-authoring `docs(issue-20)`
+>   commits.
+>
+> Verified items from the review are not re-checked here — see the
+> reviewer's `## Verified` list in the agent transcript for what NOT to
+> redo. The transcript is not committed to the repo; this Resolution
+> block is the durable record.
