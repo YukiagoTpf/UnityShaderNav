@@ -40,6 +40,26 @@ describe('scanProperties', () => {
     expect(scanProperties(text)).toEqual([]);
   });
 
+  it('scans Properties block with brace on the next line (Unity-style)', () => {
+    // Unity's default shader templates often put the opening brace on its
+    // own line. Without sticky pendingPropertiesOpen handling, the standalone
+    // `{` line would not be counted into propertiesDepth and the body would
+    // be silently dropped.
+    const text = shader(
+      'Shader "Test/BraceNextLine" {',
+      '  Properties',
+      '  {',
+      '    _MainTex ("Base Map", 2D) = "white" {}',
+      '    _BaseColor ("Tint", Color) = (1,1,1,1)',
+      '  }',
+      '}',
+    );
+    const entries = scanProperties(text);
+    expect(entries.map((e) => e.name)).toEqual(['_MainTex', '_BaseColor']);
+    expect(entries[0].type).toBe('2D');
+    expect(entries[1].type).toBe('Color');
+  });
+
   it('scans a single _MainTex declaration', () => {
     const text = shader(
       'Shader "Test/Single" {',

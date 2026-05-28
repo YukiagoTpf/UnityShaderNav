@@ -103,6 +103,12 @@ export function scanProperties(text: string): ShaderLabPropertyEntry[] {
   const entries: ShaderLabPropertyEntry[] = [];
   const commentState: CommentState = { inBlockComment: false };
   let propertiesDepth = 0;
+  // Sticky flag: set when the `Properties` keyword is seen, cleared the first
+  // time we count an opening brace into propertiesDepth. Lets us handle the
+  // Unity-common `Properties\n{` style where the opening brace is on the line
+  // after the keyword — without that flag, brace-counting is gated on
+  // propertiesDepth > 0 and the standalone `{` line is skipped.
+  let pendingPropertiesOpen = false;
 
   for (let lineNo = 0; lineNo < lines.length; lineNo++) {
     const rawLine = lines[lineNo];
@@ -116,6 +122,7 @@ export function scanProperties(text: string): ShaderLabPropertyEntry[] {
     if (inHlslContent) continue;
 
     const hasProperties = /\bProperties\b/.test(masked);
+    if (hasProperties) pendingPropertiesOpen = true;
 
     if (propertiesDepth > 0) {
       const match = PROPERTY_LINE_RE.exec(masked);
@@ -150,8 +157,11 @@ export function scanProperties(text: string): ShaderLabPropertyEntry[] {
       }
     }
 
-    if (hasProperties || propertiesDepth > 0) {
-      propertiesDepth += countChar(masked, '{') - countChar(masked, '}');
+    if (pendingPropertiesOpen || propertiesDepth > 0) {
+      const opens = countChar(masked, '{');
+      const closes = countChar(masked, '}');
+      propertiesDepth += opens - closes;
+      if (opens > 0) pendingPropertiesOpen = false;
       if (propertiesDepth < 0) propertiesDepth = 0;
     }
   }
