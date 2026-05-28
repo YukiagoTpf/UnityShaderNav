@@ -264,6 +264,45 @@ describe('scanProperties', () => {
     });
   });
 
+  it('ignores `Properties` token inside the shader name string', () => {
+    // Without string-aware masking, `Shader "Test/Properties"` would flip
+    // pendingPropertiesOpen=true and the SubShader's `{` would be counted as
+    // a fake Properties open, polluting downstream entries.
+    const text = shader(
+      'Shader "Test/Properties" {',
+      '  SubShader { }',
+      '}',
+    );
+    expect(scanProperties(text)).toEqual([]);
+  });
+
+  it('real Properties block still scans when shader name contains Properties', () => {
+    const text = shader(
+      'Shader "Foo/Properties" {',
+      '  Properties {',
+      '    _MainTex ("Base", 2D) = "white" {}',
+      '  }',
+      '}',
+    );
+    const entries = scanProperties(text);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].name).toBe('_MainTex');
+    expect(entries[0].type).toBe('2D');
+  });
+
+  it('string default literal does not start a fake Properties block', () => {
+    const text = shader(
+      'Shader "X" {',
+      '  Properties {',
+      '    _M ("M", 2D) = "Properties" {}',
+      '  }',
+      '}',
+    );
+    const entries = scanProperties(text);
+    expect(entries.map((e) => e.name)).toEqual(['_M']);
+    expect(entries[0].type).toBe('2D');
+  });
+
   it('accepts a non-ASCII display name', () => {
     const text = shader(
       'Shader "Test/Unicode" {',

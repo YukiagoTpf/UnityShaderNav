@@ -57,11 +57,23 @@ function maskComments(line: string, state: CommentState): string {
     }
 
     if (inString) {
+      // Blank every byte of the string body so that string literals can never
+      // contribute `Properties` keyword matches or `{`/`}` to the brace
+      // counter. Honor `\` escapes: a backslash consumes the next char.
       if (ch === '\\' && next !== undefined) {
+        chars[i] = ' ';
+        chars[i + 1] = ' ';
         i++;
         continue;
       }
-      if (ch === '"') inString = false;
+      if (ch === '"') {
+        // Restore the closing quote so PROPERTY_LINE_RE (which anchors on
+        // `"..."` for display names and default literals) still sees a pair
+        // of delimiters around the now-blanked body.
+        inString = false;
+      } else {
+        chars[i] = ' ';
+      }
       continue;
     }
 
