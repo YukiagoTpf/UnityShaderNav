@@ -326,12 +326,11 @@ export const BUILTIN_ENTRIES = [
   { name: 'UNITY_TRANSFER_INSTANCE_ID', kind: 'macro', category: 'urp', detail: 'Unity instancing macro', documentation: 'Forwards the instance ID from vertex to fragment input.' },
   { name: 'UNITY_VERTEX_INPUT_INSTANCE_ID', kind: 'macro', category: 'urp', detail: 'Unity instancing macro', documentation: 'Declares the instance ID input field on a vertex input struct.' },
   { name: 'UNITY_VERTEX_OUTPUT_STEREO', kind: 'macro', category: 'urp', detail: 'Unity stereo macro', documentation: 'Declares the stereo eye index output field on a vertex output struct.' },
+  { name: 'MainLightRealtimeShadow', kind: 'function', category: 'urp', returnType: 'half', parameters: [{ type: 'float4', name: 'shadowCoord' }], documentation: 'Samples the URP realtime shadow attenuation for the main light.' },
   // === HDRP helpers (HDRP-specific; SRP Core shared helpers live under URP) ===
   { name: 'GetShadowFade', kind: 'function', category: 'hdrp', returnType: 'float', parameters: [{ type: 'float3', name: 'positionWS' }, { type: 'float3', name: 'cameraDirection' }], documentation: 'Returns the shadow fade factor for a position relative to the camera.' },
-  { name: 'MainLightRealtimeShadow', kind: 'function', category: 'hdrp', returnType: 'float', parameters: [{ type: 'float4', name: 'shadowCoord' }], documentation: 'Samples the realtime shadow attenuation for the main light.' },
-  { name: 'EvaluateBSDF', kind: 'function', category: 'hdrp', returnType: 'float3', parameters: [{ type: 'BSDFData', name: 'bsdfData' }, { type: 'float3', name: 'L' }, { type: 'float3', name: 'V' }], documentation: 'Evaluates an HDRP BSDF for a given light and view direction.' },
   { name: 'GetCurrentExposureMultiplier', kind: 'function', category: 'hdrp', returnType: 'float', parameters: [], documentation: 'Returns the current camera exposure multiplier used by HDRP shaders.' },
-  { name: 'ApplyDecalToBaseColor', kind: 'function', category: 'hdrp', returnType: 'void', parameters: [{ type: 'DecalSurfaceData', name: 'decalSurfaceData' }, { type: 'inout float3', name: 'baseColor' }], documentation: 'Composites an HDRP decal sample onto a base color value.' },
+  { name: 'ApplyDecalToSurfaceData', kind: 'function', category: 'hdrp', returnType: 'void', parameters: [{ type: 'DecalSurfaceData', name: 'decalSurfaceData' }, { type: 'float3', name: 'vtxNormal' }, { type: 'inout SurfaceData', name: 'surfaceData' }], documentation: 'Composites an HDRP decal sample into the lit SurfaceData of the current pixel.' },
   {
     name: 'CBUFFER_START',
     kind: 'macro',
