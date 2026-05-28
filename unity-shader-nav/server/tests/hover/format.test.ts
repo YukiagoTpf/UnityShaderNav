@@ -324,6 +324,57 @@ describe('formatHoverCandidate — built-in entries', () => {
   });
 });
 
+describe('formatHoverCandidate — safe inline code escaping', () => {
+  it('escapes a filename containing a backtick using a longer fence + padding spaces', () => {
+    // file:///F:/proj/foo%60bar.hlsl decodes to F:/proj/foo`bar.hlsl
+    // basename: foo`bar.hlsl (one ` → fence of two ` plus padding spaces).
+    const s: SymbolEntry = {
+      name: 'Foo',
+      kind: 'struct',
+      location: loc('file:///F:/proj/foo%60bar.hlsl', 0),
+    };
+    const md = formatHoverCandidate(projectInput(s, 'file:///F:/proj'));
+    expect(md.value).toContain('_in_ `` foo`bar.hlsl ``:1');
+    // Sanity: it did NOT produce a broken single-backtick wrap.
+    expect(md.value).not.toContain('`foo`bar.hlsl`');
+  });
+
+  it('escapes a structMember parentType containing a backtick', () => {
+    const m: SymbolEntry = {
+      name: 'x',
+      kind: 'structMember',
+      declaredType: 'float3',
+      parentType: 'Weird`Type',
+      location: loc('file:///F:/proj/Lib.hlsl', 0),
+    };
+    const md = formatHoverCandidate(projectInput(m, 'file:///F:/proj'));
+    expect(md.value).toContain('_member of_ `` Weird`Type ``');
+  });
+
+  it('replaces ASCII control characters in filenames with `?`', () => {
+    // %07 is BEL (U+0007). Decoded filename: bell?ring.hlsl after sanitising.
+    const s: SymbolEntry = {
+      name: 'Foo',
+      kind: 'struct',
+      location: loc('file:///F:/proj/bell%07ring.hlsl', 0),
+    };
+    const md = formatHoverCandidate(projectInput(s, 'file:///F:/proj'));
+    expect(md.value).toContain('_in_ `bell?ring.hlsl`:1');
+    // The raw BEL character must not survive into the rendered Markdown.
+    expect(md.value).not.toMatch(/\x07/);
+  });
+
+  it('still uses a single-backtick wrap when no escaping is needed (regression)', () => {
+    const s: SymbolEntry = {
+      name: 'Foo',
+      kind: 'struct',
+      location: loc('file:///F:/proj/Lib.hlsl', 0),
+    };
+    const md = formatHoverCandidate(projectInput(s, 'file:///F:/proj'));
+    expect(md.value).toContain('_in_ `Lib.hlsl`:1');
+  });
+});
+
 describe('formatHoverCandidates', () => {
   const makeFn = (name: string, line: number): FunctionSymbolEntry => ({
     name,

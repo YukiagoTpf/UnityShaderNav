@@ -73,7 +73,7 @@ function formatProjectValue(symbol: SymbolEntry, workspaceRootUri: string | unde
   lines.push(fence(code));
 
   if (symbol.kind === 'structMember' && symbol.parentType) {
-    lines.push(`_member of_ \`${symbol.parentType}\``);
+    lines.push(`_member of_ ${safeInlineCode(symbol.parentType)}`);
   }
 
   lines.push(renderFooter(symbol, workspaceRootUri));
@@ -156,7 +156,7 @@ function renderFooter(symbol: SymbolEntry, workspaceRootUri: string | undefined)
   // Normalize to forward slashes for cross-OS display consistency.
   display = display.split(path.sep).join('/');
   const line = symbol.location.range.start.line + 1;
-  return `_in_ \`${display}\`:${line}`;
+  return `_in_ ${safeInlineCode(display)}:${line}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -190,4 +190,32 @@ function renderBuiltinCode(entry: BuiltinEntry): string {
 
 function fence(code: string): string {
   return '```hlsl\n' + code + '\n```';
+}
+
+/**
+ * Wrap a string as an inline Markdown code span, defending against unusual
+ * characters in filenames or symbol metadata.
+ *
+ * - ASCII control characters (U+0000..U+001F and U+007F) are replaced with
+ *   `?` so the rendered code span keeps its width and cannot inject control
+ *   sequences into the host's Markdown renderer.
+ * - If the input contains backticks, the fence length is chosen as
+ *   (longest run of backticks in input) + 1, and a single space is added
+ *   inside both fences so a backtick at the start or end of the input is
+ *   not consumed by the fence. This is the standard CommonMark rule.
+ * - Otherwise, the input is wrapped in single backticks.
+ */
+export function safeInlineCode(s: string): string {
+  // eslint-disable-next-line no-control-regex
+  const cleaned = s.replace(/[\x00-\x1f\x7f]/g, '?');
+  const runs = cleaned.match(/`+/g);
+  if (!runs) {
+    return '`' + cleaned + '`';
+  }
+  let longest = 0;
+  for (const r of runs) {
+    if (r.length > longest) longest = r.length;
+  }
+  const fenceStr = '`'.repeat(longest + 1);
+  return fenceStr + ' ' + cleaned + ' ' + fenceStr;
 }
