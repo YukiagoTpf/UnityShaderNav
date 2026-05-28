@@ -45,6 +45,12 @@ export function registerHoverHandler(
         return null;
       }
 
+      // Probe cheap token state BEFORE collecting visible URIs: hovering over
+      // whitespace would otherwise pay the include-visibility walk for nothing.
+      const memberAccess = memberAccessAt(fullText, params.position);
+      const word = memberAccess?.receiver ? null : wordAt(fullText, params.position);
+      if (!memberAccess?.receiver && !word) return null;
+
       const visibleUriKeys = await collectVisibleUriKeys(
         workspace.store,
         workspace.includeCtx,
@@ -52,7 +58,6 @@ export function registerHoverHandler(
       );
       const resolutionOptions = { visibleUriKeys };
 
-      const memberAccess = memberAccessAt(fullText, params.position);
       if (memberAccess?.receiver) {
         const symbols = resolveMemberSymbols(
           idx,
@@ -78,12 +83,14 @@ export function registerHoverHandler(
         // Fall through to plain word resolution (parity with definition.ts).
       }
 
-      const word = wordAt(fullText, params.position);
-      if (!word) return null;
+      // word was pre-resolved above when there was no member-access receiver.
+      // If we fell through from a member-access miss, recompute it now.
+      const fallbackWord = word ?? wordAt(fullText, params.position);
+      if (!fallbackWord) return null;
 
       const projectSymbols = resolveDefinitionSymbols(
         idx,
-        word.text,
+        fallbackWord.text,
         params.position,
         workspace.global,
         resolutionOptions,
@@ -96,10 +103,10 @@ export function registerHoverHandler(
         }));
         const contents = formatHoverCandidates(inputs);
         if (contents.value.length === 0) return null;
-        return { contents, range: word.range };
+        return { contents, range: fallbackWord.range };
       }
 
-      const builtins = BUILTIN_ENTRIES.filter((entry) => entry.name === word.text);
+      const builtins = BUILTIN_ENTRIES.filter((entry) => entry.name === fallbackWord.text);
       if (builtins.length > 0) {
         const inputs: HoverInput[] = builtins.map((entry) => ({
           source: 'builtin',
@@ -107,7 +114,7 @@ export function registerHoverHandler(
         }));
         const contents = formatHoverCandidates(inputs);
         if (contents.value.length === 0) return null;
-        return { contents, range: word.range };
+        return { contents, range: fallbackWord.range };
       }
 
       return null;
