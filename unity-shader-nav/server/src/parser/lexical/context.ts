@@ -1,6 +1,7 @@
 import type { Position } from '@unity-shader-nav/shared';
 import { lexicalContextAt, isShaderLabDocument, isInsideShaderLabHlslBlock } from './cursor';
 
+// Equivalent to: classifyCursor(...).classification ∈ {'hlslCode','semanticPosition'} (see issue #26 plan).
 export function isGenericDefinitionContext(
   text: string,
   pos: Position,
