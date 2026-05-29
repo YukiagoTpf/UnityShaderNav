@@ -45,7 +45,11 @@ suite('packaged server layout', () => {
   test('VSIX-like extension root can start packaged parser without monorepo node_modules', async () => {
     const root = monorepoRoot();
     const sourceOutRoot = path.resolve(root, 'client/out');
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'unity-shader-nav-vsix-'));
+    // realpathSync the temp root: on macOS os.tmpdir() can return a symlinked
+    // path (/tmp -> /private/tmp), but createRequire(...).resolve() below returns
+    // the realpath, so the `startsWith(packagedServerRoot)` check would fail
+    // unless both sides are realpath-normalized.
+    const tempRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'unity-shader-nav-vsix-')));
     const extensionRoot = path.join(tempRoot, 'extension');
     const packagedOutRoot = path.join(extensionRoot, 'out');
     const packagedServerRoot = path.join(packagedOutRoot, 'server');
