@@ -42,7 +42,7 @@ function makeFixture(uri: string, languageId: string, text: string, idx: FileInd
   global.upsert(idx);
   const workspace = {
     folderUri,
-    includeCtx: { unityProjectRoot: undefined, includeDirectories: [] },
+    packages: { includeCtx: { unityProjectRoot: undefined, includeDirectories: [] } },
     store,
     global,
   };
@@ -145,7 +145,7 @@ describe('registerHoverHandler — project symbols', () => {
       } as never;
       const workspace = {
         folderUri,
-        includeCtx: { unityProjectRoot: root, includeDirectories: [] },
+        packages: { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
         store,
         global,
       };

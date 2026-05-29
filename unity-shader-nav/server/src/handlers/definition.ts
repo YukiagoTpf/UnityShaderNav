@@ -61,7 +61,7 @@ export function registerDefinitionHandler(
         const resolved = await resolveInclude(
           include.path,
           params.textDocument.uri,
-          workspace.includeCtx,
+          workspace.packages.includeCtx,
         );
         if (!resolved) return null;
         if (resolved.caseInsensitive) {
@@ -113,7 +113,7 @@ export function registerDefinitionHandler(
         trace('property.hit', { name: propertyHit.name });
         const propertyVisibleUriKeys = await collectVisibleUriKeys(
           workspace.store,
-          workspace.includeCtx,
+          workspace.packages.includeCtx,
           params.textDocument.uri,
         );
         // Filter to `variable` / `cbuffer` kinds only. Properties are uniform-
@@ -154,7 +154,7 @@ export function registerDefinitionHandler(
 
       const visibleUriKeys = await collectVisibleUriKeys(
         workspace.store,
-        workspace.includeCtx,
+        workspace.packages.includeCtx,
         params.textDocument.uri,
       );
       const resolutionOptions = { visibleUriKeys, trace };

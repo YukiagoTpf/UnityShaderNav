@@ -41,7 +41,7 @@ describe('registerDefinitionHandler: include definitions', () => {
     } as never;
     const includeCtx: IncludeContext = { unityProjectRoot: root, includeDirectories: [] };
     const workspace = {
-      includeCtx,
+      packages: { includeCtx },
       store: new IndexStore(),
       global: new GlobalSymbolIndex(),
     };
@@ -101,7 +101,7 @@ describe('registerDefinitionHandler: include definitions', () => {
       },
     } as never;
     const workspace = {
-      includeCtx: { unityProjectRoot: root, includeDirectories: [] },
+      packages: { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
       store: new IndexStore(),
       global: new GlobalSymbolIndex(),
     };

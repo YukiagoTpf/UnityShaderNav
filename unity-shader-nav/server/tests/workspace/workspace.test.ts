@@ -273,8 +273,8 @@ describe('Workspace.bootstrap', () => {
     ).href;
     const userUri = pathToFileURL(join(projectRoot, 'Assets', 'Shaders', 'Main.shader')).href;
 
-    expect(workspace.isInPackages(packageUri)).toBe(true);
-    expect(workspace.isInPackages(userUri)).toBe(false);
+    expect(workspace.packages.isInPackages(packageUri)).toBe(true);
+    expect(workspace.packages.isInPackages(userUri)).toBe(false);
   });
 
   it('uses settings.projectRoot when the workspace folder is not a Unity root', async () => {

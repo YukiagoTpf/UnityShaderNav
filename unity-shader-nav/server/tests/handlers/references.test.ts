@@ -153,11 +153,13 @@ describe('registerReferencesHandler', () => {
       } as never;
       const workspace = {
         settings: DEFAULT_SETTINGS,
-        includeCtx: { unityProjectRoot: root, includeDirectories: [] },
+        packages: {
+          includeCtx: { unityProjectRoot: root, includeDirectories: [] },
+          isInPackages: () => false,
+        },
         store,
         global,
         globalRefs,
-        isInPackages: () => false,
       };
       const manager = {
         async workspaceForOrCreateFile(requestedUri: string) {
@@ -238,11 +240,13 @@ describe('registerReferencesHandler', () => {
       } as never;
       const workspace = {
         settings: DEFAULT_SETTINGS,
-        includeCtx: { unityProjectRoot: root, includeDirectories: [] },
+        packages: {
+          includeCtx: { unityProjectRoot: root, includeDirectories: [] },
+          isInPackages: () => false,
+        },
         store,
         global,
         globalRefs,
-        isInPackages: () => false,
       };
       const manager = {
         async workspaceForOrCreateFile(requestedUri: string) {
@@ -303,8 +307,10 @@ describe('registerReferencesHandler', () => {
       settings: DEFAULT_SETTINGS,
       global: new GlobalSymbolIndex(),
       globalRefs: new GlobalReferenceIndex(),
-      isInPackages(requestedUri: string) {
-        return requestedUri === packageUri;
+      packages: {
+        isInPackages(requestedUri: string) {
+          return requestedUri === packageUri;
+        },
       },
     };
     workspace.global.upsert(index);
@@ -363,7 +369,7 @@ describe('registerReferencesHandler', () => {
       store,
       global: new GlobalSymbolIndex(),
       globalRefs: new GlobalReferenceIndex(),
-      isInPackages: () => false,
+      packages: { isInPackages: () => false },
     };
     workspace.global.upsert(index);
     workspace.globalRefs.upsert(index);
@@ -418,8 +424,10 @@ describe('registerReferencesHandler', () => {
       },
       global: new GlobalSymbolIndex(),
       globalRefs: new GlobalReferenceIndex(),
-      isInPackages(requestedUri: string) {
-        return requestedUri === packageUri;
+      packages: {
+        isInPackages(requestedUri: string) {
+          return requestedUri === packageUri;
+        },
       },
     };
     workspace.globalRefs.upsert({
@@ -465,8 +473,10 @@ describe('registerReferencesHandler', () => {
       },
       global: new GlobalSymbolIndex(),
       globalRefs: new GlobalReferenceIndex(),
-      isInPackages(requestedUri: string) {
-        return requestedUri === packageUri;
+      packages: {
+        isInPackages(requestedUri: string) {
+          return requestedUri === packageUri;
+        },
       },
     };
     workspace.globalRefs.upsert({
@@ -509,8 +519,10 @@ describe('registerReferencesHandler', () => {
       settings: DEFAULT_SETTINGS,
       global: new GlobalSymbolIndex(),
       globalRefs: new GlobalReferenceIndex(),
-      isInPackages(requestedUri: string) {
-        return requestedUri === packageUri;
+      packages: {
+        isInPackages(requestedUri: string) {
+          return requestedUri === packageUri;
+        },
       },
     };
     workspace.global.upsert({
@@ -577,7 +589,7 @@ describe('registerReferencesHandler', () => {
       store,
       global: new GlobalSymbolIndex(),
       globalRefs: new GlobalReferenceIndex(),
-      isInPackages: () => false,
+      packages: { isInPackages: () => false },
     };
     workspace.global.upsert(index);
     workspace.globalRefs.upsert(index);
@@ -628,7 +640,7 @@ describe('registerReferencesHandler', () => {
       store,
       global: new GlobalSymbolIndex(),
       globalRefs: new GlobalReferenceIndex(),
-      isInPackages: () => false,
+      packages: { isInPackages: () => false },
     };
     workspace.global.upsert(index);
     workspace.globalRefs.upsert(index);
@@ -678,7 +690,7 @@ describe('registerReferencesHandler', () => {
       store,
       global: new GlobalSymbolIndex(),
       globalRefs: new GlobalReferenceIndex(),
-      isInPackages: () => false,
+      packages: { isInPackages: () => false },
     };
     workspace.global.upsert(index);
     workspace.globalRefs.upsert(index);
@@ -727,7 +739,7 @@ describe('registerReferencesHandler', () => {
       store,
       global: new GlobalSymbolIndex(),
       globalRefs: new GlobalReferenceIndex(),
-      isInPackages: () => false,
+      packages: { isInPackages: () => false },
     };
     workspace.global.upsert(index);
     workspace.globalRefs.upsert(index);
@@ -779,7 +791,7 @@ describe('registerReferencesHandler', () => {
       store,
       global: new GlobalSymbolIndex(),
       globalRefs: new GlobalReferenceIndex(),
-      isInPackages: () => false,
+      packages: { isInPackages: () => false },
     };
     workspace.global.upsert(index);
     workspace.globalRefs.upsert(index);
@@ -845,7 +857,7 @@ describe('registerReferencesHandler', () => {
       store,
       global: new GlobalSymbolIndex(),
       globalRefs: new GlobalReferenceIndex(),
-      isInPackages: () => false,
+      packages: { isInPackages: () => false },
     };
     workspace.global.upsert(index);
     workspace.globalRefs.upsert(index);
@@ -911,7 +923,7 @@ describe('registerReferencesHandler', () => {
       store,
       global: new GlobalSymbolIndex(),
       globalRefs: new GlobalReferenceIndex(),
-      isInPackages: () => false,
+      packages: { isInPackages: () => false },
     };
     workspace.global.upsert(index);
     workspace.globalRefs.upsert(index);
@@ -978,7 +990,7 @@ describe('registerReferencesHandler', () => {
       store,
       global: new GlobalSymbolIndex(),
       globalRefs: new GlobalReferenceIndex(),
-      isInPackages: () => false,
+      packages: { isInPackages: () => false },
     };
     workspace.global.upsert(index);
     workspace.globalRefs.upsert(index);
@@ -1041,7 +1053,7 @@ describe('registerReferencesHandler', () => {
       store,
       global: new GlobalSymbolIndex(),
       globalRefs: new GlobalReferenceIndex(),
-      isInPackages: () => false,
+      packages: { isInPackages: () => false },
     };
     workspace.global.upsert(index);
     workspace.globalRefs.upsert(index);
@@ -1108,7 +1120,7 @@ describe('registerReferencesHandler', () => {
       store,
       global: new GlobalSymbolIndex(),
       globalRefs: new GlobalReferenceIndex(),
-      isInPackages: () => false,
+      packages: { isInPackages: () => false },
     };
     workspace.global.upsert(index);
     workspace.globalRefs.upsert(index);
@@ -1165,15 +1177,17 @@ describe('registerReferencesHandler', () => {
     store.set(uri, index);
     const workspace = {
       settings: DEFAULT_SETTINGS,
-      includeCtx: {
-        unityProjectRoot: includeFixtureRoot,
-        includeDirectories: [],
-        packagePhysicalPaths: new Map([['com.example.assets', join(includeFixtureRoot, 'Assets')]]),
+      packages: {
+        includeCtx: {
+          unityProjectRoot: includeFixtureRoot,
+          includeDirectories: [],
+          packagePhysicalPaths: new Map([['com.example.assets', join(includeFixtureRoot, 'Assets')]]),
+        },
+        isInPackages: () => false,
       },
       store,
       global: new GlobalSymbolIndex(),
       globalRefs: new GlobalReferenceIndex(),
-      isInPackages: () => false,
     };
     workspace.globalRefs.upsert(index);
     const documents = {
@@ -1217,7 +1231,7 @@ describe('registerReferencesHandler', () => {
           settings: DEFAULT_SETTINGS,
           global: new GlobalSymbolIndex(),
           globalRefs: new GlobalReferenceIndex(),
-          isInPackages: () => false,
+          packages: { isInPackages: () => false },
         };
       },
     } as never;
