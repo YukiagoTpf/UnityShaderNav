@@ -1,9 +1,9 @@
 import type { Position } from '@unity-shader-nav/shared';
 import { classifyCursor } from '../parser/lexical/cursor';
-
-export type { SuggestionContextKind, CompletionPrefix } from '../parser/lexical/cursor';
-
 import type { SuggestionContextKind, CompletionPrefix } from '../parser/lexical/cursor';
+
+// Re-export so the suggestions barrel surface is unchanged after the seam move.
+export type { SuggestionContextKind, CompletionPrefix };
 
 export interface SuggestionContext {
   kind: SuggestionContextKind;
