@@ -3,6 +3,8 @@ export { GlobalSymbolIndex } from './globalIndex';
 export { GlobalReferenceIndex } from './globalReferences';
 export { inferReceiverTypeForCompletion, resolveMember, resolveMemberSymbols } from './chainLookup';
 export { resolveDefinition, resolveDefinitionSymbols } from './symbolResolver';
+export { resolveTarget } from './resolveTarget';
+export type { ResolverContext } from './resolveTarget';
 export {
   resolveReferenceTargets,
   resolveReferenceTargetsForMemberReference,
