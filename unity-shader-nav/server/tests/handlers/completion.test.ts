@@ -49,7 +49,7 @@ function completionWorkspace(indexes: FileIndex[], root?: string) {
     global.upsert(index);
   }
   return {
-    includeCtx: { unityProjectRoot: root, includeDirectories: [] },
+    packages: { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
     store,
     global,
   };
@@ -186,7 +186,7 @@ describe('registerCompletionHandler', () => {
     const store = new IndexStore();
     const global = new GlobalSymbolIndex();
     const workspace = {
-      includeCtx: { unityProjectRoot: undefined, includeDirectories: [] },
+      packages: { includeCtx: { unityProjectRoot: undefined, includeDirectories: [] } },
       store,
       global,
       async reindex(requestedUri: string, requestedText: string) {

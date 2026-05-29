@@ -25,7 +25,7 @@ function makeConnection(): { connection: Connection; getHandler: () => Handler |
 interface FakeWorkspace {
   global: GlobalSymbolIndex;
   settings: { findReferences: { includePackages: boolean } };
-  isInPackages: (uri: string) => boolean;
+  packages: { isInPackages: (uri: string) => boolean };
 }
 
 function makeWorkspace(
@@ -38,7 +38,7 @@ function makeWorkspace(
   return {
     global,
     settings: { findReferences: { includePackages: options.includePackages ?? false } },
-    isInPackages: (uri: string) => packageUris.has(uri),
+    packages: { isInPackages: (uri: string) => packageUris.has(uri) },
   };
 }
 

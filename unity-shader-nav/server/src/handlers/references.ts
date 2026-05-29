@@ -35,7 +35,7 @@ export function registerReferencesHandler(
         const resolved = await resolveInclude(
           target.include.path,
           params.textDocument.uri,
-          workspace.includeCtx,
+          workspace.packages.includeCtx,
         );
         if (!resolved) return null;
 
@@ -49,12 +49,12 @@ export function registerReferencesHandler(
 
           for (const reference of index.references) {
             if (reference.context !== 'include') continue;
-            if (!includePackages && workspace.isInPackages(reference.location.uri)) continue;
+            if (!includePackages && workspace.packages.isInPackages(reference.location.uri)) continue;
 
             const candidate = await resolveInclude(
               reference.name,
               reference.location.uri,
-              workspace.includeCtx,
+              workspace.packages.includeCtx,
             );
             if (!candidate) continue;
             if (pathToFileURL(candidate.absolutePath).href !== targetUri) continue;
@@ -77,8 +77,8 @@ export function registerReferencesHandler(
         global: workspace.global,
         globalRefs: workspace.globalRefs,
         store: workspace.store,
-        includeCtx: workspace.includeCtx,
-        isInPackages: (u) => workspace.isInPackages(u),
+        includeCtx: workspace.packages.includeCtx,
+        isInPackages: (u) => workspace.packages.isInPackages(u),
         includePackages: workspace.settings.findReferences.includePackages,
         includeDeclaration: params.context.includeDeclaration,
       });

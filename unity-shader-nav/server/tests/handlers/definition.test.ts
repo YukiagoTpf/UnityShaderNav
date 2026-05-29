@@ -34,7 +34,7 @@ function createDefinitionFixture(
     },
   } as never;
   const workspace = {
-    includeCtx: { unityProjectRoot: undefined, includeDirectories: [] },
+    packages: { includeCtx: { unityProjectRoot: undefined, includeDirectories: [] } },
     store: new IndexStore(),
     global: new GlobalSymbolIndex(),
   };
@@ -159,7 +159,7 @@ describe('registerDefinitionHandler', () => {
         },
       } as never;
       const workspace = {
-        includeCtx: { unityProjectRoot: root, includeDirectories: [] },
+        packages: { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
         store,
         global,
       };
@@ -227,7 +227,7 @@ describe('registerDefinitionHandler', () => {
       references: [],
     };
     const workspace = {
-      includeCtx: { unityProjectRoot: undefined, includeDirectories: [] },
+      packages: { includeCtx: { unityProjectRoot: undefined, includeDirectories: [] } },
       store: new IndexStore(),
       global: new GlobalSymbolIndex(),
     };
@@ -277,7 +277,7 @@ describe('registerDefinitionHandler', () => {
       },
     } as never;
     const workspace = {
-      includeCtx: { unityProjectRoot: undefined, includeDirectories: [] },
+      packages: { includeCtx: { unityProjectRoot: undefined, includeDirectories: [] } },
       store: new IndexStore(),
       global: new GlobalSymbolIndex(),
     };
@@ -326,7 +326,7 @@ describe('registerDefinitionHandler', () => {
       },
     } as never;
     const workspace = {
-      includeCtx: { unityProjectRoot: undefined, includeDirectories: [] },
+      packages: { includeCtx: { unityProjectRoot: undefined, includeDirectories: [] } },
       store: new IndexStore(),
       global: new GlobalSymbolIndex(),
       async reindex(requestedUri: string, requestedText: string) {
@@ -454,7 +454,7 @@ describe('registerDefinitionHandler', () => {
         },
       } as never;
       const workspace = {
-        includeCtx: { unityProjectRoot: root, includeDirectories: [] },
+        packages: { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
         store,
         global,
       };
@@ -542,7 +542,7 @@ describe('registerDefinitionHandler', () => {
         },
       } as never;
       const workspace = {
-        includeCtx: { unityProjectRoot: root, includeDirectories: [] },
+        packages: { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
         store,
         global,
       };
@@ -628,7 +628,7 @@ describe('registerDefinitionHandler', () => {
         },
       } as never;
       const workspace = {
-        includeCtx: { unityProjectRoot: root, includeDirectories: [] },
+        packages: { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
         store,
         global,
       };

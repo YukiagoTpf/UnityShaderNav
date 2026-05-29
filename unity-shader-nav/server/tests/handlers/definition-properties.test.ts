@@ -72,7 +72,7 @@ function createPairFixture(
   }
 
   const workspace = {
-    includeCtx: { unityProjectRoot: undefined, includeDirectories: [] },
+    packages: { includeCtx: { unityProjectRoot: undefined, includeDirectories: [] } },
     store,
     global,
   };
@@ -344,7 +344,7 @@ describe('registerDefinitionHandler — properties bridge', () => {
         global.upsert(idx);
       }
       const workspace = {
-        includeCtx: { unityProjectRoot: root, includeDirectories: [] },
+        packages: { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
         store,
         global,
       };
@@ -596,7 +596,7 @@ describe('registerDefinitionHandler — properties bridge', () => {
         global.upsert(idx);
       }
       const workspace = {
-        includeCtx: { unityProjectRoot: root, includeDirectories: [] },
+        packages: { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
         store,
         global,
       };
@@ -838,7 +838,7 @@ describe('registerDefinitionHandler — properties bridge', () => {
         global.upsert(idx);
       }
       const workspace = {
-        includeCtx: { unityProjectRoot: root, includeDirectories: [] },
+        packages: { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
         store,
         global,
       };

@@ -44,14 +44,14 @@ function toSymbolInformation(symbol: SymbolEntry): SymbolInformation {
 }
 
 function* collectMatches(
-  workspace: Pick<Workspace, 'global' | 'settings' | 'isInPackages'>,
+  workspace: Pick<Workspace, 'global' | 'settings' | 'packages'>,
   needle: string,
 ): Iterable<SymbolEntry> {
   const includePackages = workspace.settings.findReferences.includePackages;
   for (const entry of workspace.global.entries()) {
     if (HIDDEN_SYMBOL_KINDS.has(entry.kind)) continue;
     if (entry.name.trim().length === 0) continue;
-    if (!includePackages && workspace.isInPackages(entry.location.uri)) continue;
+    if (!includePackages && workspace.packages.isInPackages(entry.location.uri)) continue;
     if (!entry.name.toLowerCase().includes(needle)) continue;
     yield entry;
   }

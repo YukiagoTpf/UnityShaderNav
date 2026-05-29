@@ -55,11 +55,13 @@ async function createHighlightFixture(
     },
   } as never;
   const workspace = {
-    includeCtx: { unityProjectRoot: undefined, includeDirectories: [] },
+    packages: {
+      includeCtx: { unityProjectRoot: undefined, includeDirectories: [] },
+      isInPackages: () => false,
+    },
     store,
     global,
     globalRefs,
-    isInPackages: () => false,
   };
   const manager = {
     async workspaceForOrCreateFile(requestedUri: string) {
@@ -120,7 +122,7 @@ describe('registerDocumentHighlightHandler', () => {
     const store = new IndexStore();
     let reindexCalls = 0;
     const workspace = {
-      includeCtx: { unityProjectRoot: undefined, includeDirectories: [] },
+      packages: { includeCtx: { unityProjectRoot: undefined, includeDirectories: [] } },
       store,
       global: new GlobalSymbolIndex(),
       globalRefs: new GlobalReferenceIndex(),

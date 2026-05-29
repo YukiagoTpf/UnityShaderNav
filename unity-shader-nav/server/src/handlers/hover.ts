@@ -53,7 +53,7 @@ export function registerHoverHandler(
 
       const visibleUriKeys = await collectVisibleUriKeys(
         workspace.store,
-        workspace.includeCtx,
+        workspace.packages.includeCtx,
         params.textDocument.uri,
       );
       const resolutionOptions = { visibleUriKeys };

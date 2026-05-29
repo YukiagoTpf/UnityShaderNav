@@ -13,7 +13,6 @@ import type {
 import { CacheManager, CacheStore, chooseCacheDir } from '../cache';
 import { buildFingerprint } from '../cache/fingerprint';
 import { PackageContext } from '../packages';
-import type { IncludeContext } from '../include';
 import { GlobalReferenceIndex, GlobalSymbolIndex, IndexStore } from '../index';
 import { MacroPatternTable } from '../macros';
 import { indexFile } from '../parser/hlsl';
@@ -53,15 +52,6 @@ export class Workspace {
 
   isStandalone(): boolean {
     return this.unityRoot === undefined;
-  }
-
-  // Temporary pass-throughs (#28 Impl 2). Removed in Impl 3 once callers migrate to workspace.packages.*.
-  get includeCtx(): IncludeContext {
-    return this.packages.includeCtx;
-  }
-
-  isInPackages(uri: string): boolean {
-    return this.packages.isInPackages(uri);
   }
 
   async bootstrap(connection: Connection, _globalStorageDir?: string): Promise<void> {
