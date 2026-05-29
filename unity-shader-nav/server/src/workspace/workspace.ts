@@ -12,7 +12,7 @@ import type {
 } from '@unity-shader-nav/shared';
 import { CacheManager, CacheStore, chooseCacheDir } from '../cache';
 import { buildFingerprint } from '../cache/fingerprint';
-import { PackageResolver } from '../packages';
+import { PackageContext } from '../packages';
 import type { IncludeContext } from '../include';
 import { GlobalReferenceIndex, GlobalSymbolIndex, IndexStore } from '../index';
 import { MacroPatternTable } from '../macros';
@@ -33,8 +33,7 @@ const CACHE_IO_CONCURRENCY = 32;
 export class Workspace {
   readonly folderUri: string;
   unityRoot: string | undefined;
-  packageResolver: PackageResolver | undefined;
-  includeCtx: IncludeContext;
+  packages: PackageContext;
   readonly store = new IndexStore();
   readonly global = new GlobalSymbolIndex();
   readonly globalRefs = new GlobalReferenceIndex();
@@ -49,14 +48,20 @@ export class Workspace {
     this.folderUri = folderUri;
     this.settings = settings;
     this.table = new MacroPatternTable(settings.declarationMacros);
-    this.includeCtx = {
-      unityProjectRoot: undefined,
-      includeDirectories: settings.includeDirectories,
-    };
+    this.packages = PackageContext.standalone(settings);
   }
 
   isStandalone(): boolean {
     return this.unityRoot === undefined;
+  }
+
+  // Temporary pass-throughs (#28 Impl 2). Removed in Impl 3 once callers migrate to workspace.packages.*.
+  get includeCtx(): IncludeContext {
+    return this.packages.includeCtx;
+  }
+
+  isInPackages(uri: string): boolean {
+    return this.packages.isInPackages(uri);
   }
 
   async bootstrap(connection: Connection, _globalStorageDir?: string): Promise<void> {
@@ -66,11 +71,7 @@ export class Workspace {
     this.unityRoot = configuredRoot || (await detectUnityRoot(folderPath)) || undefined;
 
     if (!this.unityRoot) {
-      this.packageResolver = undefined;
-      this.includeCtx = {
-        unityProjectRoot: undefined,
-        includeDirectories: this.settings.includeDirectories,
-      };
+      this.packages = PackageContext.standalone(this.settings);
       await this.configureCache(folderPath, _globalStorageDir);
       const manifest = await this.cache?.load(this.fingerprint);
       if (manifest && this.matchesWorkspace(manifest)) {
@@ -79,13 +80,7 @@ export class Workspace {
       return;
     }
 
-    this.packageResolver = new PackageResolver(this.unityRoot);
-    await this.packageResolver.load();
-    this.includeCtx = {
-      unityProjectRoot: this.unityRoot,
-      includeDirectories: this.settings.includeDirectories,
-      packagePhysicalPaths: this.packageResolver.asIncludeContextMap(),
-    };
+    this.packages = await PackageContext.load(this.unityRoot, this.settings);
 
     await this.configureCache(folderPath, _globalStorageDir);
     const manifest = await this.cache?.load(this.fingerprint);
@@ -181,7 +176,8 @@ export class Workspace {
   }
 
   private shouldRestoreCachedFile(uri: string): boolean {
-    if (!this.unityRoot || !this.packageResolver) return true;
+    // packages resolver is present iff unityRoot is set (see bootstrap); checking unityRoot suffices.
+    if (!this.unityRoot) return true;
 
     let filePath: string;
     try {
@@ -190,7 +186,7 @@ export class Workspace {
       return false;
     }
 
-    const currentPackageRoots = this.packageResolver.allPaths().map(({ path }) => path);
+    const currentPackageRoots = this.packages.packageRoots();
     if (currentPackageRoots.some((root) => containsPath(root, filePath))) {
       return true;
     }
@@ -200,21 +196,6 @@ export class Workspace {
       join(this.unityRoot, 'Library', 'PackageCache'),
     ];
     return !packageAreas.some((root) => containsPath(root, filePath));
-  }
-
-  isInPackages(uri: string): boolean {
-    if (!this.packageResolver) return false;
-
-    let filePath: string;
-    try {
-      filePath = fileURLToPath(uri);
-    } catch {
-      return false;
-    }
-
-    return this.packageResolver
-      .allPaths()
-      .some(({ path }) => containsPath(path, filePath));
   }
 
   private async indexMissingDiskFiles(connection: Connection): Promise<void> {
@@ -229,8 +210,8 @@ export class Workspace {
       if (!this.store.get(uri)) await this.indexAndStore(filePath, connection);
     });
 
-    if (!this.packageResolver) return;
-    await mapWithConcurrency(this.packageResolver.allPaths(), INDEX_CONCURRENCY, async ({ path }) => {
+    if (!this.packages.hasResolver()) return;
+    await mapWithConcurrency(this.packages.packageRoots(), INDEX_CONCURRENCY, async (path) => {
       const packageFiles = await walkFiles(path, ['**/Documentation~/**', '**/Samples~/**']);
       await mapWithConcurrency(packageFiles, INDEX_CONCURRENCY, async (filePath) => {
         const uri = pathToFileURL(filePath).href;
@@ -272,10 +253,10 @@ export class Workspace {
         if (done % 25 === 0) progress.report(`${done}/${userFiles.length} files`);
       });
 
-      if (!this.packageResolver) return;
+      if (!this.packages.hasResolver()) return;
 
       progress.report('indexing Packages...');
-      await mapWithConcurrency(this.packageResolver.allPaths(), INDEX_CONCURRENCY, async ({ path }) => {
+      await mapWithConcurrency(this.packages.packageRoots(), INDEX_CONCURRENCY, async (path) => {
         const packageFiles = await walkFiles(path, ['**/Documentation~/**', '**/Samples~/**']);
         await mapWithConcurrency(packageFiles, INDEX_CONCURRENCY, async (file) => {
           await this.indexAndStore(file, connection);
