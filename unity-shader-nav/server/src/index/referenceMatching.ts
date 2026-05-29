@@ -6,7 +6,7 @@ import type {
   SymbolEntry,
   SymbolKind,
 } from '@unity-shader-nav/shared';
-import type { ReferenceTarget } from '../index';
+import type { ReferenceTarget } from './referenceResolver';
 
 function samePosition(a: Range['start'], b: Range['start']): boolean {
   return a.line === b.line && a.character === b.character;

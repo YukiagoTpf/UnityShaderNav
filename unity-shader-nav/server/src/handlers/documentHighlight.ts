@@ -13,26 +13,24 @@ import type { TextDocument } from 'vscode-languageserver-textdocument';
 import type { Location } from 'vscode-languageserver';
 import {
   collectVisibleUriKeys,
+  isGlobalKindAwareTarget,
+  isMemberTarget,
+  isReferenceContextCompatible,
+  isScopedTarget,
   memberAccessAt,
+  narrowGlobalTargetsForOccurrence,
   resolveMemberSymbols,
   resolveReferenceTargets,
   resolveReferenceTargetsForMemberReference,
   resolveReferenceTargetsForName,
+  sameTarget,
+  symbolToTarget,
+  uniqueLocations,
   wordAt,
 } from '../index';
 import type { RequestSuspender } from '../lifecycle/requestSuspender';
 import { isGenericDefinitionContext } from '../parser/lexical/context';
 import type { WorkspaceManager } from '../workspace';
-import {
-  isGlobalKindAwareTarget,
-  isMemberTarget,
-  isReferenceContextCompatible,
-  isScopedTarget,
-  narrowGlobalTargetsForOccurrence,
-  sameTarget,
-  symbolToTarget,
-  uniqueLocations,
-} from './referenceMatching';
 
 function isSimpleIdentifier(value: string): boolean {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);

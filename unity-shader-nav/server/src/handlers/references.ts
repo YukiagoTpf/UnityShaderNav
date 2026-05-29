@@ -11,25 +11,23 @@ import type {
 } from '@unity-shader-nav/shared';
 import {
   collectVisibleUriKeys,
+  isGlobalKindAwareTarget,
+  isMemberTarget,
+  isReferenceContextCompatible,
+  isScopedTarget,
+  narrowGlobalTargetsForOccurrence,
   resolveReferenceTargets,
   resolveReferenceTargetsForName,
   resolveReferenceTargetsForMemberReference,
+  sameTarget,
+  symbolToTarget,
+  uniqueLocations,
   wordAt,
 } from '../index';
 import { resolveInclude } from '../include';
 import type { RequestSuspender } from '../lifecycle/requestSuspender';
 import { scanIncludes } from '../parser/include/lineScanner';
 import type { WorkspaceManager } from '../workspace';
-import {
-  isGlobalKindAwareTarget,
-  isMemberTarget,
-  isReferenceContextCompatible,
-  isScopedTarget,
-  narrowGlobalTargetsForOccurrence,
-  sameTarget,
-  symbolToTarget,
-  uniqueLocations,
-} from './referenceMatching';
 
 function includePathContainsPosition(range: Range, position: Range['start']): boolean {
   return position.line === range.start.line

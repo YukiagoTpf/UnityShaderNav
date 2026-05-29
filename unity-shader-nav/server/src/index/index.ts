@@ -9,6 +9,16 @@ export {
   resolveReferenceTargetsForName,
 } from './referenceResolver';
 export { memberAccessAt, wordAt } from './wordAt';
+export {
+  isGlobalKindAwareTarget,
+  isMemberTarget,
+  isReferenceContextCompatible,
+  isScopedTarget,
+  narrowGlobalTargetsForOccurrence,
+  sameTarget,
+  symbolToTarget,
+  uniqueLocations,
+} from './referenceMatching';
 export { collectVisibleUriKeys } from './visibility';
 export { propertyAt, findPropertyCandidatesForName } from './propertyBridge';
 export type { ReferenceTarget } from './referenceResolver';
