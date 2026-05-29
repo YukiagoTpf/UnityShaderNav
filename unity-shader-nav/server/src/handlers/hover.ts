@@ -8,10 +8,9 @@ import type { TextDocument } from 'vscode-languageserver-textdocument';
 import { formatHoverCandidates, type HoverInput } from '../hover';
 import {
   collectVisibleUriKeys,
-  memberAccessAt,
+  cursorTargetAt,
   resolveDefinitionSymbols,
   resolveMemberSymbols,
-  wordAt,
 } from '../index';
 import type { RequestSuspender } from '../lifecycle/requestSuspender';
 import { isGenericDefinitionContext } from '../parser/lexical/context';
@@ -47,9 +46,10 @@ export function registerHoverHandler(
 
       // Probe cheap token state BEFORE collecting visible URIs: hovering over
       // whitespace would otherwise pay the include-visibility walk for nothing.
-      const memberAccess = memberAccessAt(fullText, params.position);
-      const word = memberAccess?.receiver ? null : wordAt(fullText, params.position);
-      if (!memberAccess?.receiver && !word) return null;
+      // detectIncludes:false because hover never navigates includes and the gate
+      // already excludes include-path positions (they are lexically strings).
+      const target = cursorTargetAt(fullText, params.position, { detectIncludes: false });
+      if (target.kind === 'none') return null;
 
       const visibleUriKeys = await collectVisibleUriKeys(
         workspace.store,
@@ -58,12 +58,12 @@ export function registerHoverHandler(
       );
       const resolutionOptions = { visibleUriKeys };
 
-      if (memberAccess?.receiver) {
+      if (target.kind === 'member') {
         const symbols = resolveMemberSymbols(
           idx,
           workspace.global,
-          memberAccess.receiver.text,
-          memberAccess.member.text,
+          target.receiver.text,
+          target.member.text,
           params.position,
           resolutionOptions,
         );
@@ -78,15 +78,16 @@ export function registerHoverHandler(
           // given zero inputs (guarded above), but keep the check so a future
           // formatter change cannot silently surface an empty hover bubble.
           if (contents.value.length === 0) return null;
-          return { contents, range: memberAccess.member.range };
+          return { contents, range: target.member.range };
         }
         // Fall through to plain word resolution (parity with definition.ts).
       }
 
-      // word was pre-resolved above when there was no member-access receiver.
-      // If we fell through from a member-access miss, recompute it now.
-      const fallbackWord = word ?? wordAt(fullText, params.position);
-      if (!fallbackWord) return null;
+      // For a member-access miss, resolve the member token as a plain word
+      // (parity with today's fallthrough); for a symbol, use its word directly.
+      // 'include' cannot occur with detectIncludes:false; treat it as null.
+      if (target.kind !== 'member' && target.kind !== 'symbol') return null;
+      const fallbackWord = target.kind === 'member' ? target.member : target.word;
 
       const projectSymbols = resolveDefinitionSymbols(
         idx,
