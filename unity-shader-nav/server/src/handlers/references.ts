@@ -6,11 +6,9 @@ import type {
 } from 'vscode-languageserver/node';
 import type { TextDocument } from 'vscode-languageserver-textdocument';
 import { pathToFileURL } from 'node:url';
-import type {
-  Range,
-} from '@unity-shader-nav/shared';
 import {
   collectVisibleUriKeys,
+  cursorTargetAt,
   isGlobalKindAwareTarget,
   isMemberTarget,
   isReferenceContextCompatible,
@@ -22,18 +20,10 @@ import {
   sameTarget,
   symbolToTarget,
   uniqueLocations,
-  wordAt,
 } from '../index';
 import { resolveInclude } from '../include';
 import type { RequestSuspender } from '../lifecycle/requestSuspender';
-import { scanIncludes } from '../parser/include/lineScanner';
 import type { WorkspaceManager } from '../workspace';
-
-function includePathContainsPosition(range: Range, position: Range['start']): boolean {
-  return position.line === range.start.line
-    && position.character >= range.start.character
-    && position.character <= range.end.character;
-}
 
 export function registerReferencesHandler(
   connection: Connection,
@@ -50,12 +40,10 @@ export function registerReferencesHandler(
       if (!workspace) return null;
 
       const fullText = document.getText();
-      const include = scanIncludes(fullText).find((candidate) =>
-        includePathContainsPosition(candidate.pathRange, params.position),
-      );
-      if (include) {
+      const target = cursorTargetAt(fullText, params.position);
+      if (target.kind === 'include') {
         const resolved = await resolveInclude(
-          include.path,
+          target.include.path,
           params.textDocument.uri,
           workspace.includeCtx,
         );
@@ -91,8 +79,8 @@ export function registerReferencesHandler(
         return uniqueLocations(locations);
       }
 
-      const word = wordAt(fullText, params.position);
-      if (!word) return null;
+      if (target.kind === 'none') return null;
+      const word = target.kind === 'member' ? target.member : target.word;
 
       const idx = workspace.store?.get(params.textDocument.uri);
       const visibleByUri = new Map<string, Promise<Set<string>>>();
