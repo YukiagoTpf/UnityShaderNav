@@ -13,9 +13,8 @@ import {
   cursorTargetAt,
   findPropertyCandidatesForName,
   propertyAt,
-  resolveDefinition,
-  resolveDefinitionSymbols,
-  resolveMember,
+  resolveTarget,
+  type ResolverContext,
 } from '../index';
 import type { RequestSuspender } from '../lifecycle/requestSuspender';
 import { isGenericDefinitionContext } from '../parser/lexical/context';
@@ -126,12 +125,14 @@ export function registerDefinitionHandler(
         // members, parameters, locals, and macro-name symbols are dropped —
         // a `void _Foo()` next to a property `_Foo` is a name collision, not
         // a bridge target.
-        const propertySymbols = resolveDefinitionSymbols(
-          idx,
-          propertyHit.name,
-          params.position,
-          workspace.global,
-          { visibleUriKeys: propertyVisibleUriKeys, trace },
+        const propertySymbols = resolveTarget(
+          { kind: 'symbol', word: { text: propertyHit.name, range: propertyHit.nameRange } },
+          {
+            index: idx,
+            global: workspace.global,
+            position: params.position,
+            options: { visibleUriKeys: propertyVisibleUriKeys, trace },
+          },
         ).filter((symbol) => symbol.kind === 'variable' || symbol.kind === 'cbuffer');
         if (propertySymbols.length === 0) {
           trace('property.forward', { links: 0 });
@@ -157,6 +158,12 @@ export function registerDefinitionHandler(
         params.textDocument.uri,
       );
       const resolutionOptions = { visibleUriKeys, trace };
+      const ctx: ResolverContext = {
+        index: idx,
+        global: workspace.global,
+        position: params.position,
+        options: resolutionOptions,
+      };
       trace('visibility', { visibleUriCount: visibleUriKeys.size });
 
       if (target.kind === 'none') {
@@ -170,20 +177,13 @@ export function registerDefinitionHandler(
         receiver: target.kind === 'member' ? target.receiver.text : undefined,
       });
       if (target.kind === 'member') {
-        const links = resolveMember(
-          idx,
-          workspace.global,
-          target.receiver.text,
-          target.member.text,
-          params.position,
-          resolutionOptions,
-        );
-        if (links.length > 0) {
-          trace('member.result', { links: links.length });
-          return links.map((link) => ({
-            targetUri: link.targetUri,
-            targetRange: link.targetRange,
-            targetSelectionRange: link.targetSelectionRange,
+        const memberSymbols = resolveTarget(target, ctx);
+        if (memberSymbols.length > 0) {
+          trace('member.result', { links: memberSymbols.length });
+          return memberSymbols.map((symbol) => ({
+            targetUri: symbol.location.uri,
+            targetRange: symbol.location.range,
+            targetSelectionRange: symbol.location.range,
             originSelectionRange: target.member.range,
           }));
         }
@@ -196,13 +196,7 @@ export function registerDefinitionHandler(
         range: word.range,
       });
 
-      const links = resolveDefinition(
-        idx,
-        word.text,
-        params.position,
-        workspace.global,
-        resolutionOptions,
-      );
+      const symbols = resolveTarget({ kind: 'symbol', word }, ctx);
 
       // Reverse direction (issue 20): an HLSL identifier may also match a
       // property name in any indexed `.shader`. Visibility is intentionally
@@ -216,20 +210,20 @@ export function registerDefinitionHandler(
         originSelectionRange: word.range,
       }));
 
-      if (links.length === 0 && propertyLinks.length === 0) {
+      if (symbols.length === 0 && propertyLinks.length === 0) {
         trace('definition.result', { links: 0 });
         return null;
       }
       trace('definition.result', {
-        links: links.length + propertyLinks.length,
-        hlsl: links.length,
+        links: symbols.length + propertyLinks.length,
+        hlsl: symbols.length,
         properties: propertyLinks.length,
       });
 
-      const hlslLinks: LocationLink[] = links.map((link) => ({
-        targetUri: link.targetUri,
-        targetRange: link.targetRange,
-        targetSelectionRange: link.targetSelectionRange,
+      const hlslLinks: LocationLink[] = symbols.map((symbol) => ({
+        targetUri: symbol.location.uri,
+        targetRange: symbol.location.range,
+        targetSelectionRange: symbol.location.range,
         originSelectionRange: word.range,
       }));
       return [...hlslLinks, ...propertyLinks];
