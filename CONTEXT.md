@@ -50,6 +50,9 @@ _Avoid_: symbol record, symbol info
 **PackageResolver**:
 启动时读 `Packages/packages-lock.json`，构建 `package_name → physical_path` 映射的服务。是 ADR-0002 manifest-driven 策略的实现承担者。
 
+**PackageContext**:
+`Workspace` 组合的对象，封装 package 相关状态：持有 **PackageResolver**、派生出 **Include chain** 解析用的 `IncludeContext`、并回答 `isInPackages(uri)` 查询。调用方一律走 `workspace.packages.*`；`Workspace` 不再直接暴露 `packageResolver` / `includeCtx` / `isInPackages`。是拆 `Workspace` god class 的第一步（#28），与 **PackageResolver** 成对理解；另见 Flagged ambiguities 的 "Package"。
+
 ### 跳转行为
 
 **Multi-candidate Peek**:
