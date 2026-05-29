@@ -7,6 +7,7 @@ import type {
   SymbolKind,
 } from '@unity-shader-nav/shared';
 import type { GlobalSymbolIndex } from './globalIndex';
+import type { CursorTarget } from './cursorTarget';
 import { resolveMemberSymbols } from './chainLookup';
 import { resolveDefinitionSymbols, type ResolutionOptions } from './symbolResolver';
 import { memberAccessAt, wordAt } from './wordAt';
@@ -87,6 +88,31 @@ export function resolveReferenceTargets(
   if (!word) return [];
 
   return resolveReferenceTargetsForName(index, word.text, position, global, options);
+}
+
+export function resolveReferenceTargetsForCursor(
+  index: FileIndex,
+  target: CursorTarget,
+  position: Position,
+  global?: GlobalSymbolIndex | null,
+  options?: ResolutionOptions,
+): ReferenceTarget[] {
+  if (target.kind === 'member') {
+    const memberTargets = resolveMemberSymbols(
+      index,
+      global,
+      target.receiver.text,
+      target.member.text,
+      position,
+      options,
+    ).map(toReferenceTarget);
+    if (memberTargets.length > 0) return memberTargets;
+    return resolveReferenceTargetsForName(index, target.member.text, position, global, options);
+  }
+  if (target.kind === 'symbol') {
+    return resolveReferenceTargetsForName(index, target.word.text, position, global, options);
+  }
+  return [];
 }
 
 export function resolveReferenceTargetsForMemberReference(

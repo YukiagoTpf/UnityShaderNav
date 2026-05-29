@@ -7,18 +7,8 @@ import type {
 import type { TextDocument } from 'vscode-languageserver-textdocument';
 import { pathToFileURL } from 'node:url';
 import {
-  collectVisibleUriKeys,
+  collectReferences,
   cursorTargetAt,
-  isGlobalKindAwareTarget,
-  isMemberTarget,
-  isReferenceContextCompatible,
-  isScopedTarget,
-  narrowGlobalTargetsForOccurrence,
-  resolveReferenceTargets,
-  resolveReferenceTargetsForName,
-  resolveReferenceTargetsForMemberReference,
-  sameTarget,
-  symbolToTarget,
   uniqueLocations,
 } from '../index';
 import { resolveInclude } from '../include';
@@ -80,100 +70,18 @@ export function registerReferencesHandler(
       }
 
       if (target.kind === 'none') return null;
-      const word = target.kind === 'member' ? target.member : target.word;
 
-      const idx = workspace.store?.get(params.textDocument.uri);
-      const visibleByUri = new Map<string, Promise<Set<string>>>();
-      const visibleForUri = (uri: string): Promise<Set<string>> => {
-        const existing = visibleByUri.get(uri);
-        if (existing) return existing;
-
-        const next = collectVisibleUriKeys(workspace.store, workspace.includeCtx, uri);
-        visibleByUri.set(uri, next);
-        return next;
-      };
-      const visibleUriKeys = idx ? await visibleForUri(params.textDocument.uri) : undefined;
-      const resolutionOptions = visibleUriKeys ? { visibleUriKeys } : undefined;
-      const targets = idx
-        ? resolveReferenceTargets(idx, fullText, params.position, workspace.global, resolutionOptions)
-        : [];
-      const scopedTargets = targets.filter(isScopedTarget);
-      const memberTargets = targets.filter(isMemberTarget);
-      const narrowedTargets = [...scopedTargets, ...memberTargets];
-      const queryName = targets[0]?.name ?? word.text;
-      const globalKindAwareTargets = narrowedTargets.length === 0
-        ? narrowGlobalTargetsForOccurrence(
-          targets.filter(isGlobalKindAwareTarget),
-          idx,
-          queryName,
-          params.position,
-        )
-        : [];
-      const activeTargets = narrowedTargets.length > 0 ? narrowedTargets : globalKindAwareTargets;
-      const includePackages = workspace.settings.findReferences.includePackages;
-      const symbolsAsReferences = params.context.includeDeclaration
-        ? workspace.global
-          .lookup(queryName)
-          .filter((symbol) => includePackages || !workspace.isInPackages(symbol.location.uri))
-          .filter((symbol) =>
-            activeTargets.length === 0 ||
-            activeTargets.some((target) => sameTarget(target, symbolToTarget(symbol))))
-          .map((symbol) => ({
-            uri: symbol.location.uri,
-            range: symbol.location.range,
-          }))
-        : [];
-
-      const references: Location[] = [];
-      for (const reference of workspace.globalRefs.lookup(queryName)) {
-        if (!includePackages && workspace.isInPackages(reference.location.uri)) continue;
-
-        if (activeTargets.length === 0) {
-          references.push({ uri: reference.location.uri, range: reference.location.range });
-          continue;
-        }
-
-        if (
-          globalKindAwareTargets.length > 0 &&
-          !globalKindAwareTargets.some((target) =>
-            isReferenceContextCompatible(target, reference.context),
-          )
-        ) {
-          continue;
-        }
-
-        const candidateIndex = workspace.store?.get(reference.location.uri);
-        if (!candidateIndex) continue;
-
-        const candidateVisibleUriKeys = await visibleForUri(reference.location.uri);
-        const candidateResolutionOptions = { visibleUriKeys: candidateVisibleUriKeys };
-        const candidateTargets = reference.context === 'member'
-          ? resolveReferenceTargetsForMemberReference(
-            candidateIndex,
-            reference,
-            workspace.global,
-            candidateResolutionOptions,
-          )
-          : reference.context !== 'include'
-            ? resolveReferenceTargetsForName(
-              candidateIndex,
-              reference.name,
-              reference.location.range.start,
-              workspace.global,
-              candidateResolutionOptions,
-            )
-            : [];
-
-        if (
-          candidateTargets.some((candidate) =>
-            activeTargets.some((target) => sameTarget(candidate, target)),
-          )
-        ) {
-          references.push({ uri: reference.location.uri, range: reference.location.range });
-        }
-      }
-
-      return uniqueLocations([...symbolsAsReferences, ...references]);
+      return collectReferences(target, {
+        index: workspace.store?.get(params.textDocument.uri),
+        position: params.position,
+        global: workspace.global,
+        globalRefs: workspace.globalRefs,
+        store: workspace.store,
+        includeCtx: workspace.includeCtx,
+        isInPackages: (u) => workspace.isInPackages(u),
+        includePackages: workspace.settings.findReferences.includePackages,
+        includeDeclaration: params.context.includeDeclaration,
+      });
     };
 
     return suspender ? suspender.run(resolveRequest) : resolveRequest();
