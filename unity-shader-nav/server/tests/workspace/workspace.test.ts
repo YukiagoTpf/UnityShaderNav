@@ -352,6 +352,6 @@ describe('Workspace.bootstrap', () => {
 
     expect(workspace.global.lookup('BeforeRebuild')).toEqual([]);
     expect(workspace.global.lookup('AfterRebuild').length).toBeGreaterThanOrEqual(1);
-    expect(workspace.packageResolver).toBeDefined();
+    expect(workspace.packages.hasResolver()).toBe(true);
   });
 });
