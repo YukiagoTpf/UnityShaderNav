@@ -13,11 +13,11 @@ import type { TextDocument } from 'vscode-languageserver-textdocument';
 import type { Location } from 'vscode-languageserver';
 import {
   collectVisibleUriKeys,
+  cursorTargetAt,
   isGlobalKindAwareTarget,
   isMemberTarget,
   isReferenceContextCompatible,
   isScopedTarget,
-  memberAccessAt,
   narrowGlobalTargetsForOccurrence,
   resolveMemberSymbols,
   resolveReferenceTargets,
@@ -26,7 +26,6 @@ import {
   sameTarget,
   symbolToTarget,
   uniqueLocations,
-  wordAt,
 } from '../index';
 import type { RequestSuspender } from '../lifecycle/requestSuspender';
 import { isGenericDefinitionContext } from '../parser/lexical/context';
@@ -145,8 +144,12 @@ export function registerDocumentHighlightHandler(
         return null;
       }
 
-      const word = wordAt(fullText, params.position);
-      if (!word) return null;
+      // Probe cheap token state BEFORE collecting visible URIs so the early
+      // exit precedes the include-visibility walk. detectIncludes:false because
+      // documentHighlight never navigates includes and the gate already excludes
+      // include-path positions (they are lexically strings).
+      const target = cursorTargetAt(fullText, params.position, { detectIncludes: false });
+      if (target.kind === 'none') return null;
 
       const visibleUriKeys = await collectVisibleUriKeys(
         workspace.store,
@@ -154,13 +157,12 @@ export function registerDocumentHighlightHandler(
         params.textDocument.uri,
       );
       const resolutionOptions = { visibleUriKeys };
-      const memberAccess = memberAccessAt(fullText, params.position);
-      const targets = memberAccess?.receiver
+      const targets = target.kind === 'member'
         ? resolveMemberSymbols(
           index,
           workspace.global,
-          memberAccess.receiver.text,
-          memberAccess.member.text,
+          target.receiver.text,
+          target.member.text,
           params.position,
           resolutionOptions,
         ).map(symbolToTarget)
@@ -171,12 +173,12 @@ export function registerDocumentHighlightHandler(
           workspace.global,
           resolutionOptions,
         );
-      if (memberAccess?.receiver && targets.length === 0) {
+      if (target.kind === 'member' && targets.length === 0) {
         const fallbackHighlights = sameReceiverMemberLocations(
           index,
-          memberAccess.member.text,
-          memberAccess.receiver.text,
-          memberAccess.receiver.range.start,
+          target.member.text,
+          target.receiver.text,
+          target.receiver.range.start,
           workspace.global,
           resolutionOptions,
         ).map(toHighlight);
@@ -185,7 +187,10 @@ export function registerDocumentHighlightHandler(
       const scopedTargets = targets.filter(isScopedTarget);
       const memberTargets = targets.filter(isMemberTarget);
       const narrowedTargets = [...scopedTargets, ...memberTargets];
-      const queryName = targets[0]?.name ?? word.text;
+      // 'include' cannot occur with detectIncludes:false; treat any
+      // non-member/symbol as null to satisfy the static union narrowing.
+      if (target.kind !== 'member' && target.kind !== 'symbol') return null;
+      const queryName = targets[0]?.name ?? (target.kind === 'member' ? target.member.text : target.word.text);
       const globalKindAwareTargets = narrowedTargets.length === 0
         ? narrowGlobalTargetsForOccurrence(
           targets.filter(isGlobalKindAwareTarget),
