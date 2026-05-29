@@ -9,6 +9,7 @@ export {
   resolveReferenceTargetsForName,
 } from './referenceResolver';
 export { memberAccessAt, wordAt } from './wordAt';
+export { cursorTargetAt } from './cursorTarget';
 export {
   isGlobalKindAwareTarget,
   isMemberTarget,
@@ -24,4 +25,5 @@ export { propertyAt, findPropertyCandidatesForName } from './propertyBridge';
 export type { ReferenceTarget } from './referenceResolver';
 export type { LocationLink } from './symbolResolver';
 export type { MemberAccess, WordAt } from './wordAt';
+export type { CursorTarget, CursorTargetOptions } from './cursorTarget';
 export type { PropertyCandidate } from './propertyBridge';
