@@ -1060,6 +1060,51 @@ describe('registerDefinitionHandler', () => {
     })).resolves.toBeNull();
   });
 
+  it('falls through to a global symbol when a member access misses struct resolution', async () => {
+    // Regression guard for definition's member→symbol fall-through
+    // (definition.ts member arm is NOT terminal): the cursor sits on the
+    // `member` token of a `receiver.member` access where `member` is NOT a
+    // field of the receiver's struct type but IS a resolvable global symbol.
+    // `resolveMember` misses, and F12 must fall through to
+    // `resolveDefinition(member.text)` and still land on the global.
+    const uri = 'file:///t/member-fallthrough-global.hlsl';
+    const text = [
+      'struct S {',
+      '  float a;',
+      '};',
+      'float gColor;',
+      'float4 frag(S s) {',
+      '  return s.gColor;',
+      '}',
+    ].join('\n');
+    const index = await indexFile(uri, text);
+    const { handler } = createDefinitionFixture(uri, 'hlsl', text, index);
+
+    const globalSymbol = index.symbols.find(
+      (symbol) => symbol.name === 'gColor' && symbol.kind === 'variable',
+    );
+    const structMember = index.symbols.find(
+      (symbol) => symbol.name === 'gColor' && symbol.kind === 'structMember',
+    );
+    expect(globalSymbol).toBeDefined();
+    // `gColor` is intentionally NOT a member of `S`, so member resolution misses.
+    expect(structMember).toBeUndefined();
+    if (!globalSymbol) return;
+
+    const result = await handler({
+      textDocument: { uri },
+      position: tokenPosition(text, 5, 'gColor'),
+    }) as LocationLink[] | null;
+
+    expect(result).toHaveLength(1);
+    expect(result?.[0].targetUri).toBe(uri);
+    expect(result?.[0].targetRange).toEqual(globalSymbol.location.range);
+    expect(result?.[0].originSelectionRange).toEqual({
+      start: { line: 5, character: 11 },
+      end: { line: 5, character: 17 },
+    });
+  });
+
   it('still resolves generic identifiers inside shaderlab hlsl blocks', async () => {
     const uri = 'file:///t/surface.shader';
     const text = [

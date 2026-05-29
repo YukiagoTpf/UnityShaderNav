@@ -10,16 +10,14 @@ import { pathToFileURL } from 'node:url';
 import { resolveInclude } from '../include';
 import {
   collectVisibleUriKeys,
+  cursorTargetAt,
   findPropertyCandidatesForName,
-  memberAccessAt,
   propertyAt,
   resolveDefinition,
   resolveDefinitionSymbols,
   resolveMember,
-  wordAt,
 } from '../index';
 import type { RequestSuspender } from '../lifecycle/requestSuspender';
-import { scanIncludes } from '../parser/include/lineScanner';
 import { isGenericDefinitionContext } from '../parser/lexical/context';
 import type { WorkspaceManager } from '../workspace';
 
@@ -56,12 +54,9 @@ export function registerDefinitionHandler(
       });
 
       const fullText = doc.getText();
-      const include = scanIncludes(fullText).find((candidate) =>
-        candidate.line === params.position.line
-        && params.position.character >= candidate.pathRange.start.character
-        && params.position.character <= candidate.pathRange.end.character,
-      );
-      if (include) {
+      const target = cursorTargetAt(fullText, params.position);
+      if (target.kind === 'include') {
+        const include = target.include;
         const start = include.pathRange.start.character;
         const end = include.pathRange.end.character;
         const resolved = await resolveInclude(
@@ -164,17 +159,22 @@ export function registerDefinitionHandler(
       const resolutionOptions = { visibleUriKeys, trace };
       trace('visibility', { visibleUriCount: visibleUriKeys.size });
 
-      const memberAccess = memberAccessAt(fullText, params.position);
+      if (target.kind === 'none') {
+        trace('word.missing', {});
+        return null;
+      }
+
+      const memberToken = target.kind === 'member' ? target.member : target.word;
       trace('memberAccess', {
-        member: memberAccess?.member.text,
-        receiver: memberAccess?.receiver?.text,
+        member: memberToken.text,
+        receiver: target.kind === 'member' ? target.receiver.text : undefined,
       });
-      if (memberAccess?.receiver) {
+      if (target.kind === 'member') {
         const links = resolveMember(
           idx,
           workspace.global,
-          memberAccess.receiver.text,
-          memberAccess.member.text,
+          target.receiver.text,
+          target.member.text,
           params.position,
           resolutionOptions,
         );
@@ -184,17 +184,13 @@ export function registerDefinitionHandler(
             targetUri: link.targetUri,
             targetRange: link.targetRange,
             targetSelectionRange: link.targetSelectionRange,
-            originSelectionRange: memberAccess.member.range,
+            originSelectionRange: target.member.range,
           }));
         }
         trace('member.result', { links: 0 });
       }
 
-      const word = wordAt(fullText, params.position);
-      if (!word) {
-        trace('word.missing', {});
-        return null;
-      }
+      const word = memberToken;
       trace('word', {
         text: word.text,
         range: word.range,
