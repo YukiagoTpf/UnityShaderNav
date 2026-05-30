@@ -22,7 +22,11 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          # Node 20+ exposes the global `File` that @vscode/vsce -> undici needs;
+          # on Node 18 the package-layout VSCE test crashes with
+          # "ReferenceError: File is not defined". engines.node still allows >=18
+          # for the shipped server (it runs on VS Code's bundled runtime).
+          node-version: 20
           cache: npm
           cache-dependency-path: unity-shader-nav/package-lock.json
 
