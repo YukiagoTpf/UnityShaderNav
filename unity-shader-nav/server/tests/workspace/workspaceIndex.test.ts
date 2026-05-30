@@ -12,8 +12,11 @@ const fakeConnection = {
   console: { log() {} },
 } as never;
 
-function newIndex(): WorkspaceIndex {
-  return new WorkspaceIndex(new MacroPatternTable(DEFAULT_SETTINGS.declarationMacros));
+function newIndex(isStandalone = false): WorkspaceIndex {
+  return new WorkspaceIndex(
+    new MacroPatternTable(DEFAULT_SETTINGS.declarationMacros),
+    () => isStandalone,
+  );
 }
 
 describe('WorkspaceIndex invariant 1: cache restore order', () => {
@@ -38,7 +41,7 @@ describe('WorkspaceIndex invariant 2: closeDocument fallback', () => {
     const diskIdx = await indexFile(uri, 'float4 DiskSym() { return 0; }');
 
     wi.restoreFromCache(uri, diskIdx);
-    await wi.reindex(uri, 'float4 LiveSym() { return 0; }', false);
+    await wi.reindex(uri, 'float4 LiveSym() { return 0; }');
 
     // Overlay is live-only while open.
     expect(wi.global.lookup('LiveSym').length).toBeGreaterThanOrEqual(1);
@@ -57,7 +60,7 @@ describe('WorkspaceIndex invariant 2: closeDocument fallback', () => {
     const uri = pathToFileURL('/virtual/Loose.hlsl').href;
 
     // Non-standalone reindex never touches diskIndexes, so there is no disk fallback.
-    await wi.reindex(uri, 'float4 OnlyLive() { return OnlyRef(); }', false);
+    await wi.reindex(uri, 'float4 OnlyLive() { return OnlyRef(); }');
     expect(wi.store.get(uri)).toBeDefined();
     expect(wi.global.lookup('OnlyLive').length).toBeGreaterThanOrEqual(1);
     expect(wi.globalRefs.lookup('OnlyRef').length).toBeGreaterThanOrEqual(1);
@@ -94,7 +97,7 @@ describe('WorkspaceIndex invariant 4: persist snapshots diskIndexes not store', 
     const wi = newIndex();
     const uri = pathToFileURL('/virtual/Overlay.hlsl').href;
 
-    await wi.reindex(uri, 'float4 OverlaySym() { return 0; }', false);
+    await wi.reindex(uri, 'float4 OverlaySym() { return 0; }');
 
     expect(wi.store.get(uri)).toBeDefined();
     expect(wi.diskIndexEntries().map(([entryUri]) => entryUri)).not.toContain(uri);

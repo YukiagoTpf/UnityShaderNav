@@ -37,7 +37,10 @@ export class Workspace {
   constructor(folderUri: string, settings: ExtensionSettings) {
     this.folderUri = folderUri;
     this.settings = settings;
-    this.index = new WorkspaceIndex(new MacroPatternTable(settings.declarationMacros));
+    this.index = new WorkspaceIndex(
+      new MacroPatternTable(settings.declarationMacros),
+      () => this.isStandalone(),
+    );
     this.packages = PackageContext.standalone(settings);
   }
 
@@ -54,7 +57,7 @@ export class Workspace {
   set table(table: MacroPatternTable) { this.index.table = table; }
 
   reindex(uri: string, text: string, shouldStore: () => boolean = () => true): Promise<void> {
-    return this.index.reindex(uri, text, this.isStandalone(), shouldStore);
+    return this.index.reindex(uri, text, shouldStore);
   }
 
   async applyChanges(events: FileEvent[], connection: Connection): Promise<void> {
