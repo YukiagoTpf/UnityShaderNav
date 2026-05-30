@@ -53,6 +53,9 @@ _Avoid_: symbol record, symbol info
 **PackageContext**:
 `Workspace` 组合的对象，封装 package 相关状态：持有 **PackageResolver**、派生出 **Include chain** 解析用的 `IncludeContext`、并回答 `isInPackages(uri)` 查询。调用方一律走 `workspace.packages.*`；`Workspace` 不再直接暴露 `packageResolver` / `includeCtx` / `isInPackages`。是拆 `Workspace` god class 的第一步（#28），与 **PackageResolver** 成对理解；另见 Flagged ambiguities 的 "Package"。
 
+**WorkspaceIndex**:
+`Workspace` 组合的索引状态对象（#31）：持有 `store` / `global` / `globalRefs` / `diskIndexes` 和 declaration-macro `table`，承载所有索引变更（`indexAndStore` / `reindex` / `applyChanges` / `closeDocument` / `drop`）。`Workspace` 自身只保留生命周期（`bootstrap` / cache restore-persist / `fullScan` / **Rebuild mode**），并通过三个具名接缝触达索引：`restoreFromCache`、`diskIndexEntries`、`clear`。四条不变量以代码注释 + `workspaceIndex.test.ts` 守护：① cache 恢复顺序 `diskIndexes→store→global→globalRefs`；② `closeDocument` 回退到磁盘索引、否则三处全删；③ `rebuild` 先清空三索引 + `diskIndexes`；④ `persist` 只快照 `diskIndexes`、绝不快照 `store`（打开中的文档不落盘）。**与 PackageContext（#28 迁走了全部调用方）不同，#31 有意保留 pass-through**——handler 仍写 `workspace.store` / `workspace.reindex`，并非未完成的迁移。
+
 ### 跳转行为
 
 **Multi-candidate Peek**:
