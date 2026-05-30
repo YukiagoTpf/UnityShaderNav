@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CACHE_VERSION, type CacheFingerprint } from '@unity-shader-nav/shared';
 import { describe, expect, it } from 'vitest';
-import { CacheManager } from '../../src/cache/cacheManager';
+import { CacheManager, chooseCacheDir } from '../../src/cache/cacheManager';
 import { CacheStore } from '../../src/cache/cacheStore';
 
 describe('CacheManager.isValid', () => {
@@ -89,5 +89,56 @@ describe('CacheManager.buildManifest', () => {
       files: [],
     });
     expect(manifest.createdAt).toBeGreaterThan(0);
+  });
+});
+
+describe('chooseCacheDir', () => {
+  it('uses Library/UnityShaderNavCache under unity root', () => {
+    expect(chooseCacheDir({
+      unityProjectRoot: '/proj',
+      workspaceFolderUri: 'file:///proj',
+      globalStorageDir: '/gs',
+    })).toBe(join('/proj', 'Library', 'UnityShaderNavCache'));
+  });
+
+  it('falls back to globalStorageDir bucket in standalone mode', () => {
+    const out = chooseCacheDir({
+      unityProjectRoot: undefined,
+      workspaceFolderUri: 'file:///x',
+      globalStorageDir: '/gs',
+    });
+
+    expect(out).not.toBeNull();
+    expect(out?.replaceAll('\\', '/')).toMatch(/^\/gs\/standalone\/[a-f0-9]{16}$/);
+  });
+
+  it('returns null when no location is available', () => {
+    expect(chooseCacheDir({
+      unityProjectRoot: undefined,
+      workspaceFolderUri: 'file:///x',
+      globalStorageDir: undefined,
+    })).toBeNull();
+  });
+});
+
+describe('CacheManager.create', () => {
+  it('builds a manager when a cache directory applies', () => {
+    const manager = CacheManager.create({
+      unityProjectRoot: '/proj',
+      workspaceFolderUri: 'file:///proj',
+      globalStorageDir: undefined,
+    });
+
+    expect(manager).toBeInstanceOf(CacheManager);
+  });
+
+  it('returns undefined when no cache directory applies', () => {
+    const manager = CacheManager.create({
+      unityProjectRoot: undefined,
+      workspaceFolderUri: 'file:///x',
+      globalStorageDir: undefined,
+    });
+
+    expect(manager).toBeUndefined();
   });
 });

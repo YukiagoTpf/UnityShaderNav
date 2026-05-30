@@ -8,7 +8,7 @@ import type {
   CacheManifest,
   ExtensionSettings,
 } from '@unity-shader-nav/shared';
-import { CacheManager, CacheStore, chooseCacheDir } from '../cache';
+import { CacheManager } from '../cache';
 import { buildFingerprint } from '../cache/fingerprint';
 import { PackageContext } from '../packages';
 import { MacroPatternTable } from '../macros';
@@ -100,18 +100,16 @@ export class Workspace {
   }
 
   private async configureCache(folderPath: string, globalStorageDir?: string): Promise<void> {
-    const cacheDir = chooseCacheDir({
+    this.cache = CacheManager.create({
       unityProjectRoot: this.unityRoot,
       workspaceFolderUri: this.folderUri,
       globalStorageDir,
     });
-    if (!cacheDir) {
-      this.cache = undefined;
+    if (!this.cache) {
       this.fingerprint = undefined;
       return;
     }
 
-    this.cache = new CacheManager(new CacheStore(cacheDir));
     this.fingerprint = await buildFingerprint(this.settings, this.resolveWasmPath(folderPath));
   }
 
