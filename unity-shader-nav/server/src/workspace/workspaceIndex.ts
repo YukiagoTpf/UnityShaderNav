@@ -23,9 +23,11 @@ export class WorkspaceIndex {
   readonly globalRefs = new GlobalReferenceIndex();
   private readonly diskIndexes = new Map<string, FileIndex>();
   table: MacroPatternTable;
+  private readonly isStandalone: () => boolean;
 
-  constructor(table: MacroPatternTable) {
+  constructor(table: MacroPatternTable, isStandalone: () => boolean) {
     this.table = table;
+    this.isStandalone = isStandalone;
   }
 
   /**
@@ -71,12 +73,11 @@ export class WorkspaceIndex {
   async reindex(
     uri: string,
     text: string,
-    isStandalone: boolean,
     shouldStore: () => boolean = () => true,
   ): Promise<void> {
     const idx = await indexFile(uri, text, this.table);
     if (!shouldStore()) return;
-    if (isStandalone) {
+    if (this.isStandalone()) {
       await this.refreshStandaloneDiskIndex(uri, text, idx);
     }
     this.store.set(uri, idx);
