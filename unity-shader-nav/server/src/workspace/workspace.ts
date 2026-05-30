@@ -1,4 +1,3 @@
-import { promises as fs } from 'node:fs';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -8,23 +7,19 @@ import type {
   CacheFingerprint,
   CacheManifest,
   ExtensionSettings,
-  FileIndex,
 } from '@unity-shader-nav/shared';
 import { CacheManager, CacheStore, chooseCacheDir } from '../cache';
 import { buildFingerprint } from '../cache/fingerprint';
 import { PackageContext } from '../packages';
-import { GlobalReferenceIndex, GlobalSymbolIndex, IndexStore } from '../index';
 import { MacroPatternTable } from '../macros';
-import { indexFile } from '../parser/hlsl';
+import { WorkspaceIndex } from './workspaceIndex';
+import type { FileEvent } from './workspaceIndex';
 import { detectUnityRoot } from './detectUnityRoot';
 import { containsPath } from './pathUtils';
 import { mapWithConcurrency } from './concurrency';
 import { walkFiles } from './walkFiles';
 
-export interface FileEvent {
-  uri: string;
-  type: 'created' | 'changed' | 'deleted';
-}
+export type { FileEvent } from './workspaceIndex';
 
 const INDEX_CONCURRENCY = 8;
 const CACHE_IO_CONCURRENCY = 32;
@@ -33,25 +28,46 @@ export class Workspace {
   readonly folderUri: string;
   unityRoot: string | undefined;
   packages: PackageContext;
-  readonly store = new IndexStore();
-  readonly global = new GlobalSymbolIndex();
-  readonly globalRefs = new GlobalReferenceIndex();
-  private readonly diskIndexes = new Map<string, FileIndex>();
+  readonly index: WorkspaceIndex;
   private cache: CacheManager | undefined;
   private fingerprint: CacheFingerprint | undefined;
   private globalStorageDir: string | undefined;
-  table: MacroPatternTable;
   settings: ExtensionSettings;
 
   constructor(folderUri: string, settings: ExtensionSettings) {
     this.folderUri = folderUri;
     this.settings = settings;
-    this.table = new MacroPatternTable(settings.declarationMacros);
+    this.index = new WorkspaceIndex(new MacroPatternTable(settings.declarationMacros));
     this.packages = PackageContext.standalone(settings);
   }
 
   isStandalone(): boolean {
     return this.unityRoot === undefined;
+  }
+
+  // Pass-throughs to the composed WorkspaceIndex (#31). Handlers/lifecycle/tests keep
+  // using workspace.store / .global / .reindex / etc.; the real owner is this.index.
+  get store() { return this.index.store; }
+  get global() { return this.index.global; }
+  get globalRefs() { return this.index.globalRefs; }
+  get table(): MacroPatternTable { return this.index.table; }
+  set table(table: MacroPatternTable) { this.index.table = table; }
+
+  reindex(uri: string, text: string, shouldStore: () => boolean = () => true): Promise<void> {
+    return this.index.reindex(uri, text, this.isStandalone(), shouldStore);
+  }
+
+  async applyChanges(events: FileEvent[], connection: Connection): Promise<void> {
+    await this.index.applyChanges(events, connection);
+    await this.persist();
+  }
+
+  closeDocument(uri: string): void {
+    this.index.closeDocument(uri);
+  }
+
+  drop(uri: string): void {
+    this.index.drop(uri);
   }
 
   async bootstrap(connection: Connection, _globalStorageDir?: string): Promise<void> {
@@ -138,10 +154,7 @@ export class Workspace {
         if (!this.shouldRestoreCachedFile(cachedFile.uri)) continue;
 
         if (valid) {
-          this.diskIndexes.set(cachedFile.uri, cachedFile.index);
-          this.store.set(cachedFile.uri, cachedFile.index);
-          this.global.upsert(cachedFile.index);
-          this.globalRefs.upsert(cachedFile.index);
+          this.index.restoreFromCache(cachedFile.uri, cachedFile.index);
         } else {
           refreshQueue.push(cachedFile.uri);
         }
@@ -151,9 +164,9 @@ export class Workspace {
       await mapWithConcurrency(refreshQueue, INDEX_CONCURRENCY, async (uri) => {
         try {
           const filePath = fileURLToPath(uri);
-          await this.indexAndStore(filePath, connection);
+          await this.index.indexAndStore(filePath, connection);
         } catch {
-          this.drop(uri);
+          this.index.drop(uri);
         }
       });
 
@@ -197,7 +210,7 @@ export class Workspace {
     ]);
     await mapWithConcurrency(userFiles, INDEX_CONCURRENCY, async (filePath) => {
       const uri = pathToFileURL(filePath).href;
-      if (!this.store.get(uri)) await this.indexAndStore(filePath, connection);
+      if (!this.index.store.get(uri)) await this.index.indexAndStore(filePath, connection);
     });
 
     if (!this.packages.hasResolver()) return;
@@ -205,24 +218,9 @@ export class Workspace {
       const packageFiles = await walkFiles(path, ['**/Documentation~/**', '**/Samples~/**']);
       await mapWithConcurrency(packageFiles, INDEX_CONCURRENCY, async (filePath) => {
         const uri = pathToFileURL(filePath).href;
-        if (!this.store.get(uri)) await this.indexAndStore(filePath, connection);
+        if (!this.index.store.get(uri)) await this.index.indexAndStore(filePath, connection);
       });
     });
-  }
-
-  private async indexAndStore(absPath: string, connection?: Connection): Promise<void> {
-    const uri = pathToFileURL(absPath).href;
-    try {
-      const text = await fs.readFile(absPath, 'utf8');
-      const idx = await indexFile(uri, text, this.table);
-      this.diskIndexes.set(uri, idx);
-      this.store.set(uri, idx);
-      this.global.upsert(idx);
-      this.globalRefs.upsert(idx);
-      connection?.console.log(`[index] ${uri} -> ${idx.symbols.length} symbols, ${idx.references.length} refs`);
-    } catch {
-      // Ignore unreadable or unparsable files during background indexing.
-    }
   }
 
   async fullScan(connection: Connection): Promise<void> {
@@ -238,7 +236,7 @@ export class Workspace {
       ]);
       let done = 0;
       await mapWithConcurrency(userFiles, INDEX_CONCURRENCY, async (file) => {
-        await this.indexAndStore(file, connection);
+        await this.index.indexAndStore(file, connection);
         done++;
         if (done % 25 === 0) progress.report(`${done}/${userFiles.length} files`);
       });
@@ -249,7 +247,7 @@ export class Workspace {
       await mapWithConcurrency(this.packages.packageRoots(), INDEX_CONCURRENCY, async (path) => {
         const packageFiles = await walkFiles(path, ['**/Documentation~/**', '**/Samples~/**']);
         await mapWithConcurrency(packageFiles, INDEX_CONCURRENCY, async (file) => {
-          await this.indexAndStore(file, connection);
+          await this.index.indexAndStore(file, connection);
         });
       });
     } finally {
@@ -257,55 +255,8 @@ export class Workspace {
     }
   }
 
-  async reindex(uri: string, text: string, shouldStore: () => boolean = () => true): Promise<void> {
-    const idx = await indexFile(uri, text, this.table);
-    if (!shouldStore()) return;
-    if (this.isStandalone()) {
-      await this.refreshStandaloneDiskIndex(uri, text, idx);
-    }
-    this.store.set(uri, idx);
-    this.global.upsert(idx);
-    this.globalRefs.upsert(idx);
-  }
-
-  private async refreshStandaloneDiskIndex(
-    uri: string,
-    liveText: string,
-    liveIndex: FileIndex,
-  ): Promise<void> {
-    try {
-      const diskText = await fs.readFile(fileURLToPath(uri), 'utf8');
-      const diskIndex = diskText === liveText
-        ? liveIndex
-        : await indexFile(uri, diskText, this.table);
-      this.diskIndexes.set(uri, diskIndex);
-    } catch {
-      this.diskIndexes.delete(uri);
-    }
-  }
-
-  async applyChanges(events: FileEvent[], connection: Connection): Promise<void> {
-    for (const event of events) {
-      if (event.type === 'deleted') {
-        this.drop(event.uri);
-        continue;
-      }
-
-      try {
-        const filePath = fileURLToPath(event.uri);
-        await this.indexAndStore(filePath, connection);
-      } catch {
-        this.drop(event.uri);
-      }
-    }
-    await this.persist();
-  }
-
   async rebuild(connection: Connection): Promise<void> {
-    this.store.clear();
-    this.global.clear();
-    this.globalRefs.clear();
-    this.diskIndexes.clear();
+    this.index.clear();
     await this.bootstrap(connection, this.globalStorageDir);
   }
 
@@ -313,7 +264,7 @@ export class Workspace {
     if (!this.cache || !this.fingerprint) return;
 
     const snapshots = await mapWithConcurrency(
-      Array.from(this.diskIndexes),
+      this.index.diskIndexEntries(),
       CACHE_IO_CONCURRENCY,
       async ([uri, index]) => this.cache!.snapshot(uri, index),
     );
@@ -332,24 +283,5 @@ export class Workspace {
     } catch {
       // Cache persistence is best-effort; indexing results remain usable without it.
     }
-  }
-
-  closeDocument(uri: string): void {
-    const diskIndex = this.diskIndexes.get(uri);
-    if (diskIndex) {
-      this.store.set(uri, diskIndex);
-      this.global.upsert(diskIndex);
-      this.globalRefs.upsert(diskIndex);
-      return;
-    }
-
-    this.drop(uri);
-  }
-
-  drop(uri: string): void {
-    this.diskIndexes.delete(uri);
-    this.store.delete(uri);
-    this.global.delete(uri);
-    this.globalRefs.delete(uri);
   }
 }
