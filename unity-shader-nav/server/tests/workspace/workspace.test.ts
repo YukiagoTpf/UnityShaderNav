@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DEFAULT_SETTINGS } from '@unity-shader-nav/shared';
-import { chooseCacheDir } from '../../src/cache/cacheLocation';
+import { chooseCacheDir } from '../../src/cache/cacheManager';
 import { Workspace } from '../../src/workspace/workspace';
 
 const fakeConnection = {
