@@ -9,13 +9,13 @@ import type { TextDocument } from 'vscode-languageserver-textdocument';
 import { pathToFileURL } from 'node:url';
 import { resolveInclude } from '../include';
 import {
-  collectVisibleUriKeys,
   cursorTargetAt,
   findPropertyCandidatesForName,
   propertyAt,
   resolveTarget,
   type ResolverContext,
 } from '../index';
+import { resolveRequestContext } from './requestContext';
 import type { RequestSuspender } from '../lifecycle/requestSuspender';
 import { isGenericDefinitionContext } from '../parser/lexical/context';
 import type { WorkspaceManager } from '../workspace';
@@ -38,11 +38,10 @@ export function registerDefinitionHandler(
 ): void {
   connection.onDefinition(async (params: DefinitionParams): Promise<LocationLink[] | Location[] | null> => {
     const resolveRequest = async (): Promise<LocationLink[] | Location[] | null> => {
-      const doc = documents.get(params.textDocument.uri);
-      if (!doc) return null;
-
-      const workspace = await manager.workspaceForOrCreateFile(params.textDocument.uri);
-      if (!workspace) return null;
+      const ctx = await resolveRequestContext(params.textDocument.uri, documents, manager);
+      if (!ctx) return null;
+      const doc = ctx.doc;
+      const workspace = ctx.workspace;
       const traceEnabled = workspace.settings?.debug?.definitionTrace === true;
       const trace = (event: string, data: Record<string, unknown>) =>
         logDefinitionTrace(connection, traceEnabled, event, data);
@@ -61,7 +60,7 @@ export function registerDefinitionHandler(
         const resolved = await resolveInclude(
           include.path,
           params.textDocument.uri,
-          workspace.packages.includeCtx,
+          ctx.includeCtx,
         );
         if (!resolved) return null;
         if (resolved.caseInsensitive) {
@@ -89,11 +88,7 @@ export function registerDefinitionHandler(
         }];
       }
 
-      let idx = workspace.index.store.get(params.textDocument.uri);
-      if (!idx && typeof workspace.index?.reindex === 'function') {
-        await workspace.index.reindex(doc.uri, fullText);
-        idx = workspace.index.store.get(params.textDocument.uri);
-      }
+      const idx = await ctx.index();
       if (!idx) {
         trace('index.missing', { uri: params.textDocument.uri });
         return null;
@@ -111,11 +106,7 @@ export function registerDefinitionHandler(
       const propertyHit = propertyAt(idx, params.position);
       if (propertyHit) {
         trace('property.hit', { name: propertyHit.name });
-        const propertyVisibleUriKeys = await collectVisibleUriKeys(
-          workspace.index.store,
-          workspace.packages.includeCtx,
-          params.textDocument.uri,
-        );
+        const propertyVisibleUriKeys = await ctx.visibleUriKeys();
         // Filter to `variable` / `cbuffer` kinds only. Properties are uniform-
         // style data; the matching HLSL sibling is either a plain global
         // (`float _BumpScale;`), a cbuffer member, or a macro-synthesized
@@ -129,7 +120,7 @@ export function registerDefinitionHandler(
           { kind: 'symbol', word: { text: propertyHit.name, range: propertyHit.nameRange } },
           {
             index: idx,
-            global: workspace.index.global,
+            global: ctx.global,
             position: params.position,
             options: { visibleUriKeys: propertyVisibleUriKeys, trace },
           },
@@ -152,15 +143,11 @@ export function registerDefinitionHandler(
         return null;
       }
 
-      const visibleUriKeys = await collectVisibleUriKeys(
-        workspace.index.store,
-        workspace.packages.includeCtx,
-        params.textDocument.uri,
-      );
+      const visibleUriKeys = await ctx.visibleUriKeys();
       const resolutionOptions = { visibleUriKeys, trace };
-      const ctx: ResolverContext = {
+      const resolverCtx: ResolverContext = {
         index: idx,
-        global: workspace.index.global,
+        global: ctx.global,
         position: params.position,
         options: resolutionOptions,
       };
@@ -177,7 +164,7 @@ export function registerDefinitionHandler(
         receiver: target.kind === 'member' ? target.receiver.text : undefined,
       });
       if (target.kind === 'member') {
-        const memberSymbols = resolveTarget(target, ctx);
+        const memberSymbols = resolveTarget(target, resolverCtx);
         if (memberSymbols.length > 0) {
           trace('member.result', { links: memberSymbols.length });
           return memberSymbols.map((symbol) => ({
@@ -196,13 +183,13 @@ export function registerDefinitionHandler(
         range: word.range,
       });
 
-      const symbols = resolveTarget({ kind: 'symbol', word }, ctx);
+      const symbols = resolveTarget({ kind: 'symbol', word }, resolverCtx);
 
       // Reverse direction (issue 20): an HLSL identifier may also match a
       // property name in any indexed `.shader`. Visibility is intentionally
       // bypassed (design decision 3) — every workspace shader whose Properties
       // block declares the same name surfaces as a candidate.
-      const propertyCandidates = findPropertyCandidatesForName(word.text, workspace.index.store);
+      const propertyCandidates = findPropertyCandidatesForName(word.text, ctx.store);
       const propertyLinks: LocationLink[] = propertyCandidates.map((cand) => ({
         targetUri: cand.uri,
         targetRange: cand.entry.declarationRange,

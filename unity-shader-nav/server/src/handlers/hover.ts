@@ -7,11 +7,11 @@ import type {
 import type { TextDocument } from 'vscode-languageserver-textdocument';
 import { formatHoverCandidates, type HoverInput } from '../hover';
 import {
-  collectVisibleUriKeys,
   cursorTargetAt,
   resolveDefinitionSymbols,
   resolveMemberSymbols,
 } from '../index';
+import { resolveRequestContext } from './requestContext';
 import type { RequestSuspender } from '../lifecycle/requestSuspender';
 import { isGenericDefinitionContext } from '../parser/lexical/context';
 import { BUILTIN_ENTRIES } from '../suggestions/builtins';
@@ -25,19 +25,14 @@ export function registerHoverHandler(
 ): void {
   connection.onHover(async (params: HoverParams): Promise<Hover | null> => {
     const resolveRequest = async (): Promise<Hover | null> => {
-      const doc = documents.get(params.textDocument.uri);
-      if (!doc) return null;
-
-      const workspace = await manager.workspaceForOrCreateFile(params.textDocument.uri);
-      if (!workspace) return null;
+      const ctx = await resolveRequestContext(params.textDocument.uri, documents, manager);
+      if (!ctx) return null;
+      const doc = ctx.doc;
+      const workspace = ctx.workspace;
 
       const fullText = doc.getText();
 
-      let idx = workspace.index.store.get(params.textDocument.uri);
-      if (!idx && typeof workspace.index?.reindex === 'function') {
-        await workspace.index.reindex(doc.uri, fullText);
-        idx = workspace.index.store.get(params.textDocument.uri);
-      }
+      const idx = await ctx.index();
       if (!idx) return null;
 
       if (!isGenericDefinitionContext(fullText, params.position, doc.languageId, params.textDocument.uri)) {
@@ -51,17 +46,13 @@ export function registerHoverHandler(
       const target = cursorTargetAt(fullText, params.position, { detectIncludes: false });
       if (target.kind === 'none') return null;
 
-      const visibleUriKeys = await collectVisibleUriKeys(
-        workspace.index.store,
-        workspace.packages.includeCtx,
-        params.textDocument.uri,
-      );
+      const visibleUriKeys = await ctx.visibleUriKeys();
       const resolutionOptions = { visibleUriKeys };
 
       if (target.kind === 'member') {
         const symbols = resolveMemberSymbols(
           idx,
-          workspace.index.global,
+          ctx.global,
           target.receiver.text,
           target.member.text,
           params.position,
@@ -93,7 +84,7 @@ export function registerHoverHandler(
         idx,
         fallbackWord.text,
         params.position,
-        workspace.index.global,
+        ctx.global,
         resolutionOptions,
       );
       if (projectSymbols.length > 0) {

@@ -12,7 +12,6 @@ import { DocumentHighlightKind } from 'vscode-languageserver/node';
 import type { TextDocument } from 'vscode-languageserver-textdocument';
 import type { Location } from 'vscode-languageserver';
 import {
-  collectVisibleUriKeys,
   cursorTargetAt,
   isGlobalKindAwareTarget,
   isMemberTarget,
@@ -27,6 +26,7 @@ import {
   symbolToTarget,
   uniqueLocations,
 } from '../index';
+import { resolveRequestContext } from './requestContext';
 import type { RequestSuspender } from '../lifecycle/requestSuspender';
 import { isGenericDefinitionContext } from '../parser/lexical/context';
 import type { WorkspaceManager } from '../workspace';
@@ -121,17 +121,11 @@ export function registerDocumentHighlightHandler(
 ): void {
   connection.onDocumentHighlight(async (params: DocumentHighlightParams): Promise<DocumentHighlight[] | null> => {
     const resolveRequest = async (): Promise<DocumentHighlight[] | null> => {
-      const document = documents.get(params.textDocument.uri);
-      if (!document) return null;
+      const ctx = await resolveRequestContext(params.textDocument.uri, documents, manager);
+      if (!ctx) return null;
+      const document = ctx.doc;
 
-      const workspace = await manager.workspaceForOrCreateFile(params.textDocument.uri);
-      if (!workspace) return null;
-
-      let index = workspace.index.store.get(params.textDocument.uri);
-      if (!index && typeof workspace.index?.reindex === 'function') {
-        await workspace.index.reindex(document.uri, document.getText());
-        index = workspace.index.store.get(params.textDocument.uri);
-      }
+      const index = await ctx.index();
       if (!index) return null;
 
       const fullText = document.getText();
@@ -151,16 +145,12 @@ export function registerDocumentHighlightHandler(
       const target = cursorTargetAt(fullText, params.position, { detectIncludes: false });
       if (target.kind === 'none') return null;
 
-      const visibleUriKeys = await collectVisibleUriKeys(
-        workspace.index.store,
-        workspace.packages.includeCtx,
-        params.textDocument.uri,
-      );
+      const visibleUriKeys = await ctx.visibleUriKeys();
       const resolutionOptions = { visibleUriKeys };
       const targets = target.kind === 'member'
         ? resolveMemberSymbols(
           index,
-          workspace.index.global,
+          ctx.global,
           target.receiver.text,
           target.member.text,
           params.position,
@@ -170,7 +160,7 @@ export function registerDocumentHighlightHandler(
           index,
           fullText,
           params.position,
-          workspace.index.global,
+          ctx.global,
           resolutionOptions,
         );
       if (target.kind === 'member' && targets.length === 0) {
@@ -179,7 +169,7 @@ export function registerDocumentHighlightHandler(
           target.member.text,
           target.receiver.text,
           target.receiver.range.start,
-          workspace.index.global,
+          ctx.global,
           resolutionOptions,
         ).map(toHighlight);
         return fallbackHighlights.length > 0 ? fallbackHighlights : null;
@@ -201,7 +191,7 @@ export function registerDocumentHighlightHandler(
         : [];
       const activeTargets = narrowedTargets.length > 0 ? narrowedTargets : globalKindAwareTargets;
 
-      const declarations: Location[] = workspace.index.global
+      const declarations: Location[] = ctx.global
         .lookup(queryName)
         .filter((symbol) => symbol.location.uri === params.textDocument.uri)
         .filter((symbol) =>
@@ -236,14 +226,14 @@ export function registerDocumentHighlightHandler(
           ? resolveReferenceTargetsForMemberReference(
             index,
             reference,
-            workspace.index.global,
+            ctx.global,
             resolutionOptions,
           )
           : resolveReferenceTargetsForName(
             index,
             reference.name,
             reference.location.range.start,
-            workspace.index.global,
+            ctx.global,
             resolutionOptions,
           );
 
