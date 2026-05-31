@@ -10,6 +10,7 @@ import type { FileIndex, Range, ReferenceEntry, SymbolEntry, SymbolKind } from '
 import type { RequestSuspender } from '../lifecycle/requestSuspender';
 import type { WorkspaceManager } from '../workspace';
 import { scanShaderLabTokens } from '../parser/shaderlab/tokenScanner';
+import { resolveRequestContext } from './requestContext';
 
 export const SEMANTIC_TOKEN_TYPES = [
   'type',
@@ -213,20 +214,11 @@ export function registerSemanticTokensHandler(
 ): void {
   connection.languages.semanticTokens.on(async (params: SemanticTokensParams): Promise<SemanticTokens> => {
     const resolveRequest = async (): Promise<SemanticTokens> => {
-      const workspace = await manager.workspaceForOrCreateFile(params.textDocument.uri);
-      if (!workspace) return { data: [] };
-
-      let index = workspace.index.store.get(params.textDocument.uri);
-      const document = documents.get(params.textDocument.uri);
-      if (!index && typeof workspace.index?.reindex === 'function') {
-        if (document) {
-          await workspace.index.reindex(document.uri, document.getText());
-          index = workspace.index.store.get(params.textDocument.uri);
-        }
-      }
+      const ctx = await resolveRequestContext(params.textDocument.uri, documents, manager, { requireDocument: false });
+      if (!ctx) return { data: [] };
+      const index = await ctx.index();
       if (!index) return { data: [] };
-
-      return semanticTokensForIndex(index, workspace.index.global, document?.getText());
+      return semanticTokensForIndex(index, ctx.global, ctx.doc?.getText());
     };
 
     if (!suspender) return resolveRequest();

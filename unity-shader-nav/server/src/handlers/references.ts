@@ -12,6 +12,7 @@ import {
   uniqueLocations,
 } from '../index';
 import { resolveInclude } from '../include';
+import { resolveRequestContext } from './requestContext';
 import type { RequestSuspender } from '../lifecycle/requestSuspender';
 import type { WorkspaceManager } from '../workspace';
 
@@ -23,11 +24,10 @@ export function registerReferencesHandler(
 ): void {
   connection.onReferences(async (params: ReferenceParams): Promise<Location[] | null> => {
     const resolveRequest = async (): Promise<Location[] | null> => {
-      const document = documents.get(params.textDocument.uri);
-      if (!document) return null;
-
-      const workspace = await manager.workspaceForOrCreateFile(params.textDocument.uri);
-      if (!workspace) return null;
+      const ctx = await resolveRequestContext(params.textDocument.uri, documents, manager);
+      if (!ctx) return null;
+      const document = ctx.doc;
+      const workspace = ctx.workspace;
 
       const fullText = document.getText();
       const target = cursorTargetAt(fullText, params.position);
@@ -35,7 +35,7 @@ export function registerReferencesHandler(
         const resolved = await resolveInclude(
           target.include.path,
           params.textDocument.uri,
-          workspace.packages.includeCtx,
+          ctx.includeCtx,
         );
         if (!resolved) return null;
 
@@ -43,8 +43,8 @@ export function registerReferencesHandler(
         const includePackages = workspace.settings.findReferences.includePackages;
         const locations: Location[] = [];
 
-        for (const uri of workspace.index.store.uris()) {
-          const index = workspace.index.store.get(uri);
+        for (const uri of ctx.store.uris()) {
+          const index = ctx.store.get(uri);
           if (!index) continue;
 
           for (const reference of index.references) {
@@ -54,7 +54,7 @@ export function registerReferencesHandler(
             const candidate = await resolveInclude(
               reference.name,
               reference.location.uri,
-              workspace.packages.includeCtx,
+              ctx.includeCtx,
             );
             if (!candidate) continue;
             if (pathToFileURL(candidate.absolutePath).href !== targetUri) continue;
@@ -72,12 +72,12 @@ export function registerReferencesHandler(
       if (target.kind === 'none') return null;
 
       return collectReferences(target, {
-        index: workspace.index.store?.get(params.textDocument.uri),
+        index: ctx.store?.get(params.textDocument.uri),
         position: params.position,
-        global: workspace.index.global,
-        globalRefs: workspace.index.globalRefs,
-        store: workspace.index.store,
-        includeCtx: workspace.packages.includeCtx,
+        global: ctx.global,
+        globalRefs: ctx.globalRefs,
+        store: ctx.store,
+        includeCtx: ctx.includeCtx,
         isInPackages: (u) => workspace.packages.isInPackages(u),
         includePackages: workspace.settings.findReferences.includePackages,
         includeDeclaration: params.context.includeDeclaration,
