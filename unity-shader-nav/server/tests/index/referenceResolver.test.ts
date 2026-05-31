@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FileIndex, Range, SymbolEntry } from '@unity-shader-nav/shared';
-import { GlobalSymbolIndex, resolveReferenceTargets } from '../../src/index';
+import { GlobalSymbolIndex } from '../../src/index';
+import { resolveReferenceTargets } from '../../src/index/referenceResolver';
 
 const uri = 'file:///project/Assets/Main.hlsl';
 
