@@ -11,6 +11,7 @@ import {
   resolveReferenceTargetsForCursor,
   resolveReferenceTargetsForName,
   resolveReferenceTargetsForMemberReference,
+  type ReferenceTarget,
 } from './referenceResolver';
 import {
   isGlobalKindAwareTarget,
@@ -163,4 +164,181 @@ export async function collectReferences(
   }
 
   return uniqueLocations([...symbolsAsReferences, ...references]);
+}
+
+export interface HighlightCollectionContext {
+  index: FileIndex;
+  position: Position;
+  global: GlobalSymbolIndex;
+  options?: ResolutionOptions;
+}
+
+function isSimpleIdentifier(value: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
+}
+
+function isVariableReceiverTarget(target: ReferenceTarget): boolean {
+  return target.kind === 'localVariable' || target.kind === 'parameter' || target.kind === 'variable';
+}
+
+function receiverTargets(
+  index: FileIndex,
+  receiver: string,
+  position: Position,
+  global: GlobalSymbolIndex | null,
+  options: ResolutionOptions | undefined,
+): ReferenceTarget[] {
+  if (!isSimpleIdentifier(receiver)) return [];
+  return resolveReferenceTargetsForName(index, receiver, position, global, options)
+    .filter(isVariableReceiverTarget);
+}
+
+// documentHighlight member fallback: when a member access resolves to no
+// declared target, highlight every member reference in the file that shares the
+// same resolved receiver variable. Kept single-file and un-deduped to match the
+// handler's historical early-return shape.
+function sameReceiverMemberLocations(
+  index: FileIndex,
+  memberName: string,
+  receiverName: string,
+  receiverPosition: Position,
+  global: GlobalSymbolIndex | null,
+  options: ResolutionOptions | undefined,
+): Location[] {
+  const activeReceiverTargets = receiverTargets(index, receiverName, receiverPosition, global, options);
+  if (activeReceiverTargets.length === 0) return [];
+
+  const locations: Location[] = [];
+  for (const reference of index.references) {
+    if (
+      reference.name !== memberName ||
+      reference.context !== 'member' ||
+      !reference.receiver ||
+      !isSimpleIdentifier(reference.receiver)
+    ) {
+      continue;
+    }
+
+    const candidateReceiverTargets = receiverTargets(
+      index,
+      reference.receiver,
+      reference.location.range.start,
+      global,
+      options,
+    );
+    if (
+      candidateReceiverTargets.some((candidate) =>
+        activeReceiverTargets.some((target) => sameTarget(candidate, target)),
+      )
+    ) {
+      locations.push({ uri: reference.location.uri, range: reference.location.range });
+    }
+  }
+
+  return locations;
+}
+
+/**
+ * Single-file highlight search — the document-scoped sibling of
+ * {@link collectReferences}. Resolves the cursor target, narrows
+ * scoped/member/global candidates, then collects the declaration + reference
+ * occurrences in the active file, deduped. Returns plain `Location[]`; the
+ * handler projects them to `DocumentHighlight` at the edge.
+ */
+export function findHighlights(target: CursorTarget, ctx: HighlightCollectionContext): Location[] {
+  const { index, position, global, options } = ctx;
+
+  let targets: ReferenceTarget[];
+  if (target.kind === 'member') {
+    targets = resolveMemberSymbols(
+      index,
+      global,
+      target.receiver.text,
+      target.member.text,
+      position,
+      options,
+    ).map(symbolToTarget);
+    if (targets.length === 0) {
+      // Member fallback returns early, before the declaration/reference tail and
+      // without uniqueLocations — preserving documentHighlight's historical shape.
+      return sameReceiverMemberLocations(
+        index,
+        target.member.text,
+        target.receiver.text,
+        target.receiver.range.start,
+        global,
+        options,
+      );
+    }
+  } else if (target.kind === 'symbol') {
+    // Text-free equivalent of resolveReferenceTargets(index, fullText, position):
+    // a `symbol` cursor target has no receiver, so that function's member branch
+    // is dead and it falls through to resolveReferenceTargetsForName by word text.
+    targets = resolveReferenceTargetsForName(index, target.word.text, position, global, options);
+  } else {
+    return [];
+  }
+
+  const queryName = targets[0]?.name ?? (target.kind === 'member' ? target.member.text : target.word.text);
+  const scopedTargets = targets.filter(isScopedTarget);
+  const memberTargets = targets.filter(isMemberTarget);
+  const narrowedTargets = [...scopedTargets, ...memberTargets];
+  const globalKindAwareTargets = narrowedTargets.length === 0
+    ? narrowGlobalTargetsForOccurrence(
+      targets.filter(isGlobalKindAwareTarget),
+      index,
+      queryName,
+      position,
+    )
+    : [];
+  const activeTargets = narrowedTargets.length > 0 ? narrowedTargets : globalKindAwareTargets;
+
+  const declarations: Location[] = global
+    .lookup(queryName)
+    .filter((symbol) => symbol.location.uri === index.uri)
+    .filter((symbol) =>
+      activeTargets.length === 0 ||
+      activeTargets.some((candidate) => sameTarget(candidate, symbolToTarget(symbol))),
+    )
+    .map((symbol) => ({ uri: symbol.location.uri, range: symbol.location.range }));
+
+  const references: Location[] = [];
+  for (const reference of index.references) {
+    if (reference.name !== queryName) continue;
+    if (reference.context === 'include') continue;
+
+    if (activeTargets.length === 0) {
+      references.push({ uri: reference.location.uri, range: reference.location.range });
+      continue;
+    }
+
+    if (
+      globalKindAwareTargets.length > 0 &&
+      !globalKindAwareTargets.some((candidate) =>
+        isReferenceContextCompatible(candidate, reference.context),
+      )
+    ) {
+      continue;
+    }
+
+    const candidateTargets = reference.context === 'member'
+      ? resolveReferenceTargetsForMemberReference(index, reference, global, options)
+      : resolveReferenceTargetsForName(
+        index,
+        reference.name,
+        reference.location.range.start,
+        global,
+        options,
+      );
+
+    if (
+      candidateTargets.some((candidate) =>
+        activeTargets.some((target) => sameTarget(candidate, target)),
+      )
+    ) {
+      references.push({ uri: reference.location.uri, range: reference.location.range });
+    }
+  }
+
+  return uniqueLocations([...declarations, ...references]);
 }
