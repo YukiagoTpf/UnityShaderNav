@@ -27,6 +27,14 @@ describe('scanIncludes', () => {
     expect(scanIncludes(text)).toHaveLength(0);
   });
 
+  it('keeps a // inside the include path (string-aware masking)', () => {
+    // The path string is preserved, so the // inside it is not mistaken for a
+    // line comment and the directive still resolves.
+    const result = scanIncludes('#include "a//b.hlsl"');
+    expect(result).toHaveLength(1);
+    expect(result[0].path).toBe('a//b.hlsl');
+  });
+
   it('ignores include in multi-line block comment', () => {
     const text = [
       '#include "Real.hlsl"',
