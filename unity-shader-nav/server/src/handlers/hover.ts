@@ -33,10 +33,10 @@ export function registerHoverHandler(
 
       const fullText = doc.getText();
 
-      let idx = workspace.store.get(params.textDocument.uri);
-      if (!idx && typeof workspace.reindex === 'function') {
-        await workspace.reindex(doc.uri, fullText);
-        idx = workspace.store.get(params.textDocument.uri);
+      let idx = workspace.index.store.get(params.textDocument.uri);
+      if (!idx && typeof workspace.index?.reindex === 'function') {
+        await workspace.index.reindex(doc.uri, fullText);
+        idx = workspace.index.store.get(params.textDocument.uri);
       }
       if (!idx) return null;
 
@@ -52,7 +52,7 @@ export function registerHoverHandler(
       if (target.kind === 'none') return null;
 
       const visibleUriKeys = await collectVisibleUriKeys(
-        workspace.store,
+        workspace.index.store,
         workspace.packages.includeCtx,
         params.textDocument.uri,
       );
@@ -61,7 +61,7 @@ export function registerHoverHandler(
       if (target.kind === 'member') {
         const symbols = resolveMemberSymbols(
           idx,
-          workspace.global,
+          workspace.index.global,
           target.receiver.text,
           target.member.text,
           params.position,
@@ -93,7 +93,7 @@ export function registerHoverHandler(
         idx,
         fallbackWord.text,
         params.position,
-        workspace.global,
+        workspace.index.global,
         resolutionOptions,
       );
       if (projectSymbols.length > 0) {

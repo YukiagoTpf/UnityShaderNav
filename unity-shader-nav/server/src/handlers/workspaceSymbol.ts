@@ -44,11 +44,11 @@ function toSymbolInformation(symbol: SymbolEntry): SymbolInformation {
 }
 
 function* collectMatches(
-  workspace: Pick<Workspace, 'global' | 'settings' | 'packages'>,
+  workspace: Pick<Workspace, 'index' | 'settings' | 'packages'>,
   needle: string,
 ): Iterable<SymbolEntry> {
   const includePackages = workspace.settings.findReferences.includePackages;
-  for (const entry of workspace.global.entries()) {
+  for (const entry of workspace.index.global.entries()) {
     if (HIDDEN_SYMBOL_KINDS.has(entry.kind)) continue;
     if (entry.name.trim().length === 0) continue;
     if (!includePackages && workspace.packages.isInPackages(entry.location.uri)) continue;

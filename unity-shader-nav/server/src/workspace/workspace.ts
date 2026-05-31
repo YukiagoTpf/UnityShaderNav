@@ -48,29 +48,9 @@ export class Workspace {
     return this.unityRoot === undefined;
   }
 
-  // Pass-throughs to the composed WorkspaceIndex (#31). Handlers/lifecycle/tests keep
-  // using workspace.store / .global / .reindex / etc.; the real owner is this.index.
-  get store() { return this.index.store; }
-  get global() { return this.index.global; }
-  get globalRefs() { return this.index.globalRefs; }
-  get table(): MacroPatternTable { return this.index.table; }
-  set table(table: MacroPatternTable) { this.index.table = table; }
-
-  reindex(uri: string, text: string, shouldStore: () => boolean = () => true): Promise<void> {
-    return this.index.reindex(uri, text, shouldStore);
-  }
-
   async applyChanges(events: FileEvent[], connection: Connection): Promise<void> {
     await this.index.applyChanges(events, connection);
     await this.persist();
-  }
-
-  closeDocument(uri: string): void {
-    this.index.closeDocument(uri);
-  }
-
-  drop(uri: string): void {
-    this.index.drop(uri);
   }
 
   async bootstrap(connection: Connection, _globalStorageDir?: string): Promise<void> {

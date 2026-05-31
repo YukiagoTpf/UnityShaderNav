@@ -126,9 +126,7 @@ describe('registerSemanticTokensHandler', () => {
       },
     } as never;
     const workspace = {
-      store,
-      global,
-      globalRefs,
+      index: { store, global, globalRefs },
     };
     const manager = {
       async workspaceForOrCreateFile(requestedUri: string) {
@@ -207,9 +205,7 @@ describe('registerSemanticTokensHandler', () => {
       },
     } as never;
     const workspace = {
-      store,
-      global,
-      globalRefs,
+      index: { store, global, globalRefs },
     };
     const manager = {
       async workspaceForOrCreateFile(requestedUri: string) {
@@ -288,9 +284,7 @@ describe('registerSemanticTokensHandler', () => {
       },
     } as never;
     const workspace = {
-      store,
-      global,
-      globalRefs,
+      index: { store, global, globalRefs },
     };
     const manager = {
       async workspaceForOrCreateFile(requestedUri: string) {

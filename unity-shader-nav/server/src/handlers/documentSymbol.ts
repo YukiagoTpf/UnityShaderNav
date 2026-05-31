@@ -20,12 +20,12 @@ export function registerDocumentSymbolHandler(
       const workspace = await manager.workspaceForOrCreateFile(params.textDocument.uri);
       if (!workspace) return null;
 
-      let index = workspace.store.get(params.textDocument.uri);
+      let index = workspace.index.store.get(params.textDocument.uri);
       if (!index) {
         const document = documents.get(params.textDocument.uri);
         if (document) {
-          await workspace.reindex(document.uri, document.getText());
-          index = workspace.store.get(params.textDocument.uri);
+          await workspace.index.reindex(document.uri, document.getText());
+          index = workspace.index.store.get(params.textDocument.uri);
         }
       }
       if (!index) return null;

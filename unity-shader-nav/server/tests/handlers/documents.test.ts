@@ -71,11 +71,13 @@ describe('registerDocuments', () => {
     const harness = createConnectionHarness();
     const calls: string[] = [];
     const workspace = {
-      async reindex(uri: string) {
-        calls.push(`reindex:${uri}`);
-      },
-      closeDocument(uri: string) {
-        calls.push(`close:${uri}`);
+      index: {
+        async reindex(uri: string) {
+          calls.push(`reindex:${uri}`);
+        },
+        closeDocument(uri: string) {
+          calls.push(`close:${uri}`);
+        },
       },
     };
     const manager = {
@@ -139,12 +141,14 @@ describe('registerDocuments', () => {
       allowReindex = resolve;
     });
     const workspace = {
-      async reindex(uri: string, _text: string, shouldStore: () => boolean) {
-        await reindexStarted;
-        if (shouldStore()) calls.push(`reindex:${uri}`);
-      },
-      closeDocument(uri: string) {
-        calls.push(`close:${uri}`);
+      index: {
+        async reindex(uri: string, _text: string, shouldStore: () => boolean) {
+          await reindexStarted;
+          if (shouldStore()) calls.push(`reindex:${uri}`);
+        },
+        closeDocument(uri: string) {
+          calls.push(`close:${uri}`);
+        },
       },
     };
     const manager = {
@@ -181,11 +185,13 @@ describe('registerDocuments', () => {
       allowStaleReindex = resolve;
     });
     const workspace = {
-      async reindex(_uri: string, text: string, shouldStore: () => boolean) {
-        if (text.includes('Stale')) await staleReindex;
-        if (shouldStore()) calls.push(`store:${text}`);
+      index: {
+        async reindex(_uri: string, text: string, shouldStore: () => boolean) {
+          if (text.includes('Stale')) await staleReindex;
+          if (shouldStore()) calls.push(`store:${text}`);
+        },
+        closeDocument() {},
       },
-      closeDocument() {},
     };
     const manager = {
       workspaceFor(uri: string) {
@@ -227,12 +233,14 @@ describe('registerDocuments', () => {
       allowStaleReindex = resolve;
     });
     const workspace = {
-      async reindex(_uri: string, text: string, shouldStore: () => boolean) {
-        if (text.includes('Stale')) await staleReindex;
-        if (shouldStore()) calls.push(`store:${text}`);
-      },
-      closeDocument(uri: string) {
-        calls.push(`close:${uri}`);
+      index: {
+        async reindex(_uri: string, text: string, shouldStore: () => boolean) {
+          if (text.includes('Stale')) await staleReindex;
+          if (shouldStore()) calls.push(`store:${text}`);
+        },
+        closeDocument(uri: string) {
+          calls.push(`close:${uri}`);
+        },
       },
     };
     const manager = {

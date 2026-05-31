@@ -48,9 +48,11 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
       }),
     };
     const liveWorkspace = {
-      reindex: vi.fn(async (_uri: string, text: string) => {
-        calls.push(`reindex:${text}`);
-      }),
+      index: {
+        reindex: vi.fn(async (_uri: string, text: string) => {
+          calls.push(`reindex:${text}`);
+        }),
+      },
     };
     const manager = {
       list: () => [workspace],
@@ -90,11 +92,13 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
       getText: () => 'float4 Stale() { return 0; }',
     };
     const liveWorkspace = {
-      reindex: vi.fn(async (_uri: string, text: string, shouldStore?: () => boolean) => {
-        calls.push(`reindex-start:${text}`);
-        liveDocument.version = 2;
-        if (shouldStore?.() ?? true) calls.push(`store:${text}`);
-      }),
+      index: {
+        reindex: vi.fn(async (_uri: string, text: string, shouldStore?: () => boolean) => {
+          calls.push(`reindex-start:${text}`);
+          liveDocument.version = 2;
+          if (shouldStore?.() ?? true) calls.push(`store:${text}`);
+        }),
+      },
     };
     const manager = {
       list: () => [workspace],
@@ -142,11 +146,13 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
     };
     let liveDocuments = [staleDocument];
     const liveWorkspace = {
-      reindex: vi.fn(async (_uri: string, text: string, shouldStore?: () => boolean) => {
-        calls.push(`reindex-start:${text}`);
-        liveDocuments = [freshDocument];
-        if (shouldStore?.() ?? true) calls.push(`store:${text}`);
-      }),
+      index: {
+        reindex: vi.fn(async (_uri: string, text: string, shouldStore?: () => boolean) => {
+          calls.push(`reindex-start:${text}`);
+          liveDocuments = [freshDocument];
+          if (shouldStore?.() ?? true) calls.push(`store:${text}`);
+        }),
+      },
     };
     const manager = {
       list: () => [workspace],
@@ -190,7 +196,7 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
         return [workspace];
       }),
       workspaceForOrCreateFile: vi.fn(async () => ({
-        reindex: vi.fn(async () => {}),
+        index: { reindex: vi.fn(async () => {}) },
       })),
     };
     const suspender = {
@@ -229,8 +235,8 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
     manager.configure(DEFAULT_SETTINGS, fakeConnection);
     await manager.addFolder(pathToFileURL(root).href, DEFAULT_SETTINGS, fakeConnection);
     const workspace = manager.list()[0];
-    expect(workspace.global.lookup('KeepSymbol').length).toBeGreaterThanOrEqual(1);
-    expect(workspace.global.lookup('StaleSymbol').length).toBeGreaterThanOrEqual(1);
+    expect(workspace.index.global.lookup('KeepSymbol').length).toBeGreaterThanOrEqual(1);
+    expect(workspace.index.global.lookup('StaleSymbol').length).toBeGreaterThanOrEqual(1);
 
     await applySettingsAndRebuild(
       fakeConnection,
@@ -242,8 +248,8 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
       () => [],
     );
 
-    expect(workspace.global.lookup('KeepSymbol').length).toBeGreaterThanOrEqual(1);
-    expect(workspace.global.lookup('StaleSymbol')).toEqual([]);
+    expect(workspace.index.global.lookup('KeepSymbol').length).toBeGreaterThanOrEqual(1);
+    expect(workspace.index.global.lookup('StaleSymbol')).toEqual([]);
   });
 
   it('settings rebuild can apply folder-scoped projectRoot without polluting other roots', async () => {
@@ -274,22 +280,23 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
     const workspaceA = manager.workspaceFor(pathToFileURL(join(projectA, 'Assets', 'Shaders', 'Common.hlsl')).href);
     const workspaceB = manager.workspaceFor(pathToFileURL(join(projectB, 'Assets', 'Shaders', 'OnlyInB.hlsl')).href);
 
-    expect(workspaceA?.global.lookup('Common').length).toBeGreaterThanOrEqual(1);
-    expect(workspaceB?.global.lookup('OnlyInB').length).toBeGreaterThanOrEqual(1);
-    expect(workspaceB?.global.lookup('Common')).toEqual([]);
+    expect(workspaceA?.index.global.lookup('Common').length).toBeGreaterThanOrEqual(1);
+    expect(workspaceB?.index.global.lookup('OnlyInB').length).toBeGreaterThanOrEqual(1);
+    expect(workspaceB?.index.global.lookup('Common')).toEqual([]);
   });
 
   it('does not rebuild indexes when only findReferences.includePackages changes', async () => {
     const workspace = {
       folderUri: 'file:///project-a',
       settings: DEFAULT_SETTINGS,
+      index: { table: undefined as unknown },
       rebuild: vi.fn(async () => {}),
     };
     const manager = {
       list: () => [workspace],
       readyList: async () => [workspace],
       workspaceForOrCreateFile: vi.fn(async () => ({
-        reindex: vi.fn(async () => {}),
+        index: { reindex: vi.fn(async () => {}) },
       })),
     };
 

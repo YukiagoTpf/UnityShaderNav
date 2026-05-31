@@ -22,7 +22,7 @@ export function registerDocuments(
     latestVersions.set(uri, version);
     const workspace = await manager.workspaceForOrCreateFile(uri);
     if (!workspace) return;
-    await workspace.reindex(uri, text, () =>
+    await workspace.index.reindex(uri, text, () =>
       liveUris.has(uri)
       && latestVersions.get(uri) === version
       && openGenerations.get(uri) === generation,
@@ -44,7 +44,7 @@ export function registerDocuments(
     latestVersions.delete(event.document.uri);
     openGenerations.delete(event.document.uri);
     delete (event.document as { [openDocumentGenerationKey]?: number })[openDocumentGenerationKey];
-    manager.workspaceFor(event.document.uri)?.closeDocument(event.document.uri);
+    manager.workspaceFor(event.document.uri)?.index.closeDocument(event.document.uri);
   });
 
   documents.listen(connection);

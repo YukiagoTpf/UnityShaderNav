@@ -52,15 +52,15 @@ export function registerCompletionHandler(
         return [];
       }
 
-      let index = workspace.store.get(params.textDocument.uri);
-      if (!index && typeof workspace.reindex === 'function') {
-        await workspace.reindex(doc.uri, fullText);
-        index = workspace.store.get(params.textDocument.uri);
+      let index = workspace.index.store.get(params.textDocument.uri);
+      if (!index && typeof workspace.index?.reindex === 'function') {
+        await workspace.index.reindex(doc.uri, fullText);
+        index = workspace.index.store.get(params.textDocument.uri);
       }
       if (!index) return null;
 
       const visibleUriKeys = await collectVisibleUriKeys(
-        workspace.store,
+        workspace.index.store,
         workspace.packages.includeCtx,
         params.textDocument.uri,
       );
@@ -68,8 +68,8 @@ export function registerCompletionHandler(
       const suggestions = context.member
         ? collectMemberSuggestions(
           index,
-          workspace.store,
-          workspace.global,
+          workspace.index.store,
+          workspace.index.global,
           visibleUriKeys,
           context.member.receiver,
           context.member.memberPrefix.text,
@@ -79,7 +79,7 @@ export function registerCompletionHandler(
           context.kind === 'hlslCode'
             ? collectVisibleProjectSuggestions({
               index,
-              store: workspace.store,
+              store: workspace.index.store,
               visibleUriKeys,
               position: params.position,
             }).filter((suggestion) => suggestion.name.startsWith(context.prefix.text))

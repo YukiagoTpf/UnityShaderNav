@@ -73,7 +73,7 @@ describe('registerFileWatchers', () => {
           return workspace;
         }),
         workspaceForOrCreateFile: vi.fn(async () => ({
-          reindex: vi.fn(async () => {}),
+          index: { reindex: vi.fn(async () => {}) },
         })),
         list: vi.fn(() => [workspace]),
       };
@@ -231,9 +231,11 @@ describe('registerFileWatchers', () => {
         readyWorkspaceFor: vi.fn(async () => workspace),
         readyList: vi.fn(async () => [workspace]),
         workspaceForOrCreateFile: vi.fn(async () => ({
-          reindex: vi.fn(async () => {
-            calls.push('reindex-open-doc');
-          }),
+          index: {
+            reindex: vi.fn(async () => {
+              calls.push('reindex-open-doc');
+            }),
+          },
         })),
         list: vi.fn(() => [workspace]),
       };
@@ -279,9 +281,11 @@ describe('registerFileWatchers', () => {
         workspaceFor: vi.fn(() => workspace),
         readyWorkspaceFor: vi.fn(async () => workspace),
         workspaceForOrCreateFile: vi.fn(async () => ({
-          reindex: vi.fn(async () => {
-            calls.push('reindex-open-doc');
-          }),
+          index: {
+            reindex: vi.fn(async () => {
+              calls.push('reindex-open-doc');
+            }),
+          },
         })),
         list: vi.fn(() => [workspace]),
       };

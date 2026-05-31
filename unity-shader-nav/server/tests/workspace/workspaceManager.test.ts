@@ -85,8 +85,8 @@ describe('WorkspaceManager: multi-root', () => {
 
     expect(workspaceA?.folderUri).toBe(projectAUri);
     expect(workspaceB?.folderUri).toBe(projectBUri);
-    expect(workspaceA?.global.lookup('OnlyInB')).toEqual([]);
-    expect(workspaceB?.global.lookup('Common')).toEqual([]);
+    expect(workspaceA?.index.global.lookup('OnlyInB')).toEqual([]);
+    expect(workspaceB?.index.global.lookup('Common')).toEqual([]);
   });
 
   it('reports ready when any workspace is a Unity project', async () => {
@@ -113,7 +113,7 @@ describe('WorkspaceManager: multi-root', () => {
 
     const workspace = manager.list()[0];
     expect(workspace.unityRoot).toBe(projectA);
-    expect(workspace.global.lookup('Common').length).toBeGreaterThanOrEqual(1);
+    expect(workspace.index.global.lookup('Common').length).toBeGreaterThanOrEqual(1);
   });
 
   it('passes configured globalStorageDir to newly added workspaces', async () => {
@@ -228,10 +228,10 @@ describe('WorkspaceManager: multi-root', () => {
       : DEFAULT_SETTINGS);
 
     const workspace = await manager.workspaceForOrCreateFile(pathToFileURL(looseFile).href);
-    await workspace?.reindex(pathToFileURL(looseFile).href, 'MY_TEX2D(_LazyTex)');
+    await workspace?.index.reindex(pathToFileURL(looseFile).href, 'MY_TEX2D(_LazyTex)');
 
     expect(workspace?.unityRoot).toBe(projectA);
-    expect(workspace?.store.get(pathToFileURL(looseFile).href)?.symbols).toMatchObject([
+    expect(workspace?.index.store.get(pathToFileURL(looseFile).href)?.symbols).toMatchObject([
       { name: '_LazyTex', kind: 'variable' },
     ]);
   });

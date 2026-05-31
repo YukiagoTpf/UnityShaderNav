@@ -39,21 +39,21 @@ export function registerSignatureHelpHandler(
       const call = callContextAt(fullText, params.position);
       if (!call) return null;
 
-      let index = workspace.store.get(params.textDocument.uri);
-      if (!index && typeof workspace.reindex === 'function') {
-        await workspace.reindex(doc.uri, fullText);
-        index = workspace.store.get(params.textDocument.uri);
+      let index = workspace.index.store.get(params.textDocument.uri);
+      if (!index && typeof workspace.index?.reindex === 'function') {
+        await workspace.index.reindex(doc.uri, fullText);
+        index = workspace.index.store.get(params.textDocument.uri);
       }
       if (!index) return null;
 
       const visibleUriKeys = await collectVisibleUriKeys(
-        workspace.store,
+        workspace.index.store,
         workspace.packages.includeCtx,
         params.textDocument.uri,
       );
       const projectSuggestions = collectVisibleProjectFunctionSuggestions({
         index,
-        store: workspace.store,
+        store: workspace.index.store,
         visibleUriKeys,
         position: params.position,
         name: call.calleeName,

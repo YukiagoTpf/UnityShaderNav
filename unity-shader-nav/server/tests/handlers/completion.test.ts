@@ -50,8 +50,7 @@ function completionWorkspace(indexes: FileIndex[], root?: string) {
   }
   return {
     packages: { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
-    store,
-    global,
+    index: { store, global },
   };
 }
 
@@ -187,12 +186,14 @@ describe('registerCompletionHandler', () => {
     const global = new GlobalSymbolIndex();
     const workspace = {
       packages: { includeCtx: { unityProjectRoot: undefined, includeDirectories: [] } },
-      store,
-      global,
-      async reindex(requestedUri: string, requestedText: string) {
-        const index = await indexFile(requestedUri, requestedText);
-        store.set(index.uri, index);
-        global.upsert(index);
+      index: {
+        store,
+        global,
+        async reindex(requestedUri: string, requestedText: string) {
+          const index = await indexFile(requestedUri, requestedText);
+          store.set(index.uri, index);
+          global.upsert(index);
+        },
       },
     };
     const handler = captureCompletion(uri, 'hlsl', text, workspace);

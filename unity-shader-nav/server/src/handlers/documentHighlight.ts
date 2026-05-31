@@ -127,10 +127,10 @@ export function registerDocumentHighlightHandler(
       const workspace = await manager.workspaceForOrCreateFile(params.textDocument.uri);
       if (!workspace) return null;
 
-      let index = workspace.store.get(params.textDocument.uri);
-      if (!index && typeof workspace.reindex === 'function') {
-        await workspace.reindex(document.uri, document.getText());
-        index = workspace.store.get(params.textDocument.uri);
+      let index = workspace.index.store.get(params.textDocument.uri);
+      if (!index && typeof workspace.index?.reindex === 'function') {
+        await workspace.index.reindex(document.uri, document.getText());
+        index = workspace.index.store.get(params.textDocument.uri);
       }
       if (!index) return null;
 
@@ -152,7 +152,7 @@ export function registerDocumentHighlightHandler(
       if (target.kind === 'none') return null;
 
       const visibleUriKeys = await collectVisibleUriKeys(
-        workspace.store,
+        workspace.index.store,
         workspace.packages.includeCtx,
         params.textDocument.uri,
       );
@@ -160,7 +160,7 @@ export function registerDocumentHighlightHandler(
       const targets = target.kind === 'member'
         ? resolveMemberSymbols(
           index,
-          workspace.global,
+          workspace.index.global,
           target.receiver.text,
           target.member.text,
           params.position,
@@ -170,7 +170,7 @@ export function registerDocumentHighlightHandler(
           index,
           fullText,
           params.position,
-          workspace.global,
+          workspace.index.global,
           resolutionOptions,
         );
       if (target.kind === 'member' && targets.length === 0) {
@@ -179,7 +179,7 @@ export function registerDocumentHighlightHandler(
           target.member.text,
           target.receiver.text,
           target.receiver.range.start,
-          workspace.global,
+          workspace.index.global,
           resolutionOptions,
         ).map(toHighlight);
         return fallbackHighlights.length > 0 ? fallbackHighlights : null;
@@ -201,7 +201,7 @@ export function registerDocumentHighlightHandler(
         : [];
       const activeTargets = narrowedTargets.length > 0 ? narrowedTargets : globalKindAwareTargets;
 
-      const declarations: Location[] = workspace.global
+      const declarations: Location[] = workspace.index.global
         .lookup(queryName)
         .filter((symbol) => symbol.location.uri === params.textDocument.uri)
         .filter((symbol) =>
@@ -236,14 +236,14 @@ export function registerDocumentHighlightHandler(
           ? resolveReferenceTargetsForMemberReference(
             index,
             reference,
-            workspace.global,
+            workspace.index.global,
             resolutionOptions,
           )
           : resolveReferenceTargetsForName(
             index,
             reference.name,
             reference.location.range.start,
-            workspace.global,
+            workspace.index.global,
             resolutionOptions,
           );
 

@@ -23,7 +23,7 @@ function makeConnection(): { connection: Connection; getHandler: () => Handler |
 }
 
 interface FakeWorkspace {
-  global: GlobalSymbolIndex;
+  index: { global: GlobalSymbolIndex };
   settings: { findReferences: { includePackages: boolean } };
   packages: { isInPackages: (uri: string) => boolean };
 }
@@ -36,7 +36,7 @@ function makeWorkspace(
   for (const file of files) global.upsert(file);
   const packageUris = options.packageUris ?? new Set<string>();
   return {
-    global,
+    index: { global },
     settings: { findReferences: { includePackages: options.includePackages ?? false } },
     packages: { isInPackages: (uri: string) => packageUris.has(uri) },
   };

@@ -89,10 +89,10 @@ export function registerDefinitionHandler(
         }];
       }
 
-      let idx = workspace.store.get(params.textDocument.uri);
-      if (!idx && typeof workspace.reindex === 'function') {
-        await workspace.reindex(doc.uri, fullText);
-        idx = workspace.store.get(params.textDocument.uri);
+      let idx = workspace.index.store.get(params.textDocument.uri);
+      if (!idx && typeof workspace.index?.reindex === 'function') {
+        await workspace.index.reindex(doc.uri, fullText);
+        idx = workspace.index.store.get(params.textDocument.uri);
       }
       if (!idx) {
         trace('index.missing', { uri: params.textDocument.uri });
@@ -112,7 +112,7 @@ export function registerDefinitionHandler(
       if (propertyHit) {
         trace('property.hit', { name: propertyHit.name });
         const propertyVisibleUriKeys = await collectVisibleUriKeys(
-          workspace.store,
+          workspace.index.store,
           workspace.packages.includeCtx,
           params.textDocument.uri,
         );
@@ -129,7 +129,7 @@ export function registerDefinitionHandler(
           { kind: 'symbol', word: { text: propertyHit.name, range: propertyHit.nameRange } },
           {
             index: idx,
-            global: workspace.global,
+            global: workspace.index.global,
             position: params.position,
             options: { visibleUriKeys: propertyVisibleUriKeys, trace },
           },
@@ -153,14 +153,14 @@ export function registerDefinitionHandler(
       }
 
       const visibleUriKeys = await collectVisibleUriKeys(
-        workspace.store,
+        workspace.index.store,
         workspace.packages.includeCtx,
         params.textDocument.uri,
       );
       const resolutionOptions = { visibleUriKeys, trace };
       const ctx: ResolverContext = {
         index: idx,
-        global: workspace.global,
+        global: workspace.index.global,
         position: params.position,
         options: resolutionOptions,
       };
@@ -202,7 +202,7 @@ export function registerDefinitionHandler(
       // property name in any indexed `.shader`. Visibility is intentionally
       // bypassed (design decision 3) — every workspace shader whose Properties
       // block declares the same name surfaces as a candidate.
-      const propertyCandidates = findPropertyCandidatesForName(word.text, workspace.store);
+      const propertyCandidates = findPropertyCandidatesForName(word.text, workspace.index.store);
       const propertyLinks: LocationLink[] = propertyCandidates.map((cand) => ({
         targetUri: cand.uri,
         targetRange: cand.entry.declarationRange,

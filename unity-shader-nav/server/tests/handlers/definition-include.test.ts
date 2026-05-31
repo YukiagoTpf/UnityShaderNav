@@ -42,8 +42,10 @@ describe('registerDefinitionHandler: include definitions', () => {
     const includeCtx: IncludeContext = { unityProjectRoot: root, includeDirectories: [] };
     const workspace = {
       packages: { includeCtx },
-      store: new IndexStore(),
-      global: new GlobalSymbolIndex(),
+      index: {
+        store: new IndexStore(),
+        global: new GlobalSymbolIndex(),
+      },
     };
     const manager = {
       workspaceFor(requestedUri: string) {
@@ -102,8 +104,10 @@ describe('registerDefinitionHandler: include definitions', () => {
     } as never;
     const workspace = {
       packages: { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
-      store: new IndexStore(),
-      global: new GlobalSymbolIndex(),
+      index: {
+        store: new IndexStore(),
+        global: new GlobalSymbolIndex(),
+      },
     };
     const manager = {
       workspaceFor(requestedUri: string) {
