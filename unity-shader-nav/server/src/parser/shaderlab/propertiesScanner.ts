@@ -1,4 +1,5 @@
 import type { Range, ShaderLabPropertyEntry, ShaderLabPropertyType } from '@unity-shader-nav/shared';
+import { maskCommentsLine } from '../masking';
 import { scanBlocks } from './blockScanner';
 
 const PROPERTY_TYPES = new Set<ShaderLabPropertyType>([
@@ -35,66 +36,16 @@ function makeRange(line: number, start: number, end: number): Range {
 }
 
 /**
- * Replace `//` and `/* * /` runs with spaces while preserving original column
- * widths. Mirrors `tokenScanner.maskComments` byte-for-byte so the property
- * scanner agrees with semantic highlighting on what counts as code.
+ * Mask comments to spaces and, via `strings: 'blank-body'`, blank string bodies
+ * too (keeping both quotes) so a literal can never contribute a `Properties`
+ * keyword match or stray `{`/`}` to the brace counter — while `PROPERTY_LINE_RE`
+ * still sees the `"..."` delimiters. Column widths are preserved. (The token
+ * scanner uses `'preserve'`; it keeps string bodies for highlighting.)
  */
 function maskComments(line: string, state: CommentState): string {
-  const chars = line.split('');
-  let inString = false;
-
-  for (let i = 0; i < chars.length; i++) {
-    const ch = chars[i];
-    const next = chars[i + 1];
-
-    if (state.inBlockComment) {
-      chars[i] = ' ';
-      if (ch === '*' && next === '/') {
-        chars[i + 1] = ' ';
-        i++;
-        state.inBlockComment = false;
-      }
-      continue;
-    }
-
-    if (inString) {
-      // Blank every byte of the string body so that string literals can never
-      // contribute `Properties` keyword matches or `{`/`}` to the brace
-      // counter. Honor `\` escapes: a backslash consumes the next char.
-      if (ch === '\\' && next !== undefined) {
-        chars[i] = ' ';
-        chars[i + 1] = ' ';
-        i++;
-        continue;
-      }
-      if (ch === '"') {
-        // Restore the closing quote so PROPERTY_LINE_RE (which anchors on
-        // `"..."` for display names and default literals) still sees a pair
-        // of delimiters around the now-blanked body.
-        inString = false;
-      } else {
-        chars[i] = ' ';
-      }
-      continue;
-    }
-
-    if (ch === '/' && next === '/') {
-      for (let j = i; j < chars.length; j++) chars[j] = ' ';
-      break;
-    }
-
-    if (ch === '/' && next === '*') {
-      chars[i] = ' ';
-      chars[i + 1] = ' ';
-      i++;
-      state.inBlockComment = true;
-      continue;
-    }
-
-    if (ch === '"') inString = true;
-  }
-
-  return chars.join('');
+  const result = maskCommentsLine(line, state.inBlockComment, { strings: 'blank-body' });
+  state.inBlockComment = result.inBlockComment;
+  return result.code;
 }
 
 function countChar(text: string, ch: string): number {
