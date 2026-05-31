@@ -1,5 +1,6 @@
 import type { Position, Range } from '@unity-shader-nav/shared';
 import { scanBlocks } from '../shaderlab/blockScanner';
+import { scanCommentRoles } from '../masking';
 
 export const ID_CHAR_RE = /[A-Za-z0-9_]/;
 export const ID_START_RE = /[A-Za-z_]/;
@@ -168,57 +169,28 @@ export function receiverExpressionStart(line: string, end: number): number {
 }
 
 export function lexicalContextAt(text: string, pos: Position): LexicalContext {
+  if (pos.line < 0 || pos.character < 0) return 'code';
   const lines = text.split(/\r?\n/);
+  if (pos.line >= lines.length) return 'code';
+
+  // Thread block-comment state through the preceding lines via the shared masker.
   let inBlockComment = false;
-
-  for (let line = 0; line <= pos.line && line < lines.length; line++) {
-    const lineText = lines[line];
-    let inString = false;
-    const limit = line === pos.line ? Math.min(pos.character, lineText.length) : lineText.length;
-
-    for (let character = 0; character <= limit; character++) {
-      if (line === pos.line && character === pos.character) {
-        if (inBlockComment) return 'comment';
-        if (inString) return 'string';
-        if (lineText[character] === '"') return 'string';
-        return 'code';
-      }
-
-      const ch = lineText[character];
-      const next = lineText[character + 1];
-
-      if (inBlockComment) {
-        if (ch === '*' && next === '/') {
-          character++;
-          inBlockComment = false;
-        }
-        continue;
-      }
-
-      if (inString) {
-        if (ch === '\\' && next !== undefined) {
-          character++;
-          continue;
-        }
-        if (ch === '"') inString = false;
-        continue;
-      }
-
-      if (ch === '/' && next === '/') {
-        if (line === pos.line) return 'comment';
-        break;
-      }
-
-      if (ch === '/' && next === '*') {
-        character++;
-        inBlockComment = true;
-        continue;
-      }
-
-      if (ch === '"') inString = true;
-    }
+  for (let line = 0; line < pos.line; line++) {
+    inBlockComment = scanCommentRoles(lines[line], inBlockComment).inBlockComment;
   }
 
+  const lineText = lines[pos.line];
+  const scan = scanCommentRoles(lineText, inBlockComment);
+  // Out of range past EOL: the old loop returned 'comment' only when a `//` had
+  // run past the cursor (its early return), otherwise it fell through to 'code'.
+  if (pos.character > lineText.length) {
+    return scan.lineComment ? 'comment' : 'code';
+  }
+  // roles has a trailing entry at [length] carrying the EOL state, so a cursor
+  // at end-of-line inside an unterminated string still reports 'string'.
+  const role = scan.roles[pos.character];
+  if (role === 'comment') return 'comment';
+  if (role === 'stringQuote' || role === 'stringBody') return 'string';
   return 'code';
 }
 
