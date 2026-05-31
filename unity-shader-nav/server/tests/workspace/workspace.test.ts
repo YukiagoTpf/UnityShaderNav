@@ -30,8 +30,8 @@ describe('Workspace.bootstrap', () => {
     await workspace.bootstrap(fakeConnection);
 
     expect(workspace.isStandalone()).toBe(false);
-    expect(workspace.global.lookup('Common').length).toBeGreaterThanOrEqual(1);
-    expect(workspace.global.lookup('Core').length).toBeGreaterThanOrEqual(1);
+    expect(workspace.index.global.lookup('Common').length).toBeGreaterThanOrEqual(1);
+    expect(workspace.index.global.lookup('Core').length).toBeGreaterThanOrEqual(1);
   });
 
   it('indexes user files and Packages into the global reference index', async () => {
@@ -41,7 +41,7 @@ describe('Workspace.bootstrap', () => {
 
     await workspace.bootstrap(fakeConnection);
 
-    const refs = workspace.globalRefs.lookup('Core');
+    const refs = workspace.index.globalRefs.lookup('Core');
     expect(refs.some((ref) => ref.location.uri.endsWith('/Assets/Shaders/Main.shader'))).toBe(true);
   });
 
@@ -66,7 +66,7 @@ describe('Workspace.bootstrap', () => {
       await ws2.bootstrap(fakeConnection);
 
       expect(fullScan).not.toHaveBeenCalled();
-      expect(ws2.global.lookup('CachedSymbol').length).toBeGreaterThanOrEqual(1);
+      expect(ws2.index.global.lookup('CachedSymbol').length).toBeGreaterThanOrEqual(1);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -93,7 +93,7 @@ describe('Workspace.bootstrap', () => {
       await workspace.bootstrap(fakeConnection);
 
       expect(fullScan).toHaveBeenCalledTimes(1);
-      expect(workspace.global.lookup('RecoveredSymbol').length).toBeGreaterThanOrEqual(1);
+      expect(workspace.index.global.lookup('RecoveredSymbol').length).toBeGreaterThanOrEqual(1);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -109,14 +109,14 @@ describe('Workspace.bootstrap', () => {
     try {
       const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
       await ws1.bootstrap(fakeConnection, globalStorageDir);
-      await ws1.reindex(shaderUri, await readFile(shaderPath, 'utf8'));
+      await ws1.index.reindex(shaderUri, await readFile(shaderPath, 'utf8'));
       await ws1.persist();
 
       const ws2 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
       await ws2.bootstrap(fakeConnection, globalStorageDir);
 
       expect(ws2.isStandalone()).toBe(true);
-      expect(ws2.global.lookup('StandaloneCached').length).toBeGreaterThanOrEqual(1);
+      expect(ws2.index.global.lookup('StandaloneCached').length).toBeGreaterThanOrEqual(1);
     } finally {
       await rm(root, { recursive: true, force: true });
       await rm(globalStorageDir, { recursive: true, force: true });
@@ -133,13 +133,13 @@ describe('Workspace.bootstrap', () => {
     try {
       const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
       await ws1.bootstrap(fakeConnection, globalStorageDir);
-      await ws1.reindex(shaderUri, 'float4 UnsavedOnly() { return 0; }');
+      await ws1.index.reindex(shaderUri, 'float4 UnsavedOnly() { return 0; }');
       await ws1.persist();
 
       const ws2 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
       await ws2.bootstrap(fakeConnection, globalStorageDir);
 
-      expect(ws2.global.lookup('UnsavedOnly')).toEqual([]);
+      expect(ws2.index.global.lookup('UnsavedOnly')).toEqual([]);
     } finally {
       await rm(root, { recursive: true, force: true });
       await rm(globalStorageDir, { recursive: true, force: true });
@@ -160,8 +160,8 @@ describe('Workspace.bootstrap', () => {
     try {
       const workspace = new Workspace(folderUri, DEFAULT_SETTINGS);
       await workspace.bootstrap(fakeConnection, globalStorageDir);
-      await workspace.reindex(bUri, await readFile(bPath, 'utf8'));
-      await workspace.reindex(aUri, await readFile(aPath, 'utf8'));
+      await workspace.index.reindex(bUri, await readFile(bPath, 'utf8'));
+      await workspace.index.reindex(aUri, await readFile(aPath, 'utf8'));
       await workspace.persist();
 
       const cacheDir = chooseCacheDir({
@@ -207,14 +207,14 @@ describe('Workspace.bootstrap', () => {
       await writeLockfile('oldhash');
       const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
       await ws1.bootstrap(fakeConnection);
-      expect(ws1.global.lookup('OldPackageSymbol').length).toBeGreaterThanOrEqual(1);
+      expect(ws1.index.global.lookup('OldPackageSymbol').length).toBeGreaterThanOrEqual(1);
 
       await writeLockfile('newhash');
       const ws2 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
       await ws2.bootstrap(fakeConnection);
 
-      expect(ws2.global.lookup('OldPackageSymbol')).toEqual([]);
-      expect(ws2.global.lookup('NewPackageSymbol').length).toBeGreaterThanOrEqual(1);
+      expect(ws2.index.global.lookup('OldPackageSymbol')).toEqual([]);
+      expect(ws2.index.global.lookup('NewPackageSymbol').length).toBeGreaterThanOrEqual(1);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -227,16 +227,16 @@ describe('Workspace.bootstrap', () => {
     const workspace = new Workspace(folder, DEFAULT_SETTINGS);
 
     await workspace.bootstrap(fakeConnection);
-    expect(workspace.global.lookup('Common').length).toBeGreaterThanOrEqual(1);
+    expect(workspace.index.global.lookup('Common').length).toBeGreaterThanOrEqual(1);
 
-    await workspace.reindex(commonUri, 'float4 LiveOnly() { return 0; }');
-    expect(workspace.global.lookup('Common')).toEqual([]);
-    expect(workspace.global.lookup('LiveOnly').length).toBeGreaterThanOrEqual(1);
+    await workspace.index.reindex(commonUri, 'float4 LiveOnly() { return 0; }');
+    expect(workspace.index.global.lookup('Common')).toEqual([]);
+    expect(workspace.index.global.lookup('LiveOnly').length).toBeGreaterThanOrEqual(1);
 
-    workspace.closeDocument(commonUri);
+    workspace.index.closeDocument(commonUri);
 
-    expect(workspace.global.lookup('Common').length).toBeGreaterThanOrEqual(1);
-    expect(workspace.global.lookup('LiveOnly')).toEqual([]);
+    expect(workspace.index.global.lookup('Common').length).toBeGreaterThanOrEqual(1);
+    expect(workspace.index.global.lookup('LiveOnly')).toEqual([]);
   });
 
   it('keeps global references in sync with live reindex and drop', async () => {
@@ -249,15 +249,15 @@ describe('Workspace.bootstrap', () => {
       const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
       await workspace.bootstrap(fakeConnection);
 
-      await workspace.reindex(shaderUri, 'float4 Caller() { return Target(); }');
-      expect(workspace.globalRefs.lookup('Target')).toHaveLength(1);
+      await workspace.index.reindex(shaderUri, 'float4 Caller() { return Target(); }');
+      expect(workspace.index.globalRefs.lookup('Target')).toHaveLength(1);
 
-      await workspace.reindex(shaderUri, 'float4 Caller() { return 0; }');
-      expect(workspace.globalRefs.lookup('Target')).toEqual([]);
+      await workspace.index.reindex(shaderUri, 'float4 Caller() { return 0; }');
+      expect(workspace.index.globalRefs.lookup('Target')).toEqual([]);
 
-      await workspace.reindex(shaderUri, 'float4 Caller() { return Target(); }');
-      workspace.drop(shaderUri);
-      expect(workspace.globalRefs.lookup('Target')).toEqual([]);
+      await workspace.index.reindex(shaderUri, 'float4 Caller() { return Target(); }');
+      workspace.index.drop(shaderUri);
+      expect(workspace.index.globalRefs.lookup('Target')).toEqual([]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -289,8 +289,8 @@ describe('Workspace.bootstrap', () => {
 
     expect(workspace.isStandalone()).toBe(false);
     expect(workspace.unityRoot).toBe(projectRoot);
-    expect(workspace.global.lookup('Common').length).toBeGreaterThanOrEqual(1);
-    expect(workspace.global.lookup('Core').length).toBeGreaterThanOrEqual(1);
+    expect(workspace.index.global.lookup('Common').length).toBeGreaterThanOrEqual(1);
+    expect(workspace.index.global.lookup('Core').length).toBeGreaterThanOrEqual(1);
   });
 
   it('applies a changed event by re-reading the file from disk', async () => {
@@ -305,13 +305,13 @@ describe('Workspace.bootstrap', () => {
 
     const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
     await workspace.bootstrap(fakeConnection);
-    expect(workspace.global.lookup('BeforeChange').length).toBeGreaterThanOrEqual(1);
+    expect(workspace.index.global.lookup('BeforeChange').length).toBeGreaterThanOrEqual(1);
 
     await writeFile(shaderPath, 'float4 AfterChange() { return 1; }');
     await workspace.applyChanges([{ uri: shaderUri, type: 'changed' }], fakeConnection);
 
-    expect(workspace.global.lookup('BeforeChange')).toEqual([]);
-    expect(workspace.global.lookup('AfterChange').length).toBeGreaterThanOrEqual(1);
+    expect(workspace.index.global.lookup('BeforeChange')).toEqual([]);
+    expect(workspace.index.global.lookup('AfterChange').length).toBeGreaterThanOrEqual(1);
   });
 
   it('drops deleted files from the live and global indexes', async () => {
@@ -326,12 +326,12 @@ describe('Workspace.bootstrap', () => {
 
     const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
     await workspace.bootstrap(fakeConnection);
-    expect(workspace.global.lookup('DeletedSymbol').length).toBeGreaterThanOrEqual(1);
+    expect(workspace.index.global.lookup('DeletedSymbol').length).toBeGreaterThanOrEqual(1);
 
     await workspace.applyChanges([{ uri: shaderUri, type: 'deleted' }], fakeConnection);
 
-    expect(workspace.store.get(shaderUri)).toBeUndefined();
-    expect(workspace.global.lookup('DeletedSymbol')).toEqual([]);
+    expect(workspace.index.store.get(shaderUri)).toBeUndefined();
+    expect(workspace.index.global.lookup('DeletedSymbol')).toEqual([]);
   });
 
   it('rebuild clears stale indexes and reloads Packages', async () => {
@@ -345,13 +345,13 @@ describe('Workspace.bootstrap', () => {
 
     const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
     await workspace.bootstrap(fakeConnection);
-    expect(workspace.global.lookup('BeforeRebuild').length).toBeGreaterThanOrEqual(1);
+    expect(workspace.index.global.lookup('BeforeRebuild').length).toBeGreaterThanOrEqual(1);
 
     await writeFile(shaderPath, 'float4 AfterRebuild() { return 1; }');
     await workspace.rebuild(fakeConnection);
 
-    expect(workspace.global.lookup('BeforeRebuild')).toEqual([]);
-    expect(workspace.global.lookup('AfterRebuild').length).toBeGreaterThanOrEqual(1);
+    expect(workspace.index.global.lookup('BeforeRebuild')).toEqual([]);
+    expect(workspace.index.global.lookup('AfterRebuild').length).toBeGreaterThanOrEqual(1);
     expect(workspace.packages.hasResolver()).toBe(true);
   });
 });

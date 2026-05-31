@@ -35,7 +35,7 @@ async function reindexOpenDocuments(
     const generation = document[openDocumentGenerationKey] ?? document;
     const text = document.getText();
     const workspace = await manager.workspaceForOrCreateFile(uri);
-    await workspace?.reindex(uri, text, () =>
+    await workspace?.index.reindex(uri, text, () =>
       Array.from(getOpenDocuments()).some((current) =>
         current.uri === uri
         && current.version === version
@@ -79,7 +79,7 @@ export async function applySettingsAndRebuild(
     suspender,
     (workspace) => {
       workspace.settings = settings;
-      workspace.table = new MacroPatternTable(settings.declarationMacros);
+      workspace.index.table = new MacroPatternTable(settings.declarationMacros);
     },
   );
 }
@@ -104,7 +104,7 @@ export async function applyScopedSettingsAndRebuild(
   if (!updates.some((update) => update.rebuild)) {
     for (const { workspace, settings } of updates) {
       workspace.settings = settings;
-      workspace.table = new MacroPatternTable(settings.declarationMacros);
+      workspace.index.table = new MacroPatternTable(settings.declarationMacros);
     }
     return;
   }
@@ -113,7 +113,7 @@ export async function applyScopedSettingsAndRebuild(
   try {
     for (const { workspace, settings, rebuild } of updates) {
       workspace.settings = settings;
-      workspace.table = new MacroPatternTable(settings.declarationMacros);
+      workspace.index.table = new MacroPatternTable(settings.declarationMacros);
       if (rebuild) await workspace.rebuild(connection);
     }
     await reindexOpenDocuments(manager, getOpenDocuments);

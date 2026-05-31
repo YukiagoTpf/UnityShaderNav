@@ -73,8 +73,7 @@ function createPairFixture(
 
   const workspace = {
     packages: { includeCtx: { unityProjectRoot: undefined, includeDirectories: [] } },
-    store,
-    global,
+    index: { store, global },
   };
   const manager = {
     async workspaceForOrCreateFile(requestedUri: string) {
@@ -345,8 +344,7 @@ describe('registerDefinitionHandler — properties bridge', () => {
       }
       const workspace = {
         packages: { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
-        store,
-        global,
+        index: { store, global },
       };
       const manager = {
         async workspaceForOrCreateFile() {
@@ -597,8 +595,7 @@ describe('registerDefinitionHandler — properties bridge', () => {
       }
       const workspace = {
         packages: { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
-        store,
-        global,
+        index: { store, global },
       };
       const manager = {
         async workspaceForOrCreateFile() {
@@ -839,8 +836,7 @@ describe('registerDefinitionHandler — properties bridge', () => {
       }
       const workspace = {
         packages: { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
-        store,
-        global,
+        index: { store, global },
       };
       const manager = {
         async workspaceForOrCreateFile() {

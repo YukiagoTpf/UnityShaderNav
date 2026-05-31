@@ -35,10 +35,12 @@ function createDefinitionFixture(
   } as never;
   const workspace = {
     packages: { includeCtx: { unityProjectRoot: undefined, includeDirectories: [] } },
-    store: new IndexStore(),
-    global: new GlobalSymbolIndex(),
+    index: {
+      store: new IndexStore(),
+      global: new GlobalSymbolIndex(),
+    },
   };
-  workspace.store.set(uri, idx);
+  workspace.index.store.set(uri, idx);
   const manager = {
     async workspaceForOrCreateFile(requestedUri: string) {
       return requestedUri === uri ? workspace : undefined;
@@ -160,8 +162,7 @@ describe('registerDefinitionHandler', () => {
       } as never;
       const workspace = {
         packages: { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
-        store,
-        global,
+        index: { store, global },
       };
       const manager = {
         async workspaceForOrCreateFile(requestedUri: string) {
@@ -228,10 +229,12 @@ describe('registerDefinitionHandler', () => {
     };
     const workspace = {
       packages: { includeCtx: { unityProjectRoot: undefined, includeDirectories: [] } },
-      store: new IndexStore(),
-      global: new GlobalSymbolIndex(),
+      index: {
+        store: new IndexStore(),
+        global: new GlobalSymbolIndex(),
+      },
     };
-    workspace.store.set(uri, idx);
+    workspace.index.store.set(uri, idx);
     const manager = {
       workspaceFor(requestedUri: string) {
         return requestedUri === uri ? workspace : undefined;
@@ -278,8 +281,10 @@ describe('registerDefinitionHandler', () => {
     } as never;
     const workspace = {
       packages: { includeCtx: { unityProjectRoot: undefined, includeDirectories: [] } },
-      store: new IndexStore(),
-      global: new GlobalSymbolIndex(),
+      index: {
+        store: new IndexStore(),
+        global: new GlobalSymbolIndex(),
+      },
     };
     const manager = {
       async workspaceForOrCreateFile() {
@@ -327,12 +332,14 @@ describe('registerDefinitionHandler', () => {
     } as never;
     const workspace = {
       packages: { includeCtx: { unityProjectRoot: undefined, includeDirectories: [] } },
-      store: new IndexStore(),
-      global: new GlobalSymbolIndex(),
-      async reindex(requestedUri: string, requestedText: string) {
-        const idx = helperIndex(requestedUri, requestedText);
-        this.store.set(requestedUri, idx);
-        this.global.upsert(idx);
+      index: {
+        store: new IndexStore(),
+        global: new GlobalSymbolIndex(),
+        async reindex(requestedUri: string, requestedText: string) {
+          const idx = helperIndex(requestedUri, requestedText);
+          this.store.set(requestedUri, idx);
+          this.global.upsert(idx);
+        },
       },
     };
     const manager = {
@@ -455,8 +462,7 @@ describe('registerDefinitionHandler', () => {
       } as never;
       const workspace = {
         packages: { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
-        store,
-        global,
+        index: { store, global },
       };
       const manager = {
         async workspaceForOrCreateFile() {
@@ -543,8 +549,7 @@ describe('registerDefinitionHandler', () => {
       } as never;
       const workspace = {
         packages: { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
-        store,
-        global,
+        index: { store, global },
       };
       const manager = {
         async workspaceForOrCreateFile() {
@@ -629,8 +634,7 @@ describe('registerDefinitionHandler', () => {
       } as never;
       const workspace = {
         packages: { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
-        store,
-        global,
+        index: { store, global },
       };
       const manager = {
         async workspaceForOrCreateFile() {

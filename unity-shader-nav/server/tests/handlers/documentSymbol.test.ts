@@ -31,8 +31,8 @@ describe('registerDocumentSymbolHandler', () => {
       }],
       references: [],
     };
-    const workspace = { store: new IndexStore() };
-    workspace.store.set(uri, idx);
+    const workspace = { index: { store: new IndexStore() } };
+    workspace.index.store.set(uri, idx);
     const manager = {
       async workspaceForOrCreateFile(requestedUri: string) {
         return requestedUri === uri ? workspace : undefined;
@@ -70,8 +70,8 @@ describe('registerDocumentSymbolHandler', () => {
       }],
       references: [],
     };
-    const workspace = { store: new IndexStore() };
-    workspace.store.set(uri, idx);
+    const workspace = { index: { store: new IndexStore() } };
+    workspace.index.store.set(uri, idx);
     const manager = {
       async workspaceForOrCreateFile(requestedUri: string) {
         return requestedUri === uri ? workspace : undefined;
@@ -108,8 +108,9 @@ describe('registerDocumentSymbolHandler', () => {
     const doc = TextDocument.create(uri, 'hlsl', 1, 'float4 LiveOutline() { return 0; }');
     const store = new IndexStore();
     const workspace = {
-      store,
-      async reindex(requestedUri: string) {
+      index: {
+        store,
+        async reindex(requestedUri: string) {
         const idx: FileIndex = {
           uri: requestedUri,
           symbols: [{
@@ -126,6 +127,7 @@ describe('registerDocumentSymbolHandler', () => {
           references: [],
         };
         store.set(requestedUri, idx);
+        },
       },
     };
     const documents = {

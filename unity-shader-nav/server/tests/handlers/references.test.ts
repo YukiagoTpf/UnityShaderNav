@@ -157,9 +157,7 @@ describe('registerReferencesHandler', () => {
           includeCtx: { unityProjectRoot: root, includeDirectories: [] },
           isInPackages: () => false,
         },
-        store,
-        global,
-        globalRefs,
+        index: { store, global, globalRefs },
       };
       const manager = {
         async workspaceForOrCreateFile(requestedUri: string) {
@@ -244,9 +242,7 @@ describe('registerReferencesHandler', () => {
           includeCtx: { unityProjectRoot: root, includeDirectories: [] },
           isInPackages: () => false,
         },
-        store,
-        global,
-        globalRefs,
+        index: { store, global, globalRefs },
       };
       const manager = {
         async workspaceForOrCreateFile(requestedUri: string) {
@@ -305,17 +301,19 @@ describe('registerReferencesHandler', () => {
     };
     const workspace = {
       settings: DEFAULT_SETTINGS,
-      global: new GlobalSymbolIndex(),
-      globalRefs: new GlobalReferenceIndex(),
+      index: {
+        global: new GlobalSymbolIndex(),
+        globalRefs: new GlobalReferenceIndex(),
+      },
       packages: {
         isInPackages(requestedUri: string) {
           return requestedUri === packageUri;
         },
       },
     };
-    workspace.global.upsert(index);
-    workspace.globalRefs.upsert(index);
-    workspace.globalRefs.upsert(packageIndex);
+    workspace.index.global.upsert(index);
+    workspace.index.globalRefs.upsert(index);
+    workspace.index.globalRefs.upsert(packageIndex);
     const documents = {
       get(requestedUri: string) {
         return requestedUri === uri ? doc : undefined;
@@ -366,13 +364,15 @@ describe('registerReferencesHandler', () => {
     store.set(uri, index);
     const workspace = {
       settings: DEFAULT_SETTINGS,
-      store,
-      global: new GlobalSymbolIndex(),
-      globalRefs: new GlobalReferenceIndex(),
+      index: {
+        store,
+        global: new GlobalSymbolIndex(),
+        globalRefs: new GlobalReferenceIndex(),
+      },
       packages: { isInPackages: () => false },
     };
-    workspace.global.upsert(index);
-    workspace.globalRefs.upsert(index);
+    workspace.index.global.upsert(index);
+    workspace.index.globalRefs.upsert(index);
     const documents = {
       get(requestedUri: string) {
         return requestedUri === uri ? doc : undefined;
@@ -422,15 +422,17 @@ describe('registerReferencesHandler', () => {
         ...DEFAULT_SETTINGS,
         findReferences: { includePackages: true },
       },
-      global: new GlobalSymbolIndex(),
-      globalRefs: new GlobalReferenceIndex(),
+      index: {
+        global: new GlobalSymbolIndex(),
+        globalRefs: new GlobalReferenceIndex(),
+      },
       packages: {
         isInPackages(requestedUri: string) {
           return requestedUri === packageUri;
         },
       },
     };
-    workspace.globalRefs.upsert({
+    workspace.index.globalRefs.upsert({
       uri: packageUri,
       symbols: [],
       references: [{
@@ -471,15 +473,17 @@ describe('registerReferencesHandler', () => {
         ...DEFAULT_SETTINGS,
         findReferences: { includePackages: true },
       },
-      global: new GlobalSymbolIndex(),
-      globalRefs: new GlobalReferenceIndex(),
+      index: {
+        global: new GlobalSymbolIndex(),
+        globalRefs: new GlobalReferenceIndex(),
+      },
       packages: {
         isInPackages(requestedUri: string) {
           return requestedUri === packageUri;
         },
       },
     };
-    workspace.globalRefs.upsert({
+    workspace.index.globalRefs.upsert({
       uri: packageUri,
       symbols: [],
       references: [{
@@ -517,15 +521,17 @@ describe('registerReferencesHandler', () => {
     const doc = TextDocument.create(uri, 'hlsl', 1, 'float4 main() { return helper(); }');
     const workspace = {
       settings: DEFAULT_SETTINGS,
-      global: new GlobalSymbolIndex(),
-      globalRefs: new GlobalReferenceIndex(),
+      index: {
+        global: new GlobalSymbolIndex(),
+        globalRefs: new GlobalReferenceIndex(),
+      },
       packages: {
         isInPackages(requestedUri: string) {
           return requestedUri === packageUri;
         },
       },
     };
-    workspace.global.upsert({
+    workspace.index.global.upsert({
       uri: packageUri,
       references: [],
       symbols: [{
@@ -534,7 +540,7 @@ describe('registerReferencesHandler', () => {
         location: { uri: packageUri, range: defRange },
       }],
     });
-    workspace.globalRefs.upsert({
+    workspace.index.globalRefs.upsert({
       uri,
       symbols: [],
       references: [{
@@ -586,13 +592,15 @@ describe('registerReferencesHandler', () => {
     store.set(uri, index);
     const workspace = {
       settings: DEFAULT_SETTINGS,
-      store,
-      global: new GlobalSymbolIndex(),
-      globalRefs: new GlobalReferenceIndex(),
+      index: {
+        store,
+        global: new GlobalSymbolIndex(),
+        globalRefs: new GlobalReferenceIndex(),
+      },
       packages: { isInPackages: () => false },
     };
-    workspace.global.upsert(index);
-    workspace.globalRefs.upsert(index);
+    workspace.index.global.upsert(index);
+    workspace.index.globalRefs.upsert(index);
     const documents = {
       get(requestedUri: string) {
         return requestedUri === uri ? doc : undefined;
@@ -637,13 +645,15 @@ describe('registerReferencesHandler', () => {
     store.set(uri, index);
     const workspace = {
       settings: DEFAULT_SETTINGS,
-      store,
-      global: new GlobalSymbolIndex(),
-      globalRefs: new GlobalReferenceIndex(),
+      index: {
+        store,
+        global: new GlobalSymbolIndex(),
+        globalRefs: new GlobalReferenceIndex(),
+      },
       packages: { isInPackages: () => false },
     };
-    workspace.global.upsert(index);
-    workspace.globalRefs.upsert(index);
+    workspace.index.global.upsert(index);
+    workspace.index.globalRefs.upsert(index);
     const documents = {
       get(requestedUri: string) {
         return requestedUri === uri ? doc : undefined;
@@ -687,13 +697,15 @@ describe('registerReferencesHandler', () => {
     store.set(uri, index);
     const workspace = {
       settings: DEFAULT_SETTINGS,
-      store,
-      global: new GlobalSymbolIndex(),
-      globalRefs: new GlobalReferenceIndex(),
+      index: {
+        store,
+        global: new GlobalSymbolIndex(),
+        globalRefs: new GlobalReferenceIndex(),
+      },
       packages: { isInPackages: () => false },
     };
-    workspace.global.upsert(index);
-    workspace.globalRefs.upsert(index);
+    workspace.index.global.upsert(index);
+    workspace.index.globalRefs.upsert(index);
     const documents = {
       get(requestedUri: string) {
         return requestedUri === uri ? doc : undefined;
@@ -736,13 +748,15 @@ describe('registerReferencesHandler', () => {
     store.set(uri, index);
     const workspace = {
       settings: DEFAULT_SETTINGS,
-      store,
-      global: new GlobalSymbolIndex(),
-      globalRefs: new GlobalReferenceIndex(),
+      index: {
+        store,
+        global: new GlobalSymbolIndex(),
+        globalRefs: new GlobalReferenceIndex(),
+      },
       packages: { isInPackages: () => false },
     };
-    workspace.global.upsert(index);
-    workspace.globalRefs.upsert(index);
+    workspace.index.global.upsert(index);
+    workspace.index.globalRefs.upsert(index);
     const documents = {
       get(requestedUri: string) {
         return requestedUri === uri ? doc : undefined;
@@ -788,13 +802,15 @@ describe('registerReferencesHandler', () => {
     store.set(uri, index);
     const workspace = {
       settings: DEFAULT_SETTINGS,
-      store,
-      global: new GlobalSymbolIndex(),
-      globalRefs: new GlobalReferenceIndex(),
+      index: {
+        store,
+        global: new GlobalSymbolIndex(),
+        globalRefs: new GlobalReferenceIndex(),
+      },
       packages: { isInPackages: () => false },
     };
-    workspace.global.upsert(index);
-    workspace.globalRefs.upsert(index);
+    workspace.index.global.upsert(index);
+    workspace.index.globalRefs.upsert(index);
     const documents = {
       get(requestedUri: string) {
         return requestedUri === uri ? doc : undefined;
@@ -854,13 +870,15 @@ describe('registerReferencesHandler', () => {
     store.set(uri, index);
     const workspace = {
       settings: DEFAULT_SETTINGS,
-      store,
-      global: new GlobalSymbolIndex(),
-      globalRefs: new GlobalReferenceIndex(),
+      index: {
+        store,
+        global: new GlobalSymbolIndex(),
+        globalRefs: new GlobalReferenceIndex(),
+      },
       packages: { isInPackages: () => false },
     };
-    workspace.global.upsert(index);
-    workspace.globalRefs.upsert(index);
+    workspace.index.global.upsert(index);
+    workspace.index.globalRefs.upsert(index);
     const documents = {
       get(requestedUri: string) {
         return requestedUri === uri ? doc : undefined;
@@ -920,13 +938,15 @@ describe('registerReferencesHandler', () => {
     store.set(uri, index);
     const workspace = {
       settings: DEFAULT_SETTINGS,
-      store,
-      global: new GlobalSymbolIndex(),
-      globalRefs: new GlobalReferenceIndex(),
+      index: {
+        store,
+        global: new GlobalSymbolIndex(),
+        globalRefs: new GlobalReferenceIndex(),
+      },
       packages: { isInPackages: () => false },
     };
-    workspace.global.upsert(index);
-    workspace.globalRefs.upsert(index);
+    workspace.index.global.upsert(index);
+    workspace.index.globalRefs.upsert(index);
     const documents = {
       get(requestedUri: string) {
         return requestedUri === uri ? doc : undefined;
@@ -987,13 +1007,15 @@ describe('registerReferencesHandler', () => {
     store.set(uri, index);
     const workspace = {
       settings: DEFAULT_SETTINGS,
-      store,
-      global: new GlobalSymbolIndex(),
-      globalRefs: new GlobalReferenceIndex(),
+      index: {
+        store,
+        global: new GlobalSymbolIndex(),
+        globalRefs: new GlobalReferenceIndex(),
+      },
       packages: { isInPackages: () => false },
     };
-    workspace.global.upsert(index);
-    workspace.globalRefs.upsert(index);
+    workspace.index.global.upsert(index);
+    workspace.index.globalRefs.upsert(index);
     const documents = {
       get(requestedUri: string) {
         return requestedUri === uri ? doc : undefined;
@@ -1050,13 +1072,15 @@ describe('registerReferencesHandler', () => {
     store.set(uri, index);
     const workspace = {
       settings: DEFAULT_SETTINGS,
-      store,
-      global: new GlobalSymbolIndex(),
-      globalRefs: new GlobalReferenceIndex(),
+      index: {
+        store,
+        global: new GlobalSymbolIndex(),
+        globalRefs: new GlobalReferenceIndex(),
+      },
       packages: { isInPackages: () => false },
     };
-    workspace.global.upsert(index);
-    workspace.globalRefs.upsert(index);
+    workspace.index.global.upsert(index);
+    workspace.index.globalRefs.upsert(index);
     const documents = {
       get(requestedUri: string) {
         return requestedUri === uri ? doc : undefined;
@@ -1117,13 +1141,15 @@ describe('registerReferencesHandler', () => {
     store.set(uri, index);
     const workspace = {
       settings: DEFAULT_SETTINGS,
-      store,
-      global: new GlobalSymbolIndex(),
-      globalRefs: new GlobalReferenceIndex(),
+      index: {
+        store,
+        global: new GlobalSymbolIndex(),
+        globalRefs: new GlobalReferenceIndex(),
+      },
       packages: { isInPackages: () => false },
     };
-    workspace.global.upsert(index);
-    workspace.globalRefs.upsert(index);
+    workspace.index.global.upsert(index);
+    workspace.index.globalRefs.upsert(index);
     const documents = {
       get(requestedUri: string) {
         return requestedUri === uri ? doc : undefined;
@@ -1185,11 +1211,13 @@ describe('registerReferencesHandler', () => {
         },
         isInPackages: () => false,
       },
-      store,
-      global: new GlobalSymbolIndex(),
-      globalRefs: new GlobalReferenceIndex(),
+      index: {
+        store,
+        global: new GlobalSymbolIndex(),
+        globalRefs: new GlobalReferenceIndex(),
+      },
     };
-    workspace.globalRefs.upsert(index);
+    workspace.index.globalRefs.upsert(index);
     const documents = {
       get(requestedUri: string) {
         return requestedUri === uri ? doc : undefined;
@@ -1229,8 +1257,10 @@ describe('registerReferencesHandler', () => {
       async workspaceForOrCreateFile() {
         return {
           settings: DEFAULT_SETTINGS,
-          global: new GlobalSymbolIndex(),
-          globalRefs: new GlobalReferenceIndex(),
+          index: {
+            global: new GlobalSymbolIndex(),
+            globalRefs: new GlobalReferenceIndex(),
+          },
           packages: { isInPackages: () => false },
         };
       },

@@ -40,7 +40,7 @@ describe('cold start with cache', () => {
       await ws2.bootstrap(fakeConnection);
       const warmMs = Date.now() - warmStart;
 
-      expect(ws2.global.lookup('Common').length).toBeGreaterThanOrEqual(1);
+      expect(ws2.index.global.lookup('Common').length).toBeGreaterThanOrEqual(1);
       expect(warmMs).toBeLessThanOrEqual(coldMs + 100);
     } finally {
       await rm(root, { recursive: true, force: true });

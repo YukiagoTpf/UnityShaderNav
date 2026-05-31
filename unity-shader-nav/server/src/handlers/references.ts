@@ -43,8 +43,8 @@ export function registerReferencesHandler(
         const includePackages = workspace.settings.findReferences.includePackages;
         const locations: Location[] = [];
 
-        for (const uri of workspace.store.uris()) {
-          const index = workspace.store.get(uri);
+        for (const uri of workspace.index.store.uris()) {
+          const index = workspace.index.store.get(uri);
           if (!index) continue;
 
           for (const reference of index.references) {
@@ -72,11 +72,11 @@ export function registerReferencesHandler(
       if (target.kind === 'none') return null;
 
       return collectReferences(target, {
-        index: workspace.store?.get(params.textDocument.uri),
+        index: workspace.index.store?.get(params.textDocument.uri),
         position: params.position,
-        global: workspace.global,
-        globalRefs: workspace.globalRefs,
-        store: workspace.store,
+        global: workspace.index.global,
+        globalRefs: workspace.index.globalRefs,
+        store: workspace.index.store,
         includeCtx: workspace.packages.includeCtx,
         isInPackages: (u) => workspace.packages.isInPackages(u),
         includePackages: workspace.settings.findReferences.includePackages,

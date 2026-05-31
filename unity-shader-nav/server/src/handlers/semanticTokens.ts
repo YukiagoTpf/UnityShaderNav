@@ -216,17 +216,17 @@ export function registerSemanticTokensHandler(
       const workspace = await manager.workspaceForOrCreateFile(params.textDocument.uri);
       if (!workspace) return { data: [] };
 
-      let index = workspace.store.get(params.textDocument.uri);
+      let index = workspace.index.store.get(params.textDocument.uri);
       const document = documents.get(params.textDocument.uri);
-      if (!index && typeof workspace.reindex === 'function') {
+      if (!index && typeof workspace.index?.reindex === 'function') {
         if (document) {
-          await workspace.reindex(document.uri, document.getText());
-          index = workspace.store.get(params.textDocument.uri);
+          await workspace.index.reindex(document.uri, document.getText());
+          index = workspace.index.store.get(params.textDocument.uri);
         }
       }
       if (!index) return { data: [] };
 
-      return semanticTokensForIndex(index, workspace.global, document?.getText());
+      return semanticTokensForIndex(index, workspace.index.global, document?.getText());
     };
 
     if (!suspender) return resolveRequest();
