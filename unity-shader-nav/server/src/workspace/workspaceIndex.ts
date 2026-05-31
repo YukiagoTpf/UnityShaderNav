@@ -14,8 +14,9 @@ export interface FileEvent {
 /**
  * Owns the live + on-disk index state extracted from Workspace (#31):
  * store / global / globalRefs / diskIndexes / declaration-macro table, plus all
- * index-mutation operations. Workspace composes one and exposes pass-throughs;
- * the lifecycle + cache concern stays in Workspace.
+ * index-mutation operations. Callers reach it via workspace.index.* (#37); the
+ * lifecycle + cache concern stays in Workspace, which keeps only applyChanges
+ * (it orchestrates index.applyChanges + persist).
  */
 export class WorkspaceIndex {
   readonly store = new IndexStore();
@@ -102,8 +103,8 @@ export class WorkspaceIndex {
   }
 
   /**
-   * Apply file-watcher events to the indexes. Index-mutation only — Workspace's
-   * applyChanges pass-through calls persist() afterward.
+   * Apply file-watcher events to the indexes. Index-mutation only — the kept
+   * Workspace.applyChanges calls persist() afterward.
    */
   async applyChanges(events: FileEvent[], connection: Connection): Promise<void> {
     for (const event of events) {
