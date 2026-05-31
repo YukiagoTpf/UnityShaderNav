@@ -5,7 +5,7 @@ import type {
   TextDocuments,
 } from 'vscode-languageserver/node';
 import type { TextDocument } from 'vscode-languageserver-textdocument';
-import { collectVisibleUriKeys } from '../index';
+import { resolveRequestContext } from './requestContext';
 import type { RequestSuspender } from '../lifecycle/requestSuspender';
 import type { WorkspaceManager } from '../workspace';
 import {
@@ -40,11 +40,9 @@ export function registerCompletionHandler(
 ): void {
   connection.onCompletion(async (params: CompletionParams): Promise<CompletionItem[] | null> => {
     const resolveRequest = async (): Promise<CompletionItem[] | null> => {
-      const doc = documents.get(params.textDocument.uri);
-      if (!doc) return null;
-
-      const workspace = await manager.workspaceForOrCreateFile(params.textDocument.uri);
-      if (!workspace) return null;
+      const ctx = await resolveRequestContext(params.textDocument.uri, documents, manager);
+      if (!ctx) return null;
+      const doc = ctx.doc;
 
       const fullText = doc.getText();
       const context = suggestionContextAt(fullText, params.position, doc.languageId, params.textDocument.uri);
@@ -52,24 +50,16 @@ export function registerCompletionHandler(
         return [];
       }
 
-      let index = workspace.index.store.get(params.textDocument.uri);
-      if (!index && typeof workspace.index?.reindex === 'function') {
-        await workspace.index.reindex(doc.uri, fullText);
-        index = workspace.index.store.get(params.textDocument.uri);
-      }
+      const index = await ctx.index();
       if (!index) return null;
 
-      const visibleUriKeys = await collectVisibleUriKeys(
-        workspace.index.store,
-        workspace.packages.includeCtx,
-        params.textDocument.uri,
-      );
+      const visibleUriKeys = await ctx.visibleUriKeys();
 
       const suggestions = context.member
         ? collectMemberSuggestions(
           index,
-          workspace.index.store,
-          workspace.index.global,
+          ctx.store,
+          ctx.global,
           visibleUriKeys,
           context.member.receiver,
           context.member.memberPrefix.text,
@@ -79,7 +69,7 @@ export function registerCompletionHandler(
           context.kind === 'hlslCode'
             ? collectVisibleProjectSuggestions({
               index,
-              store: workspace.index.store,
+              store: ctx.store,
               visibleUriKeys,
               position: params.position,
             }).filter((suggestion) => suggestion.name.startsWith(context.prefix.text))
