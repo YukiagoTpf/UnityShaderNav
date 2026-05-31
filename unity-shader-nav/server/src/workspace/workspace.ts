@@ -32,11 +32,11 @@ export class Workspace {
   private cache: CacheManager | undefined;
   private fingerprint: CacheFingerprint | undefined;
   private globalStorageDir: string | undefined;
-  settings: ExtensionSettings;
+  private _settings: ExtensionSettings;
 
   constructor(folderUri: string, settings: ExtensionSettings) {
     this.folderUri = folderUri;
-    this.settings = settings;
+    this._settings = settings;
     this.index = new WorkspaceIndex(
       new MacroPatternTable(settings.declarationMacros),
       () => this.isStandalone(),
@@ -44,8 +44,22 @@ export class Workspace {
     this.packages = PackageContext.standalone(settings);
   }
 
+  get settings(): ExtensionSettings {
+    return this._settings;
+  }
+
   isStandalone(): boolean {
     return this.unityRoot === undefined;
+  }
+
+  /**
+   * Apply new settings and recompile the declaration-macro table together.
+   * Owns the settings -> table invariant that used to be duplicated across the
+   * three rebuild.ts mutation sites.
+   */
+  applySettings(settings: ExtensionSettings): void {
+    this._settings = settings;
+    this.index.rebuildTable(settings.declarationMacros);
   }
 
   async applyChanges(events: FileEvent[], connection: Connection): Promise<void> {

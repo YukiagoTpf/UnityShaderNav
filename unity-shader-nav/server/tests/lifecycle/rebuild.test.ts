@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { DEFAULT_SETTINGS } from '@unity-shader-nav/shared';
+import { DEFAULT_SETTINGS, type ExtensionSettings } from '@unity-shader-nav/shared';
 import { describe, expect, it, vi } from 'vitest';
 import {
   applyScopedSettingsAndRebuild,
@@ -291,6 +291,9 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
       settings: DEFAULT_SETTINGS,
       index: { table: undefined as unknown },
       rebuild: vi.fn(async () => {}),
+      applySettings(next: ExtensionSettings) {
+        this.settings = next;
+      },
     };
     const manager = {
       list: () => [workspace],
