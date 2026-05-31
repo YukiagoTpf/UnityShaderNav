@@ -32,7 +32,7 @@ export interface ResolverContext {
   options?: ResolutionOptions;
 }
 
-export function resolveTarget(target: CursorTarget, ctx: ResolverContext): SymbolEntry[] {
+export function resolveDefinition(target: CursorTarget, ctx: ResolverContext): SymbolEntry[] {
   switch (target.kind) {
     case 'member':
       return resolveMemberSymbols(
@@ -62,7 +62,7 @@ export interface ReferenceCollectionContext {
   includeDeclaration: boolean;
 }
 
-export async function collectReferences(
+export async function findReferences(
   target: CursorTarget,
   ctx: ReferenceCollectionContext,
 ): Promise<Location[]> {
@@ -240,7 +240,7 @@ function sameReceiverMemberLocations(
 
 /**
  * Single-file highlight search — the document-scoped sibling of
- * {@link collectReferences}. Resolves the cursor target, narrows
+ * {@link findReferences}. Resolves the cursor target, narrows
  * scoped/member/global candidates, then collects the declaration + reference
  * occurrences in the active file, deduped. Returns plain `Location[]`; the
  * handler projects them to `DocumentHighlight` at the edge.

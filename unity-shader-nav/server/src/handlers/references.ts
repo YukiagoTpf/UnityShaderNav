@@ -7,8 +7,8 @@ import type {
 import type { TextDocument } from 'vscode-languageserver-textdocument';
 import { pathToFileURL } from 'node:url';
 import {
-  collectReferences,
   cursorTargetAt,
+  findReferences,
   uniqueLocations,
 } from '../index';
 import { resolveInclude } from '../include';
@@ -71,7 +71,7 @@ export function registerReferencesHandler(
 
       if (target.kind === 'none') return null;
 
-      return collectReferences(target, {
+      return findReferences(target, {
         index: ctx.store?.get(params.textDocument.uri),
         position: params.position,
         global: ctx.global,

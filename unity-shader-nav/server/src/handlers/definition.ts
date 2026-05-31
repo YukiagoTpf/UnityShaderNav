@@ -12,7 +12,7 @@ import {
   cursorTargetAt,
   findPropertyCandidatesForName,
   propertyAt,
-  resolveTarget,
+  resolveDefinition,
   type ResolverContext,
 } from '../index';
 import { resolveRequestContext } from './requestContext';
@@ -116,7 +116,7 @@ export function registerDefinitionHandler(
         // members, parameters, locals, and macro-name symbols are dropped —
         // a `void _Foo()` next to a property `_Foo` is a name collision, not
         // a bridge target.
-        const propertySymbols = resolveTarget(
+        const propertySymbols = resolveDefinition(
           { kind: 'symbol', word: { text: propertyHit.name, range: propertyHit.nameRange } },
           {
             index: idx,
@@ -164,7 +164,7 @@ export function registerDefinitionHandler(
         receiver: target.kind === 'member' ? target.receiver.text : undefined,
       });
       if (target.kind === 'member') {
-        const memberSymbols = resolveTarget(target, resolverCtx);
+        const memberSymbols = resolveDefinition(target, resolverCtx);
         if (memberSymbols.length > 0) {
           trace('member.result', { links: memberSymbols.length });
           return memberSymbols.map((symbol) => ({
@@ -183,7 +183,7 @@ export function registerDefinitionHandler(
         range: word.range,
       });
 
-      const symbols = resolveTarget({ kind: 'symbol', word }, resolverCtx);
+      const symbols = resolveDefinition({ kind: 'symbol', word }, resolverCtx);
 
       // Reverse direction (issue 20): an HLSL identifier may also match a
       // property name in any indexed `.shader`. Visibility is intentionally
