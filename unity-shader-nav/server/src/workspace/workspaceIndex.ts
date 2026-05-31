@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { Connection } from 'vscode-languageserver/node';
-import type { FileIndex } from '@unity-shader-nav/shared';
+import type { FileIndex, UserDeclarationMacro } from '@unity-shader-nav/shared';
 import { GlobalReferenceIndex, GlobalSymbolIndex, IndexStore } from '../index';
 import { MacroPatternTable } from '../macros';
 import { indexFile } from '../parser/hlsl';
@@ -23,12 +23,25 @@ export class WorkspaceIndex {
   readonly global = new GlobalSymbolIndex();
   readonly globalRefs = new GlobalReferenceIndex();
   private readonly diskIndexes = new Map<string, FileIndex>();
-  table: MacroPatternTable;
+  private _table: MacroPatternTable;
   private readonly isStandalone: () => boolean;
 
   constructor(table: MacroPatternTable, isStandalone: () => boolean) {
-    this.table = table;
+    this._table = table;
     this.isStandalone = isStandalone;
+  }
+
+  get table(): MacroPatternTable {
+    return this._table;
+  }
+
+  /**
+   * Recompile the declaration-macro table from settings' declarationMacros.
+   * The settings -> table invariant is owned by Workspace.applySettings, which
+   * is this method's only caller.
+   */
+  rebuildTable(declarationMacros: UserDeclarationMacro[]): void {
+    this._table = new MacroPatternTable(declarationMacros);
   }
 
   /**

@@ -1,6 +1,5 @@
 import type { Connection } from 'vscode-languageserver/node';
 import type { ExtensionSettings } from '@unity-shader-nav/shared';
-import { MacroPatternTable } from '../macros';
 import type { Workspace } from '../workspace/workspace';
 import type { WorkspaceManager } from '../workspace/workspaceManager';
 import type { RequestSuspender } from './requestSuspender';
@@ -77,10 +76,7 @@ export async function applySettingsAndRebuild(
     manager,
     getOpenDocuments,
     suspender,
-    (workspace) => {
-      workspace.settings = settings;
-      workspace.index.table = new MacroPatternTable(settings.declarationMacros);
-    },
+    (workspace) => workspace.applySettings(settings),
   );
 }
 
@@ -103,8 +99,7 @@ export async function applyScopedSettingsAndRebuild(
 
   if (!updates.some((update) => update.rebuild)) {
     for (const { workspace, settings } of updates) {
-      workspace.settings = settings;
-      workspace.index.table = new MacroPatternTable(settings.declarationMacros);
+      workspace.applySettings(settings);
     }
     return;
   }
@@ -112,8 +107,7 @@ export async function applyScopedSettingsAndRebuild(
   suspender?.suspend();
   try {
     for (const { workspace, settings, rebuild } of updates) {
-      workspace.settings = settings;
-      workspace.index.table = new MacroPatternTable(settings.declarationMacros);
+      workspace.applySettings(settings);
       if (rebuild) await workspace.rebuild(connection);
     }
     await reindexOpenDocuments(manager, getOpenDocuments);

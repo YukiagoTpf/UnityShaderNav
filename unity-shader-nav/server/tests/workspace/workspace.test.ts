@@ -355,3 +355,20 @@ describe('Workspace.bootstrap', () => {
     expect(workspace.packages.hasResolver()).toBe(true);
   });
 });
+
+describe('Workspace.applySettings', () => {
+  it('rebuilds the macro table and updates settings together when declarationMacros change', () => {
+    const workspace = new Workspace('file:///proj', DEFAULT_SETTINGS);
+    const before = workspace.index.table;
+    expect(before.findDecl('MY_TEX')).toHaveLength(0);
+
+    workspace.applySettings({
+      ...DEFAULT_SETTINGS,
+      declarationMacros: [{ pattern: 'MY_TEX($name)', kind: 'variable' }],
+    });
+
+    expect(workspace.settings.declarationMacros).toHaveLength(1);
+    expect(workspace.index.table).not.toBe(before);
+    expect(workspace.index.table.findDecl('MY_TEX')).toHaveLength(1);
+  });
+});
