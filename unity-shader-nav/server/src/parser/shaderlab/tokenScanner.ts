@@ -1,6 +1,7 @@
 import type { Range } from '@unity-shader-nav/shared';
 import { BUILTIN_DECLARATION_MACROS } from '../../macros/builtin';
 import { BUILTIN_ENTRIES } from '../../suggestions/builtins/catalog';
+import { maskCommentsLine } from '../masking';
 import { scanBlocks } from './blockScanner';
 
 export type ShaderLabLexicalTokenType =
@@ -90,49 +91,9 @@ function makeRange(line: number, start: number, end: number): Range {
 }
 
 function maskComments(line: string, state: CommentState): string {
-  const chars = line.split('');
-  let inString = false;
-
-  for (let i = 0; i < chars.length; i++) {
-    const ch = chars[i];
-    const next = chars[i + 1];
-
-    if (state.inBlockComment) {
-      chars[i] = ' ';
-      if (ch === '*' && next === '/') {
-        chars[i + 1] = ' ';
-        i++;
-        state.inBlockComment = false;
-      }
-      continue;
-    }
-
-    if (inString) {
-      if (ch === '\\' && next !== undefined) {
-        i++;
-        continue;
-      }
-      if (ch === '"') inString = false;
-      continue;
-    }
-
-    if (ch === '/' && next === '/') {
-      for (let j = i; j < chars.length; j++) chars[j] = ' ';
-      break;
-    }
-
-    if (ch === '/' && next === '*') {
-      chars[i] = ' ';
-      chars[i + 1] = ' ';
-      i++;
-      state.inBlockComment = true;
-      continue;
-    }
-
-    if (ch === '"') inString = true;
-  }
-
-  return chars.join('');
+  const result = maskCommentsLine(line, state.inBlockComment, { strings: 'preserve' });
+  state.inBlockComment = result.inBlockComment;
+  return result.code;
 }
 
 function maskStrings(line: string): string {

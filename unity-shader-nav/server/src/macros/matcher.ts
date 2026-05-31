@@ -1,6 +1,7 @@
 import type Parser from 'web-tree-sitter';
 import type { Range } from '@unity-shader-nav/shared';
 import type { MacroPatternTable } from './index';
+import { maskCommentsLine } from '../parser/masking';
 import { rangeOf, textOf } from '../parser/hlsl/nodeHelpers';
 
 export interface DeclarationMatch {
@@ -12,38 +13,6 @@ export interface DeclarationMatch {
 export interface ReferenceMatch {
   capturedName: string;
   nameRange: Range;
-}
-
-function stripComments(line: string, inBlockComment: boolean): { code: string; inBlockComment: boolean } {
-  const chars = line.split('');
-
-  for (let i = 0; i < chars.length; i++) {
-    if (inBlockComment) {
-      const endsBlock = chars[i] === '*' && chars[i + 1] === '/';
-      chars[i] = ' ';
-
-      if (endsBlock) {
-        chars[i + 1] = ' ';
-        i++;
-        inBlockComment = false;
-      }
-      continue;
-    }
-
-    if (chars[i] === '/' && chars[i + 1] === '/') {
-      for (let j = i; j < chars.length; j++) chars[j] = ' ';
-      break;
-    }
-
-    if (chars[i] === '/' && chars[i + 1] === '*') {
-      chars[i] = ' ';
-      chars[i + 1] = ' ';
-      i++;
-      inBlockComment = true;
-    }
-  }
-
-  return { code: chars.join(''), inBlockComment };
 }
 
 function firstNamedDescendantOfType(
@@ -128,7 +97,7 @@ export function scanPragmaLines(
   let inBlockComment = false;
 
   for (let i = 0; i < lines.length; i++) {
-    const stripped = stripComments(lines[i], inBlockComment);
+    const stripped = maskCommentsLine(lines[i], inBlockComment, { strings: 'preserve' });
     inBlockComment = stripped.inBlockComment;
 
     const match = matchPragmaLine(stripped.code, i, table);

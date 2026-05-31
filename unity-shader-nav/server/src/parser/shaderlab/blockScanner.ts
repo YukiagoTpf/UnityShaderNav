@@ -1,4 +1,5 @@
 import type { BlockKind, ScanResult, ShaderLabBlock } from '@unity-shader-nav/shared';
+import { maskCommentsLine } from '../masking';
 
 const START_DIRECTIVES: Record<string, BlockKind> = {
   HLSLPROGRAM: 'HLSLPROGRAM',
@@ -14,58 +15,8 @@ const END_DIRECTIVES_FOR: Record<BlockKind, string> = {
   CGINCLUDE: 'ENDCG',
 };
 
-function stripDirectiveComments(line: string, inBlockComment: boolean): { code: string; inBlockComment: boolean } {
-  const chars = line.split('');
-  let inString = false;
-
-  for (let i = 0; i < chars.length; i++) {
-    const ch = chars[i];
-    const next = chars[i + 1];
-
-    if (inBlockComment) {
-      chars[i] = ' ';
-      if (ch === '*' && next === '/') {
-        chars[i + 1] = ' ';
-        i++;
-        inBlockComment = false;
-      }
-      continue;
-    }
-
-    if (inString) {
-      if (ch === '\\' && next !== undefined) {
-        i++;
-        continue;
-      }
-      if (ch === '"') {
-        inString = false;
-      }
-      continue;
-    }
-
-    if (ch === '/' && next === '/') {
-      for (let j = i; j < chars.length; j++) chars[j] = ' ';
-      break;
-    }
-
-    if (ch === '/' && next === '*') {
-      chars[i] = ' ';
-      chars[i + 1] = ' ';
-      i++;
-      inBlockComment = true;
-      continue;
-    }
-
-    if (ch === '"') {
-      inString = true;
-    }
-  }
-
-  return { code: chars.join(''), inBlockComment };
-}
-
 function trimDirective(line: string, inBlockComment: boolean): { directive: string; inBlockComment: boolean } {
-  const stripped = stripDirectiveComments(line, inBlockComment);
+  const stripped = maskCommentsLine(line, inBlockComment, { strings: 'preserve' });
   return {
     directive: stripped.code.trim(),
     inBlockComment: stripped.inBlockComment,
