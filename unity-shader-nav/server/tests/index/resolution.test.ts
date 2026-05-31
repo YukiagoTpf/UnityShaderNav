@@ -3,7 +3,7 @@ import type { FileIndex, Position, Range, SymbolEntry } from '@unity-shader-nav/
 import { GlobalSymbolIndex } from '../../src/index/globalIndex';
 import type { CursorTarget, WordAt } from '../../src/index/cursorTarget';
 import type { IncludeDirective } from '../../src/parser/include/lineScanner';
-import { resolveTarget, type ResolverContext } from '../../src/index/resolveTarget';
+import { resolveDefinition, type ResolverContext } from '../../src/index/resolution';
 
 const uri = 'file:///t/main.hlsl';
 
@@ -24,7 +24,7 @@ function ctxFor(index: FileIndex, position: Position, global: GlobalSymbolIndex 
   return { index, global, position };
 }
 
-describe('resolveTarget dispatch', () => {
+describe('resolveDefinition dispatch', () => {
   it('symbol target resolves to a matching global variable', () => {
     const gColor = sym({
       name: 'gColor',
@@ -34,7 +34,7 @@ describe('resolveTarget dispatch', () => {
     const idx: FileIndex = { uri, references: [], symbols: [gColor] };
 
     const target: CursorTarget = { kind: 'symbol', word: word('gColor') };
-    const result = resolveTarget(target, ctxFor(idx, { line: 5, character: 2 }));
+    const result = resolveDefinition(target, ctxFor(idx, { line: 5, character: 2 }));
 
     expect(result).toHaveLength(1);
     expect(result[0]).toBe(gColor);
@@ -64,7 +64,7 @@ describe('resolveTarget dispatch', () => {
     };
 
     const target: CursorTarget = { kind: 'member', receiver: word('s'), member: word('a') };
-    const result = resolveTarget(target, ctxFor(idx, { line: 5, character: 2 }));
+    const result = resolveDefinition(target, ctxFor(idx, { line: 5, character: 2 }));
 
     expect(result).toHaveLength(1);
     expect(result[0]).toBe(member);
@@ -79,7 +79,7 @@ describe('resolveTarget dispatch', () => {
 
     // `s` is never declared, so its receiver type cannot be inferred.
     const target: CursorTarget = { kind: 'member', receiver: word('s'), member: word('a') };
-    const result = resolveTarget(target, ctxFor(idx, { line: 5, character: 2 }));
+    const result = resolveDefinition(target, ctxFor(idx, { line: 5, character: 2 }));
 
     expect(result).toEqual([]);
   });
@@ -102,7 +102,7 @@ describe('resolveTarget dispatch', () => {
 
     // Receiver `s` resolves to type `S`, but `S` has no member named `missing`.
     const target: CursorTarget = { kind: 'member', receiver: word('s'), member: word('missing') };
-    const result = resolveTarget(target, ctxFor(idx, { line: 5, character: 2 }));
+    const result = resolveDefinition(target, ctxFor(idx, { line: 5, character: 2 }));
 
     expect(result).toEqual([]);
   });
@@ -111,7 +111,7 @@ describe('resolveTarget dispatch', () => {
     const idx: FileIndex = { uri, references: [], symbols: [sym({ name: 'gColor', kind: 'variable' })] };
 
     const target: CursorTarget = { kind: 'none' };
-    const result = resolveTarget(target, ctxFor(idx, { line: 0, character: 0 }));
+    const result = resolveDefinition(target, ctxFor(idx, { line: 0, character: 0 }));
 
     expect(result).toEqual([]);
   });
@@ -121,7 +121,7 @@ describe('resolveTarget dispatch', () => {
 
     const include: IncludeDirective = { line: 0, path: 'Common.hlsl', pathRange: zeroRange };
     const target: CursorTarget = { kind: 'include', include };
-    const result = resolveTarget(target, ctxFor(idx, { line: 0, character: 0 }));
+    const result = resolveDefinition(target, ctxFor(idx, { line: 0, character: 0 }));
 
     expect(result).toEqual([]);
   });
@@ -149,7 +149,7 @@ describe('resolveTarget dispatch', () => {
     });
 
     const target: CursorTarget = { kind: 'symbol', word: word('vert') };
-    const result = resolveTarget(target, ctxFor(idx, { line: 12, character: 1 }, global));
+    const result = resolveDefinition(target, ctxFor(idx, { line: 12, character: 1 }, global));
 
     expect(result).toHaveLength(2);
     const uris = result.map((s) => s.location.uri).sort();
