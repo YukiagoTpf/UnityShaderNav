@@ -44,6 +44,7 @@ The output channel is named `UnityShaderNav`.
 Run from `unity-shader-nav/`:
 
 ```powershell
+npm run check:fast
 npm run build
 npm run watch
 npm run test -w @unity-shader-nav/server
@@ -55,19 +56,24 @@ npm run package:vsix
 
 ## Testing Strategy
 
+- `npm run check:fast` is the authoritative local and CI feedback path. It
+  removes generated output, rebuilds current TypeScript source, and runs the
+  complete language-server test suite without starting or downloading VS Code.
 - Parser and index behavior belongs in server unit tests.
 - LSP handler behavior belongs in server handler tests.
 - VS Code activation, packaging layout, and command-level smoke tests belong in
   `tests/integration/client`.
+- Tests that bootstrap a Unity project must copy repository fixtures to a
+  disposable directory before allowing `Library/UnityShaderNavCache/` writes.
 - Add fixtures that describe the shader shape being fixed. Small, explicit
   fixtures are easier to maintain than copied production shaders.
 
 ## CI
 
-GitHub Actions runs the same `npm test` chain on every push and pull
-request to `main` (`.github/workflows/ci.yml`). The Electron integration
-tests run on `ubuntu-latest` under `xvfb` with the Electron runtime apt
-packages preinstalled.
+GitHub Actions runs `npm run check:fast` first on every push and pull request
+to `main` (`.github/workflows/ci.yml`). Only after that deterministic source
+check passes does CI install the Electron runtime libraries and run
+`npm run test:integration` under `xvfb`.
 
 `unity-shader-nav/.vscode-test/` is cached via `actions/cache@v4`. The
 cache key is `vscode-test-<runner-os>-<hash of unity-shader-nav/package-lock.json>`,

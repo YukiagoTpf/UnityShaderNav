@@ -27,14 +27,16 @@ include resolution.
 Run from `unity-shader-nav/`:
 
 ```powershell
+npm run check:fast
 npm run build
 npm run test -w @unity-shader-nav/server
 npm test
-node tests/out/runTest.js
+npm run test:electron
 ```
 
-Use focused server tests while developing, then run broader verification before
-submitting a pull request.
+Use `npm run check:fast` as the default feedback loop. Run focused server tests
+while developing, then run broader verification before submitting a pull
+request.
 
 ## Pull Request Expectations
 

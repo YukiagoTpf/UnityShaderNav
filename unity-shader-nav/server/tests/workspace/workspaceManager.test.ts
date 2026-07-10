@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -6,6 +6,13 @@ import { pathToFileURL } from 'node:url';
 import { DEFAULT_SETTINGS } from '@unity-shader-nav/shared';
 import { WorkspaceManager } from '../../src/workspace/workspaceManager';
 import { Workspace } from '../../src/workspace/workspace';
+import {
+  copyUnityProjectFixture,
+  removeCopiedUnityProject,
+} from '../helpers/copiedUnityProject';
+
+const projectASource = resolve(__dirname, '../include/fixtures/projectA');
+let projectA: string;
 
 const fakeConnection = {
   console: { log() {} },
@@ -44,8 +51,13 @@ async function waitFor(predicate: () => boolean): Promise<void> {
   throw new Error('condition was not met');
 }
 
-afterEach(() => {
+beforeEach(async () => {
+  projectA = await copyUnityProjectFixture(projectASource);
+});
+
+afterEach(async () => {
   vi.restoreAllMocks();
+  await removeCopiedUnityProject(projectA);
 });
 
 async function makeProjectB(): Promise<string> {
@@ -71,7 +83,6 @@ describe('WorkspaceManager: multi-root', () => {
   });
 
   it('routes files to their owning workspace and keeps indexes isolated', async () => {
-    const projectA = resolve(__dirname, '../include/fixtures/projectA');
     const projectB = await makeProjectB();
     const projectAUri = pathToFileURL(projectA).href;
     const projectBUri = pathToFileURL(projectB).href;
@@ -90,7 +101,6 @@ describe('WorkspaceManager: multi-root', () => {
   });
 
   it('reports ready when any workspace is a Unity project', async () => {
-    const projectA = resolve(__dirname, '../include/fixtures/projectA');
     const manager = new WorkspaceManager();
 
     expect(manager.mode()).toBe('standalone');
@@ -100,7 +110,6 @@ describe('WorkspaceManager: multi-root', () => {
   });
 
   it('uses the settings passed for a newly added folder', async () => {
-    const projectA = resolve(__dirname, '../include/fixtures/projectA');
     const standaloneFolder = await mkdtemp(join(tmpdir(), 'usn-latest-settings-'));
     const manager = new WorkspaceManager();
 
@@ -212,7 +221,6 @@ describe('WorkspaceManager: multi-root', () => {
   });
 
   it('uses scoped settings when lazily creating a workspace for a file', async () => {
-    const projectA = resolve(__dirname, '../include/fixtures/projectA');
     const looseFolder = await mkdtemp(join(tmpdir(), 'usn-lazy-scoped-'));
     const looseFile = join(looseFolder, 'Loose.hlsl');
     await writeFile(looseFile, 'MY_TEX2D(_LazyTex)');

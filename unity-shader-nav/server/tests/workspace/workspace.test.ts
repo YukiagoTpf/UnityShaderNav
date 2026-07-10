@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -6,6 +6,13 @@ import { pathToFileURL } from 'node:url';
 import { DEFAULT_SETTINGS } from '@unity-shader-nav/shared';
 import { chooseCacheDir } from '../../src/cache/cacheManager';
 import { Workspace } from '../../src/workspace/workspace';
+import {
+  copyUnityProjectFixture,
+  removeCopiedUnityProject,
+} from '../helpers/copiedUnityProject';
+
+const projectASource = resolve(__dirname, '../include/fixtures/projectA');
+let projectA: string;
 
 const fakeConnection = {
   console: { log() {} },
@@ -18,13 +25,18 @@ const fakeConnection = {
   },
 } as never;
 
-afterEach(() => {
+beforeEach(async () => {
+  projectA = await copyUnityProjectFixture(projectASource);
+});
+
+afterEach(async () => {
   vi.restoreAllMocks();
+  await removeCopiedUnityProject(projectA);
 });
 
 describe('Workspace.bootstrap', () => {
   it('indexes user files and Packages into the global index', async () => {
-    const folder = pathToFileURL(resolve(__dirname, '../include/fixtures/projectA')).href;
+    const folder = pathToFileURL(projectA).href;
     const workspace = new Workspace(folder, DEFAULT_SETTINGS);
 
     await workspace.bootstrap(fakeConnection);
@@ -35,7 +47,7 @@ describe('Workspace.bootstrap', () => {
   });
 
   it('indexes user files and Packages into the global reference index', async () => {
-    const projectRoot = resolve(__dirname, '../include/fixtures/projectA');
+    const projectRoot = projectA;
     const folder = pathToFileURL(projectRoot).href;
     const workspace = new Workspace(folder, DEFAULT_SETTINGS);
 
@@ -221,7 +233,7 @@ describe('Workspace.bootstrap', () => {
   });
 
   it('restores the full-scan index when a scanned file is opened and closed', async () => {
-    const projectRoot = resolve(__dirname, '../include/fixtures/projectA');
+    const projectRoot = projectA;
     const folder = pathToFileURL(projectRoot).href;
     const commonUri = pathToFileURL(join(projectRoot, 'Assets', 'Shaders', 'Common.hlsl')).href;
     const workspace = new Workspace(folder, DEFAULT_SETTINGS);
@@ -264,7 +276,7 @@ describe('Workspace.bootstrap', () => {
   });
 
   it('detects references under package roots', async () => {
-    const projectRoot = resolve(__dirname, '../include/fixtures/projectA');
+    const projectRoot = projectA;
     const workspace = new Workspace(pathToFileURL(projectRoot).href, DEFAULT_SETTINGS);
     await workspace.bootstrap(fakeConnection);
 
@@ -278,7 +290,7 @@ describe('Workspace.bootstrap', () => {
   });
 
   it('uses settings.projectRoot when the workspace folder is not a Unity root', async () => {
-    const projectRoot = resolve(__dirname, '../include/fixtures/projectA');
+    const projectRoot = projectA;
     const folder = pathToFileURL(await mkdtemp(join(tmpdir(), 'usn-non-root-'))).href;
     const workspace = new Workspace(folder, {
       ...DEFAULT_SETTINGS,

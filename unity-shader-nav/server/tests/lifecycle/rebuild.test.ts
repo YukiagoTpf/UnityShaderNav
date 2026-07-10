@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -11,6 +11,10 @@ import {
   rebuildWorkspacesWithOpenDocuments,
 } from '../../src/lifecycle/rebuild';
 import { WorkspaceManager } from '../../src/workspace';
+import {
+  copyUnityProjectFixture,
+  removeCopiedUnityProject,
+} from '../helpers/copiedUnityProject';
 
 const fakeConnection = {
   console: { log() {} },
@@ -253,7 +257,7 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
   });
 
   it('settings rebuild can apply folder-scoped projectRoot without polluting other roots', async () => {
-    const projectA = resolve(__dirname, '../include/fixtures/projectA');
+    const projectA = await copyUnityProjectFixture(resolve(__dirname, '../include/fixtures/projectA'));
     const projectB = await mkdtemp(join(tmpdir(), 'usn-scoped-settings-b-'));
     await mkdir(join(projectB, 'Assets', 'Shaders'), { recursive: true });
     await mkdir(join(projectB, 'Packages'), { recursive: true });
@@ -261,28 +265,33 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
     await writeFile(join(projectB, 'Packages', 'packages-lock.json'), '{"dependencies":{}}');
     await writeFile(join(projectB, 'Assets', 'Shaders', 'OnlyInB.hlsl'), 'float4 OnlyInB() { return 0; }');
 
-    const projectAUri = pathToFileURL(projectA).href;
-    const projectBUri = pathToFileURL(projectB).href;
-    const manager = new WorkspaceManager();
-    manager.configure(DEFAULT_SETTINGS, fakeConnection);
-    await manager.addFolder(projectAUri, DEFAULT_SETTINGS, fakeConnection);
-    await manager.addFolder(projectBUri, DEFAULT_SETTINGS, fakeConnection);
+    try {
+      const projectAUri = pathToFileURL(projectA).href;
+      const projectBUri = pathToFileURL(projectB).href;
+      const manager = new WorkspaceManager();
+      manager.configure(DEFAULT_SETTINGS, fakeConnection);
+      await manager.addFolder(projectAUri, DEFAULT_SETTINGS, fakeConnection);
+      await manager.addFolder(projectBUri, DEFAULT_SETTINGS, fakeConnection);
 
-    await applyScopedSettingsAndRebuild(
-      fakeConnection,
-      manager,
-      async (folderUri) => folderUri === projectAUri
-        ? { ...DEFAULT_SETTINGS, projectRoot: projectA }
-        : DEFAULT_SETTINGS,
-      () => [],
-    );
+      await applyScopedSettingsAndRebuild(
+        fakeConnection,
+        manager,
+        async (folderUri) => folderUri === projectAUri
+          ? { ...DEFAULT_SETTINGS, projectRoot: projectA }
+          : DEFAULT_SETTINGS,
+        () => [],
+      );
 
-    const workspaceA = manager.workspaceFor(pathToFileURL(join(projectA, 'Assets', 'Shaders', 'Common.hlsl')).href);
-    const workspaceB = manager.workspaceFor(pathToFileURL(join(projectB, 'Assets', 'Shaders', 'OnlyInB.hlsl')).href);
+      const workspaceA = manager.workspaceFor(pathToFileURL(join(projectA, 'Assets', 'Shaders', 'Common.hlsl')).href);
+      const workspaceB = manager.workspaceFor(pathToFileURL(join(projectB, 'Assets', 'Shaders', 'OnlyInB.hlsl')).href);
 
-    expect(workspaceA?.index.global.lookup('Common').length).toBeGreaterThanOrEqual(1);
-    expect(workspaceB?.index.global.lookup('OnlyInB').length).toBeGreaterThanOrEqual(1);
-    expect(workspaceB?.index.global.lookup('Common')).toEqual([]);
+      expect(workspaceA?.index.global.lookup('Common').length).toBeGreaterThanOrEqual(1);
+      expect(workspaceB?.index.global.lookup('OnlyInB').length).toBeGreaterThanOrEqual(1);
+      expect(workspaceB?.index.global.lookup('Common')).toEqual([]);
+    } finally {
+      await removeCopiedUnityProject(projectA);
+      await rm(projectB, { recursive: true, force: true });
+    }
   });
 
   it('does not rebuild indexes when only findReferences.includePackages changes', async () => {
