@@ -1,0 +1,257 @@
+# Index Lifecycle and Failure Semantics
+
+## Status
+
+Accepted — 2026-07-10
+
+## Context
+
+Workspace indexing currently crosses file discovery, package resolution, parser
+initialization, cache restore, live-document overlays, and persistent cache
+writes. Treating every exception as a skipped file makes a parser or grammar
+failure indistinguishable from a legitimately empty project. Clearing the
+published index before a rebuild also leaves requests with either partial data
+or no data at all.
+
+The lifecycle needs one public contract before status reporting, concurrent
+publication, and cache scheduling can be made reliable. That contract must keep
+ordinary source-file failures local while making failures that invalidate the
+whole indexing operation visible.
+
+## Decision
+
+### Ownership and publication boundary
+
+`Workspace` is the lifecycle Module for one workspace root. It owns one
+published indexed revision and its matching settings, macro table, Unity root,
+package context, and cache fingerprint. Index construction is an internal
+Implementation: handlers may query a published revision, but must never observe
+its builder or the mutable stores used to construct it.
+
+Publishing is a single Seam. A full scan, rebuild, watcher batch, accepted live
+edit, or close operation prepares all changes before swapping the current
+revision. The operation either publishes the complete candidate or publishes
+nothing.
+
+Each `Workspace` has one monotonically increasing `revision` counter:
+
+- `0` means that no index has ever been published by that workspace instance.
+- Each successful, externally observable publication increments the counter
+  exactly once. A no-op does not need to publish.
+- A failed operation never increments it.
+- The counter orders revisions only within one server session and workspace;
+  it is not a wall-clock timestamp or a cross-process identifier.
+
+`WorkspaceManager` owns a separate, monotonically increasing `statusSequence`.
+It increments whenever a workspace lifecycle record changes or a root is added
+or removed. It orders status snapshots; it does not identify index data. The
+sequence is scoped to one LSP session. A reconnect resets the client's
+last-seen sequence before it accepts the new server's initial snapshot.
+
+### Mode and lifecycle state are separate
+
+Workspace mode is either `unity` or `standalone`. It describes available
+project context, not readiness. Every workspace independently occupies exactly
+one lifecycle state:
+
+```text
+indexing { operation: initial | rebuild | recovery, servingRevision? }
+ready    { revision, warningCount }
+failed   { servingRevision?, failure }
+```
+
+`servingRevision` is present only when a previously published revision remains
+queryable. The allowed transitions are:
+
+```text
+absent -> indexing(initial) -> ready(r1) | failed(no revision)
+ready(rN) -> indexing(rebuild) -> ready(rN+1) | failed(serving rN)
+failed(rN?) -> indexing(recovery) -> ready(rNext) | failed(serving rN?)
+failed(serving rN) -> failed(serving rN+1) for a compatible live transaction
+any state -> absent
+```
+
+Incremental and live-document transactions normally move directly from
+`ready(rN)` to `ready(rN+1)`. If one encounters an infrastructure failure, the
+workspace moves to `failed(serving rN)` without exposing its candidate.
+
+An empty revision is valid only after discovery, package resolution, parser
+initialization, and candidate construction all succeed and there are no
+indexable files. Standalone mode may therefore publish an empty revision.
+Infrastructure failure can never publish `ready` with an empty or partial
+revision.
+
+### Failure classification
+
+Failures fall into three classes:
+
+| Class | Examples | Effect |
+| --- | --- | --- |
+| Source-file failure | One discovered file cannot be read; a source-level failure is explicitly classified as local to that file | Keep a compatible last-valid record for an existing file; skip a new file; finish the transaction with a warning. If the old record is incompatible with the candidate, abort the candidate instead of mixing identities |
+| Infrastructure failure | Root traversal is incomplete; `packages-lock.json` is missing, unreadable, or malformed for a Unity root; grammar/WASM initialization fails; the parser engine throws; an index invariant fails | Abort the entire candidate, retain the last published revision, and enter `failed` |
+| Cache failure | Cache entry is invalid, cache load misses, or cache save fails | Rebuild from source or keep serving the in-memory revision; report a warning, not an indexing failure |
+
+Tree-sitter syntax error nodes are normal input and do not by themselves make a
+file unindexable. Conversely, an unexpected exception from parser
+initialization or indexing is not downgraded to a source-file warning merely
+because it occurred while processing one file.
+
+The retain-or-drop policy is deliberate:
+
+- An explicit delete event, or removal from the package set described by a
+  valid new lockfile, drops the previous record when that transaction publishes.
+- A transient failure reading or locally indexing an existing file retains its
+  last valid record and increments the operation's warning count, but only when
+  that record was produced by an indexing identity compatible with the
+  candidate (including parser semantics, declaration-macro rules, and package
+  version/path membership).
+- The same failure for a file with no previous record skips that file and adds
+  a warning.
+- If changed indexing semantics make the previous record incompatible, the
+  candidate cannot satisfy the retain policy. The operation fails and the whole
+  previous revision remains published; it must not combine an old file index
+  with new settings or macro rules.
+- If workspace discovery cannot establish whether files still exist, the whole
+  operation fails; it must not infer deletions from an incomplete scan.
+
+Package membership is part of the candidate revision. A valid lockfile change
+may add or remove packages atomically. A missing or invalid lockfile does not
+publish a candidate with an empty package set, preserving
+[ADR-0002](0002-manifest-driven-package-indexing.md).
+
+### Request behavior
+
+Every request captures one published revision for its entire execution,
+including asynchronous include-visibility work. It cannot combine stores,
+settings, package context, or macro rules from different revisions.
+
+| Lifecycle state | Request behavior |
+| --- | --- |
+| Initial indexing, no revision | Wait up to the request's bounded startup deadline. On timeout or terminal failure, return the request's neutral LSP result (`null` or an empty collection), never partial data. |
+| Ready | Query the captured current revision. |
+| Rebuild or recovery with `servingRevision` | Query the previous revision immediately while the candidate is built. |
+| Failed with `servingRevision` | Continue querying that revision while exposing the failure through status. |
+| Failed without a revision | Return the neutral LSP result until recovery publishes a revision. |
+
+The status request itself is never suspended behind indexing; clients must be
+able to diagnose a slow or failed bootstrap. A recovery uses the same staging
+and publication rules as a rebuild. Full-rebuild triggers (relevant settings,
+package-lock or repository changes, and an explicit retry) may start recovery.
+Parser initialization must discard a rejected initialization promise so an
+explicit recovery can retry in the same server process.
+
+While a failure remains unresolved, an open, edit, or close live-document
+transaction may publish a new serving revision only when it explicitly uses
+the retained revision's settings, package context, macro table, and parser
+identity. The workspace stays `failed` and keeps reporting the original
+failure. Other mutations are coalesced into a recovery rather than being
+applied to an uncertain base. If the parser infrastructure is still
+unavailable, the live transaction publishes nothing.
+
+Cross-root requests such as workspace-symbol search capture a tuple containing
+one serving revision per participating root. When at least one root can serve,
+the request proceeds immediately with those roots and temporarily omits roots
+that have no published revision; their lifecycle remains visible in status. If
+no root can serve, the request uses the same bounded startup wait as a
+single-root request. A slow or failed root never blocks results from another
+root that can serve.
+
+### Multi-root and observable status
+
+Roots are independent lifecycle units. One root's indexing or failure neither
+blocks requests served by another root nor removes the failed root from the
+manager. Removing a workspace folder is the only normal transition that makes
+its record disappear.
+
+The server exposes the complete lifecycle snapshot through both:
+
+1. a pull request, so a client cannot miss the initial state; and
+2. a changed notification after every externally observable transition.
+
+The conceptual Interface is:
+
+```text
+IndexStatusSnapshot {
+  statusSequence,
+  workspaces: [{ folderUri, mode, lifecycle state }]
+}
+```
+
+Notifications carry the complete snapshot, not deltas. A client accepts only a
+snapshot with a newer `statusSequence` in the current LSP session. Indexing
+emits at most operation start and terminal lifecycle notifications per root; it
+does not notify per file. Source warnings are summarized by count. Failures
+expose a stable category and a concise message, not a stack trace.
+
+`warningCount` describes source warnings in the most recently published
+revision, rather than an ever-growing session total. A later publication with
+no source warnings resets it to zero. Cache and other best-effort runtime
+warnings go to the output log; they do not change `revision`, `warningCount`, or
+`statusSequence`.
+
+The client projects the multi-root snapshot to one status-bar state with this
+severity order:
+
+```text
+failed > indexing > ready > standalone
+```
+
+A failed root remains visibly failed even if it can serve an older revision.
+`ready` means at least one Unity workspace is ready and no higher-severity state
+exists. An empty workspace list, or a list containing only ready standalone
+workspaces, projects to `standalone`; it never leaves the client stuck on
+`starting`. Per-root details remain available in the snapshot for diagnostics.
+
+### Transition review table
+
+| Event | Transition and publication | Revision served during work | Status observation |
+| --- | --- | --- | --- |
+| Add root | `absent -> indexing(initial)` | None | Root appears; start notification |
+| Initial success | `indexing -> ready(r1)` | None until publish | Terminal ready notification |
+| Initial infrastructure failure | `indexing -> failed` | None | Terminal failed notification; root remains present |
+| Rebuild start | `ready(rN) -> indexing(rebuild, rN)` | `rN` | Start notification |
+| Rebuild success | Atomic candidate publish to `ready(rN+1)` | `rN` until swap | Terminal ready notification |
+| Rebuild infrastructure failure | `indexing -> failed(serving rN)`; candidate discarded | `rN` | Terminal failed notification |
+| File batch or live edit succeeds | Atomic publish `ready(rN) -> ready(rN+1)` | One captured revision per request | One terminal snapshot if observable state changed |
+| Compatible local file failure | Publish retained/skipped-file candidate with warnings | Previous revision until swap | Ready snapshot includes warning count |
+| Incompatible retained file during rebuild | Candidate discarded; previous revision and its configuration stay paired | Previous revision | Failed notification with a source-failure category |
+| File-batch infrastructure failure | Candidate discarded; `ready(rN) -> failed(serving rN)` | `rN` | Failed notification |
+| Valid package-lock change | Rebuild package context and files as one candidate | Previous revision | Rebuild start and terminal notification |
+| Invalid package-lock change | Candidate discarded | Previous revision, if any | Failed notification |
+| Cache load/restore failure | Continue with source indexing | Previous revision, if rebuilding | Output-log warning only; lifecycle follows source build |
+| Cache save failure | No index transition | Current revision | Output-log warning only; no false failure |
+| Recovery trigger | `failed(rN?) -> indexing(recovery, rN?)` | `rN` when present | Start notification |
+| Compatible live open/edit/close while failed | Atomic overlay publish to `failed(serving rN+1)`; original failure remains | `rN` until swap | Failed snapshot with the newer serving revision |
+| Remove root | Any state to `absent` | No longer selectable | Full snapshot without the root |
+
+## Existing decision guardrails
+
+This lifecycle does not change earlier semantic decisions:
+
+- [ADR-0001](0001-multi-candidate-peek-for-ambiguous-symbols.md): a revision
+  preserves all valid definition candidates; publication never chooses one.
+- [ADR-0002](0002-manifest-driven-package-indexing.md): package membership is
+  still derived only from `packages-lock.json` and is committed with its index.
+- [ADR-0003](0003-macro-pattern-whitelist.md): the macro whitelist and user
+  declaration patterns are committed with the revision that consumed them.
+- [ADR-0004](0004-persist-index-cache-under-library.md): cache remains under
+  `Library/` (or standalone global storage) and is a derived, best-effort copy.
+- [ADR-0005](0005-conservative-preprocessor-branch-dimming.md): inactive-region
+  dimming remains presentation-only and cannot filter a published index.
+
+## Consequences
+
+- Rebuild requires staging plus a single pointer swap; clearing the published
+  index before rebuilding is not conforming.
+- A published revision is immutable. This gives query handlers a deep Interface
+  with high locality: they ask domain questions of one view instead of
+  coordinating raw symbol/reference stores.
+- Settings, package context, macro patterns, and index data require a shared
+  transaction boundary. This can temporarily increase memory during a rebuild
+  because the old and candidate revisions coexist.
+- Failed workspaces must remain managed and retryable. Parser initialization,
+  file walking, and package loading must stop swallowing infrastructure errors.
+- Readiness reporting is a projection of lifecycle truth, not a second source of
+  truth in the client.
+- Cache persistence is downstream of publication. A cache failure cannot roll
+  back or invalidate an in-memory revision.

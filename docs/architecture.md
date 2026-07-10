@@ -58,6 +58,23 @@ The index is intentionally pragmatic:
   changes index results. See
   [ADR-0005](adr/0005-conservative-preprocessor-branch-dimming.md).
 
+## Index Lifecycle and Publication
+
+Each workspace publishes immutable, monotonically ordered index revisions.
+Initialization and rebuilds construct a complete candidate before one atomic
+publication step; requests either capture the previous published revision or
+the new one, never a partial mix. Workspace mode (`unity` or `standalone`) is
+separate from lifecycle state (`indexing`, `ready`, or `failed`), and multi-root
+workspaces report each root independently.
+
+Source-file failures retain the last valid record for that file (or skip a new
+file) and surface a warning. Failures that invalidate the whole candidate—such
+as incomplete root discovery, invalid package state, or grammar/parser
+initialization failure—abort publication and remain observable while the last
+valid revision, if any, continues serving requests. Cache failures are
+best-effort warnings. See
+[ADR-0006](adr/0006-index-lifecycle-and-failure-semantics.md).
+
 ## Package Resolution
 
 Unity package includes are resolved from `Packages/packages-lock.json`. This

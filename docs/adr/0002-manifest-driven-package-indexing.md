@@ -20,6 +20,10 @@ Unity 项目的 shader include 大量来自 Packages（URP/HDRP/Core RP/ShaderGr
 
 ## Consequences
 
-- 必须监听 `Packages/packages-lock.json` 变化触发 rebuild（见 ADR-0007 / spec §8）。
+- 必须监听 `Packages/packages-lock.json` 变化触发原子 rebuild；失败时保留上一版
+  已发布索引（见
+  [ADR-0006](0006-index-lifecycle-and-failure-semantics.md) / spec §8）。
 - 用户若手动操作 `Library/PackageCache/`（罕见），索引可能与 Unity 实际状态偏离——可接受。
-- 老版本 Unity（< 2019.3）没有 lock 文件——这些项目落入降级模式，目前不在 MVP 支持范围。
+- 老版本 Unity（< 2019.3）没有 lock 文件——这些项目不在当前支持范围；Unity
+  workspace 缺失、无法读取或无法解析 lock 文件时，索引进入可观察的 failed 状态，
+  不得降级成 `ready` + 空 package set。
