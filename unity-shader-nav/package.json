@@ -14,13 +14,14 @@
     "watch:typecheck": "node scripts/watch-typecheck.mjs",
     "check:fast": "npm run clean && npm run build && npm run test -w @unity-shader-nav/server",
     "test": "npm run check:fast && npm run test:integration",
-    "test:integration": "npm run compile:tests && npm run test:package-layout && node tests/out/runTest.js",
+    "test:integration": "npm run test:package && node tests/out/runTest.js",
+    "test:package": "npm run package:vsix && npm run compile:tests && npm run test:package-layout",
     "compile:tests": "rimraf tests/out && tsc -p tests/tsconfig.json",
     "test:electron": "npm run compile:tests && node tests/out/runTest.js",
     "test:package-layout": "mocha tests/out/client/package-layout.test.js --ui tdd --timeout 60000",
     "clean": "rimraf client/out server/out shared/out tests/out client/tsconfig.tsbuildinfo server/tsconfig.tsbuildinfo shared/tsconfig.tsbuildinfo",
     "bench:issue3": "node scripts/benchmark-index-cache.mjs",
-    "package:vsix": "npm run clean && npm run build && node scripts/package-vsix.mjs"
+    "package:vsix": "node scripts/package-vsix.mjs --build-and-verify"
   },
   "devDependencies": {
     "@types/node": "^18.19.0",

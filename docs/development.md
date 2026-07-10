@@ -48,6 +48,7 @@ npm run check:fast
 npm run build
 npm run watch
 npm run test -w @unity-shader-nav/server
+npm run test:package
 npm test
 npm run test:electron
 npm run bench:issue3 -- --files 800
@@ -60,6 +61,9 @@ npm run package:vsix
   removes generated output, rebuilds current TypeScript source, and runs the
   complete language-server test suite without starting or downloading VS Code.
 - Parser and index behavior belongs in server unit tests.
+- `npm run test:package` is the authoritative package check. One invocation
+  removes generated output, rebuilds current source, creates the versioned VSIX,
+  verifies its manifest and runtime files, then runs package-layout tests.
 - LSP handler behavior belongs in server handler tests.
 - VS Code activation, packaging layout, and command-level smoke tests belong in
   `tests/integration/client`.
@@ -71,9 +75,10 @@ npm run package:vsix
 ## CI
 
 GitHub Actions runs `npm run check:fast` first on every push and pull request
-to `main` (`.github/workflows/ci.yml`). Only after that deterministic source
-check passes does CI install the Electron runtime libraries and run
-`npm run test:integration` under `xvfb`.
+to `main` (`.github/workflows/ci.yml`), then runs `npm run test:package` as a
+separately attributable current-run package check. Only after both deterministic
+checks pass does CI install the Electron runtime libraries and run
+`npm run test:electron` under `xvfb`.
 
 `unity-shader-nav/.vscode-test/` is cached via `actions/cache@v4`. The
 cache key is `vscode-test-<runner-os>-<hash of unity-shader-nav/package-lock.json>`,

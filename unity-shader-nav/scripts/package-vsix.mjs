@@ -49,11 +49,13 @@ const freshnessChecks = [
 ];
 
 const requiredVsixEntries = [
+  'extension/package.json',
   'extension/README.md',
   'extension/LICENSE.txt',
   'extension/out/extension.js',
   'extension/out/server/server.js',
   'extension/out/grammars/tree-sitter-hlsl.wasm',
+  'extension/out/server/node_modules/web-tree-sitter/package.json',
   'extension/out/server/node_modules/web-tree-sitter/tree-sitter.js',
   'extension/out/server/node_modules/web-tree-sitter/tree-sitter.wasm',
 ];
@@ -65,6 +67,12 @@ try {
   if (args.verifyVsix) {
     await assertVsixContents(resolve(args.verifyVsix));
     process.exit(0);
+  }
+
+  if (args.buildAndVerify) {
+    await removeVersionedVsix();
+    await runNpmScript('clean');
+    await runNpmScript('build');
   }
 
   await assertFreshBuildOutputs(monorepoRoot);
@@ -152,8 +160,7 @@ async function statOrThrow(file, message) {
 }
 
 async function packageVsix() {
-  const packageJson = JSON.parse(await readFile(resolve(clientRoot, 'package.json'), 'utf8'));
-  const vsixPath = resolve(clientRoot, `${packageJson.name}-${packageJson.version}.vsix`);
+  const vsixPath = await versionedVsixPath();
   await rm(vsixPath, { force: true });
   const restoreExtensionRootFiles = await stageExtensionRootFiles();
 
@@ -174,6 +181,25 @@ async function packageVsix() {
   } finally {
     await restoreExtensionRootFiles();
   }
+}
+
+async function versionedVsixPath() {
+  const packageJson = JSON.parse(await readFile(resolve(clientRoot, 'package.json'), 'utf8'));
+  return resolve(clientRoot, `${packageJson.name}-${packageJson.version}.vsix`);
+}
+
+async function removeVersionedVsix() {
+  const vsixPath = await versionedVsixPath();
+  await rm(vsixPath, { force: true });
+  console.log(`[package-vsix] removed pre-existing ${relative(monorepoRoot, vsixPath)}`);
+}
+
+async function runNpmScript(script) {
+  const command = process.platform === 'win32' ? process.env.ComSpec ?? 'cmd.exe' : 'npm';
+  const commandArgs = process.platform === 'win32'
+    ? ['/d', '/s', '/c', 'npm.cmd', 'run', script]
+    : ['run', script];
+  await run(command, commandArgs, monorepoRoot);
 }
 
 async function stageExtensionRootFiles() {
@@ -267,6 +293,7 @@ function findEndOfCentralDirectory(buffer) {
 
 function parseArgs(rawArgs) {
   const parsed = {
+    buildAndVerify: false,
     checkOutput: false,
     monorepoRoot: undefined,
     prepareExtensionRoot: false,
@@ -274,7 +301,9 @@ function parseArgs(rawArgs) {
   };
   for (let i = 0; i < rawArgs.length; i++) {
     const arg = rawArgs[i];
-    if (arg === '--check-output') {
+    if (arg === '--build-and-verify') {
+      parsed.buildAndVerify = true;
+    } else if (arg === '--check-output') {
       parsed.checkOutput = true;
     } else if (arg === '--prepare-extension-root') {
       parsed.prepareExtensionRoot = true;

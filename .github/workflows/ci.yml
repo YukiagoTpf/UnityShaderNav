@@ -48,6 +48,9 @@ jobs:
       - name: Run fast verification
         run: npm run check:fast
 
+      - name: Run package verification
+        run: npm run test:package
+
       - name: Install Electron runtime libraries
         run: |
           sudo apt-get update
@@ -66,5 +69,5 @@ jobs:
             libxshmfence1
         working-directory: .
 
-      - name: Run integration verification
-        run: xvfb-run -a npm run test:integration
+      - name: Run Electron verification
+        run: xvfb-run -a npm run test:electron

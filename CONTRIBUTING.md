@@ -30,13 +30,16 @@ Run from `unity-shader-nav/`:
 npm run check:fast
 npm run build
 npm run test -w @unity-shader-nav/server
+npm run test:package
 npm test
 npm run test:electron
 ```
 
 Use `npm run check:fast` as the default feedback loop. Run focused server tests
 while developing, then run broader verification before submitting a pull
-request.
+request. `npm run test:package` starts from clean generated output, builds a new
+VSIX, verifies its runtime contents, and runs the package-layout tests; use it
+instead of inspecting an older `client/out/` or VSIX artifact.
 
 ## Pull Request Expectations
 

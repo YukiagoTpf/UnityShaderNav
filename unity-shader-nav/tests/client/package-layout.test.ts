@@ -5,6 +5,18 @@ import { createRequire } from 'node:module';
 import * as os from 'node:os';
 import { spawnSync } from 'node:child_process';
 
+const REQUIRED_VSIX_ENTRIES = [
+  'extension/package.json',
+  'extension/README.md',
+  'extension/LICENSE.txt',
+  'extension/out/extension.js',
+  'extension/out/server/server.js',
+  'extension/out/grammars/tree-sitter-hlsl.wasm',
+  'extension/out/server/node_modules/web-tree-sitter/package.json',
+  'extension/out/server/node_modules/web-tree-sitter/tree-sitter.js',
+  'extension/out/server/node_modules/web-tree-sitter/tree-sitter.wasm',
+] as const;
+
 function monorepoRoot(): string {
   return path.resolve(__dirname, '../../..');
 }
@@ -115,21 +127,55 @@ suite('packaged server layout', () => {
     }
   });
 
+  test('current-run packaging removes the old VSIX before a fallible build', () => {
+    const root = monorepoRoot();
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'unity-shader-nav-package-run-'));
+    try {
+      const clientRoot = path.join(tempRoot, 'client');
+      const vsixPath = path.join(clientRoot, 'fixture-extension-1.2.3.vsix');
+      fs.mkdirSync(clientRoot, { recursive: true });
+      fs.writeFileSync(
+        path.join(clientRoot, 'package.json'),
+        JSON.stringify({ name: 'fixture-extension', version: '1.2.3' }),
+      );
+      fs.writeFileSync(
+        path.join(tempRoot, 'package.json'),
+        JSON.stringify({
+          private: true,
+          scripts: {
+            clean: 'node deliberately-missing-clean-script.js',
+            build: 'node deliberately-missing-build-script.js',
+          },
+        }),
+      );
+      fs.writeFileSync(vsixPath, 'stale artifact');
+
+      const result = spawnSync(
+        process.execPath,
+        [
+          path.resolve(root, 'scripts/package-vsix.mjs'),
+          '--build-and-verify',
+          '--monorepo-root',
+          tempRoot,
+        ],
+        { encoding: 'utf8' },
+      );
+
+      assert.notStrictEqual(result.status, 0);
+      assert.strictEqual(fs.existsSync(vsixPath), false);
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   test('VSIX verifier rejects generated TypeScript build cache entries', () => {
     const root = monorepoRoot();
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'unity-shader-nav-vsix-check-'));
     try {
       const vsixPath = path.join(tempRoot, 'extension.vsix');
       fs.writeFileSync(vsixPath, zipWithCentralDirectoryEntries([
-        'extension/README.md',
-        'extension/LICENSE.txt',
-        'extension/package.json',
+        ...REQUIRED_VSIX_ENTRIES,
         'extension/tsconfig.tsbuildinfo',
-        'extension/out/extension.js',
-        'extension/out/server/server.js',
-        'extension/out/grammars/tree-sitter-hlsl.wasm',
-        'extension/out/server/node_modules/web-tree-sitter/tree-sitter.js',
-        'extension/out/server/node_modules/web-tree-sitter/tree-sitter.wasm',
       ]));
 
       const result = spawnSync(
@@ -145,32 +191,35 @@ suite('packaged server layout', () => {
     }
   });
 
-  test('VSIX verifier requires the extension README', () => {
-    const root = monorepoRoot();
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'unity-shader-nav-vsix-readme-'));
-    try {
-      const vsixPath = path.join(tempRoot, 'extension.vsix');
-      fs.writeFileSync(vsixPath, zipWithCentralDirectoryEntries([
-        'extension/package.json',
-        'extension/out/extension.js',
-        'extension/out/server/server.js',
-        'extension/out/grammars/tree-sitter-hlsl.wasm',
-        'extension/out/server/node_modules/web-tree-sitter/tree-sitter.js',
-        'extension/out/server/node_modules/web-tree-sitter/tree-sitter.wasm',
-      ]));
+  for (const requiredEntry of REQUIRED_VSIX_ENTRIES) {
+    test(`VSIX verifier requires ${requiredEntry}`, () => {
+      const root = monorepoRoot();
+      const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'unity-shader-nav-vsix-required-'));
+      try {
+        const vsixPath = path.join(tempRoot, 'extension.vsix');
+        fs.writeFileSync(
+          vsixPath,
+          zipWithCentralDirectoryEntries(
+            REQUIRED_VSIX_ENTRIES.filter((entry) => entry !== requiredEntry),
+          ),
+        );
 
-      const result = spawnSync(
-        process.execPath,
-        [path.resolve(root, 'scripts/package-vsix.mjs'), '--verify-vsix', vsixPath],
-        { encoding: 'utf8' },
-      );
+        const result = spawnSync(
+          process.execPath,
+          [path.resolve(root, 'scripts/package-vsix.mjs'), '--verify-vsix', vsixPath],
+          { encoding: 'utf8' },
+        );
 
-      assert.notStrictEqual(result.status, 0);
-      assert.match(result.stderr, /VSIX is missing required file extension\/README\.md/);
-    } finally {
-      fs.rmSync(tempRoot, { recursive: true, force: true });
-    }
-  });
+        assert.notStrictEqual(result.status, 0);
+        assert.strictEqual(
+          result.stderr.trim(),
+          `VSIX is missing required file ${requiredEntry}`,
+        );
+      } finally {
+        fs.rmSync(tempRoot, { recursive: true, force: true });
+      }
+    });
+  }
 
   test('direct VSCE package from client includes the extension README', function () {
     this.timeout(60000);
@@ -249,6 +298,28 @@ suite('runtime watch workflow', () => {
         `expected runtime layout file ${relative} to exist after --once build`,
       );
     }
+  });
+});
+
+suite('verification command contract', () => {
+  test('package verification builds and inspects one current-run VSIX', () => {
+    const rootPackage = JSON.parse(
+      fs.readFileSync(path.resolve(monorepoRoot(), 'package.json'), 'utf8'),
+    ) as { scripts?: Record<string, string> };
+    const scripts = rootPackage.scripts ?? {};
+
+    assert.strictEqual(
+      scripts['package:vsix'],
+      'node scripts/package-vsix.mjs --build-and-verify',
+    );
+    assert.strictEqual(
+      scripts['test:package'],
+      'npm run package:vsix && npm run compile:tests && npm run test:package-layout',
+    );
+    assert.strictEqual(
+      scripts['test:integration'],
+      'npm run test:package && node tests/out/runTest.js',
+    );
   });
 });
 
