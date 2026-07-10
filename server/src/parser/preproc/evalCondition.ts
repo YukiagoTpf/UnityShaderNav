@@ -3,7 +3,7 @@
  * analyzer supports. Deliberately *not* a general C expression evaluator:
  * anything outside the supported grammar collapses to `UNKNOWN` (kept visible).
  *
- * `UNKNOWN` dominates `VARIANT` in the `and`/`or` tables (review-P1): a branch
+ * `UNKNOWN` dominates `VARIANT` in the `and`/`or` tables: a branch
  * that *might* be active via an unknown/include macro must never be dimmed as
  * variant-only.
  */

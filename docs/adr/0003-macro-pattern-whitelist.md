@@ -25,12 +25,12 @@ UNITY_DECLARE_INSTANCED_PROP(float4, _Color)
 
 ## Why not full macro expansion
 
-1. **工程量**：完整宏展开需要实现 token-level preprocessor（包括嵌套展开、token paste、stringification、conditional），是 MVP 范围之外的复杂度。
+1. **工程量**：完整宏展开需要实现 token-level preprocessor（包括嵌套展开、token paste、stringification、conditional），超出代码导航核心的职责边界。
 2. **稳定性**：Unity 官方 declaration 宏的命名模式非常稳定（多年没变），白名单维护成本远低于通用展开器。
 3. **可观察性**：白名单失配时容易诊断（"这个宏不在表里"），通用展开器出错时排查痛苦。
 
 ## Consequences
 
 - 用户自定义 declaration 宏不在默认白名单中时，F12 在通过该宏声明的变量上会失败——通过配置项 `declarationMacros` 兜底。
-- CG 兼容（spec §6）复用同一机制：`sampler2D`、`UNITY_INSTANCING_BUFFER_START` 等 CG 特有声明语法都进白名单。
+- CG 兼容复用同一机制：`sampler2D`、`UNITY_INSTANCING_BUFFER_START` 等 CG 特有声明语法都进白名单。
 - 宏体内的内容不展开——F12 跳到宏定义本身（`#define X ...`），不进入宏体内的符号。这是有意限制。

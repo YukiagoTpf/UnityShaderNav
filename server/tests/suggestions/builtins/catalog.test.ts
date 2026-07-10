@@ -48,7 +48,7 @@ describe('built-in suggestion catalog', () => {
     expect(normalize.parameters?.[0]).not.toHaveProperty('range');
   });
 
-  it('contains the planned initial high-signal vocabulary', () => {
+  it('contains the high-signal vocabulary contract', () => {
     for (const name of [
       'normalize',
       'dot',

@@ -7,8 +7,8 @@ Unity Shader 作者经常用 `#ifdef`/`#ifndef`/`#if defined(...)` 把代码切�
 **变暗显示**，帮助作者一眼看出哪些代码块当前是关闭的或被 variant keyword 门控的。
 
 UnityShaderNav 本身**不评估**预处理条件（见 [ADR-0001](0001-multi-candidate-peek-for-ambiguous-symbols.md)：
-索引展平所有 `#ifdef` 分支，导航/Find References 一律忽略预处理状态）。issue #22
-要的是一个**只影响呈现**的编辑器辅助：把不生效 / variant 门控的分支变暗，而不去
+索引展平所有 `#ifdef` 分支，导航/Find References 一律忽略预处理状态）。这里需要的是
+一个**只影响呈现**的编辑器辅助：把不生效 / variant 门控的分支变暗，而不去
 声称做到了编译器级别的 Unity variant 求值。
 
 难点在于：真实的激活与否取决于 material/global keyword、平台 define、include 链里

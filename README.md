@@ -30,10 +30,9 @@ The extension focuses on fast code navigation:
 
 ## Status
 
-This project is in early public-preview shape. The core language server is
-working and covered by unit and VS Code integration tests, but Marketplace
-publishing, release automation, CI cache tuning, and a few Unity path edge cases
-are still tracked in [GitHub Issues](https://github.com/YukiagoTpf/UnityShaderNav/issues).
+This project is in public preview. Published builds and release notes are on
+[GitHub Releases](https://github.com/YukiagoTpf/UnityShaderNav/releases); current
+work is tracked in [GitHub Issues](https://github.com/YukiagoTpf/UnityShaderNav/issues).
 
 ## Supported Files
 
@@ -114,7 +113,6 @@ See [Configuration](docs/configuration.md) for the full explanation and examples
 - [Development Guide](docs/development.md)
 - [Architecture](docs/architecture.md)
 - [Troubleshooting](docs/troubleshooting.md)
-- [Roadmap](docs/roadmap.md)
 - [Technical Spec](docs/technical-spec.md)
 - [Architecture Decision Records](docs/adr/)
 

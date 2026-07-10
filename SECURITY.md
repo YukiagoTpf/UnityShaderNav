@@ -7,7 +7,7 @@ runtime.
 ## Supported Versions
 
 The project is in public-preview development. Security fixes are applied to the
-current `main` branch until formal releases begin.
+current `main` branch. Preview releases do not have a backport support window.
 
 ## Reporting a Vulnerability
 

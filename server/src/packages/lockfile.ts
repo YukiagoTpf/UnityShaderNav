@@ -62,7 +62,7 @@ export function resolvePackagePhysicalPath(
     // packages — under `Library/PackageCache/<name>@<hash[:10]>`. For `?path=`
     // entries Unity extracts only the requested subdirectory into that cache
     // folder, so the resolved path still points at the package root. Verified
-    // empirically against Unity 2022.3.53f1c1 (issue #25).
+    // empirically against Unity 2022.3.53f1c1 lockfiles.
     const dirHash = entry.hash.slice(0, 10);
     return join(projectRoot, 'Library', 'PackageCache', `${name}@${dirHash}`);
   }

@@ -34,8 +34,8 @@ export interface PropertyCandidate {
 
 /**
  * Collect every `.shader` Properties entry in the workspace whose name equals
- * `name`. Design decision 3 (issue 20 plan): the reverse direction bypasses
- * include-visibility and surfaces every indexed shader's property — the user
+ * `name`. The reverse direction intentionally bypasses include visibility and
+ * surfaces every indexed shader's property — the user
  * disambiguates via VS Code Peek (ADR-0001). No async, no include resolution,
  * O(shaders) per F12 request.
  */

@@ -108,7 +108,7 @@ describe('scan integration: blocks fall inside their owning Pass', () => {
   });
 });
 
-describe('scanBlocks: directive with same-line block comment (P2#1)', () => {
+describe('scanBlocks: directive with same-line block comment', () => {
   it('recognizes HLSLPROGRAM and ENDHLSL when followed by /* */', () => {
     const result = scanBlocks(fixture('directive-block-comment.shader'));
     expect(result.blocks).toHaveLength(1);

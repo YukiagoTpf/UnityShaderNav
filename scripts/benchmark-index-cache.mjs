@@ -34,7 +34,7 @@ function parseArgs(argv) {
 }
 
 async function createSyntheticProject(fileCount) {
-  const root = await mkdtemp(join(tmpdir(), 'usn-issue3-bench-'));
+  const root = await mkdtemp(join(tmpdir(), 'usn-index-cache-bench-'));
   await mkdir(join(root, 'Assets', 'Shaders'), { recursive: true });
   await mkdir(join(root, 'Packages'), { recursive: true });
   await mkdir(join(root, 'ProjectSettings'), { recursive: true });

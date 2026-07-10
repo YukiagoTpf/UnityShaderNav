@@ -206,10 +206,11 @@ their types, defaults, ranges, and behavior.
 Core verification commands:
 
 ```powershell
-npm run build
-npm run test -w @unity-shader-nav/server
+npm run check:fast
+npm run test:package
 npm test
 ```
 
-Use focused server tests for parser/resolver changes, then run broader tests
-before publishing or merging user-visible behavior changes.
+Use focused server tests while developing, then run the authoritative fast,
+current-package, and aggregate commands before publishing or merging
+user-visible behavior changes.

@@ -31,7 +31,7 @@ const HLSL = 'file:///t/test.hlsl';
 const SHADER = 'file:///t/test.shader';
 
 // A realistic small ShaderLab doc with an HLSLPROGRAM...ENDHLSL block, used by the
-// block-gating cases (#10). Property names live in the ShaderLab region; code inside
+// block-gating cases. Property names live in the ShaderLab region; code inside
 // the HLSLPROGRAM block is HLSL.
 const SHADER_DOC = [
   'Shader "T/Test" {',                            // 0
@@ -105,12 +105,11 @@ const cases: Case[] = [
   },
 
   // 4. include path: cursor on the filename inside #include "Common.hlsl"
-  // CURRENT behavior: the path text is inside a string literal, so the cursor's
+  // The path text is inside a string literal, so the cursor's
   // lexical state and classification are both 'string'. wordAt still finds the bare
   // identifier ('Common') under the cursor.
-  // #30 will add an include-path classification; until then this is just a string.
   {
-    name: 'include path filename (currently classified as string)',
+    name: 'include path filename is classified as string',
     text: '#include "Common.hlsl"',
     line: 0,
     character: '#include "Co'.length, // inside the Common token
@@ -121,7 +120,7 @@ const cases: Case[] = [
       memberMember: 'Common',
       memberReceiver: null,
       lexical: 'string',
-      classification: 'string', // #30 will add an include-path classification
+      classification: 'string',
       prefix: 'Co',
       memberPrefixReceiver: null,
     },
@@ -217,10 +216,10 @@ const cases: Case[] = [
   },
 
   // 9. generic type argument: cursor on MyType in StructuredBuffer<MyType>
-  // CURRENT behavior: this is ordinary HLSL code; there is no generic-type-arg
-  // classification yet. #30 will add one. wordAt resolves the type-arg identifier.
+  // Generic type arguments use ordinary HLSL code classification; wordAt still
+  // resolves the type-argument identifier.
   {
-    name: 'generic type argument (currently classified as hlslCode)',
+    name: 'generic type argument is classified as hlslCode',
     text: 'StructuredBuffer<MyType> buf;',
     line: 0,
     character: 'StructuredBuffer<My'.length, // inside MyType
@@ -231,7 +230,7 @@ const cases: Case[] = [
       memberMember: 'MyType',
       memberReceiver: null,
       lexical: 'code',
-      classification: 'hlslCode', // #30 will add a generic-type-arg classification
+      classification: 'hlslCode',
       prefix: 'My',
       memberPrefixReceiver: null,
     },

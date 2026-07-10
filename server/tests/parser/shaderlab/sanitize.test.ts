@@ -39,7 +39,7 @@ describe('sanitizeLine', () => {
     expect(tricky.includes('s = "')).toBe(true);
   });
 
-  it('does not carry block-comment state across lines (MVP limitation)', () => {
+  it('does not carry block-comment state across lines', () => {
     const out = sanitizeLine('/* unterminated');
     expect(out).toBe(' '.repeat(out.length));
     const next = sanitizeLine('still code */');

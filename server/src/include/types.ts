@@ -4,7 +4,7 @@ export interface IncludeContext {
   /** Absolute path; undefined means standalone mode. */
   unityProjectRoot: string | undefined;
   includeDirectories: string[];
-  /** Optional physical package map, filled by Plan 07. */
+  /** Optional physical package map resolved from Packages/packages-lock.json. */
   packagePhysicalPaths?: Map<string, string>;
 }
 

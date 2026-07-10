@@ -93,7 +93,7 @@ function expectedScopedLocations(index: FileIndex, name: string, scopeRange: Ran
 
 describe('registerReferencesHandler', () => {
   it('filters global references to the canonical include-visible target', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'usn-issue-1-refs-'));
+    const root = await mkdtemp(join(tmpdir(), 'usn-reference-project-'));
     try {
       const assets = join(root, 'Assets');
       await mkdir(assets, { recursive: true });
@@ -183,7 +183,7 @@ describe('registerReferencesHandler', () => {
   });
 
   it('does not leak root-only same-name definitions into an include-visible target search', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'usn-issue-1-root-only-'));
+    const root = await mkdtemp(join(tmpdir(), 'usn-reference-root-only-'));
     try {
       const assets = join(root, 'Assets');
       await mkdir(assets, { recursive: true });

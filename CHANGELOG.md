@@ -3,9 +3,17 @@
 All notable changes to UnityShaderNav are recorded here.
 
 This project follows the spirit of [Keep a Changelog](https://keepachangelog.com/)
-and uses semantic versioning for extension releases once public publishing starts.
+and uses semantic versioning for extension releases.
 
 ## Unreleased
+
+### Changed
+
+- Removed completed execution plans, handoff records, duplicated Agent status,
+  and the stale roadmap from the current knowledge surface. Git history and
+  GitHub Issues remain the durable record of completed work.
+- Added fixed public provenance, an upstream license, offline integrity checks,
+  and a byte-for-byte rebuild command for the vendored HLSL grammar.
 
 ### Fixed
 

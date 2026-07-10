@@ -1,6 +1,6 @@
 # UnityShaderNav
 
-VSCode 扩展，为 Unity Shader 文件（ShaderLab + HLSL）提供代码导航。本文件定义项目术语，避免讨论时各说各话。
+VSCode 扩展，为 Unity Shader 文件（ShaderLab + HLSL）提供代码导航。本文件只定义稳定的领域术语与推荐命名；实现拓扑见 `docs/architecture.md`，可变状态与工作项见 GitHub Issues。
 
 ## Language
 
@@ -37,24 +37,24 @@ _Avoid_: symbol record, symbol info
 `SymbolEntry` 的字段，描述该符号在哪段文本范围内可见。全局符号 = 整个文件；函数参数 / 局部变量 = 所属函数体范围。用于 shadowing 判定和 Find References 的位置过滤。
 
 **Proximity tie-break**:
-同函数内多个同名局部变量声明（如不同 block scope 里重复用 `temp`）的 F12 消歧策略——按"最近的、行号 ≤ 引用行号的声明"返回。详见 spec §5。
+同函数内多个同名局部变量声明（如不同 block scope 里重复用 `temp`）的 F12 消歧策略——返回引用位置之前最近的可见声明。
 
 ### 索引生命周期
 
 **Cold start**:
-扩展激活后到全量索引完成的时间窗口。期间 LSP 请求挂起最多 5s + 进度条提示，详见 spec §8。
+扩展激活后到初始索引可服务请求之间的时间窗口。该阶段的请求等待与失败语义由索引生命周期统一管理。
 
 **Rebuild mode**:
-文件变更超过阈值（20 个 / 500ms）或检测到分支切换 / packages-lock 变化时，索引进入的清空-重扫状态。区别于"增量更新"路径。
+外部状态变化使增量更新不再可靠时，索引进入的清空、重扫和重新发布状态。区别于单文件的增量更新路径。
 
 **PackageResolver**:
 启动时读 `Packages/packages-lock.json`，构建 `package_name → physical_path` 映射的服务。是 ADR-0002 manifest-driven 策略的实现承担者。
 
 **PackageContext**:
-`Workspace` 组合的对象，封装 package 相关状态：持有 **PackageResolver**、派生出 **Include chain** 解析用的 `IncludeContext`、并回答 `isInPackages(uri)` 查询。调用方一律走 `workspace.packages.*`；`Workspace` 不再直接暴露 `packageResolver` / `includeCtx` / `isInPackages`。是拆 `Workspace` god class 的第一步（#28），与 **PackageResolver** 成对理解；另见 Flagged ambiguities 的 "Package"。
+`Workspace` 中 package 相关能力的边界：组合 **PackageResolver**、include 解析上下文和 package 成员关系。与 **PackageResolver** 成对理解；另见 Flagged ambiguities 的 "Package"。
 
 **WorkspaceIndex**:
-`Workspace` 组合的索引状态对象（#31）：持有 `store` / `global` / `globalRefs` / `diskIndexes` 和 declaration-macro `table`，承载所有索引变更（`indexAndStore` / `reindex` / `applyChanges` / `closeDocument` / `drop`）。`Workspace` 自身只保留生命周期（`bootstrap` / cache restore-persist / `fullScan` / **Rebuild mode**），并通过三个具名接缝触达索引：`restoreFromCache`、`diskIndexEntries`、`clear`。四条不变量以代码注释 + `workspaceIndex.test.ts` 守护：① cache 恢复顺序 `diskIndexes→store→global→globalRefs`；② `closeDocument` 回退到磁盘索引、否则三处全删；③ `rebuild` 先清空三索引 + `diskIndexes`；④ `persist` 只快照 `diskIndexes`、绝不快照 `store`（打开中的文档不落盘）。调用方一律走 `workspace.index.*`（handler / lifecycle / suggestions），#37 已迁走 #31 暂留的 pass-through——唯一例外是 `Workspace.applyChanges`（它编排 `index.applyChanges` + `persist`，属生命周期，故留在 `Workspace`）。
+`Workspace` 中索引状态与索引变更的边界。它维护磁盘索引、打开文档覆盖、全局符号和全局引用之间的一致性；`Workspace` 负责生命周期编排，不直接复制这些状态。
 
 ### 跳转行为
 
@@ -62,7 +62,7 @@ _Avoid_: symbol record, symbol info
 同名符号有多个定义（#ifdef 分支、多 Pass 同名、HLSL overload）时，F12 返回所有候选，由 VSCode 原生 Peek UI 让用户挑选。是本扩展与 Rider Shader Context Picker 的关键差异——详见 ADR-0001。
 
 **Chain lookup**:
-struct 成员 F12（如 `surface.positionWS`）的解析过程——先推导 `surface` 的声明类型，再在该 struct 内查字段。MVP 阶段支持到 L3（含函数返回值），详见 spec §5。
+struct 成员 F12（如 `surface.positionWS`）的解析过程——先推导 receiver 的声明类型，再沿类型与成员关系解析目标字段。
 
 ### 补全与签名
 
@@ -101,7 +101,7 @@ _Avoid_: hover, function docs
 > **TA**："F12 在 `TransformObjectToHClip` 上跳到了 4 个地方，怎么回事？"
 > **开发者**："那是 multi-candidate Peek——这个函数在 URP 里有多个 #ifdef 分支版本（含 instancing / 不含），我们不评估预处理条件，所以全部当候选返回。挑你当前用的那个就行。"
 > **TA**："Rider 就跳一个啊。"
-> **开发者**："Rider 有 Shader Context Picker 推断激活分支，那是 P2 范围。MVP 走多候选，参见 ADR-0001。"
+> **开发者**："Rider 会用 Shader Context Picker 推断激活分支；UnityShaderNav 采用 ADR-0001 的保守多候选语义。"
 >
 > **TA**："我 F12 在 `_MainTex` 上跳不到声明。"
 > **开发者**："看一下声明长什么样——如果是 `TEXTURE2D(_MainTex)`，这是 declaration macro，需要白名单识别。它是不是项目自定义的宏？"

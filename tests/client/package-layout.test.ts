@@ -12,6 +12,8 @@ const REQUIRED_VSIX_ENTRIES = [
   'extension/out/extension.js',
   'extension/out/server/server.js',
   'extension/out/grammars/tree-sitter-hlsl.wasm',
+  'extension/out/grammars/tree-sitter-hlsl.provenance.json',
+  'extension/out/grammars/tree-sitter-hlsl.LICENSE',
   'extension/out/server/node_modules/web-tree-sitter/package.json',
   'extension/out/server/node_modules/web-tree-sitter/tree-sitter.js',
   'extension/out/server/node_modules/web-tree-sitter/tree-sitter.wasm',
@@ -290,6 +292,8 @@ suite('runtime watch workflow', () => {
       'client/out/extension.js',
       'client/out/server/server.js',
       'client/out/grammars/tree-sitter-hlsl.wasm',
+      'client/out/grammars/tree-sitter-hlsl.provenance.json',
+      'client/out/grammars/tree-sitter-hlsl.LICENSE',
       'client/out/server/node_modules/web-tree-sitter/tree-sitter.js',
       'client/out/server/node_modules/web-tree-sitter/tree-sitter.wasm',
     ]) {
@@ -302,7 +306,7 @@ suite('runtime watch workflow', () => {
 });
 
 suite('verification command contract', () => {
-  test('fast verification checks workspace manifest and lock metadata first', () => {
+  test('fast verification checks workspace and public knowledge contracts first', () => {
     const rootPackage = JSON.parse(
       fs.readFileSync(path.resolve(monorepoRoot(), 'package.json'), 'utf8'),
     ) as { scripts?: Record<string, string> };
@@ -312,7 +316,20 @@ suite('verification command contract', () => {
       scripts['check:workspace-lock'],
       'node --test scripts/check-workspace-lock.test.mjs && node scripts/check-workspace-lock.mjs',
     );
-    assert.match(scripts['check:fast'] ?? '', /^npm run check:workspace-lock && /);
+    assert.strictEqual(
+      scripts['check:knowledge'],
+      'node --test scripts/check-public-knowledge.test.mjs && node scripts/check-public-knowledge.mjs',
+    );
+    assert.match(
+      scripts['check:fast'] ?? '',
+      /^npm run check:workspace-lock && npm run check:knowledge && /,
+    );
+    assert.strictEqual(
+      scripts['grammar:rebuild'],
+      'node scripts/rebuild-tree-sitter-hlsl.mjs',
+    );
+    assert.strictEqual(scripts['bench:index-cache'], 'node scripts/benchmark-index-cache.mjs');
+    assert.strictEqual(scripts['bench:issue3'], undefined);
   });
 
   test('package verification builds and inspects one current-run VSIX', () => {

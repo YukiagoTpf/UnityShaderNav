@@ -115,7 +115,7 @@ function tokenPosition(text: string, line: number, token: string, occurrence = 0
 
 describe('registerDefinitionHandler', () => {
   it('filters global definition candidates to the transitive include chain', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'usn-issue-1-def-'));
+    const root = await mkdtemp(join(tmpdir(), 'usn-definition-project-'));
     try {
       const assets = join(root, 'Assets');
       await mkdir(assets, { recursive: true });
@@ -407,7 +407,7 @@ describe('registerDefinitionHandler', () => {
   });
 
   it('resolves an include-visible struct type identifier in a variable declaration', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'usn-issue-2-type-'));
+    const root = await mkdtemp(join(tmpdir(), 'usn-definition-type-'));
     try {
       const assets = join(root, 'Assets');
       await mkdir(assets, { recursive: true });
@@ -486,7 +486,7 @@ describe('registerDefinitionHandler', () => {
   });
 
   it('resolves an include-visible struct type identifier inside a shader hlsl block', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'usn-issue-2-shader-type-'));
+    const root = await mkdtemp(join(tmpdir(), 'usn-definition-shader-type-'));
     try {
       const assets = join(root, 'Assets');
       await mkdir(assets, { recursive: true });

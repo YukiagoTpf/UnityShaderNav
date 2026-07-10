@@ -48,6 +48,7 @@ Run from the repository root:
 
 ```powershell
 npm run check:fast
+npm run check:knowledge
 npm run build
 npm run watch
 npm run test -w @unity-shader-nav/server
@@ -55,16 +56,21 @@ npm run test:package
 npm test
 npm run test:electron:activation
 npm run test:electron
-npm run bench:issue3 -- --files 800
+npm run bench:index-cache -- --files 800
 npm run package:vsix
+npm run grammar:rebuild
 ```
 
 ## Testing Strategy
 
 - `npm run check:fast` is the authoritative local and CI feedback path. It
-  first verifies that workspace manifests and lockfile identities agree, then
+  first verifies workspace/lock identity and the public knowledge surface, then
   removes generated output, rebuilds current TypeScript source, and runs the
   complete language-server test suite without starting or downloading VS Code.
+- `npm run check:knowledge` is an offline integrity check for public local
+  links and anchors, ADR identities and paths, repository-safe source
+  references, Agent entrypoints, and the vendored grammar provenance, artifact,
+  and upstream license.
 - Parser and index behavior belongs in server unit tests.
 - `npm run test:package` is the authoritative package check. One invocation
   removes generated output, rebuilds current source, creates the versioned VSIX,
@@ -86,6 +92,21 @@ npm run package:vsix
   disposable directory before allowing `Library/UnityShaderNavCache/` writes.
 - Add fixtures that describe the shader shape being fixed. Small, explicit
   fixtures are easier to maintain than copied production shaders.
+
+## Vendored HLSL Grammar
+
+The checked-in grammar's source revision, public toolchain, container digest,
+artifact checksum, and upstream license checksum have one machine-readable
+source of truth in
+[`tree-sitter-hlsl.provenance.json`](../server/grammars/tree-sitter-hlsl.provenance.json).
+
+`npm run check:knowledge` verifies the checked-in artifact and license offline.
+`npm run grammar:rebuild` performs a clean build from the pinned public source
+and compares it byte for byte with the repository. The rebuild requires Git,
+Docker, network access to GitHub, Docker Hub, and the public npm registry, and a
+runtime capable of executing the pinned Linux/amd64 Emscripten image. The
+command is intentionally verification-only: changing the vendored artifact is
+a separate, reviewable provenance update.
 
 ## CI
 

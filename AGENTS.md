@@ -1,6 +1,6 @@
 # Agent 协作约定 — UnityShaderNav
 
-这个仓库是 VS Code 扩展 + LSP 服务，给 Unity Shader 文件做代码导航（F12 / Find References / Outline / Highlight）。旧的实施计划已归档到 git history；当前协作以公开文档、GitHub Issues 和代码测试为准。
+这个仓库是 VS Code 扩展 + LSP 服务，给 Unity Shader 文件做代码导航（F12 / Find References / Outline / Highlight）。当前协作以公开文档、GitHub Issues 和代码测试为准。
 
 ## 执行纪律
 
@@ -8,32 +8,26 @@
 - **禁止创建 `codex/` 前缀分支。**
 - **不要 `--no-verify` / `--force-with-lease` / `git reset --hard`** 等绕路操作。失败先诊断，修了再开新 commit。
 - 提交信息沿用 conventional commits，例如 `feat(issue-10): ...`、`fix(issue-7): ...`、`test(issue-8): ...`、`docs: ...`。
-- 遇到 GitHub issue 与现实有偏差时，优先把新的诊断、取舍和验证结果写回对应 issue，不再新建本地 fixplan 文档。
+- 遇到 GitHub issue 与现实有偏差时，优先把新的诊断、取舍和验证结果写回对应 issue，不新建本地 fixplan 或 handoff 文档。
 
-## 当前信息入口
+## 权威入口
 
 - `README.md` — 项目公开入口。
+- `CONTEXT.md` — 稳定的领域术语与命名约定。
+- `client/package.json` — 扩展身份、版本和 VS Code manifest。
 - `CHANGELOG.md` — 对外变更记录。
 - `docs/README.md` — 文档索引。
 - `docs/development.md` — 本地开发、调试和测试命令。
 - `docs/architecture.md` / `docs/adr/` — 架构说明和长期决策。
-- `docs/roadmap.md` — 当前方向摘要；实际 backlog 以 GitHub Issues 为准。
-- GitHub Issues — bug、feature、fix plan、实现总结和验证记录的主入口。
+- GitHub Issues — backlog、诊断、实现总结和验证记录。
 
-## 当前发布状态
+## 公共仓库边界
 
-- 最新发布版本：`v0.0.7`。
-- Release 地址：https://github.com/YukiagoTpf/UnityShaderNav/releases/tag/v0.0.7
-- 最新 VSIX 产物：`client/unity-shader-nav-0.0.7.vsix`。
-- `client/package.json` 当前插件版本为 `0.0.7`，并使用 `client/images/icon.png` 作为 VS Code Marketplace 图标。
-- 0.0.7 亮点：Workspace symbol search（Ctrl+T，#19）；`?path=` git package 解析 + git 包目录 hash 截 10 字符（#25）。
-
-## 已知坑
-
-- **路径渲染幻觉**：harness 在显示 tool 输出（Read / Grep / Bash stdout）时，可能把路径里的字面内容渲染得不可信。判断是真污染还是显示幻觉，用 `od -c` 或 `cat | hexdump` 看 raw bytes。
+- 公开文档和源码注释只记录仓库事实或可公开验证的来源，不保留私有来源名称、链接、归因、个人绝对路径或历史执行记录。
+- 已完成工作的过程材料留在 Git history 和对应 GitHub issue；当前树只保留长期有效的 Interface、决策和说明。
 
 ## 项目入口
 
 - Git 仓库根目录同时是源码、npm workspace、文档和 Agent 上下文的唯一项目根目录。
-- 顶层命令在仓库根目录运行：`npm run build` / `npm test` / `npm run watch`
-- 调试：在 VS Code 里打开仓库根目录后按 F5
+- 顶层命令在仓库根目录运行：`npm run build` / `npm test` / `npm run watch`。
+- 调试：在 VS Code 里打开仓库根目录后按 F5。

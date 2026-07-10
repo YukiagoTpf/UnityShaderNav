@@ -95,7 +95,7 @@ describe('registerHoverHandler — project symbols', () => {
   });
 
   it('hovers a function across a #include chain and respects include visibility', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'usn-issue-18-hover-'));
+    const root = await mkdtemp(join(tmpdir(), 'usn-hover-project-'));
     try {
       const assets = join(root, 'Assets');
       await mkdir(assets, { recursive: true });
@@ -284,8 +284,7 @@ describe('registerHoverHandler — project symbols', () => {
       position: tokenPosition(text, 0, 'Helper'),
     });
 
-    // Per plan design decision 9: self-hover is allowed; the formatter renders
-    // the same card it would for a use-site.
+    // Self-hover is intentional: declarations use the same card as use-sites.
     expect(result).not.toBeNull();
     const value = (result?.contents as { value: string }).value;
     expect(value).toContain('float4 Helper()');
@@ -471,7 +470,7 @@ describe('registerHoverHandler — guards and empty cases', () => {
   });
 
   it('passes folderUri through to the formatter so paths become workspace-relative', async () => {
-    const folder = await mkdtemp(join(tmpdir(), 'usn-issue-18-folderuri-'));
+    const folder = await mkdtemp(join(tmpdir(), 'usn-hover-folder-uri-'));
     try {
       const filePath = join(folder, 'sub', 'A.hlsl');
       await mkdir(join(folder, 'sub'), { recursive: true });

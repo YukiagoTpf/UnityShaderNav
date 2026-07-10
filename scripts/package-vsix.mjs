@@ -36,7 +36,7 @@ const freshnessChecks = [
   },
   {
     output: 'client/out/grammars/tree-sitter-hlsl.wasm',
-    inputs: ['server/grammars/tree-sitter-hlsl.wasm'],
+    inputs: ['server/grammars'],
   },
   {
     output: 'client/out/server/node_modules/web-tree-sitter/tree-sitter.js',
@@ -55,6 +55,8 @@ const requiredVsixEntries = [
   'extension/out/extension.js',
   'extension/out/server/server.js',
   'extension/out/grammars/tree-sitter-hlsl.wasm',
+  'extension/out/grammars/tree-sitter-hlsl.provenance.json',
+  'extension/out/grammars/tree-sitter-hlsl.LICENSE',
   'extension/out/server/node_modules/web-tree-sitter/package.json',
   'extension/out/server/node_modules/web-tree-sitter/tree-sitter.js',
   'extension/out/server/node_modules/web-tree-sitter/tree-sitter.wasm',

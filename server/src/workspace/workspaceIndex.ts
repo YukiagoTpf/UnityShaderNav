@@ -12,9 +12,9 @@ export interface FileEvent {
 }
 
 /**
- * Owns the live + on-disk index state extracted from Workspace (#31):
+ * Owns the live + on-disk index state composed by Workspace:
  * store / global / globalRefs / diskIndexes / declaration-macro table, plus all
- * index-mutation operations. Callers reach it via workspace.index.* (#37); the
+ * index-mutation operations. Callers reach it via workspace.index; the
  * lifecycle + cache concern stays in Workspace, which keeps only applyChanges
  * (it orchestrates index.applyChanges + persist).
  */

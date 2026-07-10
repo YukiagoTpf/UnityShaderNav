@@ -13,11 +13,11 @@ Unity Shader 代码大量依赖预处理器分支（`#ifdef SHADER_API_*`、`mul
 Rider 通过分析当前文件激活的 `#pragma multi_compile` 集合，**唯一确定** F12 目标。这需要：
 1. 完整的 multi_compile 语义模型（含 keyword set 笛卡尔积、`shader_feature_local` 等）
 2. 用户在 UI 上切换"当前上下文"的交互（Rider 的 Shader Context Picker）
-3. 工程量约为整个 MVP 的 50% 以上
+3. 需要维护一套与导航核心规模相当的编译上下文模型
 
-MVP 目标是 Rider **基础**跳转的体验，不是完整复刻。多候选 Peek 是 VSCode 原生 UX，用户不需要学新概念，且在"两个分支都是有效目标"的常见场景（同名函数在 Forward/Shadow Pass 都有定义）下反而比 Rider 更直观。
+本项目提供保守、可解释的代码导航，不复刻完整 Shader 编译上下文。多候选 Peek 是 VSCode 原生 UX，用户不需要学新概念，且在"两个分支都是有效目标"的常见场景（同名函数在 Forward/Shadow Pass 都有定义）下更直观。
 
-Shader Context Picker 留作 P2 演进方向（spec §13.4），届时可在多候选基础上叠加"激活分支"作为默认选中项。
+未来若引入可靠的编译上下文，可在多候选结果之上增加默认候选，但不能破坏保守回退语义。
 
 ## Consequences
 

@@ -130,7 +130,7 @@ dist
 # Stores VSCode versions used for testing VSCode extensions
 .vscode-test
 
-# Unity generated project state and Plan 09 cache fixtures
+# Unity generated project state and index-cache fixtures
 **/Library/
 
 # pnpm

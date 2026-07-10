@@ -290,10 +290,10 @@ describe('registerDefinitionHandler — properties bridge', () => {
     expect(result?.[0].originSelectionRange).toEqual(idx.properties?.[0].nameRange);
   });
 
-  // Case 2: forward, declaration in included .hlsl. Uses _BumpScale to avoid
-  // the _MainTex_ST suffix-confusion called out in the plan.
+  // Case 2: forward, declaration in included .hlsl. Uses _BumpScale so suffix
+  // matching around _MainTex_ST cannot obscure the include-resolution behavior.
   it('case 2: forward, declaration in included .hlsl (_BumpScale)', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'usn-issue-20-case2-'));
+    const root = await mkdtemp(join(tmpdir(), 'usn-property-bridge-case2-'));
     try {
       const assets = join(root, 'Assets');
       await mkdir(assets, { recursive: true });
@@ -387,12 +387,9 @@ describe('registerDefinitionHandler — properties bridge', () => {
     expect(result).toBeNull();
   });
 
-  // Case 4: forward, multiple HLSL declarations of the same name. The plan
-  // suggests an `#ifdef`-gated pair, but the HLSL parser does not currently
-  // emit symbols inside `#ifdef` branches (preprocessor-naive — see
-  // `docs/adr/0001-multi-candidate-resolution.md`). Two same-name globals in
-  // sibling Pass blocks exercise the multi-candidate path identically, which
-  // is what the bridge filter must preserve.
+  // Case 4: forward, multiple HLSL declarations of the same name. Two globals
+  // in sibling Pass blocks exercise the multi-candidate contract from ADR-0001
+  // without coupling this test to preprocessor branch collection.
   it('case 4: forward, multiple HLSL declarations return all candidates', async () => {
     const uri = 'file:///t/case4.shader';
     const text = [
@@ -534,7 +531,7 @@ describe('registerDefinitionHandler — properties bridge', () => {
   // Case 7: reverse, HLSL identifier in included .hlsl → property entries
   // from both shader files that share the include.
   it('case 7: reverse, HLSL identifier in include returns both shader properties', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'usn-issue-20-case7-'));
+    const root = await mkdtemp(join(tmpdir(), 'usn-property-bridge-case7-'));
     try {
       const assets = join(root, 'Assets');
       await mkdir(assets, { recursive: true });
@@ -773,7 +770,7 @@ describe('registerDefinitionHandler — properties bridge', () => {
 
   // Case 14 (handler integration): reverse direction bypasses visibility.
   it('case 14: reverse direction bypasses visibility (handler integration)', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'usn-issue-20-case14-'));
+    const root = await mkdtemp(join(tmpdir(), 'usn-property-bridge-case14-'));
     try {
       const assets = join(root, 'Assets');
       await mkdir(assets, { recursive: true });

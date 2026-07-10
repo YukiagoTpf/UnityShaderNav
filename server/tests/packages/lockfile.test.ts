@@ -77,7 +77,7 @@ describe('resolvePackagePhysicalPath', () => {
 
   it('git with ?path= subdir maps to Library/PackageCache/<name>@<hash[:10]>', () => {
     // Unity extracts only the subdir into the cache folder; the directory name
-    // itself does not encode the subpath. Verified against Unity 2022.3 (issue #25).
+    // itself does not encode the subpath. Verified against Unity 2022.3 lockfiles.
     expect(resolvePackagePhysicalPath(
       'com.cysharp.unitask',
       {
@@ -90,7 +90,7 @@ describe('resolvePackagePhysicalPath', () => {
   });
 
   it('git with a real 40-char hash truncates the cache directory hash to 10 chars', () => {
-    // Verified against Unity 2022.3 (issue #25). Existing short-hash fixtures
+    // Verified against Unity 2022.3 lockfiles. Existing short-hash fixtures
     // happened to pass because `slice(0, 10)` is a no-op on strings of length ≤10.
     expect(resolvePackagePhysicalPath(
       'com.unity.test-framework',
@@ -136,7 +136,7 @@ describe('resolvePackagePhysicalPath', () => {
   });
 
   it('local absolute file paths are returned as-is', () => {
-    const abs = isAbsolute('/Users/me/rp') ? '/Users/me/rp' : resolve('C:/rp');
+    const abs = isAbsolute('/workspace/rp') ? '/workspace/rp' : resolve('C:/rp');
 
     expect(resolvePackagePhysicalPath(
       'com.example.abs',

@@ -7,12 +7,12 @@ This directory contains the public-facing documentation for UnityShaderNav.
 - [User Guide](usage.md)
 - [Configuration](configuration.md)
 - [Troubleshooting](troubleshooting.md)
-- [Roadmap](roadmap.md)
 
 ## Contributors
 
 - [Development Guide](development.md)
 - [Architecture](architecture.md)
+- [Domain Vocabulary](../CONTEXT.md)
 - [Technical Spec](technical-spec.md)
 - [Architecture Decision Records](adr/)
 

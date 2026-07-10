@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "repository": "https://github.com/tree-sitter-grammars/tree-sitter-hlsl.git",
+    "tag": "v0.2.0",
+    "commit": "bab9111922d53d43668fabb61869bec51bbcb915",
+    "licensePath": "server/grammars/tree-sitter-hlsl.LICENSE",
+    "licenseSha256": "dec735ccc031754dd05e6556dd9e959915eb367cf01cf009c77a1a38786932b1"
+  },
+  "toolchain": {
+    "treeSitterCli": {
+      "version": "0.24.7",
+      "integrity": "sha512-o4gnE82pVmMMhJbWwD6+I9yr4lXii5Ci5qEQ2pFpUbVy1YiD8cizTJaqdcznA0qEbo7l2OneI1GocChPrI4YGQ==",
+      "registry": "https://registry.npmjs.org"
+    },
+    "emscripten": {
+      "image": "docker.io/emscripten/emsdk",
+      "tag": "3.1.64",
+      "digest": "sha256:8847dad4171ebc8a53d9ae5cda86a2546ef5b2e68834c14dc1ba2b2962e125cc",
+      "platform": "linux/amd64"
+    }
+  },
+  "artifact": {
+    "path": "server/grammars/tree-sitter-hlsl.wasm",
+    "size": 4223843,
+    "sha256": "3ab32399a9c1a284330e0c943013319ffa146472ca9eeef321875a203f0b702f"
+  }
+}

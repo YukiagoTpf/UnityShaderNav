@@ -21,7 +21,9 @@ UnityShaderNav 是一个用于 Unity Shader 项目的 Visual Studio Code 扩展�
 
 ## 状态
 
-项目目前处于早期 public preview 阶段。核心 language server 已经可以工作，并有单元测试和 VS Code 集成测试覆盖；Marketplace 发布、release 自动化、CI 缓存优化，以及少数 Unity 路径边界情况仍在 [GitHub Issues](https://github.com/YukiagoTpf/UnityShaderNav/issues) 中跟踪。
+项目目前处于 public preview 阶段。已发布构建和发布说明见
+[GitHub Releases](https://github.com/YukiagoTpf/UnityShaderNav/releases)，当前工作见
+[GitHub Issues](https://github.com/YukiagoTpf/UnityShaderNav/issues)。
 
 ## 支持的文件
 
@@ -100,7 +102,6 @@ npm run package:vsix
 - [Development Guide](docs/development.md)
 - [Architecture](docs/architecture.md)
 - [Troubleshooting](docs/troubleshooting.md)
-- [Roadmap](docs/roadmap.md)
 - [Technical Spec](docs/technical-spec.md)
 - [Architecture Decision Records](docs/adr/)
 

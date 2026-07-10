@@ -32,7 +32,7 @@ describe('scanStructure: multi-pass with names', () => {
   });
 });
 
-describe('scanStructure: braces inside strings (P1#1)', () => {
+describe('scanStructure: braces inside strings', () => {
   it('does not close pass/subshader/shader on `"}"` literal', () => {
     const result = scanStructure(fixture('strings-with-braces.shader'));
     expect(result.shaders).toHaveLength(1);
@@ -46,7 +46,7 @@ describe('scanStructure: braces inside strings (P1#1)', () => {
   });
 });
 
-describe('scanStructure: inline Pass { Name "X" } (P1#2)', () => {
+describe('scanStructure: inline Pass { Name "X" }', () => {
   it('extracts name from same line as Pass {', () => {
     const result = scanStructure(fixture('inline-pass-name.shader'));
     const passes = result.shaders[0].children[0].children;
@@ -56,7 +56,7 @@ describe('scanStructure: inline Pass { Name "X" } (P1#2)', () => {
   });
 });
 
-describe('scanStructure: explicit ranges (P2#2)', () => {
+describe('scanStructure: explicit ranges', () => {
   it('records headerLine and closeLine for single-pass shader', () => {
     const result = scanStructure(fixture('single-pass.shader'));
     const shader = result.shaders[0];

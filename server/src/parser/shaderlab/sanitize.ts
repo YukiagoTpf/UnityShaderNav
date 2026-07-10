@@ -6,9 +6,8 @@
 //      the depth).
 //
 // Output length is identical to input so column positions stay valid.
-// Multi-line block comments are NOT carried across lines (intentional MVP
-// limitation; callers needing multiline awareness must implement their own
-// state).
+// Multi-line block comments are not carried across lines; callers needing
+// multiline awareness must provide their own state.
 
 const enum S { Code, Line, Block, Str }
 

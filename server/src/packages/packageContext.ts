@@ -5,7 +5,7 @@ import { containsPath } from '../workspace/pathUtils';
 import { PackageResolver } from './packageResolver';
 
 /**
- * Encapsulates the package concern extracted from Workspace (#28): owns the
+ * Encapsulates the package concern composed by Workspace: owns the
  * PackageResolver, derives the IncludeContext, and answers isInPackages(uri).
  * Workspace composes one and reaches it via `workspace.packages`.
  */

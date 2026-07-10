@@ -96,7 +96,7 @@ first 10 characters when naming the cache directory, so the resolver does the
 same. `?path=` subpath git packages share this naming convention — Unity
 extracts only the requested subdirectory into the cache folder, so the resolved
 path still points at the package root. Verified against Unity 2022.3.53f1c1
-(issue #25). Unknown sources and `git` entries without a `hash` are skipped
+lockfiles. Unknown sources and `git` entries without a `hash` are skipped
 with a console warning rather than being guessed.
 
 ## Cache
