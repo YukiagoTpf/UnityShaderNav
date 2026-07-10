@@ -50,6 +50,7 @@ npm run watch
 npm run test -w @unity-shader-nav/server
 npm run test:package
 npm test
+npm run test:electron:activation
 npm run test:electron
 npm run bench:issue3 -- --files 800
 npm run package:vsix
@@ -65,8 +66,18 @@ npm run package:vsix
   removes generated output, rebuilds current source, creates the versioned VSIX,
   verifies its manifest and runtime files, then runs package-layout tests.
 - LSP handler behavior belongs in server handler tests.
-- VS Code activation, packaging layout, and command-level smoke tests belong in
-  `tests/integration/client`.
+- VS Code activation belongs in `tests/client`; command-level feature tests and
+  their fixtures belong in `tests/integration/client`.
+- Electron tests use the exact VS Code release in `tests/vscode-version.txt`.
+  `npm run test:electron:activation` proves language-triggered activation from
+  an initially inactive extension; `npm run test:electron` runs activation and
+  integration in separate profiles.
+- Every Electron process stages its extension runtime, compiled tests, selected
+  workspace, and repository fixtures under a short `/tmp/usn-*` sandbox on
+  POSIX (the OS temp directory on Windows). Copying rejects existing `Library/`
+  state, nested test temp directories stay inside the sandbox through
+  `TMPDIR`/`TMP`/`TEMP`, and both success and failure remove the complete
+  sandbox.
 - Tests that bootstrap a Unity project must copy repository fixtures to a
   disposable directory before allowing `Library/UnityShaderNavCache/` writes.
 - Add fixtures that describe the shader shape being fixed. Small, explicit
@@ -78,17 +89,22 @@ GitHub Actions runs `npm run check:fast` first on every push and pull request
 to `main` (`.github/workflows/ci.yml`), then runs `npm run test:package` as a
 separately attributable current-run package check. Only after both deterministic
 checks pass does CI install the Electron runtime libraries and run
-`npm run test:electron` under `xvfb`.
+the prepared activation + integration profiles under `xvfb`. The public
+`npm run test:electron` command includes the package gate itself; CI calls the
+internal prepared command only because the preceding named step already ran
+that same gate.
 
-`unity-shader-nav/.vscode-test/` is cached via `actions/cache@v4`. The
-cache key is `vscode-test-<runner-os>-<hash of unity-shader-nav/package-lock.json>`,
-so the cache automatically invalidates whenever the lockfile changes
-(including transitive bumps to `@vscode/test-electron`, which is what
-controls the downloaded VS Code build).
+`unity-shader-nav/.vscode-test/` is the explicit persistent download cache; it
+is not disposable profile state. GitHub Actions caches it with an identity made
+from runner OS, runner architecture, the exact value in
+`tests/vscode-version.txt`, and the package-lock hash. There is no broad fallback
+key that can silently select a different VS Code release. The lockfile component
+also invalidates the cache when `@vscode/test-electron` changes.
 
-To force a refresh without changing dependencies, bump the cache key
-suffix in the workflow. Locally `.vscode-test/` is managed by
-`@vscode/test-electron` and does not require manual maintenance.
+To test a newer VS Code release, change the one version file and run the
+activation and full Electron commands locally before committing it. Locally
+`.vscode-test/` is managed by `@vscode/test-electron`; old explicitly pinned
+runtimes may be deleted when no branch needs them.
 
 ## Issue Fix Workflow
 

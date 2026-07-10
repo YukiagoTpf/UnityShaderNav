@@ -32,6 +32,7 @@ npm run build
 npm run test -w @unity-shader-nav/server
 npm run test:package
 npm test
+npm run test:electron:activation
 npm run test:electron
 ```
 
@@ -40,6 +41,11 @@ while developing, then run broader verification before submitting a pull
 request. `npm run test:package` starts from clean generated output, builds a new
 VSIX, verifies its runtime contents, and runs the package-layout tests; use it
 instead of inspecting an older `client/out/` or VSIX artifact.
+
+`npm run test:electron:activation` runs only the activation-event smoke test in
+an isolated profile. `npm run test:electron` runs that smoke test and the full
+integration suite in separate disposable profiles against the pinned VS Code
+version.
 
 ## Pull Request Expectations
 

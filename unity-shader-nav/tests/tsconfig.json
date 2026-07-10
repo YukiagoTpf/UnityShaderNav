@@ -8,6 +8,6 @@
     "moduleResolution": "Node",
     "types": ["node", "mocha"]
   },
-  "include": ["runTest.ts", "client/**/*.ts", "integration/**/*.ts"],
+  "include": ["runTest.ts", "harness/**/*.ts", "client/**/*.ts", "integration/**/*.ts"],
   "exclude": ["server/**/*", "out/**"]
 }

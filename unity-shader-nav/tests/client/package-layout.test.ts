@@ -318,7 +318,11 @@ suite('verification command contract', () => {
     );
     assert.strictEqual(
       scripts['test:integration'],
-      'npm run test:package && node tests/out/runTest.js',
+      'npm run test:package && npm run test:electron:prepared',
+    );
+    assert.strictEqual(
+      scripts['test:electron'],
+      'npm run test:package && npm run test:electron:prepared',
     );
   });
 });

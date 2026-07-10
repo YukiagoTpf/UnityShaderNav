@@ -30,17 +30,24 @@ jobs:
           cache: npm
           cache-dependency-path: unity-shader-nav/package-lock.json
 
+      - name: Read pinned VS Code test version
+        id: vscode-test-version
+        shell: bash
+        run: |
+          version="$(tr -d '\r\n' < tests/vscode-version.txt)"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid tests/vscode-version.txt: $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Cache VS Code test runtime
         uses: actions/cache@v4
         with:
-          # The Electron integration tests download a VS Code build into
-          # unity-shader-nav/.vscode-test/ on first run. The cache key
-          # rotates when the lockfile changes so a @vscode/test-electron
-          # bump invalidates a stale binary.
+          # Runtime identity includes platform, the exact tested VS Code
+          # release, and the test-electron implementation lockfile.
           path: unity-shader-nav/.vscode-test
-          key: vscode-test-${{ runner.os }}-${{ hashFiles('unity-shader-nav/package-lock.json') }}
-          restore-keys: |
-            vscode-test-${{ runner.os }}-
+          key: vscode-test-${{ runner.os }}-${{ runner.arch }}-${{ steps.vscode-test-version.outputs.version }}-${{ hashFiles('unity-shader-nav/package-lock.json') }}
 
       - name: Install dependencies
         run: npm ci
@@ -70,4 +77,5 @@ jobs:
         working-directory: .
 
       - name: Run Electron verification
-        run: xvfb-run -a npm run test:electron
+        # test:package above produced the exact runtime and compiled tests.
+        run: xvfb-run -a npm run test:electron:prepared

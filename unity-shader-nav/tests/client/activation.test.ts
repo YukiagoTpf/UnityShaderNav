@@ -1,4 +1,7 @@
 import * as assert from 'node:assert';
+import { realpathSync } from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 
 const EXT_ID = 'Yukiago.unity-shader-nav';
@@ -17,6 +20,20 @@ async function waitFor(predicate: () => boolean, timeoutMs = 5000, stepMs = 50):
 }
 
 suite('UnityShaderNav activation', () => {
+  test('runs from one disposable short-path harness', () => {
+    const harnessRoot = process.env.USN_HARNESS_ROOT;
+    assert.ok(harnessRoot, 'Electron tests must run through the staged harness');
+    const ext = findExt();
+    assert.ok(ext, 'extension manifest must be loaded');
+
+    assert.ok(isWithin(harnessRoot, ext.extensionPath), 'extension path must be staged');
+    assert.ok(isWithin(harnessRoot, __dirname), 'compiled tests must be staged');
+    assert.ok(isWithin(harnessRoot, os.tmpdir()), 'test temp state must stay in the harness');
+    for (const folder of vscode.workspace.workspaceFolders ?? []) {
+      assert.ok(isWithin(harnessRoot, folder.uri.fsPath), 'workspace must be staged');
+    }
+  });
+
   test('manifest declares onLanguage activation for shaderlab and hlsl', () => {
     const ext = findExt();
     assert.ok(ext, 'extension manifest must be loaded');
@@ -34,6 +51,7 @@ suite('UnityShaderNav activation', () => {
   test('opening a .shader document triggers activation via activationEvents', async () => {
     const ext = findExt();
     assert.ok(ext, 'extension manifest must be loaded');
+    assert.strictEqual(ext.isActive, false, 'activation smoke must begin with the extension inactive');
 
     // Open the shader doc without calling ext.activate() — rely on the
     // declared onLanguage:shaderlab event to drive activation.
@@ -50,3 +68,9 @@ suite('UnityShaderNav activation', () => {
     );
   });
 });
+
+function isWithin(root: string, candidate: string): boolean {
+  const relativePath = path.relative(realpathSync(root), realpathSync(candidate));
+  return relativePath === ''
+    || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath));
+}

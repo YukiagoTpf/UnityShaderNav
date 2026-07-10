@@ -76,6 +76,7 @@ export async function addWorkspaceFolder(folderPath: string): Promise<WorkspaceF
 }
 
 export async function removeWorkspaceFolder(folderPath: string): Promise<void> {
+  await closeEditorsForFolder(folderPath);
   const deadline = Date.now() + UPDATE_TIMEOUT_MS;
   while (Date.now() < deadline) {
     const existing = findWorkspaceFolder(folderPath);
@@ -96,13 +97,14 @@ export async function removeWorkspaceFolder(folderPath: string): Promise<void> {
 }
 
 export async function closeEditorsForFolder(folderPath: string): Promise<void> {
-  for (const editor of [...vscode.window.visibleTextEditors]) {
-    if (!isWithinPath(folderPath, editor.document.uri.fsPath)) {
+  for (const document of [...vscode.workspace.textDocuments]) {
+    if (document.uri.scheme !== 'file' || !isWithinPath(folderPath, document.uri.fsPath)) {
       continue;
     }
-    await vscode.window.showTextDocument(editor.document, editor.viewColumn, false);
+    await vscode.window.showTextDocument(document, { preview: false, preserveFocus: false });
     await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
   }
+
 }
 
 export async function withWorkspaceFolder<T>(
