@@ -1,5 +1,5 @@
 import type { Connection } from 'vscode-languageserver/node';
-import type { ExtensionSettings } from '@unity-shader-nav/shared';
+import { settingsRequireReindex, type ExtensionSettings } from '@unity-shader-nav/shared';
 import type { Workspace } from '../workspace/workspace';
 import type { WorkspaceManager } from '../workspace/workspaceManager';
 import type { RequestSuspender } from './requestSuspender';
@@ -16,13 +16,6 @@ export interface OpenDocumentSnapshot {
 export type OpenDocumentsProvider = () => Iterable<OpenDocumentSnapshot>;
 
 type RebuildSuspender = Pick<RequestSuspender, 'suspend' | 'release'>;
-
-function settingsAffectIndex(previous: ExtensionSettings, next: ExtensionSettings): boolean {
-  return previous.projectRoot !== next.projectRoot
-    || JSON.stringify(previous.includeDirectories) !== JSON.stringify(next.includeDirectories)
-    || JSON.stringify(previous.excludePatterns) !== JSON.stringify(next.excludePatterns)
-    || JSON.stringify(previous.declarationMacros) !== JSON.stringify(next.declarationMacros);
-}
 
 async function reindexOpenDocuments(
   manager: WorkspaceManager,
@@ -93,7 +86,7 @@ export async function applyScopedSettingsAndRebuild(
     return {
       workspace,
       settings,
-      rebuild: settingsAffectIndex(workspace.settings, settings),
+      rebuild: settingsRequireReindex(workspace.settings, settings),
     };
   }));
 

@@ -2,6 +2,11 @@
 
 UnityShaderNav settings use the `unityShaderNav` prefix.
 
+Settings are validated independently at each leaf. Invalid values fall back to
+the documented default, while valid siblings in the same nested object remain
+active. All settings are resource-scoped and apply without restarting VS Code;
+settings that affect indexing trigger a workspace rebuild automatically.
+
 ## `unityShaderNav.projectRoot`
 
 Type: `string`
@@ -39,18 +44,14 @@ shared shader libraries, or unusual built-in include locations.
 
 Type: `string[]`
 
-Default:
-
-```jsonc
-["**/Library/**", "**/Temp/**", "**/Logs/**"]
-```
+Default: `["**/Library/**","**/Temp/**","**/Logs/**"]`
 
 Glob patterns skipped during user-file indexing. These patterns do not control
 Unity Package indexing; packages are resolved from `Packages/packages-lock.json`.
 
 ## `unityShaderNav.declarationMacros`
 
-Type: object array
+Type: `object[]`
 
 Default: `[]`
 

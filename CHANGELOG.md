@@ -7,6 +7,14 @@ and uses semantic versioning for extension releases once public publishing start
 
 ## Unreleased
 
+### Fixed
+
+- Configuration keys, defaults, validation, live change forwarding, and index
+  rebuild behavior now share one checked contract. In particular, changing
+  `unityShaderNav.debug.definitionTrace` applies without restarting the
+  extension, and invalid nested values no longer replace valid sibling
+  defaults.
+
 ## 0.0.7 - 2026-05-28
 
 ### Added

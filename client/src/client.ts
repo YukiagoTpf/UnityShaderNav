@@ -6,16 +6,7 @@ import {
   ServerOptions,
   TransportKind,
 } from 'vscode-languageclient/node';
-
-const SETTINGS_SECTIONS = [
-  'unityShaderNav.projectRoot',
-  'unityShaderNav.includeDirectories',
-  'unityShaderNav.excludePatterns',
-  'unityShaderNav.declarationMacros',
-  'unityShaderNav.findReferences.includePackages',
-  'unityShaderNav.dimInactiveBranches.enabled',
-  'unityShaderNav.dimInactiveBranches.opacity',
-];
+import { SETTINGS_SECTION } from '@unity-shader-nav/shared';
 
 export function createLanguageClient(context: ExtensionContext): LanguageClient {
   const serverModule = context.asAbsolutePath(path.join('out', 'server', 'server.js'));
@@ -43,8 +34,7 @@ export function createLanguageClient(context: ExtensionContext): LanguageClient 
   );
 
   context.subscriptions.push(workspace.onDidChangeConfiguration((event) => {
-    const changed = SETTINGS_SECTIONS.some((section) => event.affectsConfiguration(section));
-    if (!changed) return;
+    if (!event.affectsConfiguration(SETTINGS_SECTION)) return;
 
     void client.sendNotification('workspace/didChangeConfiguration', {
       settings: null,

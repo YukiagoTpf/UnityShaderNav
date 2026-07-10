@@ -96,4 +96,26 @@ describe('onSettingsChanged', () => {
       { pattern: 'MY_TEX2D($name)', kind: 'variable' },
     ]);
   });
+
+  it('reloads a definition-trace-only change when the client sends null settings', async () => {
+    let handler: ((params: unknown) => Promise<void>) | undefined;
+    const connection = {
+      onDidChangeConfiguration: (registered: (params: unknown) => Promise<void>) => {
+        handler = registered;
+      },
+      workspace: {
+        getConfiguration: async () => ({ debug: { definitionTrace: true } }),
+      },
+    } as unknown as Connection;
+
+    let got = DEFAULT_SETTINGS;
+    onSettingsChanged(connection, (settings) => {
+      got = settings;
+    });
+
+    await handler!({ settings: null });
+
+    expect(got.debug.definitionTrace).toBe(true);
+    expect(got.dimInactiveBranches).toEqual(DEFAULT_SETTINGS.dimInactiveBranches);
+  });
 });

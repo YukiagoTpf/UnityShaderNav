@@ -198,16 +198,8 @@ is discarded and rebuilt. Standalone mode falls back to VS Code global storage.
 
 ## Public Settings
 
-See [Configuration](configuration.md) for details.
-
-| Setting | Purpose |
-|---|---|
-| `unityShaderNav.projectRoot` | Explicit Unity project root |
-| `unityShaderNav.includeDirectories` | Extra include search roots |
-| `unityShaderNav.excludePatterns` | User-file scan excludes |
-| `unityShaderNav.declarationMacros` | Project-specific declaration macro patterns |
-| `unityShaderNav.findReferences.includePackages` | Include package references in Shift+F12 |
-| `unityShaderNav.debug.definitionTrace` | Debug definition resolution |
+[Configuration](configuration.md) is the canonical list of public settings,
+their types, defaults, ranges, and behavior.
 
 ## Verification Baseline
 

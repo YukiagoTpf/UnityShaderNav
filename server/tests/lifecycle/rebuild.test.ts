@@ -294,7 +294,31 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
     }
   });
 
-  it('does not rebuild indexes when only findReferences.includePackages changes', async () => {
+  it.each([
+    {
+      name: 'findReferences.includePackages',
+      nextSettings: {
+        ...DEFAULT_SETTINGS,
+        findReferences: { includePackages: true },
+      },
+      assertApplied: (settings: ExtensionSettings) => {
+        expect(settings.findReferences.includePackages).toBe(true);
+      },
+    },
+    {
+      name: 'debug.definitionTrace',
+      nextSettings: {
+        ...DEFAULT_SETTINGS,
+        debug: { definitionTrace: true },
+      },
+      assertApplied: (settings: ExtensionSettings) => {
+        expect(settings.debug.definitionTrace).toBe(true);
+      },
+    },
+  ])('applies a $name-only change without rebuilding indexes', async ({
+    nextSettings,
+    assertApplied,
+  }) => {
     const workspace = {
       folderUri: 'file:///project-a',
       settings: DEFAULT_SETTINGS,
@@ -315,14 +339,11 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
     await applyScopedSettingsAndRebuild(
       fakeConnection,
       manager as never,
-      async () => ({
-        ...DEFAULT_SETTINGS,
-        findReferences: { includePackages: true },
-      }),
+      async () => nextSettings,
       () => [{ uri: 'file:///project-a/Assets/Open.hlsl', version: 1, getText: () => 'float4 Open() { return 0; }' }],
     );
 
-    expect(workspace.settings.findReferences.includePackages).toBe(true);
+    assertApplied(workspace.settings);
     expect(workspace.rebuild).not.toHaveBeenCalled();
     expect(manager.workspaceForOrCreateFile).not.toHaveBeenCalled();
   });

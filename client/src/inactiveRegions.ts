@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import type { LanguageClient } from 'vscode-languageclient/node';
 import {
   INACTIVE_REGIONS_REQUEST,
+  normalizeSettingValue,
   type InactiveRegionsParams,
   type InactiveRegionsResult,
 } from '@unity-shader-nav/shared';
@@ -14,11 +15,17 @@ function getConfig(uri: vscode.Uri | undefined) {
 }
 
 function isEnabled(uri: vscode.Uri | undefined): boolean {
-  return getConfig(uri).get<boolean>('dimInactiveBranches.enabled', true);
+  return normalizeSettingValue(
+    'dimInactiveBranches.enabled',
+    getConfig(uri).get<unknown>('dimInactiveBranches.enabled'),
+  );
 }
 
 function getOpacity(uri: vscode.Uri | undefined): number {
-  return getConfig(uri).get<number>('dimInactiveBranches.opacity', 0.55);
+  return normalizeSettingValue(
+    'dimInactiveBranches.opacity',
+    getConfig(uri).get<unknown>('dimInactiveBranches.opacity'),
+  );
 }
 
 function createDecorationType(opacity: number): vscode.TextEditorDecorationType {
