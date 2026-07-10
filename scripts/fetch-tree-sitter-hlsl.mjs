@@ -12,10 +12,13 @@
 //   5. cp tree-sitter-hlsl.wasm <repo>/server/grammars/
 //
 // 这一步在 Plan 03 实施时手工跑过一次，wasm 入库后无需重跑。
-import { writeFileSync } from 'node:fs';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const URL = 'https://github.com/tree-sitter-grammars/tree-sitter-hlsl/releases/latest/download/tree-sitter-hlsl.wasm';
+const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const grammarDirectory = resolve(repositoryRoot, 'server/grammars');
 
 const res = await fetch(URL, { redirect: 'follow' });
 if (!res.ok) {
@@ -23,6 +26,6 @@ if (!res.ok) {
   console.error('Fallback: see header comment in this script for the docker-based build path.');
   process.exit(1);
 }
-await mkdir('server/grammars', { recursive: true });
-writeFileSync('server/grammars/tree-sitter-hlsl.wasm', Buffer.from(await res.arrayBuffer()));
+await mkdir(grammarDirectory, { recursive: true });
+await writeFile(resolve(grammarDirectory, 'tree-sitter-hlsl.wasm'), Buffer.from(await res.arrayBuffer()));
 console.log('downloaded tree-sitter-hlsl.wasm');

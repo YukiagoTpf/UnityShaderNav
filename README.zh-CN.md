@@ -58,14 +58,13 @@ UnityShaderNav 会在这些文件中激活：
 - npm
 
 ```powershell
-cd unity-shader-nav
-npm install
+npm ci
 npm run build
 ```
 
 从源码运行扩展：
 
-1. 用 VS Code 打开 `unity-shader-nav/`。
+1. 用 VS Code 打开仓库根目录。
 2. 在终端运行 `npm run watch`，等待出现 `[watch-runtime] build ok`。
 3. 按 F5，并选择扩展启动配置。
 4. 在 Extension Development Host 中打开 Unity 项目。
@@ -75,7 +74,6 @@ npm run build
 本地打包 VSIX：
 
 ```powershell
-cd unity-shader-nav
 npm run package:vsix
 ```
 

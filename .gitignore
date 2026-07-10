@@ -61,9 +61,11 @@ web_modules/
 
 # Output of 'npm pack'
 *.tgz
+*.vsix
 
-# Staged by VSCE prepublish from the repo-root README.
-unity-shader-nav/client/README.md
+# Staged temporarily by VSCE prepublish from the repository root.
+client/README.md
+client/LICENSE
 
 # Yarn Integrity file
 .yarn-integrity

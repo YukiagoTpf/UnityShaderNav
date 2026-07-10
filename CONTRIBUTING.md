@@ -13,18 +13,17 @@ small, reproducible, and grounded in real Unity shader files.
 ## Development Setup
 
 ```powershell
-cd unity-shader-nav
-npm install
+npm ci
 npm run build
 ```
 
-Open `unity-shader-nav/` in VS Code and press F5 to launch an Extension
+Open the repository root in VS Code and press F5 to launch an Extension
 Development Host. Open a real Unity project in that host to test package and
 include resolution.
 
 ## Test Commands
 
-Run from `unity-shader-nav/`:
+Run from the repository root:
 
 ```powershell
 npm run check:fast

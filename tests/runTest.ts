@@ -3,7 +3,7 @@ import { runTests } from '@vscode/test-electron';
 import { parseElectronSuite, runElectronHarness } from './harness/electronHarness';
 
 async function main(): Promise<void> {
-  // __dirname at runtime = unity-shader-nav/tests/out
+  // __dirname at runtime = <repository>/tests/out
   const repositoryRoot = path.resolve(__dirname, '../..');
   const suite = parseElectronSuite(process.argv.slice(2));
   await runElectronHarness(

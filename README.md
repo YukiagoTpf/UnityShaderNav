@@ -72,14 +72,13 @@ Requirements:
 - npm
 
 ```powershell
-cd unity-shader-nav
-npm install
+npm ci
 npm run build
 ```
 
 To run the extension from source:
 
-1. Open `unity-shader-nav/` in VS Code.
+1. Open the repository root in VS Code.
 2. In a terminal, run `npm run watch` and wait for `[watch-runtime] build ok`.
 3. Press F5 and choose the extension launch configuration.
 4. In the Extension Development Host, open a Unity project.
@@ -89,7 +88,6 @@ To run the extension from source:
 To package a local VSIX:
 
 ```powershell
-cd unity-shader-nav
 npm run package:vsix
 ```
 

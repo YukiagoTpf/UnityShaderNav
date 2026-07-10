@@ -24,7 +24,7 @@
 
 - 最新发布版本：`v0.0.7`。
 - Release 地址：https://github.com/YukiagoTpf/UnityShaderNav/releases/tag/v0.0.7
-- 最新 VSIX 产物：`unity-shader-nav/client/unity-shader-nav-0.0.7.vsix`。
+- 最新 VSIX 产物：`client/unity-shader-nav-0.0.7.vsix`。
 - `client/package.json` 当前插件版本为 `0.0.7`，并使用 `client/images/icon.png` 作为 VS Code Marketplace 图标。
 - 0.0.7 亮点：Workspace symbol search（Ctrl+T，#19）；`?path=` git package 解析 + git 包目录 hash 截 10 字符（#25）。
 
@@ -34,6 +34,6 @@
 
 ## 项目入口
 
-- 源码 root：`unity-shader-nav/`
-- 顶层命令在 `unity-shader-nav/` 下跑：`npm run build` / `npm test` / `npm run watch`
-- 调试：在 VS Code 里打开 `unity-shader-nav/` 文件夹按 F5
+- Git 仓库根目录同时是源码、npm workspace、文档和 Agent 上下文的唯一项目根目录。
+- 顶层命令在仓库根目录运行：`npm run build` / `npm test` / `npm run watch`
+- 调试：在 VS Code 里打开仓库根目录后按 F5

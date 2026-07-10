@@ -214,7 +214,6 @@ See [Configuration](configuration.md) for details.
 Core verification commands:
 
 ```powershell
-cd unity-shader-nav
 npm run build
 npm run test -w @unity-shader-nav/server
 npm test

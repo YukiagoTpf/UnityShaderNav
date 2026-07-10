@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted — 2026-07-10; migration required
+Accepted — 2026-07-10; implemented by
+[#64](https://github.com/YukiagoTpf/UnityShaderNav/issues/64)
 
 ## Context
 

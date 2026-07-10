@@ -203,8 +203,8 @@ async function runNpmScript(script) {
 }
 
 async function stageExtensionRootFiles() {
-  const restoreReadme = await stageFile(findRepoFileSource('README.md'), resolve(clientRoot, 'README.md'));
-  const restoreLicense = await stageFile(findRepoFileSource('LICENSE'), resolve(clientRoot, 'LICENSE'));
+  const restoreReadme = await stageFile(repoFile('README.md'), resolve(clientRoot, 'README.md'));
+  const restoreLicense = await stageFile(repoFile('LICENSE'), resolve(clientRoot, 'LICENSE'));
 
   return async () => {
     await restoreReadme();
@@ -231,14 +231,10 @@ async function stageFile(source, target) {
   };
 }
 
-function findRepoFileSource(name) {
-  const candidates = [
-    resolve(monorepoRoot, name),
-    resolve(dirname(monorepoRoot), name),
-  ];
-  const source = candidates.find((candidate) => existsSync(candidate));
-  if (!source) {
-    throw new Error(`${name} is missing; checked ${candidates.map((candidate) => relative(monorepoRoot, candidate)).join(', ')}`);
+function repoFile(name) {
+  const source = resolve(monorepoRoot, name);
+  if (!existsSync(source)) {
+    throw new Error(`${name} is missing from the repository root`);
   }
   return source;
 }

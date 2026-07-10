@@ -1,9 +1,13 @@
 // R1 spike: dump tree-sitter-hlsl node shapes for canonical HLSL fragments.
-// Run from unity-shader-nav/: node scripts/probe-hlsl.mjs
+// Run with: node scripts/probe-hlsl.mjs
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import Parser from 'web-tree-sitter';
 
+const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
 await Parser.init();
-const lang = await Parser.Language.load('./server/grammars/tree-sitter-hlsl.wasm');
+const lang = await Parser.Language.load(resolve(repositoryRoot, 'server/grammars/tree-sitter-hlsl.wasm'));
 const parser = new Parser();
 parser.setLanguage(lang);
 

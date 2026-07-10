@@ -11,10 +11,6 @@ jobs:
     name: build and test
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    defaults:
-      run:
-        working-directory: unity-shader-nav
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,7 +24,7 @@ jobs:
           # for the shipped server (it runs on VS Code's bundled runtime).
           node-version: 20
           cache: npm
-          cache-dependency-path: unity-shader-nav/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Read pinned VS Code test version
         id: vscode-test-version
@@ -46,8 +42,8 @@ jobs:
         with:
           # Runtime identity includes platform, the exact tested VS Code
           # release, and the test-electron implementation lockfile.
-          path: unity-shader-nav/.vscode-test
-          key: vscode-test-${{ runner.os }}-${{ runner.arch }}-${{ steps.vscode-test-version.outputs.version }}-${{ hashFiles('unity-shader-nav/package-lock.json') }}
+          path: .vscode-test
+          key: vscode-test-${{ runner.os }}-${{ runner.arch }}-${{ steps.vscode-test-version.outputs.version }}-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         run: npm ci
@@ -74,8 +70,6 @@ jobs:
             libxdamage1 \
             libxrandr2 \
             libxshmfence1
-        working-directory: .
-
       - name: Run Electron verification
         # test:package above produced the exact runtime and compiled tests.
         run: xvfb-run -a npm run test:electron:prepared

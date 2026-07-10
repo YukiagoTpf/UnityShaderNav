@@ -60,14 +60,13 @@ UnityShaderNav は次のファイルで有効になります。
 - npm
 
 ```powershell
-cd unity-shader-nav
-npm install
+npm ci
 npm run build
 ```
 
 ソースから拡張機能を実行する手順:
 
-1. VS Code で `unity-shader-nav/` を開きます。
+1. VS Code でリポジトリのルートを開きます。
 2. ターミナルで `npm run watch` を実行し、`[watch-runtime] build ok` が表示されるまで待ちます。
 3. F5 を押し、拡張機能の起動構成を選択します。
 4. Extension Development Host で Unity プロジェクトを開きます。
@@ -77,7 +76,6 @@ npm run build
 ローカルで VSIX をパッケージする場合:
 
 ```powershell
-cd unity-shader-nav
 npm run package:vsix
 ```
 

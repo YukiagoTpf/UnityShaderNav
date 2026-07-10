@@ -1,11 +1,15 @@
 # Development Guide
 
-UnityShaderNav is a TypeScript monorepo under `unity-shader-nav/`.
+UnityShaderNav is a TypeScript monorepo rooted directly at the Git repository
+root. This single-root contract is recorded in
+[ADR-0007](adr/0007-canonical-repository-root.md).
 
 ## Layout
 
 ```text
-unity-shader-nav/
+<repository>/
+  package.json
+  package-lock.json
   client/   VS Code extension client
   server/   language server, parser, index, and LSP handlers
   shared/   shared protocol and data types
@@ -16,14 +20,13 @@ unity-shader-nav/
 ## Setup
 
 ```powershell
-cd unity-shader-nav
-npm install
+npm ci
 npm run build
 ```
 
 ## Run in VS Code
 
-1. Open `unity-shader-nav/` in VS Code.
+1. Open the repository root in VS Code.
 2. In a terminal, run `npm run watch`.
 3. Wait for the initial `[watch-runtime] build ok` message.
 4. Press F5.
@@ -41,7 +44,7 @@ The output channel is named `UnityShaderNav`.
 
 ## Useful Commands
 
-Run from `unity-shader-nav/`:
+Run from the repository root:
 
 ```powershell
 npm run check:fast
@@ -94,7 +97,7 @@ the prepared activation + integration profiles under `xvfb`. The public
 internal prepared command only because the preceding named step already ran
 that same gate.
 
-`unity-shader-nav/.vscode-test/` is the explicit persistent download cache; it
+`.vscode-test/` is the explicit persistent download cache; it
 is not disposable profile state. GitHub Actions caches it with an identity made
 from runner OS, runner architecture, the exact value in
 `tests/vscode-version.txt`, and the package-lock hash. There is no broad fallback
