@@ -302,6 +302,19 @@ suite('runtime watch workflow', () => {
 });
 
 suite('verification command contract', () => {
+  test('fast verification checks workspace manifest and lock metadata first', () => {
+    const rootPackage = JSON.parse(
+      fs.readFileSync(path.resolve(monorepoRoot(), 'package.json'), 'utf8'),
+    ) as { scripts?: Record<string, string> };
+    const scripts = rootPackage.scripts ?? {};
+
+    assert.strictEqual(
+      scripts['check:workspace-lock'],
+      'node --test scripts/check-workspace-lock.test.mjs && node scripts/check-workspace-lock.mjs',
+    );
+    assert.match(scripts['check:fast'] ?? '', /^npm run check:workspace-lock && /);
+  });
+
   test('package verification builds and inspects one current-run VSIX', () => {
     const rootPackage = JSON.parse(
       fs.readFileSync(path.resolve(monorepoRoot(), 'package.json'), 'utf8'),

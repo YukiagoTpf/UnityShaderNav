@@ -62,6 +62,7 @@ npm run package:vsix
 ## Testing Strategy
 
 - `npm run check:fast` is the authoritative local and CI feedback path. It
+  first verifies that workspace manifests and lockfile identities agree, then
   removes generated output, rebuilds current TypeScript source, and runs the
   complete language-server test suite without starting or downloading VS Code.
 - Parser and index behavior belongs in server unit tests.
