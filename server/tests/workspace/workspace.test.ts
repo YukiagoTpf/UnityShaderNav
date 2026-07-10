@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { DEFAULT_SETTINGS } from '@unity-shader-nav/shared';
 import { chooseCacheDir } from '../../src/cache/cacheManager';
 import { Workspace } from '../../src/workspace/workspace';
+import { WorkspaceIndex } from '../../src/workspace/workspaceIndex';
 import {
   copyUnityProjectFixture,
   removeCopiedUnityProject,
@@ -15,7 +16,7 @@ const projectASource = resolve(__dirname, '../include/fixtures/projectA');
 let projectA: string;
 
 const fakeConnection = {
-  console: { log() {} },
+  console: { log() {}, warn() {} },
   window: {
     createWorkDoneProgress: async () => ({
       begin() {},
@@ -74,11 +75,86 @@ describe('Workspace.bootstrap', () => {
       expect(manifest.files.length).toBeGreaterThanOrEqual(1);
 
       const fullScan = vi.spyOn(Workspace.prototype, 'fullScan');
+      const restore = vi.spyOn(WorkspaceIndex.prototype, 'restoreFromCache');
       const ws2 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
       await ws2.bootstrap(fakeConnection);
 
       expect(fullScan).not.toHaveBeenCalled();
+      expect(restore).toHaveBeenCalled();
       expect(ws2.index.global.lookup('CachedSymbol').length).toBeGreaterThanOrEqual(1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('rebuilds and replaces a cache produced by a different index implementation', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-cache-implementation-mismatch-'));
+    await mkdir(join(root, 'Assets', 'Shaders'), { recursive: true });
+    await mkdir(join(root, 'Packages'), { recursive: true });
+    await mkdir(join(root, 'ProjectSettings'), { recursive: true });
+    await writeFile(join(root, 'Packages', 'packages-lock.json'), '{"dependencies":{}}');
+    const shaderPath = join(root, 'Assets', 'Shaders', 'Current.hlsl');
+    const source = 'float4 CurrentImplementation() { return 0; }';
+    await writeFile(shaderPath, source);
+
+    try {
+      const folderUri = pathToFileURL(root).href;
+      const first = new Workspace(folderUri, DEFAULT_SETTINGS);
+      await first.bootstrap(fakeConnection);
+
+      const cachePath = join(root, 'Library', 'UnityShaderNavCache', 'index.json');
+      const manifest = JSON.parse(await readFile(cachePath, 'utf8'));
+      const persistedIdentity = manifest.fingerprint.indexImplementation as string;
+      const staleIdentity = persistedIdentity === 'a'.repeat(64)
+        ? 'b'.repeat(64)
+        : 'a'.repeat(64);
+      manifest.fingerprint.indexImplementation = staleIdentity;
+      await writeFile(cachePath, JSON.stringify(manifest), 'utf8');
+
+      const fullScan = vi.spyOn(Workspace.prototype, 'fullScan');
+      const restore = vi.spyOn(WorkspaceIndex.prototype, 'restoreFromCache');
+      const second = new Workspace(folderUri, DEFAULT_SETTINGS);
+      await second.bootstrap(fakeConnection);
+
+      expect(fullScan).toHaveBeenCalledTimes(1);
+      expect(restore).not.toHaveBeenCalled();
+      expect(second.index.global.lookup('CurrentImplementation')).toHaveLength(1);
+      expect(await readFile(shaderPath, 'utf8')).toBe(source);
+
+      const rewritten = JSON.parse(await readFile(cachePath, 'utf8'));
+      expect(rewritten.fingerprint.indexImplementation).toBe(persistedIdentity);
+      expect(rewritten.fingerprint.indexImplementation).not.toBe(staleIdentity);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps source indexing usable while cache identity is unavailable', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-cache-identity-unavailable-'));
+    await mkdir(join(root, 'Assets', 'Shaders'), { recursive: true });
+    await mkdir(join(root, 'Packages'), { recursive: true });
+    await mkdir(join(root, 'ProjectSettings'), { recursive: true });
+    await writeFile(join(root, 'Packages', 'packages-lock.json'), '{"dependencies":{}}');
+    await writeFile(
+      join(root, 'Assets', 'Shaders', 'NoCache.hlsl'),
+      'float4 SourceStillWorks() { return 0; }',
+    );
+    const warning = vi.fn();
+    const connection = {
+      ...fakeConnection,
+      console: { ...fakeConnection.console, warn: warning },
+    } as never;
+
+    try {
+      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, null);
+      await workspace.bootstrap(connection);
+
+      expect(workspace.index.global.lookup('SourceStillWorks')).toHaveLength(1);
+      expect(warning).toHaveBeenCalledWith(expect.stringContaining('cache disabled'));
+      await expect(readFile(
+        join(root, 'Library', 'UnityShaderNavCache', 'index.json'),
+        'utf8',
+      )).rejects.toMatchObject({ code: 'ENOENT' });
     } finally {
       await rm(root, { recursive: true, force: true });
     }

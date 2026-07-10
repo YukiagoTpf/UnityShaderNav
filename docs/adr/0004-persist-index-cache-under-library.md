@@ -26,5 +26,5 @@ Standalone 模式（spec §5 Q5/C2，用户打开单个 `.hlsl` 文件、没有 
 
 ## Consequences
 
-- 缓存格式需要带版本号——扩展升级时不兼容的旧缓存直接丢弃重建。
+- 缓存格式版本只描述持久化 schema；实际索引实现使用自动计算的 **Index implementation identity**，语义实现变化时无需人工 bump 也会丢弃旧记录并重建。
 - 用户运行 `Library/` 清理脚本时会触发全量 rebuild——预期行为，不报错。

@@ -56,6 +56,10 @@ _Avoid_: symbol record, symbol info
 **WorkspaceIndex**:
 `Workspace` 中索引状态与索引变更的边界。它维护磁盘索引、打开文档覆盖、全局符号和全局引用之间的一致性；`Workspace` 负责生命周期编排，不直接复制这些状态。
 
+**Index implementation identity**:
+实际生成 `FileIndex` 的 server 与 parser runtime 的内容身份。它是 cache fingerprint 的一部分；identity 不同或无法确定时只能从源码重建，不能恢复可能由另一套索引语义产生的记录。
+_Avoid_: cache version, release version, Git revision
+
 ### 跳转行为
 
 **Multi-candidate Peek**:

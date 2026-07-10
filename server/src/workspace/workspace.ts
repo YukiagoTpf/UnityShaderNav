@@ -10,6 +10,7 @@ import type {
 } from '@unity-shader-nav/shared';
 import { CacheManager } from '../cache';
 import { buildFingerprint } from '../cache/fingerprint';
+import { INDEX_IMPLEMENTATION_IDENTITY } from '../cache/implementationIdentity';
 import { PackageContext } from '../packages';
 import { MacroPatternTable } from '../macros';
 import { WorkspaceIndex } from './workspaceIndex';
@@ -34,7 +35,11 @@ export class Workspace {
   private globalStorageDir: string | undefined;
   private _settings: ExtensionSettings;
 
-  constructor(folderUri: string, settings: ExtensionSettings) {
+  constructor(
+    folderUri: string,
+    settings: ExtensionSettings,
+    private readonly indexImplementation: string | null = INDEX_IMPLEMENTATION_IDENTITY ?? null,
+  ) {
     this.folderUri = folderUri;
     this._settings = settings;
     this.index = new WorkspaceIndex(
@@ -75,7 +80,7 @@ export class Workspace {
 
     if (!this.unityRoot) {
       this.packages = PackageContext.standalone(this.settings);
-      await this.configureCache(folderPath, _globalStorageDir);
+      await this.configureCache(folderPath, _globalStorageDir, connection);
       const manifest = await this.cache?.load(this.fingerprint);
       if (manifest && this.matchesWorkspace(manifest)) {
         await this.bootstrapFromCache(connection, manifest);
@@ -85,7 +90,7 @@ export class Workspace {
 
     this.packages = await PackageContext.load(this.unityRoot, this.settings);
 
-    await this.configureCache(folderPath, _globalStorageDir);
+    await this.configureCache(folderPath, _globalStorageDir, connection);
     const manifest = await this.cache?.load(this.fingerprint);
     if (manifest && this.matchesWorkspace(manifest)) {
       await this.bootstrapFromCache(connection, manifest);
@@ -96,7 +101,11 @@ export class Workspace {
     await this.persist();
   }
 
-  private async configureCache(folderPath: string, globalStorageDir?: string): Promise<void> {
+  private async configureCache(
+    folderPath: string,
+    globalStorageDir: string | undefined,
+    connection: Connection,
+  ): Promise<void> {
     this.cache = CacheManager.create({
       unityProjectRoot: this.unityRoot,
       workspaceFolderUri: this.folderUri,
@@ -107,7 +116,17 @@ export class Workspace {
       return;
     }
 
-    this.fingerprint = await buildFingerprint(this.settings, this.resolveWasmPath(folderPath));
+    this.fingerprint = await buildFingerprint(
+      this.settings,
+      this.resolveWasmPath(folderPath),
+      this.indexImplementation ?? undefined,
+    );
+    if (!this.fingerprint) {
+      connection.console.warn(
+        'Index cache disabled: the running index implementation could not be identified.',
+      );
+      this.cache = undefined;
+    }
   }
 
   private resolveWasmPath(folderPath: string): string {

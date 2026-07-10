@@ -62,6 +62,8 @@ function isLocation(value: unknown, expectedUri?: string): boolean {
 
 function isCacheFingerprint(value: unknown): value is CacheFingerprint {
   return isRecord(value)
+    && typeof value.indexImplementation === 'string'
+    && /^[0-9a-f]{64}$/.test(value.indexImplementation)
     && typeof value.grammarVersion === 'string'
     && typeof value.settingsHash === 'string'
     && typeof value.macroTableHash === 'string';

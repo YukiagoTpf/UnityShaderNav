@@ -102,6 +102,10 @@ with a console warning rather than being guessed.
 ## Cache
 
 The workspace index is persisted under `Library/UnityShaderNavCache/` with a
-cache version and source fingerprint. In standalone mode, cache storage falls
-back to VS Code global storage. See
+schema version and source fingerprint. The fingerprint content-addresses the
+actual server bundle and the external parser runtime package (including its
+resolved entry), grammar bytes, index-affecting settings, and macro table; a
+different or unavailable implementation identity forces a source rebuild
+without a manual version bump. In standalone mode,
+cache storage falls back to VS Code global storage. See
 [ADR-0004](adr/0004-persist-index-cache-under-library.md).

@@ -74,6 +74,7 @@ describe('CacheManager.buildManifest', () => {
   it('builds a versioned manifest with the provided fingerprint and files', () => {
     const manager = new CacheManager(new CacheStore('/tmp/no-write'));
     const fingerprint: CacheFingerprint = {
+      indexImplementation: 'a'.repeat(64),
       grammarVersion: 'g',
       settingsHash: 's',
       macroTableHash: 'm',

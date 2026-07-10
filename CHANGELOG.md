@@ -14,6 +14,9 @@ and uses semantic versioning for extension releases.
   GitHub Issues remain the durable record of completed work.
 - Added fixed public provenance, an upstream license, offline integrity checks,
   and a byte-for-byte rebuild command for the vendored HLSL grammar.
+- Cache fingerprints now content-address the running index implementation and
+  complete parser runtime package, so semantic code changes automatically
+  reject stale indexes.
 
 ### Fixed
 

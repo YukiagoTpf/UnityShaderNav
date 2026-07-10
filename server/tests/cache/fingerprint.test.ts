@@ -72,9 +72,32 @@ describe('macroTableHash', () => {
 
 describe('buildFingerprint + fingerprintsEqual', () => {
   it('equal inputs produce equal fingerprints', async () => {
-    const f1 = await buildFingerprint(DEFAULT_SETTINGS, '/nope');
-    const f2 = await buildFingerprint(DEFAULT_SETTINGS, '/nope');
+    const identity = 'a'.repeat(64);
+    const f1 = await buildFingerprint(DEFAULT_SETTINGS, '/nope', identity);
+    const f2 = await buildFingerprint(DEFAULT_SETTINGS, '/nope', identity);
 
+    expect(f1).toBeDefined();
+    expect(f2).toBeDefined();
+    if (!f1 || !f2) throw new Error('expected cache fingerprints');
     expect(fingerprintsEqual(f1, f2)).toBe(true);
+  });
+
+  it('changes when only the index implementation changes', async () => {
+    const first = await buildFingerprint(DEFAULT_SETTINGS, '/nope', 'a'.repeat(64));
+    const second = await buildFingerprint(DEFAULT_SETTINGS, '/nope', 'b'.repeat(64));
+
+    expect(first).toBeDefined();
+    expect(second).toBeDefined();
+    if (!first || !second) throw new Error('expected cache fingerprints');
+    expect(fingerprintsEqual(first, second)).toBe(false);
+  });
+
+  it.each([
+    undefined,
+    'short',
+    'A'.repeat(64),
+    'z'.repeat(64),
+  ])('does not create a persistable fingerprint for identity %s', async (identity) => {
+    expect(await buildFingerprint(DEFAULT_SETTINGS, '/nope', identity)).toBeUndefined();
   });
 });

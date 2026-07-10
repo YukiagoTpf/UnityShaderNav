@@ -66,8 +66,11 @@ export function macroTableHash(userMacros: ExtensionSettings['declarationMacros'
 export async function buildFingerprint(
   settings: ExtensionSettings,
   wasmPath: string,
-): Promise<CacheFingerprint> {
+  indexImplementation: string | undefined,
+): Promise<CacheFingerprint | undefined> {
+  if (!indexImplementation || !/^[0-9a-f]{64}$/.test(indexImplementation)) return undefined;
   return {
+    indexImplementation,
     grammarVersion: await grammarVersionHash(wasmPath),
     settingsHash: settingsHash(settings),
     macroTableHash: macroTableHash(settings.declarationMacros),
@@ -75,7 +78,8 @@ export async function buildFingerprint(
 }
 
 export function fingerprintsEqual(a: CacheFingerprint, b: CacheFingerprint): boolean {
-  return a.grammarVersion === b.grammarVersion
+  return a.indexImplementation === b.indexImplementation
+    && a.grammarVersion === b.grammarVersion
     && a.settingsHash === b.settingsHash
     && a.macroTableHash === b.macroTableHash;
 }

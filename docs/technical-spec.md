@@ -193,8 +193,12 @@ The cache is persisted under:
 <UnityProject>/Library/UnityShaderNavCache/
 ```
 
-Cache records are versioned and fingerprinted. Incompatible or stale cache data
-is discarded and rebuilt. Standalone mode falls back to VS Code global storage.
+Cache records have a schema version and a fingerprint. The fingerprint includes
+the actual index implementation, the complete external parser runtime package,
+grammar, index-affecting settings, and macro table. The package entry must also
+resolve successfully. A missing, malformed, or different implementation
+identity is a cache miss and triggers source indexing; it never changes source
+files. Standalone mode falls back to VS Code global storage.
 
 ## Public Settings
 

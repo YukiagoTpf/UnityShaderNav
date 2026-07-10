@@ -56,6 +56,37 @@ suite('packaged server layout', () => {
     assert.ok(fromServerEntry.resolve('web-tree-sitter').includes('web-tree-sitter'));
   });
 
+  test('packaged index implementation identity follows the installed runtime bytes', () => {
+    const root = monorepoRoot();
+    const serverRoot = path.resolve(root, 'client/out/server');
+    const serverEntry = path.join(serverRoot, 'server.js');
+    const identityModulePath = path.join(serverRoot, 'cache/implementationIdentity.js');
+    const { implementationIdentityForModule } = require(identityModulePath) as {
+      implementationIdentityForModule(moduleFile: string): string | undefined;
+    };
+    const identity = implementationIdentityForModule(serverEntry);
+    assert.match(identity ?? '', /^[0-9a-f]{64}$/);
+
+    const tempRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'usn-runtime-identity-')));
+    const movedServerRoot = path.join(tempRoot, 'server');
+    try {
+      fs.cpSync(serverRoot, movedServerRoot, { recursive: true });
+      const movedEntry = path.join(movedServerRoot, 'server.js');
+      assert.strictEqual(implementationIdentityForModule(movedEntry), identity);
+
+      fs.appendFileSync(movedEntry, '\n// changed runtime bytes\n');
+      assert.notStrictEqual(implementationIdentityForModule(movedEntry), identity);
+
+      fs.rmSync(path.join(
+        movedServerRoot,
+        'node_modules/web-tree-sitter/tree-sitter.wasm',
+      ));
+      assert.strictEqual(implementationIdentityForModule(movedEntry), undefined);
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   test('VSIX-like extension root can start packaged parser without monorepo node_modules', async () => {
     const root = monorepoRoot();
     const sourceOutRoot = path.resolve(root, 'client/out');

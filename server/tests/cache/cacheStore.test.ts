@@ -11,6 +11,9 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CacheStore } from '../../src/cache/cacheStore';
 
+const INDEX_IMPLEMENTATION_A = 'a'.repeat(64);
+const INDEX_IMPLEMENTATION_B = 'b'.repeat(64);
+
 const fsMock = vi.hoisted(() => ({
   failNextRename: false,
 }));
@@ -33,6 +36,7 @@ vi.mock('node:fs', async (importOriginal) => {
 });
 
 const fingerprint: CacheFingerprint = {
+  indexImplementation: INDEX_IMPLEMENTATION_A,
   grammarVersion: 'g',
   settingsHash: 's',
   macroTableHash: 'm',
@@ -103,6 +107,7 @@ describe('CacheStore', () => {
     const dir = await mkdtemp(join(tmpdir(), 'usn-cache-valid-'));
     const store = new CacheStore(dir);
     const fingerprint: CacheFingerprint = {
+      indexImplementation: INDEX_IMPLEMENTATION_A,
       grammarVersion: 'g1',
       settingsHash: 's1',
       macroTableHash: 'm1',
@@ -228,16 +233,35 @@ describe('CacheStore', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it('returns null when fingerprint mismatches', async () => {
+  it('rejects v6 manifests from before automatic implementation identity', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'usn-cache-pre-implementation-identity-'));
+    const store = new CacheStore(dir);
+
+    await writeRawManifest(dir, {
+      version: 6,
+      workspaceFolderUri: 'file:///x',
+      unityProjectRoot: '/x',
+      createdAt: 123,
+      fingerprint: { grammarVersion: 'g', settingsHash: 's', macroTableHash: 'm' },
+      files: [],
+    });
+
+    expect(await store.load()).toBeNull();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('returns null when the index implementation identity mismatches', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'usn-cache-fp-'));
     const store = new CacheStore(dir);
     const fpA: CacheFingerprint = {
-      grammarVersion: 'a',
+      indexImplementation: INDEX_IMPLEMENTATION_A,
+      grammarVersion: 'g',
       settingsHash: 's1',
       macroTableHash: 'm1',
     };
     const fpB: CacheFingerprint = {
-      grammarVersion: 'b',
+      indexImplementation: INDEX_IMPLEMENTATION_B,
+      grammarVersion: 'g',
       settingsHash: 's1',
       macroTableHash: 'm1',
     };
@@ -294,6 +318,27 @@ describe('CacheStore', () => {
 
     expect(await store.load()).toBeNull();
 
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it.each([
+    undefined,
+    'short',
+    'A'.repeat(64),
+    'z'.repeat(64),
+  ])('rejects malformed index implementation identity %s', async (indexImplementation) => {
+    const dir = await mkdtemp(join(tmpdir(), 'usn-cache-bad-identity-'));
+    const store = new CacheStore(dir);
+
+    await writeRawManifest(dir, {
+      ...validManifest(),
+      fingerprint: {
+        ...fingerprint,
+        indexImplementation,
+      },
+    });
+
+    expect(await store.load()).toBeNull();
     await rm(dir, { recursive: true, force: true });
   });
 
@@ -468,6 +513,7 @@ describe('CacheStore', () => {
     const dir = await mkdtemp(join(tmpdir(), 'usn-cache-concurrent-'));
     const store = new CacheStore(dir);
     const fingerprint: CacheFingerprint = {
+      indexImplementation: INDEX_IMPLEMENTATION_A,
       grammarVersion: 'g',
       settingsHash: 's',
       macroTableHash: 'm',

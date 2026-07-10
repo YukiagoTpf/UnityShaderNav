@@ -1,12 +1,14 @@
 import type { FileIndex } from './symbols';
 
-export const CACHE_VERSION = 6;
+export const CACHE_VERSION = 7;
 
 /**
  * Fields that invalidate the whole cache when changed between runs.
- * Each value is a stable hex digest so manifests stay JSON-friendly.
+ * Values are deterministic, JSON-friendly content identities.
  */
 export interface CacheFingerprint {
+  /** SHA-256 of the actual server and parser runtime that produced FileIndex. */
+  indexImplementation: string;
   /** SHA-1 of the vendored tree-sitter-hlsl.wasm bytes, or a fixed sentinel. */
   grammarVersion: string;
   /** SHA-1 over settings keys that influence indexing. */
