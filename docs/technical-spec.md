@@ -117,11 +117,13 @@ Properties, Tags, render states, preprocessor directives, include paths,
 macro-style declaration heads, shader semantics, and swizzles. Highlight-only
 tokens do not participate in Go to Definition or Find References.
 
-Built-in vocabulary entries live in
-`server/src/suggestions/builtins/catalog.ts`. Every entry needs a category.
-When adding a new category or changing filtering behavior, add or update the
-built-in catalog/filter tests and any formatter coverage needed for the new
-shape.
+Built-in vocabulary entries and their neutral metadata live behind the single
+`server/src/vocabulary.ts` production interface. Parsing-derived semantic
+coloring and hover consume that interface directly; completion and signature
+help adapt it into suggestion-specific results. Parser modules must not import
+suggestion modules, including through transitive imports. When adding a new
+category or changing metadata, update the direct vocabulary tests plus the
+projection tests for each affected consumer.
 
 ## Scope and Visibility
 

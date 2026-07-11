@@ -17,6 +17,9 @@ and uses semantic versioning for extension releases.
 - Cache fingerprints now content-address the running index implementation and
   complete parser runtime package, so semantic code changes automatically
   reject stale indexes.
+- Moved shared shader vocabulary behind a neutral domain interface and added a
+  transitive dependency check that keeps parser modules independent of
+  suggestion-specific code.
 
 ### Fixed
 

@@ -9,7 +9,7 @@ import type { FileIndex, FunctionSymbolEntry } from '@unity-shader-nav/shared';
 import { GlobalSymbolIndex, IndexStore } from '../../src/index';
 import { registerHoverHandler } from '../../src/handlers/hover';
 import { indexFile } from '../../src/parser/hlsl/fileIndexer';
-import { BUILTIN_ENTRIES } from '../../src/suggestions/builtins';
+import { BUILTIN_ENTRIES } from '../../src/vocabulary';
 
 type HoverHandler = (params: HoverParams) => Promise<Hover | null>;
 

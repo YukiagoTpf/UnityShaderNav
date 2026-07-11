@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FunctionSymbolEntry, SymbolEntry } from '@unity-shader-nav/shared';
-import type { BuiltinEntry } from '../../src/suggestions/builtins';
+import type { BuiltinEntry } from '../../src/vocabulary';
 import {
   formatHoverCandidate,
   formatHoverCandidates,

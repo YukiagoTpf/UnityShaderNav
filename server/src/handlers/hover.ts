@@ -14,7 +14,7 @@ import {
 import { resolveRequestContext } from './requestContext';
 import type { RequestSuspender } from '../lifecycle/requestSuspender';
 import { isGenericDefinitionContext } from '../parser/lexical/context';
-import { BUILTIN_ENTRIES } from '../suggestions/builtins';
+import { BUILTIN_ENTRIES } from '../vocabulary';
 import type { WorkspaceManager } from '../workspace';
 
 export function registerHoverHandler(

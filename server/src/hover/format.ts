@@ -2,7 +2,7 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MarkupKind, type MarkupContent } from 'vscode-languageserver/node';
 import type { FunctionSymbolEntry, SymbolEntry } from '@unity-shader-nav/shared';
-import type { BuiltinCategory, BuiltinEntry } from '../suggestions/builtins';
+import type { BuiltinCategory, BuiltinEntry } from '../vocabulary';
 
 export interface ProjectHoverInput {
   source: 'project';

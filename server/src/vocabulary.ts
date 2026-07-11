@@ -1,4 +1,25 @@
-import type { BuiltinEntry } from './types';
+export type BuiltinCategory =
+  | 'hlsl'
+  | 'unitycg'
+  | 'urp'
+  | 'hdrp'
+  | 'shaderlab'
+  | 'semantic';
+
+export interface BuiltinEntry {
+  name: string;
+  kind: 'function' | 'keyword' | 'semantic' | 'state' | 'macro' | 'type';
+  category: BuiltinCategory;
+  detail?: string;
+  documentation?: string;
+  insertText?: string;
+  returnType?: string;
+  parameters?: Array<{
+    name: string;
+    type: string;
+    documentation?: string;
+  }>;
+}
 
 const shaderLabStateDetail = 'ShaderLab render state';
 const shaderLabValueDetail = 'ShaderLab state value';

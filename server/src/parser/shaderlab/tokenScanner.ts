@@ -1,6 +1,6 @@
 import type { Range } from '@unity-shader-nav/shared';
 import { BUILTIN_DECLARATION_MACROS } from '../../macros/builtin';
-import { BUILTIN_ENTRIES } from '../../suggestions/builtins/catalog';
+import { BUILTIN_ENTRIES } from '../../vocabulary';
 import { maskCommentsLine } from '../masking';
 import { scanBlocks } from './blockScanner';
 

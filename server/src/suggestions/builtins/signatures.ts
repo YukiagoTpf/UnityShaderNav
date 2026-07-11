@@ -1,7 +1,7 @@
 import type { ShaderSuggestion } from '../types';
 import type { SuggestionContext } from '../context';
-import { BUILTIN_ENTRIES } from './catalog';
-import { builtinEntryToSuggestion } from './types';
+import { BUILTIN_ENTRIES } from '../../vocabulary';
+import { builtinEntryToSuggestion } from './toSuggestion';
 
 export function collectBuiltinFunctionSuggestions(
   name: string,

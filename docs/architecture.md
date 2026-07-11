@@ -29,11 +29,13 @@ handling. Important modules:
 - `parser/hlsl`: wraps tree-sitter and collects symbols/references.
 - `macros`: recognizes built-in and user-configured declaration/reference
   patterns.
+- `vocabulary.ts`: owns the neutral Unity/HLSL/ShaderLab built-in vocabulary
+  consumed by parsing-derived coloring, hover, completion, and signature help.
 - `include` and `packages`: resolve relative includes and Unity Package paths.
 - `index`: stores symbols, references, visibility, and chain lookup data.
 - `suggestions`: classifies completion/signature contexts, enumerates visible
-  project symbols, formats LSP completion/signature items, and filters curated
-  built-in shader vocabulary.
+  project symbols, formats LSP completion/signature items, and adapts filtered
+  vocabulary entries to suggestion results.
 - `handlers`: implements definition, references, document symbols, document
   highlights, hover, completion, signature help, semantic tokens,
   inactive-region dimming, and open-document behavior.
@@ -51,6 +53,10 @@ The index is intentionally pragmatic:
   assignment facts rather than a full type system.
 - Completion and signature help reuse the same index and include-visibility
   rules as navigation, then merge curated built-ins only after project symbols.
+- Parser modules may consume the neutral vocabulary but cannot depend on the
+  suggestion projection. A transitive dependency-direction test enforces this
+  boundary for statically analyzable TypeScript imports, re-exports, `require`
+  calls, and dynamic imports.
 - Preprocessor conditions are not evaluated for navigation, references, or
   completion. A separate presentation-only layer does apply conservative
   preprocessor branch dimming (inactive and variant-gated `#if`/`#ifdef`/

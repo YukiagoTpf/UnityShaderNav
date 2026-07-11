@@ -1,8 +1,7 @@
 import type { SuggestionContext } from '../context';
 import type { ShaderSuggestion } from '../types';
-import type { BuiltinEntry } from './types';
-import { BUILTIN_ENTRIES } from './catalog';
-import { builtinEntryToSuggestion } from './types';
+import { BUILTIN_ENTRIES, type BuiltinEntry } from '../../vocabulary';
+import { builtinEntryToSuggestion } from './toSuggestion';
 
 const SHADERLAB_STATE_VALUE_NAMES = new Set([
   'Off',

@@ -14,6 +14,20 @@ function names(text: string, line: number, character: number, languageId = 'hlsl
 }
 
 describe('built-in suggestion filtering', () => {
+  it('projects vocabulary entries into suggestion metadata', () => {
+    const text = 'float4 main() { return nor';
+    const result = collect(text, 0, text.length);
+    const normalize = result.find((suggestion) => suggestion.name === 'normalize');
+
+    expect(normalize).toMatchObject({
+      source: 'builtin',
+      kind: 'function',
+      sortText: '9_normalize',
+      returnType: 'T',
+      parameters: [{ type: 'T', name: 'x' }],
+    });
+  });
+
   it('returns HLSL, UnityCG, and URP entries in generic HLSL code', () => {
     const result = names('float4 main() { return ', 0, 23);
 
