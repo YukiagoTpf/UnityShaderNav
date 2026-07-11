@@ -7,16 +7,20 @@ import type { Connection, DefinitionParams, LocationLink } from 'vscode-language
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import type { FileIndex } from '@unity-shader-nav/shared';
 import {
-  GlobalSymbolIndex,
   IndexStore,
   findPropertyCandidatesForName,
   propertyAt,
 } from '../../src/index';
 import { registerDefinitionHandler } from '../../src/handlers/definition';
+import type { IncludeContext } from '../../src/include';
 import { indexFile } from '../../src/parser/hlsl/fileIndexer';
 import { isGenericDefinitionContext } from '../../src/parser/lexical/context';
 import { MacroPatternTable } from '../../src/macros/table';
-import { uriKey } from '../../src/index/uriKey';
+import { uriKey } from '../../src/uriKey';
+import {
+  createDocumentRegistry,
+  createIndexedWorkspaceFixture,
+} from '../helpers/indexedWorkspaceFixture';
 
 function makeTable(): MacroPatternTable {
   return new MacroPatternTable();
@@ -29,19 +33,12 @@ interface FixtureFile {
   idx: FileIndex;
 }
 
-/**
- * Pair-of-files variant of `definition.test.ts`'s `createDefinitionFixture`
- * (lines 14-51). Mirrors the original fixture shape byte-for-byte (no `settings`,
- * no `reindex`), and pre-populates both the `IndexStore` and the
- * `GlobalSymbolIndex` so visibility-aware resolution sees every test file.
- */
 function createPairFixture(
   primary: FixtureFile,
   others: FixtureFile[] = [],
+  options: { includeCtx?: IncludeContext } = {},
 ): {
   handler: (params: DefinitionParams) => Promise<unknown>;
-  store: IndexStore;
-  global: GlobalSymbolIndex;
 } {
   let handler: ((params: DefinitionParams) => Promise<unknown>) | undefined;
   const connection = {
@@ -51,39 +48,28 @@ function createPairFixture(
     },
     console: {
       warn() {},
+      log() {},
     },
   } as unknown as Connection;
 
-  const documentsMap = new Map<string, TextDocument>();
-  for (const file of [primary, ...others]) {
-    documentsMap.set(file.uri, TextDocument.create(file.uri, file.languageId, 1, file.text));
-  }
-  const documents = {
-    get(requestedUri: string) {
-      return documentsMap.get(requestedUri);
-    },
-  } as never;
-
-  const store = new IndexStore();
-  const global = new GlobalSymbolIndex();
-  for (const file of [primary, ...others]) {
-    store.set(file.uri, file.idx);
-    global.upsert(file.idx);
-  }
-
-  const workspace = {
-    packages: { includeCtx: { unityProjectRoot: undefined, includeDirectories: [] } },
-    index: { store, global },
-  };
+  const files = [primary, ...others];
+  const documents = createDocumentRegistry(...files.map((file) => (
+    TextDocument.create(file.uri, file.languageId, 1, file.text)
+  )));
+  const workspace = createIndexedWorkspaceFixture(
+    files.map((file) => file.idx),
+    options,
+  );
+  const fileUris = new Set(files.map((file) => file.uri));
   const manager = {
     servingWorkspaceFor(requestedUri: string) {
-      return documentsMap.has(requestedUri) ? workspace : undefined;
+      return fileUris.has(requestedUri) ? workspace : undefined;
     },
-  } as never;
+  };
 
   registerDefinitionHandler(connection, documents, manager);
   if (!handler) throw new Error('definition handler was not registered');
-  return { handler, store, global };
+  return { handler };
 }
 
 function tokenPos(text: string, line: number, token: string, occurrence = 0): { line: number; character: number } {
@@ -321,39 +307,13 @@ describe('registerDefinitionHandler — properties bridge', () => {
       const libUri = pathToFileURL(libPath).href;
       const shaderIdx = await indexFile(shaderUri, shaderText, makeTable());
       const libIdx = await indexFile(libUri, libText, makeTable());
+      const { handler } = createPairFixture(
+        { uri: shaderUri, languageId: 'shaderlab', text: shaderText, idx: shaderIdx },
+        [{ uri: libUri, languageId: 'hlsl', text: libText, idx: libIdx }],
+        { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
+      );
 
-      let handler: ((params: DefinitionParams) => Promise<unknown>) | undefined;
-      const connection = {
-        onDefinition(fn: (params: DefinitionParams) => Promise<unknown>) {
-          handler = fn;
-          return { dispose() {} };
-        },
-        console: { warn() {} },
-      } as unknown as Connection;
-      const doc = TextDocument.create(shaderUri, 'shaderlab', 1, shaderText);
-      const documents = {
-        get(requestedUri: string) {
-          return requestedUri === shaderUri ? doc : undefined;
-        },
-      } as never;
-      const store = new IndexStore();
-      const global = new GlobalSymbolIndex();
-      for (const idx of [shaderIdx, libIdx]) {
-        store.set(idx.uri, idx);
-        global.upsert(idx);
-      }
-      const workspace = {
-        packages: { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
-        index: { store, global },
-      };
-      const manager = {
-        servingWorkspaceFor() {
-          return workspace;
-        },
-      } as never;
-      registerDefinitionHandler(connection, documents, manager);
-
-      const result = (await handler?.({
+      const result = (await handler({
         textDocument: { uri: shaderUri },
         position: tokenPos(shaderText, 2, '_BumpScale'),
       })) as LocationLink[] | null;
@@ -569,39 +529,16 @@ describe('registerDefinitionHandler — properties bridge', () => {
       const aIdx = await indexFile(aUri, aText, makeTable());
       const bIdx = await indexFile(bUri, bText, makeTable());
       const libIdx = await indexFile(libUri, libText, makeTable());
+      const { handler } = createPairFixture(
+        { uri: libUri, languageId: 'hlsl', text: libText, idx: libIdx },
+        [
+          { uri: aUri, languageId: 'shaderlab', text: aText, idx: aIdx },
+          { uri: bUri, languageId: 'shaderlab', text: bText, idx: bIdx },
+        ],
+        { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
+      );
 
-      let handler: ((params: DefinitionParams) => Promise<unknown>) | undefined;
-      const connection = {
-        onDefinition(fn: (params: DefinitionParams) => Promise<unknown>) {
-          handler = fn;
-          return { dispose() {} };
-        },
-        console: { warn() {} },
-      } as unknown as Connection;
-      const libDoc = TextDocument.create(libUri, 'hlsl', 1, libText);
-      const documents = {
-        get(requestedUri: string) {
-          return requestedUri === libUri ? libDoc : undefined;
-        },
-      } as never;
-      const store = new IndexStore();
-      const global = new GlobalSymbolIndex();
-      for (const idx of [aIdx, bIdx, libIdx]) {
-        store.set(idx.uri, idx);
-        global.upsert(idx);
-      }
-      const workspace = {
-        packages: { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
-        index: { store, global },
-      };
-      const manager = {
-        servingWorkspaceFor() {
-          return workspace;
-        },
-      } as never;
-      registerDefinitionHandler(connection, documents, manager);
-
-      const result = (await handler?.({
+      const result = (await handler({
         textDocument: { uri: libUri },
         position: tokenPos(libText, 0, '_MainTex'),
       })) as LocationLink[] | null;
@@ -807,42 +744,19 @@ describe('registerDefinitionHandler — properties bridge', () => {
       const aIdx = await indexFile(aUri, aText, makeTable());
       const bIdx = await indexFile(bUri, bText, makeTable());
       const cIdx = await indexFile(cUri, cText, makeTable());
-
-      let handler: ((params: DefinitionParams) => Promise<unknown>) | undefined;
-      const connection = {
-        onDefinition(fn: (params: DefinitionParams) => Promise<unknown>) {
-          handler = fn;
-          return { dispose() {} };
-        },
-        console: { warn() {} },
-      } as unknown as Connection;
       // Cursor lives in C.hlsl on a synthetic `_MainTex` identifier in a doc
       // with that bare word so wordAt can pick it up.
       const cDocText = '_MainTex;\n';
-      const cDoc = TextDocument.create(cUri, 'hlsl', 1, cDocText);
-      const documents = {
-        get(requestedUri: string) {
-          return requestedUri === cUri ? cDoc : undefined;
-        },
-      } as never;
-      const store = new IndexStore();
-      const global = new GlobalSymbolIndex();
-      for (const idx of [aIdx, bIdx, cIdx]) {
-        store.set(idx.uri, idx);
-        global.upsert(idx);
-      }
-      const workspace = {
-        packages: { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
-        index: { store, global },
-      };
-      const manager = {
-        servingWorkspaceFor() {
-          return workspace;
-        },
-      } as never;
-      registerDefinitionHandler(connection, documents, manager);
+      const { handler } = createPairFixture(
+        { uri: cUri, languageId: 'hlsl', text: cDocText, idx: cIdx },
+        [
+          { uri: aUri, languageId: 'shaderlab', text: aText, idx: aIdx },
+          { uri: bUri, languageId: 'shaderlab', text: bText, idx: bIdx },
+        ],
+        { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
+      );
 
-      const result = (await handler?.({
+      const result = (await handler({
         textDocument: { uri: cUri },
         position: tokenPos(cDocText, 0, '_MainTex'),
       })) as LocationLink[] | null;

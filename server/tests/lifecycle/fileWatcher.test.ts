@@ -26,7 +26,7 @@ describe('registerFileWatchers', () => {
       };
       const manager = {
         workspaceFor: vi.fn(() => workspace),
-        readyWorkspaceFor: vi.fn(async () => workspace),
+        readyWorkspacesFor: vi.fn(() => [workspace]),
         list: vi.fn(() => [workspace]),
       };
       const connection = {
@@ -51,6 +51,78 @@ describe('registerFileWatchers', () => {
     }
   });
 
+  it('updates every serving Workspace that owns a disk baseline for the file', async () => {
+    vi.useFakeTimers();
+    try {
+      let handler: ((event: FileEvent) => void) | undefined;
+      const parent = {
+        folderUri: 'file:///project',
+        applyChanges: vi.fn(async () => {}),
+      };
+      const child = {
+        folderUri: 'file:///project/Nested',
+        applyChanges: vi.fn(async () => {}),
+      };
+      const manager = {
+        readyWorkspacesFor: vi.fn(() => [child, parent]),
+      };
+      const connection = {
+        console: { log: vi.fn() },
+        onNotification: vi.fn((_name: string, callback: (event: FileEvent) => void) => {
+          handler = callback;
+        }),
+      };
+      const event: FileEvent = {
+        uri: 'file:///project/Nested/Shared.hlsl',
+        type: 'changed',
+      };
+
+      registerFileWatchers(connection as never, manager as never);
+      handler?.(event);
+      await vi.advanceTimersByTimeAsync(501);
+
+      expect(child.applyChanges).toHaveBeenCalledWith([event], connection);
+      expect(parent.applyChanges).toHaveBeenCalledWith([event], connection);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('updates the remaining disk owners when one Workspace rejects the event', async () => {
+    vi.useFakeTimers();
+    try {
+      let handler: ((event: FileEvent) => void) | undefined;
+      const failed = {
+        applyChanges: vi.fn(async () => {
+          throw new Error('child failed');
+        }),
+      };
+      const healthy = { applyChanges: vi.fn(async () => {}) };
+      const manager = {
+        readyWorkspacesFor: vi.fn(() => [failed, healthy]),
+      };
+      const connection = {
+        console: { log: vi.fn(), error: vi.fn() },
+        onNotification: vi.fn((_name: string, callback: (event: FileEvent) => void) => {
+          handler = callback;
+        }),
+      };
+      const event: FileEvent = { uri: 'file:///project/Shared.hlsl', type: 'changed' };
+
+      registerFileWatchers(connection as never, manager as never);
+      handler?.(event);
+      await vi.advanceTimersByTimeAsync(501);
+
+      expect(failed.applyChanges).toHaveBeenCalledWith([event], connection);
+      expect(healthy.applyChanges).toHaveBeenCalledWith([event], connection);
+      expect(connection.console.error).toHaveBeenCalledWith(
+        '[UnityShaderNav] file lifecycle update failed: child failed',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('skips incremental file changes while the target root is not serving', async () => {
     vi.useFakeTimers();
     try {
@@ -65,9 +137,9 @@ describe('registerFileWatchers', () => {
       };
       const manager = {
         workspaceFor: vi.fn(() => workspace),
-        readyWorkspaceFor: vi.fn(async () => {
-          calls.push('readyWorkspaceFor');
-          return undefined;
+        readyWorkspacesFor: vi.fn(() => {
+          calls.push('readyWorkspacesFor');
+          return [];
         }),
         workspaceForOrCreateFile: vi.fn(async () => ({
           index: { reindex: vi.fn(async () => {}) },
@@ -85,7 +157,7 @@ describe('registerFileWatchers', () => {
       handler?.({ uri: 'file:///projectA/Assets/Shaders/Common.hlsl', type: 'changed' });
       await vi.advanceTimersByTimeAsync(501);
 
-      expect(calls).toEqual(['readyWorkspaceFor']);
+      expect(calls).toEqual(['readyWorkspacesFor']);
       expect(workspace.applyChanges).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
@@ -103,7 +175,7 @@ describe('registerFileWatchers', () => {
       };
       const manager = {
         workspaceFor: vi.fn(() => workspace),
-        readyWorkspaceFor: vi.fn(async () => workspace),
+        readyWorkspacesFor: vi.fn(() => [workspace]),
         rebuildableList: vi.fn(async () => [workspace]),
         list: vi.fn(() => [workspace]),
       };
@@ -138,7 +210,7 @@ describe('registerFileWatchers', () => {
       };
       const manager = {
         workspaceFor: vi.fn(() => workspace),
-        readyWorkspaceFor: vi.fn(async () => workspace),
+        readyWorkspacesFor: vi.fn(() => [workspace]),
         rebuildableList: vi.fn(async () => [workspace]),
         list: vi.fn(() => [workspace]),
       };
@@ -173,7 +245,7 @@ describe('registerFileWatchers', () => {
       };
       const manager = {
         workspaceFor: vi.fn(() => workspace),
-        readyWorkspaceFor: vi.fn(async () => workspace),
+        readyWorkspacesFor: vi.fn(() => [workspace]),
         rebuildableList: vi.fn(async () => [workspace]),
         list: vi.fn(() => [workspace]),
       };
@@ -214,13 +286,17 @@ describe('registerFileWatchers', () => {
       const workspace = {
         folderUri: 'file:///projectA',
         applyChanges: vi.fn(async () => {}),
+        updateDocument: vi.fn(async () => {
+          calls.push('update-open-doc');
+          return true;
+        }),
         rebuild: vi.fn(async () => {
           calls.push('rebuild');
         }),
       };
       const manager = {
         workspaceFor: vi.fn(() => workspace),
-        readyWorkspaceFor: vi.fn(async () => workspace),
+        readyWorkspacesFor: vi.fn(() => [workspace]),
         rebuildableList: vi.fn(async () => [workspace]),
         workspaceForOrCreateFile: vi.fn(async () => ({
           index: {
@@ -246,18 +322,17 @@ describe('registerFileWatchers', () => {
         connection as never,
         manager as never,
         suspender,
-        () => [{ uri: 'file:///projectA/Assets/Shaders/Main.shader', version: 1, getText: () => 'float4 LiveOnly();' }],
       );
       handler?.({ uri: 'file:///projectA/.git/HEAD', type: 'changed' });
       await vi.advanceTimersByTimeAsync(501);
 
-      expect(calls).toEqual(['suspend', 'rebuild', 'reindex-open-doc', 'release']);
+      expect(calls).toEqual(['suspend', 'rebuild', 'release']);
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it('restores open document overlays after incremental file changes', async () => {
+  it('delegates incremental overlay restoration to Workspace.applyChanges', async () => {
     vi.useFakeTimers();
     try {
       let handler: ((event: FileEvent) => void) | undefined;
@@ -271,7 +346,7 @@ describe('registerFileWatchers', () => {
       };
       const manager = {
         workspaceFor: vi.fn(() => workspace),
-        readyWorkspaceFor: vi.fn(async () => workspace),
+        readyWorkspacesFor: vi.fn(() => [workspace]),
         workspaceForOrCreateFile: vi.fn(async () => ({
           index: {
             reindex: vi.fn(async () => {
@@ -292,13 +367,12 @@ describe('registerFileWatchers', () => {
         connection as never,
         manager as never,
         undefined,
-        () => [{ uri: 'file:///projectA/Assets/Shaders/Main.shader', version: 1, getText: () => 'float4 LiveOnly();' }],
       );
       handler?.({ uri: 'file:///projectA/Assets/Shaders/Main.shader', type: 'changed' });
       vi.advanceTimersByTime(501);
       for (let i = 0; i < 10; i++) await Promise.resolve();
 
-      expect(calls).toEqual(['applyChanges', 'reindex-open-doc']);
+      expect(calls).toEqual(['applyChanges']);
     } finally {
       vi.useRealTimers();
     }
@@ -315,7 +389,7 @@ describe('registerFileWatchers', () => {
         }),
       };
       const manager = {
-        readyWorkspaceFor: vi.fn(async () => workspace),
+        readyWorkspacesFor: vi.fn(() => [workspace]),
       };
       const connection = {
         console: { log: vi.fn(), error: vi.fn() },

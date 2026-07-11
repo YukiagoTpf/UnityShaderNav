@@ -7,10 +7,10 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   applyScopedSettingsAndRebuild,
   applySettingsAndRebuild,
-  openDocumentGenerationKey,
-  rebuildWorkspacesWithOpenDocuments,
+  rebuildWorkspaces,
 } from '../../src/lifecycle/rebuild';
 import { Workspace, WorkspaceManager } from '../../src/workspace';
+import type { IndexedDocumentSnapshot } from '../../src/workspace/indexedWorkspace';
 import {
   copyUnityProjectFixture,
   removeCopiedUnityProject,
@@ -43,144 +43,45 @@ async function flushPromises(times = 5): Promise<void> {
   for (let i = 0; i < times; i++) await Promise.resolve();
 }
 
-describe('rebuildWorkspacesWithOpenDocuments', () => {
-  it('restores open document overlays before releasing suspended requests', async () => {
+function openDocument(
+  text: string,
+  openId = 1,
+  version = 1,
+  uri = 'file:///Standalone.hlsl',
+): IndexedDocumentSnapshot {
+  return { uri, languageId: 'hlsl', text, openId, version };
+}
+
+describe('rebuildWorkspaces', () => {
+  it('relies on Workspace replay and releases without external document routing', async () => {
     const calls: string[] = [];
     const workspace = {
       rebuild: vi.fn(async () => {
         calls.push('rebuild');
       }),
     };
-    const liveWorkspace = {
-      index: {
-        reindex: vi.fn(async (_uri: string, text: string) => {
-          calls.push(`reindex:${text}`);
-        }),
-      },
-    };
     const manager = {
       list: () => [workspace],
       rebuildableList: async () => [workspace],
-      workspaceForOrCreateFile: vi.fn(async () => liveWorkspace),
+      workspaceForOrCreateFile: vi.fn(),
     };
     const suspender = {
       suspend: vi.fn(() => calls.push('suspend')),
       release: vi.fn(() => calls.push('release')),
     };
 
-    await rebuildWorkspacesWithOpenDocuments(
+    await rebuildWorkspaces(
       fakeConnection,
       manager as never,
-      () => [{ uri: 'file:///Standalone.hlsl', version: 1, getText: () => 'float4 LiveOnly() { return 0; }' }],
       suspender,
     );
 
     expect(calls).toEqual([
       'suspend',
       'rebuild',
-      'reindex:float4 LiveOnly() { return 0; }',
       'release',
     ]);
-  });
-
-  it('does not restore a stale open document overlay when the live version changes during reindex', async () => {
-    const calls: string[] = [];
-    const workspace = {
-      rebuild: vi.fn(async () => {
-        calls.push('rebuild');
-      }),
-    };
-    const liveDocument = {
-      uri: 'file:///Standalone.hlsl',
-      version: 1,
-      getText: () => 'float4 Stale() { return 0; }',
-    };
-    const liveWorkspace = {
-      index: {
-        reindex: vi.fn(async (_uri: string, text: string, shouldStore?: () => boolean) => {
-          calls.push(`reindex-start:${text}`);
-          liveDocument.version = 2;
-          if (shouldStore?.() ?? true) calls.push(`store:${text}`);
-        }),
-      },
-    };
-    const manager = {
-      list: () => [workspace],
-      rebuildableList: async () => [workspace],
-      workspaceForOrCreateFile: vi.fn(async () => liveWorkspace),
-    };
-    const suspender = {
-      suspend: vi.fn(() => calls.push('suspend')),
-      release: vi.fn(() => calls.push('release')),
-    };
-
-    await rebuildWorkspacesWithOpenDocuments(
-      fakeConnection,
-      manager as never,
-      () => [liveDocument],
-      suspender,
-    );
-
-    expect(calls).toEqual([
-      'suspend',
-      'rebuild',
-      'reindex-start:float4 Stale() { return 0; }',
-      'release',
-    ]);
-  });
-
-  it('does not restore a stale open document overlay after close and reopen at the same version', async () => {
-    const calls: string[] = [];
-    const workspace = {
-      rebuild: vi.fn(async () => {
-        calls.push('rebuild');
-      }),
-    };
-    const staleDocument = {
-      uri: 'file:///Standalone.hlsl',
-      version: 1,
-      [openDocumentGenerationKey]: 1,
-      getText: () => 'float4 Stale() { return 0; }',
-    };
-    const freshDocument = {
-      uri: 'file:///Standalone.hlsl',
-      version: 1,
-      [openDocumentGenerationKey]: 2,
-      getText: () => 'float4 Fresh() { return 0; }',
-    };
-    let liveDocuments = [staleDocument];
-    const liveWorkspace = {
-      index: {
-        reindex: vi.fn(async (_uri: string, text: string, shouldStore?: () => boolean) => {
-          calls.push(`reindex-start:${text}`);
-          liveDocuments = [freshDocument];
-          if (shouldStore?.() ?? true) calls.push(`store:${text}`);
-        }),
-      },
-    };
-    const manager = {
-      list: () => [workspace],
-      rebuildableList: async () => [workspace],
-      workspaceForOrCreateFile: vi.fn(async () => liveWorkspace),
-    };
-    const suspender = {
-      suspend: vi.fn(() => calls.push('suspend')),
-      release: vi.fn(() => calls.push('release')),
-    };
-
-    await rebuildWorkspacesWithOpenDocuments(
-      fakeConnection,
-      manager as never,
-      () => liveDocuments,
-      suspender,
-    );
-
-    expect(calls).toEqual([
-      'suspend',
-      'rebuild',
-      'reindex-start:float4 Stale() { return 0; }',
-      'release',
-    ]);
+    expect(manager.workspaceForOrCreateFile).not.toHaveBeenCalled();
   });
 
   it('waits for ready workspaces before rebuilding', async () => {
@@ -208,10 +109,9 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
       release: vi.fn(() => calls.push('release')),
     };
 
-    const rebuild = rebuildWorkspacesWithOpenDocuments(
+    const rebuild = rebuildWorkspaces(
       fakeConnection,
       manager as never,
-      () => [],
       suspender,
     );
     await flushPromises();
@@ -248,10 +148,9 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
       workspaceForOrCreateFile: vi.fn(),
     };
 
-    const rebuilding = rebuildWorkspacesWithOpenDocuments(
+    const rebuilding = rebuildWorkspaces(
       fakeConnection,
       manager as never,
-      () => [],
     );
     await flushPromises();
 
@@ -284,7 +183,6 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
         ...DEFAULT_SETTINGS,
         excludePatterns: [...DEFAULT_SETTINGS.excludePatterns, 'Assets/Shaders/Stale.hlsl'],
       },
-      () => [],
     );
 
     expect(workspace.index.global.lookup('KeepSymbol').length).toBeGreaterThanOrEqual(1);
@@ -314,7 +212,6 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
         async (folderUri) => folderUri === projectAUri
           ? { ...DEFAULT_SETTINGS, projectRoot: projectA }
           : DEFAULT_SETTINGS,
-        () => [],
       );
 
       const workspaceA = manager.workspaceFor(pathToFileURL(join(projectA, 'Assets', 'Shaders', 'Common.hlsl')).href);
@@ -381,7 +278,6 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
       fakeConnection,
       manager as never,
       async () => nextSettings,
-      () => [{ uri: 'file:///project-a/Assets/Open.hlsl', version: 1, getText: () => 'float4 Open() { return 0; }' }],
     );
 
     assertApplied(workspace.settings);
@@ -426,7 +322,6 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
       fakeConnection,
       manager as never,
       async () => nextSettings,
-      () => [],
     );
 
     expect(initialWorkspace.reconfigure).toHaveBeenCalledWith(fakeConnection, nextSettings);
@@ -437,10 +332,20 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
   it('decides queued S0 -> S1 -> S0 rebuilds from the settings active at execution time', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-settings-reversal-'));
     try {
+      const open = openDocument(
+        'float4 Unsaved() { return 0; }',
+        1,
+        1,
+        pathToFileURL(join(root, 'Open.hlsl')).href,
+      );
       const workspace = new Workspace(
         pathToFileURL(root).href,
         DEFAULT_SETTINGS,
-        { ensureParserReady: async () => {}, indexImplementation: null },
+        {
+          ensureParserReady: async () => {},
+          indexImplementation: null,
+          openDocuments: () => [open],
+        },
       );
       const initial = deferred();
       const settingsSeenByBootstrap: ExtensionSettings[] = [];
@@ -450,8 +355,10 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
         return 0;
       });
       const overlaySettings: ExtensionSettings[] = [];
-      vi.spyOn(workspace.index, 'reindex').mockImplementation(async () => {
+      const prepareDocument = workspace.index.prepareDocument.bind(workspace.index);
+      vi.spyOn(workspace.index, 'prepareDocument').mockImplementation(async (...args) => {
         overlaySettings.push(workspace.settings);
+        return prepareDocument(...args);
       });
       const manager = {
         list: () => [workspace],
@@ -469,25 +376,23 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
         fakeConnection,
         manager as never,
         async () => settings1,
-        () => [{ uri: 'file:///Open.hlsl', version: 1, getText: () => 'unsaved' }],
       );
       await applyScopedSettingsAndRebuild(
         fakeConnection,
         manager as never,
         async () => DEFAULT_SETTINGS,
-        () => [{ uri: 'file:///Open.hlsl', version: 1, getText: () => 'unsaved' }],
       );
 
       initial.resolve();
       await initializing;
-      for (let i = 0; i < 50; i++) {
+      for (let i = 0; i < 100; i++) {
         const lifecycle = workspace.indexStatus().lifecycle;
         if (
           lifecycle.state === 'ready'
           && lifecycle.revision === 3
           && overlaySettings.length > 0
         ) break;
-        await flushPromises();
+        await new Promise((resolveWait) => setTimeout(resolveWait, 0));
       }
 
       expect(settingsSeenByBootstrap).toEqual([DEFAULT_SETTINGS, settings1, DEFAULT_SETTINGS]);

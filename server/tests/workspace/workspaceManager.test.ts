@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DEFAULT_SETTINGS } from '@unity-shader-nav/shared';
 import { CacheManager } from '../../src/cache/cacheManager';
 import { WorkspaceManager } from '../../src/workspace/workspaceManager';
@@ -311,6 +311,34 @@ describe('WorkspaceManager: multi-root', () => {
     }
   });
 
+  it('does not let an unrelated initial root block a later root from becoming ready', async () => {
+    const slowRoot = await mkdtemp(join(tmpdir(), 'usn-add-slow-root-'));
+    const readyRoot = await mkdtemp(join(tmpdir(), 'usn-add-independent-root-'));
+    const slowUri = pathToFileURL(slowRoot).href;
+    const readyUri = pathToFileURL(readyRoot).href;
+    const slow = deferred<number>();
+    const manager = new WorkspaceManager();
+    vi.spyOn(Workspace.prototype, 'bootstrap').mockImplementation(function bootstrap(this: Workspace) {
+      return this.folderUri === slowUri ? slow.promise : Promise.resolve(0);
+    });
+    const addingSlow = manager.addFolder(slowUri, DEFAULT_SETTINGS, fakeConnection);
+
+    try {
+      await waitFor(() => manager.list().some((workspace) => workspace.folderUri === slowUri));
+      await manager.addFolder(readyUri, DEFAULT_SETTINGS, fakeConnection);
+
+      expect(manager.servingWorkspaceFor(pathToFileURL(join(readyRoot, 'Ready.hlsl')).href))
+        .toMatchObject({ folderUri: readyUri });
+    } finally {
+      await manager.removeFolder(slowUri);
+      await manager.removeFolder(readyUri);
+      slow.resolve(0);
+      await addingSlow;
+      await rm(slowRoot, { recursive: true, force: true });
+      await rm(readyRoot, { recursive: true, force: true });
+    }
+  });
+
   it('returns request-facing workspace readiness immediately', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-serving-root-'));
     const folderUri = pathToFileURL(root).href;
@@ -423,6 +451,45 @@ describe('WorkspaceManager: multi-root', () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  it('replays an open unsaved snapshot into a remove/re-add replacement', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-remove-readd-open-'));
+    const folderUri = pathToFileURL(root).href;
+    const fileUri = pathToFileURL(join(root, 'Open.hlsl')).href;
+    const text = [
+      'float4 UnsavedAcrossReadd() { return 0; }',
+      'float4 Caller() { return UnsavedAcrossReadd(); }',
+    ].join('\n');
+    const document = {
+      uri: fileUri,
+      languageId: 'hlsl',
+      text,
+      openId: 1,
+      version: 4,
+    };
+    const manager = new WorkspaceManager();
+    manager.configureOpenDocumentsProvider(() => [document]);
+
+    try {
+      await manager.addFolder(folderUri, DEFAULT_SETTINGS, fakeConnection);
+      const first = manager.servingWorkspaceFor(fileUri);
+      expect(await first?.definitionAt({
+        document,
+        position: { line: 1, character: 27 },
+      })).toHaveLength(1);
+
+      await manager.removeFolder(folderUri);
+      await manager.addFolder(folderUri, DEFAULT_SETTINGS, fakeConnection);
+      const replacement = manager.servingWorkspaceFor(fileUri);
+      expect(replacement).not.toBe(first);
+      expect(await replacement?.definitionAt({
+        document,
+        position: { line: 1, character: 27 },
+      })).toHaveLength(1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('uses scoped settings when lazily creating a workspace for a file', async () => {
     const looseFolder = await mkdtemp(join(tmpdir(), 'usn-lazy-scoped-'));
     const looseFile = join(looseFolder, 'Loose.hlsl');
@@ -439,12 +506,373 @@ describe('WorkspaceManager: multi-root', () => {
       : DEFAULT_SETTINGS);
 
     const workspace = await manager.workspaceForOrCreateFile(pathToFileURL(looseFile).href);
-    await workspace?.index.reindex(pathToFileURL(looseFile).href, 'MY_TEX2D(_LazyTex)');
+    await workspace?.updateDocument({
+      uri: pathToFileURL(looseFile).href,
+      languageId: 'hlsl',
+      text: 'MY_TEX2D(_LazyTex)',
+      openId: 1,
+      version: 1,
+    });
 
     expect(workspace?.unityRoot).toBe(projectA);
     expect(workspace?.index.store.get(pathToFileURL(looseFile).href)?.symbols).toMatchObject([
       { name: '_LazyTex', kind: 'variable' },
     ]);
+  });
+
+  it('cancels lazy creation when the document closes during settings lookup', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-lazy-cancel-settings-'));
+    const fileUri = pathToFileURL(join(root, 'Loose.hlsl')).href;
+    const settingsStarted = deferred();
+    const releaseSettings = deferred();
+    let open = true;
+    const manager = new WorkspaceManager();
+    manager.configureRuntime(fakeConnection);
+    manager.configureSettingsResolver(async () => {
+      settingsStarted.resolve();
+      await releaseSettings.promise;
+      return DEFAULT_SETTINGS;
+    });
+
+    try {
+      const creating = manager.workspaceForOrCreateFile(fileUri, () => open);
+      await settingsStarted.promise;
+      open = false;
+      releaseSettings.resolve();
+
+      await expect(creating).resolves.toBeUndefined();
+      expect(manager.list()).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('retires a lazy bootstrap when its last open document closes', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-lazy-release-bootstrap-'));
+    const fileUri = pathToFileURL(join(root, 'Loose.hlsl')).href;
+    const bootstrap = deferred<number>();
+    let openDocuments = [{
+      uri: fileUri,
+      languageId: 'hlsl',
+      text: 'float4 Unsaved() { return 0; }',
+      openId: 1,
+      version: 1,
+    }];
+    vi.spyOn(Workspace.prototype, 'bootstrap').mockReturnValue(bootstrap.promise);
+    const manager = new WorkspaceManager();
+    manager.configure(DEFAULT_SETTINGS, fakeConnection);
+    manager.configureOpenDocumentsProvider(() => openDocuments);
+
+    try {
+      const creating = manager.workspaceForOrCreateFile(fileUri, () => openDocuments.length > 0);
+      await waitFor(() => manager.list().length === 1);
+      openDocuments = [];
+      await manager.releaseDocument(fileUri);
+
+      expect(manager.list()).toEqual([]);
+      await expect(creating).resolves.toBeUndefined();
+      bootstrap.resolve(0);
+      await flushPromises();
+      expect(manager.list()).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('moves live-document ownership across nested workspace add and remove', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-nested-live-owner-'));
+    const nested = join(root, 'Nested');
+    const rootUri = pathToFileURL(root).href;
+    const nestedUri = pathToFileURL(nested).href;
+    const fileUri = pathToFileURL(join(nested, 'Live.hlsl')).href;
+    await mkdir(nested, { recursive: true });
+    let openDocuments = [{
+      uri: fileUri,
+      languageId: 'hlsl',
+      text: 'float4 ParentOwned() { return 0; }',
+      openId: 1,
+      version: 1,
+    }];
+    const manager = new WorkspaceManager();
+    manager.configure(DEFAULT_SETTINGS, fakeConnection);
+    manager.configureOpenDocumentsProvider(() => openDocuments);
+
+    try {
+      await manager.addFolder(rootUri, DEFAULT_SETTINGS, fakeConnection);
+      const parent = manager.workspaceFor(fileUri)!;
+      expect(parent.index.global.lookup('ParentOwned')).toHaveLength(1);
+
+      const ownershipStarted = deferred();
+      const releaseOwnership = deferred();
+      const synchronizeParent = parent.synchronizeOpenDocuments.bind(parent);
+      const parentSynchronization = vi
+        .spyOn(parent, 'synchronizeOpenDocuments')
+        .mockImplementationOnce(async () => {
+          ownershipStarted.resolve();
+          await releaseOwnership.promise;
+          await synchronizeParent();
+        });
+      const addingNested = manager.addFolder(nestedUri, DEFAULT_SETTINGS, fakeConnection);
+      await ownershipStarted.promise;
+      expect(manager.workspaceFor(fileUri)?.canServe()).toBe(false);
+      releaseOwnership.resolve();
+      await addingNested;
+
+      const child = manager.workspaceFor(fileUri)!;
+      expect(child).not.toBe(parent);
+      expect(child.index.global.lookup('ParentOwned')).toHaveLength(1);
+      expect(parent.index.global.lookup('ParentOwned')).toEqual([]);
+
+      openDocuments = [{
+        ...openDocuments[0],
+        text: 'float4 ChildOwnedV2() { return 0; }',
+        version: 2,
+      }];
+      await child.updateDocument(openDocuments[0]);
+      const replacementStarted = deferred();
+      const releaseReplacement = deferred();
+      parentSynchronization.mockImplementationOnce(async () => {
+        replacementStarted.resolve();
+        await releaseReplacement.promise;
+        await synchronizeParent();
+      });
+      const removingNested = manager.removeFolder(nestedUri);
+      await replacementStarted.promise;
+      expect(manager.servingWorkspaceFor(fileUri)).toBeUndefined();
+      releaseReplacement.resolve();
+      await removingNested;
+
+      expect(manager.workspaceFor(fileUri)).toBe(parent);
+      expect(manager.servingWorkspaceFor(fileUri)).toBe(parent);
+      expect(parent.index.global.lookup('ParentOwned')).toEqual([]);
+      expect(parent.index.global.lookup('ChildOwnedV2')).toHaveLength(1);
+
+      await manager.addFolder(nestedUri, DEFAULT_SETTINGS, fakeConnection);
+      const replacement = manager.workspaceFor(fileUri)!;
+      expect(replacement).not.toBe(parent);
+      expect(replacement.index.global.lookup('ChildOwnedV2')).toHaveLength(1);
+      expect(parent.index.global.lookup('ChildOwnedV2')).toEqual([]);
+
+      openDocuments = [];
+      await replacement.closeDocument({ uri: fileUri, openId: 1 });
+      await manager.removeFolder(nestedUri);
+
+      expect(manager.workspaceFor(fileUri)).toBe(parent);
+      expect(parent.index.global.lookup('ChildOwnedV2')).toEqual([]);
+    } finally {
+      await manager.removeFolder(nestedUri);
+      await manager.removeFolder(rootUri);
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('retires a transient parent after a persistent nested root takes its last document', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-transient-parent-owner-'));
+    const nested = join(root, 'Nested');
+    const filePath = join(nested, 'Live.hlsl');
+    const fileUri = pathToFileURL(filePath).href;
+    const rootUri = pathToFileURL(root).href;
+    const nestedUri = pathToFileURL(nested).href;
+    await mkdir(join(root, 'Assets'), { recursive: true });
+    await mkdir(join(root, 'ProjectSettings'), { recursive: true });
+    await mkdir(join(root, 'Packages'), { recursive: true });
+    await mkdir(nested, { recursive: true });
+    await writeFile(
+      join(root, 'ProjectSettings', 'ProjectVersion.txt'),
+      'm_EditorVersion: 2022.3.0f1\n',
+    );
+    await writeFile(join(root, 'Packages', 'packages-lock.json'), '{"dependencies":{}}\n');
+    await writeFile(filePath, 'float4 SavedOnDisk() { return 0; }');
+    let openDocuments = [{
+      uri: fileUri,
+      languageId: 'hlsl',
+      text: 'float4 UnsavedInEditor() { return 0; }',
+      openId: 1,
+      version: 1,
+    }];
+    const manager = new WorkspaceManager();
+    manager.configure(DEFAULT_SETTINGS, fakeConnection);
+    manager.configureOpenDocumentsProvider(() => openDocuments);
+
+    try {
+      const transientParent = await manager.workspaceForOrCreateFile(fileUri);
+      expect(transientParent?.folderUri).toBe(rootUri);
+      expect(manager.list()).toHaveLength(1);
+
+      await manager.addFolder(nestedUri, DEFAULT_SETTINGS, fakeConnection);
+
+      expect(manager.workspaceFor(fileUri)?.folderUri).toBe(nestedUri);
+      expect(manager.list().map((workspace) => workspace.folderUri)).toEqual([nestedUri]);
+      expect(transientParent?.canServe()).toBe(false);
+
+      await manager.removeFolder(nestedUri);
+      expect(manager.workspaceFor(fileUri)).toBeUndefined();
+      const rerouted = await manager.workspaceForOrCreateFile(
+        fileUri,
+        () => openDocuments[0]?.openId === 1,
+      );
+      expect(rerouted?.folderUri).toBe(rootUri);
+      expect(rerouted).not.toBe(transientParent);
+      expect(rerouted?.index.global.lookup('UnsavedInEditor')).toHaveLength(1);
+    } finally {
+      openDocuments = [];
+      await manager.removeFolder(nestedUri);
+      await manager.removeFolder(rootUri);
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps parent and nested disk baselines current across ownership transfer', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-nested-disk-baseline-'));
+    const nested = join(root, 'Assets', 'Nested');
+    const filePath = join(nested, 'Live.hlsl');
+    const fileUri = pathToFileURL(filePath).href;
+    const rootUri = pathToFileURL(root).href;
+    const nestedUri = pathToFileURL(nested).href;
+    await mkdir(nested, { recursive: true });
+    await mkdir(join(root, 'ProjectSettings'), { recursive: true });
+    await mkdir(join(root, 'Packages'), { recursive: true });
+    await writeFile(
+      join(root, 'ProjectSettings', 'ProjectVersion.txt'),
+      'm_EditorVersion: 2022.3.0f1\n',
+    );
+    await writeFile(join(root, 'Packages', 'packages-lock.json'), '{"dependencies":{}}\n');
+    await writeFile(filePath, 'float4 DiskV1() { return 0; }');
+    let openDocuments = [{
+      uri: fileUri,
+      languageId: 'hlsl',
+      text: 'float4 LiveOverlay() { return 0; }',
+      openId: 1,
+      version: 1,
+    }];
+    const manager = new WorkspaceManager();
+    manager.configure(DEFAULT_SETTINGS, fakeConnection);
+    manager.configureOpenDocumentsProvider(() => openDocuments);
+
+    try {
+      await manager.addFolder(rootUri, DEFAULT_SETTINGS, fakeConnection);
+      const parent = manager.workspaceFor(fileUri)!;
+      await manager.addFolder(nestedUri, DEFAULT_SETTINGS, fakeConnection);
+      const child = manager.workspaceFor(fileUri)!;
+      expect(child).not.toBe(parent);
+
+      await writeFile(filePath, 'float4 DiskV2() { return 0; }');
+      const diskOwners = manager.readyWorkspacesFor(fileUri);
+      expect(new Set(diskOwners)).toEqual(new Set([parent, child]));
+      await Promise.all(diskOwners.map((workspace) => workspace.applyChanges(
+        [{ uri: fileUri, type: 'changed' }],
+        fakeConnection,
+      )));
+
+      await manager.removeFolder(nestedUri);
+      expect(manager.workspaceFor(fileUri)).toBe(parent);
+      expect(parent.index.global.lookup('LiveOverlay')).toHaveLength(1);
+
+      openDocuments = [];
+      await parent.closeDocument({ uri: fileUri, openId: 1 });
+      expect(parent.index.global.lookup('DiskV1')).toEqual([]);
+      expect(parent.index.global.lookup('DiskV2')).toHaveLength(1);
+      expect(parent.index.global.lookup('LiveOverlay')).toEqual([]);
+    } finally {
+      await manager.removeFolder(nestedUri);
+      await manager.removeFolder(rootUri);
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fans out only to existing baselines or exact scan candidates', async () => {
+    const unityRoot = await mkdtemp(join(tmpdir(), 'usn-external-project-root-'));
+    const externalRoot = await mkdtemp(join(tmpdir(), 'usn-external-workspace-'));
+    const externalPackageRoot = join(externalRoot, 'ExternalPackage');
+    const externalPath = join(externalPackageRoot, 'External.hlsl');
+    const workspaceOnlyPath = join(externalRoot, 'WorkspaceOnly.hlsl');
+    const externalUri = pathToFileURL(externalPath).href;
+    const workspaceOnlyUri = pathToFileURL(workspaceOnlyPath).href;
+    const externalRootUri = pathToFileURL(externalRoot).href;
+    await mkdir(join(unityRoot, 'Assets'), { recursive: true });
+    await mkdir(join(unityRoot, 'ProjectSettings'), { recursive: true });
+    await mkdir(join(unityRoot, 'Packages', 'Unlisted'), { recursive: true });
+    await mkdir(join(unityRoot, 'Library'), { recursive: true });
+    await mkdir(join(unityRoot, 'Assets', 'Generated'), { recursive: true });
+    await mkdir(join(externalPackageRoot, 'Documentation~'), { recursive: true });
+    await writeFile(
+      join(unityRoot, 'ProjectSettings', 'ProjectVersion.txt'),
+      'm_EditorVersion: 2022.3.0f1\n',
+    );
+    await writeFile(join(unityRoot, 'Packages', 'packages-lock.json'), JSON.stringify({
+      dependencies: {
+        'com.example.external': {
+          version: `file:${externalPackageRoot}`,
+          depth: 0,
+          source: 'local',
+          dependencies: {},
+        },
+      },
+    }));
+    await writeFile(externalPath, 'float4 ExternalDiskV1() { return 0; }');
+    await writeFile(workspaceOnlyPath, 'float4 WorkspaceOnly() { return 0; }');
+    const unlistedUri = pathToFileURL(join(unityRoot, 'Packages', 'Unlisted', 'Hidden.hlsl')).href;
+    const excludedUri = pathToFileURL(join(unityRoot, 'Library', 'Generated.hlsl')).href;
+    const exactDirectoryExcludedUri = pathToFileURL(
+      join(unityRoot, 'Assets', 'Generated', 'Hidden.hlsl'),
+    ).href;
+    const packageDocumentationUri = pathToFileURL(
+      join(externalPackageRoot, 'Documentation~', 'Example.hlsl'),
+    ).href;
+    await writeFile(fileURLToPath(unlistedUri), 'float4 MustStayUnlisted() { return 0; }');
+    await writeFile(fileURLToPath(excludedUri), 'float4 MustStayExcluded() { return 0; }');
+    await writeFile(
+      fileURLToPath(exactDirectoryExcludedUri),
+      'float4 ExactDirectoryExcluded() { return 0; }',
+    );
+    await writeFile(
+      fileURLToPath(packageDocumentationUri),
+      'float4 PackageDocumentationExcluded() { return 0; }',
+    );
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      projectRoot: unityRoot,
+      excludePatterns: [...DEFAULT_SETTINGS.excludePatterns, 'Assets/Generated'],
+    };
+    let openDocuments = [{
+      uri: externalUri,
+      languageId: 'hlsl',
+      text: 'float4 ExternalLive() { return 0; }',
+      openId: 1,
+      version: 1,
+    }];
+    const manager = new WorkspaceManager();
+    manager.configure(settings, fakeConnection);
+    manager.configureOpenDocumentsProvider(() => openDocuments);
+
+    try {
+      await manager.addFolder(externalRootUri, settings, fakeConnection);
+      const workspace = manager.workspaceFor(externalUri)!;
+      expect(manager.readyWorkspacesFor(externalUri)).toEqual([workspace]);
+      expect(manager.readyWorkspacesFor(workspaceOnlyUri)).toEqual([]);
+      expect(manager.readyWorkspacesFor(unlistedUri)).toEqual([]);
+      expect(manager.readyWorkspacesFor(excludedUri)).toEqual([]);
+      expect(manager.readyWorkspacesFor(exactDirectoryExcludedUri)).toEqual([]);
+      expect(manager.readyWorkspacesFor(packageDocumentationUri)).toEqual([]);
+
+      await writeFile(externalPath, 'float4 ExternalDiskV2() { return 0; }');
+      await workspace.applyChanges(
+        [{ uri: externalUri, type: 'changed' }],
+        fakeConnection,
+      );
+      expect(workspace.index.global.lookup('ExternalLive')).toHaveLength(1);
+
+      openDocuments = [];
+      await workspace.closeDocument({ uri: externalUri, openId: 1 });
+      expect(workspace.index.global.lookup('ExternalDiskV1')).toEqual([]);
+      expect(workspace.index.global.lookup('ExternalDiskV2')).toHaveLength(1);
+      expect(workspace.index.global.lookup('ExternalLive')).toEqual([]);
+    } finally {
+      openDocuments = [];
+      await manager.removeFolder(externalRootUri);
+      await rm(unityRoot, { recursive: true, force: true });
+      await rm(externalRoot, { recursive: true, force: true });
+    }
   });
 
   it('persists all managed workspaces', async () => {

@@ -6,10 +6,14 @@ import { pathToFileURL } from 'node:url';
 import type { Connection, DefinitionParams } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import type { FileIndex } from '@unity-shader-nav/shared';
-import { GlobalSymbolIndex, IndexStore } from '../../src/index';
 import { registerDefinitionHandler } from '../../src/handlers/definition';
 import { RequestSuspender } from '../../src/lifecycle/requestSuspender';
 import { indexFile } from '../../src/parser/hlsl/fileIndexer';
+import type { IndexedWorkspace } from '../../src/workspace/indexedWorkspace';
+import {
+  createDocumentRegistry,
+  createIndexedWorkspaceFixture,
+} from '../helpers/indexedWorkspaceFixture';
 
 function createDefinitionFixture(
   uri: string,
@@ -28,24 +32,13 @@ function createDefinitionFixture(
     },
   } as unknown as Connection;
   const doc = TextDocument.create(uri, languageId, 1, text);
-  const documents = {
-    get(requestedUri: string) {
-      return requestedUri === uri ? doc : undefined;
-    },
-  } as never;
-  const workspace = {
-    packages: { includeCtx: { unityProjectRoot: undefined, includeDirectories: [] } },
-    index: {
-      store: new IndexStore(),
-      global: new GlobalSymbolIndex(),
-    },
-  };
-  workspace.index.store.set(uri, idx);
+  const documents = createDocumentRegistry(doc);
+  const workspace = createIndexedWorkspaceFixture([idx]);
   const manager = {
     servingWorkspaceFor(requestedUri: string) {
       return requestedUri === uri ? workspace : undefined;
     },
-  } as never;
+  };
 
   registerDefinitionHandler(connection, documents, manager);
   if (!handler) throw new Error('definition handler was not registered');
@@ -114,6 +107,48 @@ function tokenPosition(text: string, line: number, token: string, occurrence = 0
 }
 
 describe('registerDefinitionHandler', () => {
+  it('lazily recreates a missing route for the current open session', async () => {
+    let handler: ((params: DefinitionParams) => Promise<unknown>) | undefined;
+    const connection = {
+      onDefinition(fn: (params: DefinitionParams) => Promise<unknown>) {
+        handler = fn;
+        return { dispose() {} };
+      },
+      console: { log() {}, warn() {} },
+    } as unknown as Connection;
+    const uri = 'file:///outside/Orphaned.hlsl';
+    const document = TextDocument.create(
+      uri,
+      'hlsl',
+      1,
+      'float4 Orphaned() { return 0; }',
+    );
+    const documents = createDocumentRegistry(document);
+    const workspace = createIndexedWorkspaceFixture([await indexFile(uri, document.getText())]);
+    let lazyCalls = 0;
+    const manager = {
+      servingWorkspaceFor: () => undefined,
+      workspaceFor: () => undefined,
+      async workspaceForOrCreateFile(
+        requestedUri: string,
+        shouldCreate: () => boolean,
+      ) {
+        lazyCalls++;
+        expect(requestedUri).toBe(uri);
+        expect(shouldCreate()).toBe(true);
+        return workspace;
+      },
+    };
+    registerDefinitionHandler(connection, documents, manager);
+    if (!handler) throw new Error('definition handler was not registered');
+
+    await expect(handler({
+      textDocument: { uri },
+      position: { line: 0, character: 9 },
+    })).resolves.toHaveLength(1);
+    expect(lazyCalls).toBe(1);
+  });
+
   it('filters global definition candidates to the transitive include chain', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-definition-project-'));
     try {
@@ -138,12 +173,6 @@ describe('registerDefinitionHandler', () => {
       const mainIndex = await indexFile(mainUri, mainText);
       const sharedIndex = await indexFile(sharedUri, sharedText);
       const otherIndex = await indexFile(otherUri, otherText);
-      const store = new IndexStore();
-      const global = new GlobalSymbolIndex();
-      for (const index of [mainIndex, sharedIndex, otherIndex]) {
-        store.set(index.uri, index);
-        global.upsert(index);
-      }
       let handler: ((params: DefinitionParams) => Promise<unknown>) | undefined;
       const connection = {
         onDefinition(fn: (params: DefinitionParams) => Promise<unknown>) {
@@ -155,20 +184,16 @@ describe('registerDefinitionHandler', () => {
         },
       } as unknown as Connection;
       const doc = TextDocument.create(mainUri, 'hlsl', 1, mainText);
-      const documents = {
-        get(requestedUri: string) {
-          return requestedUri === mainUri ? doc : undefined;
-        },
-      } as never;
-      const workspace = {
-        packages: { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
-        index: { store, global },
-      };
+      const documents = createDocumentRegistry(doc);
+      const workspace = createIndexedWorkspaceFixture(
+        [mainIndex, sharedIndex, otherIndex],
+        { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
+      );
       const manager = {
         servingWorkspaceFor(requestedUri: string) {
           return requestedUri === mainUri ? workspace : undefined;
         },
-      } as never;
+      };
       const sharedHelper = sharedIndex.symbols.find(
         (symbol) => symbol.name === 'Helper' && symbol.kind === 'function',
       );
@@ -208,11 +233,7 @@ describe('registerDefinitionHandler', () => {
       'float4 helper(float4 v) { return v; }',
       'float4 main() { return helper(float4(1,1,1,1)); }',
     ].join('\n'));
-    const documents = {
-      get(requestedUri: string) {
-        return requestedUri === uri ? doc : undefined;
-      },
-    } as never;
+    const documents = createDocumentRegistry(doc);
     const idx: FileIndex = {
       uri,
       symbols: [
@@ -227,22 +248,12 @@ describe('registerDefinitionHandler', () => {
       ],
       references: [],
     };
-    const workspace = {
-      packages: { includeCtx: { unityProjectRoot: undefined, includeDirectories: [] } },
-      index: {
-        store: new IndexStore(),
-        global: new GlobalSymbolIndex(),
-      },
-    };
-    workspace.index.store.set(uri, idx);
+    const workspace = createIndexedWorkspaceFixture([idx]);
     const manager = {
-      workspaceFor(requestedUri: string) {
+      servingWorkspaceFor(requestedUri: string) {
         return requestedUri === uri ? workspace : undefined;
       },
-      servingWorkspaceFor(requestedUri: string) {
-        return this.workspaceFor(requestedUri);
-      },
-    } as never;
+    };
 
     registerDefinitionHandler(connection, documents, manager);
 
@@ -274,23 +285,25 @@ describe('registerDefinitionHandler', () => {
     } as unknown as Connection;
     const uri = 'file:///t/x.hlsl';
     const doc = TextDocument.create(uri, 'hlsl', 1, 'float4 main() { return 0; }');
-    const documents = {
-      get(requestedUri: string) {
-        return requestedUri === uri ? doc : undefined;
+    const documents = createDocumentRegistry(doc);
+    const workspace: IndexedWorkspace = {
+      async updateDocument() {
+        return true;
       },
-    } as never;
-    const workspace = {
-      packages: { includeCtx: { unityProjectRoot: undefined, includeDirectories: [] } },
-      index: {
-        store: new IndexStore(),
-        global: new GlobalSymbolIndex(),
+      async closeDocument() {
+      },
+      async definitionAt() {
+        return null;
+      },
+      async referencesAt() {
+        return null;
       },
     };
     const manager = {
       servingWorkspaceFor() {
         return workspace;
       },
-    } as never;
+    };
     const suspender = new RequestSuspender({ timeoutMs: 1000 });
     suspender.suspend();
 
@@ -325,28 +338,13 @@ describe('registerDefinitionHandler', () => {
       'float4 main() { return helper(float4(1,1,1,1)); }',
     ].join('\n');
     const doc = TextDocument.create(uri, 'hlsl', 1, text);
-    const documents = {
-      get(requestedUri: string) {
-        return requestedUri === uri ? doc : undefined;
-      },
-    } as never;
-    const workspace = {
-      packages: { includeCtx: { unityProjectRoot: undefined, includeDirectories: [] } },
-      index: {
-        store: new IndexStore(),
-        global: new GlobalSymbolIndex(),
-        async reindex(requestedUri: string, requestedText: string) {
-          const idx = helperIndex(requestedUri, requestedText);
-          this.store.set(requestedUri, idx);
-          this.global.upsert(idx);
-        },
-      },
-    };
+    const documents = createDocumentRegistry(doc);
+    const workspace = createIndexedWorkspaceFixture([]);
     const manager = {
       servingWorkspaceFor() {
         return workspace;
       },
-    } as never;
+    };
 
     registerDefinitionHandler(connection, documents, manager);
 
@@ -434,12 +432,6 @@ describe('registerDefinitionHandler', () => {
         indexFile(uri, mainText),
         indexFile(typesUri, typesText),
       ]);
-      const store = new IndexStore();
-      const global = new GlobalSymbolIndex();
-      for (const idx of indexes) {
-        store.set(idx.uri, idx);
-        global.upsert(idx);
-      }
       const structSymbol = indexes[1].symbols.find(
         (symbol) => symbol.name === 'Customdata' && symbol.kind === 'struct',
       );
@@ -455,20 +447,16 @@ describe('registerDefinitionHandler', () => {
         },
       } as unknown as Connection;
       const doc = TextDocument.create(uri, 'hlsl', 1, mainText);
-      const documents = {
-        get(requestedUri: string) {
-          return requestedUri === uri ? doc : undefined;
-        },
-      } as never;
-      const workspace = {
-        packages: { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
-        index: { store, global },
-      };
+      const documents = createDocumentRegistry(doc);
+      const workspace = createIndexedWorkspaceFixture(
+        indexes,
+        { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
+      );
       const manager = {
         servingWorkspaceFor() {
           return workspace;
         },
-      } as never;
+      };
 
       registerDefinitionHandler(connection, documents, manager);
 
@@ -521,12 +509,6 @@ describe('registerDefinitionHandler', () => {
         indexFile(uri, mainText),
         indexFile(typesUri, typesText),
       ]);
-      const store = new IndexStore();
-      const global = new GlobalSymbolIndex();
-      for (const idx of indexes) {
-        store.set(idx.uri, idx);
-        global.upsert(idx);
-      }
       const structSymbol = indexes[1].symbols.find(
         (symbol) => symbol.name === 'Customdata' && symbol.kind === 'struct',
       );
@@ -542,20 +524,16 @@ describe('registerDefinitionHandler', () => {
         },
       } as unknown as Connection;
       const doc = TextDocument.create(uri, 'shaderlab', 1, mainText);
-      const documents = {
-        get(requestedUri: string) {
-          return requestedUri === uri ? doc : undefined;
-        },
-      } as never;
-      const workspace = {
-        packages: { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
-        index: { store, global },
-      };
+      const documents = createDocumentRegistry(doc);
+      const workspace = createIndexedWorkspaceFixture(
+        indexes,
+        { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
+      );
       const manager = {
         servingWorkspaceFor() {
           return workspace;
         },
-      } as never;
+      };
 
       registerDefinitionHandler(connection, documents, manager);
 
@@ -606,12 +584,6 @@ describe('registerDefinitionHandler', () => {
         indexFile(surfaceUri, surfaceText),
         indexFile(otherUri, otherText),
       ]);
-      const store = new IndexStore();
-      const global = new GlobalSymbolIndex();
-      for (const index of indexes) {
-        store.set(index.uri, index);
-        global.upsert(index);
-      }
       const surfaceMember = indexes[1].symbols.find(
         (symbol) =>
           symbol.name === 'positionWS' &&
@@ -627,20 +599,16 @@ describe('registerDefinitionHandler', () => {
         },
       } as unknown as Connection;
       const doc = TextDocument.create(uri, 'hlsl', 1, useText);
-      const documents = {
-        get(requestedUri: string) {
-          return requestedUri === uri ? doc : undefined;
-        },
-      } as never;
-      const workspace = {
-        packages: { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
-        index: { store, global },
-      };
+      const documents = createDocumentRegistry(doc);
+      const workspace = createIndexedWorkspaceFixture(
+        indexes,
+        { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
+      );
       const manager = {
         servingWorkspaceFor() {
           return workspace;
         },
-      } as never;
+      };
 
       registerDefinitionHandler(connection, documents, manager);
 

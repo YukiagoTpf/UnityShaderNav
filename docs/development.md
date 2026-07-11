@@ -75,7 +75,23 @@ npm run grammar:rebuild
 - `npm run test:package` is the authoritative package check. One invocation
   removes generated output, rebuilds current source, creates the versioned VSIX,
   verifies its manifest and runtime files, then runs package-layout tests.
-- LSP handler behavior belongs in server handler tests.
+- Thin LSP adapter behavior belongs in server handler tests. Definition,
+  References, and document-lifecycle tests fake only Indexed Workspace behavior;
+  they must not reconstruct `store/global/globalRefs` Workspace shapes.
+- Definition/References semantic tests call the same Indexed Workspace methods
+  and production navigation implementation used by the server. Live overlay,
+  disk fallback, stale-attempt, rebuild replay, and cross-document ordering
+  tests use a real `Workspace`.
+- Async lifecycle races use explicit deferred barriers and observable eventual
+  conditions. Do not add fixed settle sleeps to make a parse/close/edit race
+  appear deterministic.
+- Workspace routing tests must cover nested-root ownership in both directions:
+  add transfers the overlay away from the parent, remove republishes the latest
+  open snapshot, and close leaves no stale former owner.
+- A request-time store miss may join the registry's current attempt through
+  Workspace behavior; if no attempt can publish, it returns the feature's
+  neutral result. Tests must establish index state through lifecycle/Workspace
+  behavior rather than adding a handler-local reindex mock.
 - VS Code activation belongs in `tests/client`; command-level feature tests and
   their fixtures belong in `tests/integration/client`.
 - Integration synchronization must use the production index-status path or an

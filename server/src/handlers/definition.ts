@@ -3,217 +3,43 @@ import type {
   DefinitionParams,
   Location,
   LocationLink,
-  TextDocuments,
 } from 'vscode-languageserver/node';
-import type { TextDocument } from 'vscode-languageserver-textdocument';
-import { pathToFileURL } from 'node:url';
-import { resolveInclude } from '../include';
-import {
-  cursorTargetAt,
-  findPropertyCandidatesForName,
-  propertyAt,
-  resolveDefinition,
-  type ResolverContext,
-} from '../index';
-import { resolveRequestContext } from './requestContext';
 import type { RequestSuspender } from '../lifecycle/requestSuspender';
-import { isGenericDefinitionContext } from '../parser/lexical/context';
-import type { WorkspaceManager } from '../workspace';
-
-function logDefinitionTrace(
-  connection: Connection,
-  enabled: boolean,
-  event: string,
-  data: Record<string, unknown>,
-): void {
-  if (!enabled) return;
-  connection.console.log(`[UnityShaderNav][definition-trace] ${event} ${JSON.stringify(data)}`);
-}
+import type {
+  IndexedDocumentRegistry,
+  IndexedWorkspaceRequestRouter,
+} from '../workspace/indexedWorkspace';
+import { workspaceForDocumentRequest } from '../workspace/indexedWorkspace';
 
 export function registerDefinitionHandler(
   connection: Connection,
-  documents: TextDocuments<TextDocument>,
-  manager: WorkspaceManager,
+  documents: Pick<IndexedDocumentRegistry, 'snapshot'>,
+  manager: IndexedWorkspaceRequestRouter,
   suspender?: Pick<RequestSuspender, 'run'>,
 ): void {
   connection.onDefinition(async (params: DefinitionParams): Promise<LocationLink[] | Location[] | null> => {
     const resolveRequest = async (): Promise<LocationLink[] | Location[] | null> => {
-      const ctx = await resolveRequestContext(params.textDocument.uri, documents, manager);
-      if (!ctx) return null;
-      const doc = ctx.doc;
-      const workspace = ctx.workspace;
-      const traceEnabled = workspace.settings?.debug?.definitionTrace === true;
-      const trace = (event: string, data: Record<string, unknown>) =>
-        logDefinitionTrace(connection, traceEnabled, event, data);
-      trace('request', {
-        uri: params.textDocument.uri,
+      const document = documents.snapshot(params.textDocument.uri);
+      if (!document) return null;
+      const workspace = await workspaceForDocumentRequest(document, documents, manager);
+      if (!workspace) return null;
+
+      return workspace.definitionAt({
+        document,
         position: params.position,
-        languageId: doc.languageId,
-      });
-
-      const fullText = doc.getText();
-      const target = cursorTargetAt(fullText, params.position);
-      if (target.kind === 'include') {
-        const include = target.include;
-        const start = include.pathRange.start.character;
-        const end = include.pathRange.end.character;
-        const resolved = await resolveInclude(
-          include.path,
-          params.textDocument.uri,
-          ctx.includeCtx,
-        );
-        if (!resolved) return null;
-        if (resolved.caseInsensitive) {
-          connection.console.warn(
-            `[UnityShaderNav] case-insensitive include match: "${include.path}" -> ${resolved.absolutePath}`,
-          );
-        }
-        trace('include', {
-          path: include.path,
-          resolvedUri: pathToFileURL(resolved.absolutePath).href,
-        });
-        const targetUri = pathToFileURL(resolved.absolutePath).href;
-        const targetRange = {
-          start: { line: 0, character: 0 },
-          end: { line: 0, character: 0 },
-        };
-        return [{
-          targetUri,
-          targetRange,
-          targetSelectionRange: targetRange,
-          originSelectionRange: {
-            start: { line: params.position.line, character: start },
-            end: { line: params.position.line, character: end },
+        observer: {
+          trace(event, data) {
+            connection.console.log(
+              `[UnityShaderNav][definition-trace] ${event} ${JSON.stringify(data)}`,
+            );
           },
-        }];
-      }
-
-      const idx = await ctx.index();
-      if (!idx) {
-        trace('index.missing', { uri: params.textDocument.uri });
-        return null;
-      }
-      trace('index.loaded', {
-        symbols: idx.symbols.length,
-        references: idx.references.length,
-      });
-
-      // Forward direction (issue 20): cursor on a ShaderLab property name →
-      // resolve the HLSL/CG declaration(s) of the same identifier. Runs BEFORE
-      // `isGenericDefinitionContext` because the gate currently rejects every
-      // non-HLSL cursor inside a `.shader` file. `idx.properties` is populated
-      // at index time (Task 3) — no rescan here.
-      const propertyHit = propertyAt(idx, params.position);
-      if (propertyHit) {
-        trace('property.hit', { name: propertyHit.name });
-        const propertyVisibleUriKeys = await ctx.visibleUriKeys();
-        // Filter to `variable` / `cbuffer` kinds only. Properties are uniform-
-        // style data; the matching HLSL sibling is either a plain global
-        // (`float _BumpScale;`), a cbuffer member, or a macro-synthesized
-        // global. The macro matcher emits `symbolKind: 'variable'` for the
-        // `TEXTURE2D($name)` family per `macros/matcher.ts:7` and
-        // `macros/builtin.ts:10`, so they pass this filter. Functions, struct
-        // members, parameters, locals, and macro-name symbols are dropped —
-        // a `void _Foo()` next to a property `_Foo` is a name collision, not
-        // a bridge target.
-        const propertySymbols = resolveDefinition(
-          { kind: 'symbol', word: { text: propertyHit.name, range: propertyHit.nameRange } },
-          {
-            index: idx,
-            global: ctx.global,
-            position: params.position,
-            options: { visibleUriKeys: propertyVisibleUriKeys, trace },
+          caseInsensitiveInclude(includePath, absolutePath) {
+            connection.console.warn(
+              `[UnityShaderNav] case-insensitive include match: "${includePath}" -> ${absolutePath}`,
+            );
           },
-        ).filter((symbol) => symbol.kind === 'variable' || symbol.kind === 'cbuffer');
-        if (propertySymbols.length === 0) {
-          trace('property.forward', { links: 0 });
-          return null;
-        }
-        trace('property.forward', { links: propertySymbols.length });
-        return propertySymbols.map((symbol) => ({
-          targetUri: symbol.location.uri,
-          targetRange: symbol.location.range,
-          targetSelectionRange: symbol.location.range,
-          originSelectionRange: propertyHit.nameRange,
-        }));
-      }
-
-      if (!isGenericDefinitionContext(fullText, params.position, doc.languageId, params.textDocument.uri)) {
-        trace('context.rejected', {});
-        return null;
-      }
-
-      const visibleUriKeys = await ctx.visibleUriKeys();
-      const resolutionOptions = { visibleUriKeys, trace };
-      const resolverCtx: ResolverContext = {
-        index: idx,
-        global: ctx.global,
-        position: params.position,
-        options: resolutionOptions,
-      };
-      trace('visibility', { visibleUriCount: visibleUriKeys.size });
-
-      if (target.kind === 'none') {
-        trace('word.missing', {});
-        return null;
-      }
-
-      const memberToken = target.kind === 'member' ? target.member : target.word;
-      trace('memberAccess', {
-        member: memberToken.text,
-        receiver: target.kind === 'member' ? target.receiver.text : undefined,
+        },
       });
-      if (target.kind === 'member') {
-        const memberSymbols = resolveDefinition(target, resolverCtx);
-        if (memberSymbols.length > 0) {
-          trace('member.result', { links: memberSymbols.length });
-          return memberSymbols.map((symbol) => ({
-            targetUri: symbol.location.uri,
-            targetRange: symbol.location.range,
-            targetSelectionRange: symbol.location.range,
-            originSelectionRange: target.member.range,
-          }));
-        }
-        trace('member.result', { links: 0 });
-      }
-
-      const word = memberToken;
-      trace('word', {
-        text: word.text,
-        range: word.range,
-      });
-
-      const symbols = resolveDefinition({ kind: 'symbol', word }, resolverCtx);
-
-      // Reverse direction (issue 20): an HLSL identifier may also match a
-      // property name in any indexed `.shader`. Visibility is intentionally
-      // bypassed (design decision 3) — every workspace shader whose Properties
-      // block declares the same name surfaces as a candidate.
-      const propertyCandidates = findPropertyCandidatesForName(word.text, ctx.store);
-      const propertyLinks: LocationLink[] = propertyCandidates.map((cand) => ({
-        targetUri: cand.uri,
-        targetRange: cand.entry.declarationRange,
-        targetSelectionRange: cand.entry.nameRange,
-        originSelectionRange: word.range,
-      }));
-
-      if (symbols.length === 0 && propertyLinks.length === 0) {
-        trace('definition.result', { links: 0 });
-        return null;
-      }
-      trace('definition.result', {
-        links: symbols.length + propertyLinks.length,
-        hlsl: symbols.length,
-        properties: propertyLinks.length,
-      });
-
-      const hlslLinks: LocationLink[] = symbols.map((symbol) => ({
-        targetUri: symbol.location.uri,
-        targetRange: symbol.location.range,
-        targetSelectionRange: symbol.location.range,
-        originSelectionRange: word.range,
-      }));
-      return [...hlslLinks, ...propertyLinks];
     };
 
     return suspender ? suspender.run(resolveRequest) : resolveRequest();

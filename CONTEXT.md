@@ -54,14 +54,26 @@ _Avoid_: symbol record, symbol info
 `Workspace` 中 package 相关能力的边界：组合 **PackageResolver**、include 解析上下文和 package 成员关系。与 **PackageResolver** 成对理解；另见 Flagged ambiguities 的 "Package"。
 
 **WorkspaceIndex**:
-`Workspace` 中索引状态与索引变更的边界。它维护磁盘索引、打开文档覆盖、全局符号和全局引用之间的一致性；`Workspace` 负责生命周期编排，不直接复制这些状态。
+`Workspace` 内部的索引实现。它维护磁盘索引、打开文档覆盖、全局符号和全局引用之间的一致性；请求 handler 不接收它，也不直接调用其变更方法。
+
+**Indexed Workspace interface**:
+请求与文档生命周期使用的行为接口。当前包含打开文档更新、关闭文档、Definition 和 Find References；`Workspace` 在接口后组合索引、include 可见性、Package 过滤与生命周期顺序。
+_Avoid_: index bundle, store context, workspace index facade
+
+**Open document snapshot**:
+一次编辑器文档状态的不可变值：`uri + languageId + text + openId + version`。`openId` 标识一次 `didOpen → didClose` 会话；`version` 只在同一 `openId` 内排序。两者共同构成 document attempt identity。
+_Avoid_: document generation, text document reference
+
+**Live document overlay**:
+打开或未保存文档覆盖在磁盘索引之上的索引记录。edit 只允许最新 document attempt 提交；close 恢复最后有效的磁盘记录，没有磁盘版本时删除该 URI 的索引记录。等价 file URI 共用一个 identity；一个 snapshot 只属于最长路径匹配的 Workspace，根拓扑变化时在旧、新 owner 之间迁移；没有新 owner 时，当前 Definition/References 请求可以重新进入 lazy routing。
+_Avoid_: temporary index, unsaved cache
 
 **Index implementation identity**:
 实际生成 `FileIndex` 的 server 与 parser runtime 的内容身份。它是 cache fingerprint 的一部分；identity 不同或无法确定时只能从源码重建，不能恢复可能由另一套索引语义产生的记录。
 _Avoid_: cache version, release version, Git revision
 
 **Index revision**:
-单个 `Workspace` 在一次 language-server session 内成功发布的索引代次。`0` 表示尚无可服务索引；成功发布单调递增，失败不递增。它只排序该 Workspace 的索引数据，不是时间戳，也不等于 status sequence。
+单个 `Workspace` 在一次 language-server session 内成功发布的初始/重建索引代次。`0` 表示尚无可服务索引；成功初始化或重建单调递增，失败不递增。当前 live-document 与增量文件变更不会增加 revision；完整 immutable publication boundary 仍以 ADR-0006 为准。它不是时间戳，也不等于 status sequence。
 _Avoid_: index version, cache generation, status sequence
 
 **Serving workspace**:

@@ -112,7 +112,7 @@ function rangeOfToken(text: string, line: number, token: string, occurrence = 0)
 }
 
 describe('registerDocumentHighlightHandler', () => {
-  it('reindexes an open document when the workspace store misses it', async () => {
+  it('returns neutral on store miss without mutating the workspace', async () => {
     const { connection, handler } = captureDocumentHighlightHandler();
     const uri = 'file:///project/Assets/Live.hlsl';
     const text = 'float4 Live() { return 1; }';
@@ -152,7 +152,7 @@ describe('registerDocumentHighlightHandler', () => {
       position: { line: 0, character: 7 },
     });
 
-    expect(reindexCalls).toBe(1);
+    expect(reindexCalls).toBe(0);
     expect(result).toBeNull();
   });
 

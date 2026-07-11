@@ -27,6 +27,12 @@ and uses semantic versioning for extension releases.
   actionable infrastructure failures, non-blocking startup request routing
   while a root has no serving index, cancellation-safe folder removal, and
   status-driven Electron test waits.
+- Routed open/edit/close, Definition, and Find References through an Indexed
+  Workspace behavior boundary. Document attempts now use open-session identity
+  plus LSP version, coalesce during lazy startup, replay before ready/rebuild
+  publication, reject stale async work, and restore disk state on close without
+  exposing mutable index stores to migrated handlers. Equivalent file URIs and
+  nested workspace add/remove transitions now preserve exactly one live owner.
 
 ### Fixed
 
@@ -35,6 +41,9 @@ and uses semantic versioning for extension releases.
   `unityShaderNav.debug.definitionTrace` applies without restarting the
   extension, and invalid nested values no longer replace valid sibling
   defaults.
+- Removed direct request-time reindex fallbacks that could publish stale text
+  after a newer edit or close. A live store miss can now join only the current
+  registry attempt through Workspace behavior; otherwise it remains neutral.
 
 ## 0.0.7 - 2026-05-28
 

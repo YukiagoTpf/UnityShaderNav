@@ -48,6 +48,35 @@ or removed. It orders status snapshots; it does not identify index data. The
 sequence is scoped to one LSP session. A reconnect resets the client's
 last-seen sequence before it accepts the new server's initial snapshot.
 
+### Current implementation stage
+
+The decision in this ADR is the required end state. The current implementation
+has established a narrower safe boundary without claiming the immutable
+publication step is complete:
+
+- Successful initialization and rebuild publish and increment `revision`;
+  live-document and watcher transactions do not yet increment it.
+- The open-document registry supplies immutable `openId + version` attempts.
+  `Workspace` serializes/coalesces them, validates after parsing and disk I/O,
+  and commits the affected mutable indexes synchronously.
+- Initial indexing and rebuild replay current open documents before `ready` is
+  published. Close restores a disk baseline or removes a live-only file.
+- Workspace-topology changes reconcile the open-document provider across the
+  previous and next longest-match owner; replacements remain request-neutral
+  during transfer, orphan snapshots can restart lazy discovery from a current
+  behavior request, watcher changes refresh every eligible serving
+  disk-baseline owner, and equivalent file URIs share one key.
+- Definition and Find References use Workspace-owned behavior and execute in
+  its operation queue. Other request handlers cannot mutate a missing index
+  through an index implementation; they may join the registry's current
+  attempt only through Workspace behavior.
+- Full rebuild still becomes non-serving and uses bounded request suspension;
+  no retained immutable revision is advertised during that work.
+
+Therefore references below to candidate swaps, retained serving revisions, and
+revision increments for every transaction remain architectural requirements,
+not claims about the current mutable implementation.
+
 ### Mode and lifecycle state are separate
 
 Workspace mode is either `unity` or `standalone`. It describes available

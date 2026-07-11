@@ -1,5 +1,5 @@
 import { promises as fs } from 'node:fs';
-import { join, relative } from 'node:path';
+import { basename, isAbsolute, join, relative } from 'node:path';
 
 const HLSL_EXTS = new Set(['.shader', '.hlsl', '.cginc', '.hlslinc', '.compute']);
 const WALK_CONCURRENCY = 16;
@@ -13,13 +13,37 @@ function matchesGlob(relPath: string, pattern: string): boolean {
   return new RegExp(`^${source}$`).test(relPath);
 }
 
-function isExcluded(relPath: string, patterns: string[]): boolean {
+function isExcluded(relPath: string, patterns: readonly string[]): boolean {
   return patterns.some((pattern) => matchesGlob(relPath, pattern) || matchesGlob(`/${relPath}`, pattern));
+}
+
+function isTreePathExcluded(relativePath: string, patterns: readonly string[]): boolean {
+  const segments = relativePath.split('/');
+  for (let length = 1; length <= segments.length; length++) {
+    if (isExcluded(segments.slice(0, length).join('/'), patterns)) return true;
+  }
+  return false;
 }
 
 function extensionOf(name: string): string {
   const dot = name.lastIndexOf('.');
   return dot >= 0 ? name.substring(dot).toLowerCase() : '';
+}
+
+export function isIndexableFilePath(
+  root: string,
+  filePath: string,
+  excludePatterns: readonly string[],
+): boolean {
+  const relativePath = relative(root, filePath).replace(/\\/g, '/');
+  if (
+    relativePath === ''
+    || relativePath === '..'
+    || relativePath.startsWith('../')
+    || isAbsolute(relativePath)
+  ) return false;
+  return HLSL_EXTS.has(extensionOf(basename(filePath)))
+    && !isTreePathExcluded(relativePath, excludePatterns);
 }
 
 export async function walkFiles(
@@ -88,7 +112,7 @@ export async function walkFiles(
       for (const entry of entries) {
         const absolutePath = join(dir, entry.name);
         const relativePath = relative(root, absolutePath).replace(/\\/g, '/');
-        if (isExcluded(relativePath, excludePatterns)) continue;
+        if (isTreePathExcluded(relativePath, excludePatterns)) continue;
 
         if (entry.isDirectory()) {
           queue.push(absolutePath);

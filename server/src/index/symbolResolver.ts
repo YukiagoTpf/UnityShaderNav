@@ -1,7 +1,7 @@
 import type { FileIndex, Position, Range, SymbolEntry } from '@unity-shader-nav/shared';
 import type { GlobalSymbolIndex } from './globalIndex';
 import { inRange, isBeforeOrAt } from './positionGeometry';
-import { uriKey } from './uriKey';
+import { uriKey } from '../uriKey';
 
 export interface LocationLink {
   targetUri: string;

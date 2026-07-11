@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { FileIndex, FunctionSymbolEntry, SymbolEntry } from '@unity-shader-nav/shared';
 import { IndexStore } from '../../src/index';
 import { collectVisibleProjectFunctionSuggestions, collectVisibleProjectSuggestions } from '../../src/suggestions';
-import { uriKey } from '../../src/index/uriKey';
+import { uriKey } from '../../src/uriKey';
 
 const mainUri = 'file:///t/main.hlsl';
 const includeUri = 'file:///t/include.hlsl';

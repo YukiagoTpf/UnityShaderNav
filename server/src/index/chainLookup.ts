@@ -2,7 +2,7 @@ import type { FileIndex, FunctionSymbolEntry, Position, SymbolEntry } from '@uni
 import type { GlobalSymbolIndex } from './globalIndex';
 import type { LocationLink, ResolutionOptions } from './symbolResolver';
 import { inRange, isBeforeOrAt } from './positionGeometry';
-import { uriKey } from './uriKey';
+import { uriKey } from '../uriKey';
 
 function laterThan(a: Position, b: Position): boolean {
   return a.line > b.line || (a.line === b.line && a.character > b.character);

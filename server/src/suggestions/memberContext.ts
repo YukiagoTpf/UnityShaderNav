@@ -1,7 +1,7 @@
 import type { FileIndex, Position, SymbolEntry } from '@unity-shader-nav/shared';
 import type { GlobalSymbolIndex, IndexStore } from '../index';
 import { inferReceiverTypeForCompletion } from '../index/chainLookup';
-import { uriKey } from '../index/uriKey';
+import { uriKey } from '../uriKey';
 import { symbolToSuggestion } from './projectSymbols';
 import type { ShaderSuggestion } from './types';
 

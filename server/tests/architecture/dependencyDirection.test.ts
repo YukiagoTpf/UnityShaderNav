@@ -17,6 +17,11 @@ type DependencyGraph = ReadonlyMap<string, readonly string[]>;
 const SOURCE_ROOT = resolve(__dirname, '../../src');
 const PARSER_PREFIX = 'parser/';
 const SUGGESTIONS_PREFIX = 'suggestions/';
+const INDEXED_ADAPTERS = [
+  'handlers/definition.ts',
+  'handlers/documents.ts',
+  'handlers/references.ts',
+] as const;
 
 describe('server dependency direction', () => {
   it('extracts every TypeScript dependency form used by the guard', () => {
@@ -115,6 +120,63 @@ describe('server dependency direction', () => {
     if (violation) {
       throw new Error(
         `parser modules must not depend on suggestions: ${violation.join(' -> ')}`,
+      );
+    }
+  });
+
+  it('keeps migrated navigation adapters behind the Indexed Workspace behavior', () => {
+    const graph = buildSourceGraph(SOURCE_ROOT);
+    for (const adapter of INDEXED_ADAPTERS) {
+      const violation = findDependencyPath(
+        graph,
+        [adapter],
+        (moduleId) => moduleId.startsWith('index/')
+          || moduleId === 'handlers/requestContext.ts'
+          || moduleId === 'workspace/navigation.ts'
+          || moduleId === 'workspace/workspace.ts'
+          || moduleId === 'workspace/workspaceIndex.ts'
+          || moduleId === 'workspace/workspaceManager.ts',
+      );
+      if (violation) {
+        throw new Error(
+          `Indexed Workspace adapter reached a concrete implementation: ${violation.join(' -> ')}`,
+        );
+      }
+
+      const source = readFileSync(resolve(SOURCE_ROOT, adapter), 'utf8');
+      expect(source).not.toMatch(/\.(?:index|store|global|globalRefs)\b/);
+    }
+
+    for (const adapter of ['handlers/definition.ts', 'handlers/references.ts']) {
+      const source = readFileSync(resolve(SOURCE_ROOT, adapter), 'utf8');
+      expect(source, adapter).toContain('workspaceForDocumentRequest');
+    }
+  });
+
+  it('prevents production live-document mutation from bypassing Workspace', () => {
+    for (const sourceFile of collectTypeScriptFiles(SOURCE_ROOT)) {
+      const source = readFileSync(sourceFile, 'utf8');
+      expect(source, relativeModuleId(SOURCE_ROOT, sourceFile))
+        .not.toMatch(/\.index\.(?:reindex|closeDocument)\s*\(/);
+    }
+
+    const rebuild = readFileSync(resolve(SOURCE_ROOT, 'lifecycle/rebuild.ts'), 'utf8');
+    expect(rebuild).not.toMatch(/\.(?:store|global|globalRefs)\b/);
+  });
+
+  it('keeps migrated handler tests free of reconstructed Workspace internals', () => {
+    const testRoot = resolve(SOURCE_ROOT, '../tests/handlers');
+    for (const file of [
+      'definition.test.ts',
+      'definition-include.test.ts',
+      'definition-properties.test.ts',
+      'documents.test.ts',
+      'references.test.ts',
+    ]) {
+      const source = readFileSync(resolve(testRoot, file), 'utf8');
+      expect(source, file).not.toMatch(/workspace\.index\b/);
+      expect(source, file).not.toMatch(
+        /index\s*:\s*\{[\s\S]{0,160}\b(?:store|global|globalRefs)\b/,
       );
     }
   });

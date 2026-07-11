@@ -7,10 +7,9 @@ import type { IncludeContext } from '../include';
 import type { Workspace, WorkspaceManager } from '../workspace';
 
 /**
- * The resolved request context shared by every navigation/query handler. It owns
- * the copy-pasted preamble — document lookup, workspace resolution, the index
- * reindex-fallback, and the include-visibility walk — behind one seam so handlers
- * shrink to `context → LSP result` and stop reaching into workspace internals.
+ * Compatibility context for query handlers not yet migrated to Indexed
+ * Workspace behavior. It owns their repeated document lookup, workspace
+ * resolution, index lookup, and include-visibility walk behind one seam.
  *
  * Workspace-derived fields are exposed as lazy getters and `index()` /
  * `visibleUriKeys()` as lazy memoized promises: a field or walk is only evaluated
@@ -32,9 +31,9 @@ export interface RequestContext {
   readonly globalRefs: GlobalReferenceIndex;
   readonly includeCtx: IncludeContext;
   /**
-   * Lazy, memoized: `store.get(uri)`; if missing and a document is available,
-   * reindex it and `store.get(uri)` again. The promise is memoized so reindex
-   * runs at most once per request even across repeated calls.
+   * Lazy, memoized serving-index lookup. A live miss may await the registry's
+   * current snapshot through Workspace behavior; this context never calls an
+   * index implementation directly.
    */
   index(): Promise<FileIndex | undefined>;
   /** Lazy, memoized: `collectVisibleUriKeys(store, includeCtx, uri)`. */
@@ -82,19 +81,21 @@ export async function resolveRequestContext(
   const workspace = manager.servingWorkspaceFor(uri);
   if (!workspace) return null;
 
-  // Memoize the promise so the reindex runs at most once even under concurrent awaits.
+  // Memoize so legacy query adapters can join the same safe document attempt
+  // while they are migrated. Workspace remains the sole mutation owner.
   let indexPromise: Promise<FileIndex | undefined> | undefined;
   const index = (): Promise<FileIndex | undefined> =>
-    (indexPromise ??= (async (): Promise<FileIndex | undefined> => {
-      let idx = workspace.index.store.get(uri);
-      if (!idx && typeof workspace.index?.reindex === 'function') {
-        const doc = getDoc();
-        if (doc) {
-          await workspace.index.reindex(doc.uri, doc.getText());
-          idx = workspace.index.store.get(uri);
-        }
-      }
-      return idx;
+    (indexPromise ??= (async () => {
+      let current = workspace.index.store.get(uri);
+      if (current) return current;
+
+      const document = typeof manager.openDocumentSnapshot === 'function'
+        ? manager.openDocumentSnapshot(uri)
+        : undefined;
+      if (!document) return undefined;
+      await workspace.updateDocument(document);
+      current = workspace.index.store.get(uri);
+      return current;
     })());
 
   let visiblePromise: Promise<Set<string>> | undefined;

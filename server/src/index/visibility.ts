@@ -2,7 +2,7 @@ import { pathToFileURL } from 'node:url';
 import type { IncludeContext } from '../include';
 import { resolveInclude } from '../include';
 import type { IndexStore } from './indexStore';
-import { uriKey } from './uriKey';
+import { uriKey } from '../uriKey';
 
 export async function collectVisibleUriKeys(
   store: Pick<IndexStore, 'get'>,

@@ -1,5 +1,5 @@
 import type { FileIndex } from '@unity-shader-nav/shared';
-import { uriKey } from './uriKey';
+import { uriKey } from '../uriKey';
 
 export class IndexStore {
   private readonly byUri = new Map<string, FileIndex>();

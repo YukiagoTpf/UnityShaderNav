@@ -1,7 +1,7 @@
 import type { FileIndex, FunctionSymbolEntry, Position, SymbolEntry } from '@unity-shader-nav/shared';
 import type { IndexStore } from '../index';
 import { inRange, isBeforeOrAt } from '../index/positionGeometry';
-import { uriKey } from '../index/uriKey';
+import { uriKey } from '../uriKey';
 import type { ShaderSuggestion } from './types';
 
 export interface CollectProjectSuggestionsInput {

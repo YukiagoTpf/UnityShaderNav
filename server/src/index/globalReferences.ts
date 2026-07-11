@@ -1,5 +1,5 @@
 import type { FileIndex, ReferenceEntry } from '@unity-shader-nav/shared';
-import { uriKey } from './uriKey';
+import { uriKey } from '../uriKey';
 
 export class GlobalReferenceIndex {
   private readonly byName = new Map<string, ReferenceEntry[]>();

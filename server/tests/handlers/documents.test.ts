@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest';
-import type { Connection } from 'vscode-languageserver/node';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  TextDocumentSyncKind,
+  type Connection,
+} from 'vscode-languageserver/node';
 import { registerDocuments } from '../../src/handlers/documents';
+import type { IndexedWorkspace } from '../../src/workspace/indexedWorkspace';
 
 type OpenHandler = (event: {
   textDocument: { uri: string; languageId: string; version: number; text: string };
@@ -16,15 +20,18 @@ function createConnectionHarness(): {
   open: OpenHandler;
   change: ChangeHandler;
   close: CloseHandler;
-  logs: string[];
+  errors: string[];
 } {
   let open: OpenHandler | undefined;
   let change: ChangeHandler | undefined;
   let close: CloseHandler | undefined;
-  const logs: string[] = [];
+  const errors: string[] = [];
   const disposable = { dispose() {} };
   const connection = {
-    console: { log(message: string) { logs.push(message); } },
+    console: {
+      log() {},
+      error(message: string) { errors.push(message); },
+    },
     onDidOpenTextDocument(handler: OpenHandler) {
       open = handler;
       return disposable;
@@ -37,245 +44,267 @@ function createConnectionHarness(): {
       close = handler;
       return disposable;
     },
-    onWillSaveTextDocument() {
-      return disposable;
-    },
-    onWillSaveTextDocumentWaitUntil() {
-      return disposable;
-    },
-    onDidSaveTextDocument() {
-      return disposable;
-    },
+    onWillSaveTextDocument() { return disposable; },
+    onWillSaveTextDocumentWaitUntil() { return disposable; },
+    onDidSaveTextDocument() { return disposable; },
   } as unknown as Connection;
-
   return {
     connection,
     open: (event) => open?.(event),
     change: (event) => change?.(event),
     close: (event) => close?.(event),
-    logs,
+    errors,
   };
 }
 
-async function waitFor(predicate: () => boolean): Promise<void> {
-  const deadline = Date.now() + 3000;
-  while (Date.now() < deadline) {
-    if (predicate()) return;
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  expect(predicate()).toBe(true);
+function workspaceFixture(): IndexedWorkspace {
+  return {
+    updateDocument: vi.fn(async () => true),
+    closeDocument: vi.fn(async () => {}),
+    definitionAt: vi.fn(async () => null),
+    referencesAt: vi.fn(async () => null),
+  };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+}
+
+async function flushPromises(times = 8): Promise<void> {
+  for (let index = 0; index < times; index++) await Promise.resolve();
+}
+
+const uri = 'file:///t/doc.hlsl';
+const openEvent = (text: string, version = 1) => ({
+  textDocument: { uri, languageId: 'hlsl', version, text },
+});
+const changeEvent = (text: string, version: number) => ({
+  textDocument: { uri, version },
+  contentChanges: [{ text }],
+});
+
 describe('registerDocuments', () => {
-  it('routes opened documents to their owning workspace and closes live overlays', async () => {
+  it('uses one canonical identity for equivalent Windows file URIs', async () => {
     const harness = createConnectionHarness();
-    const calls: string[] = [];
-    const workspace = {
-      index: {
-        async reindex(uri: string) {
-          calls.push(`reindex:${uri}`);
-        },
-        closeDocument(uri: string) {
-          calls.push(`close:${uri}`);
-        },
-      },
+    const workspace = workspaceFixture();
+    const manager = {
+      workspaceFor: () => workspace,
+      servingWorkspaceFor: () => workspace,
+      workspaceForOrCreateFile: vi.fn(async () => workspace),
+      releaseDocument: vi.fn(async () => {}),
+      configureOpenDocumentsProvider: vi.fn(),
     };
-    const manager = {
-      workspaceFor(uri: string) {
-        return uri === 'file:///t/doc.hlsl' ? workspace : undefined;
-      },
-      async workspaceForOrCreateFile(uri: string) {
-        return this.workspaceFor(uri);
-      },
-    } as never;
+    const upperUri = 'file:///C:/Project/Canonical.hlsl';
+    const lowerUri = 'file:///c:/Project/Canonical.hlsl';
+    const registered = registerDocuments(harness.connection, manager);
 
-    registerDocuments(harness.connection, manager);
     harness.open({
       textDocument: {
-        uri: 'file:///t/doc.hlsl',
+        uri: upperUri,
         languageId: 'hlsl',
         version: 1,
-        text: 'float4 helper(float4 v) { return v; }',
+        text: 'float4 Opened() { return 0; }',
       },
     });
+    await flushPromises();
 
-    await waitFor(() => calls.includes('reindex:file:///t/doc.hlsl'));
-
-    harness.close({ textDocument: { uri: 'file:///t/doc.hlsl' } });
-
-    expect(calls).toContain('close:file:///t/doc.hlsl');
-  });
-
-  it('does not route documents outside known workspaces', async () => {
-    const harness = createConnectionHarness();
-    const calls: string[] = [];
-    const manager = {
-      workspaceFor() {
-        return undefined;
-      },
-      async workspaceForOrCreateFile() {
-        return undefined;
-      },
-    } as never;
-
-    registerDocuments(harness.connection, manager);
-    harness.open({
-      textDocument: {
-        uri: 'file:///outside/once.hlsl',
-        languageId: 'hlsl',
-        version: 1,
-        text: 'float4 helper(float4 v) { return v; }',
-      },
+    expect((harness.connection as unknown as { __textDocumentSync: number })
+      .__textDocumentSync).toBe(TextDocumentSyncKind.Incremental);
+    expect(registered.documents.get(upperUri)?.uri).toBe(lowerUri);
+    expect(registered.snapshot(upperUri)).toEqual(registered.snapshot(lowerUri));
+    expect(registered.snapshot(lowerUri)).toMatchObject({
+      uri: lowerUri,
+      openId: 1,
+      version: 1,
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    expect(calls).toEqual([]);
-  });
-
-  it('does not restore an index after the document closes during indexing', async () => {
-    const harness = createConnectionHarness();
-    const calls: string[] = [];
-    let allowReindex!: () => void;
-    const reindexStarted = new Promise<void>((resolve) => {
-      allowReindex = resolve;
-    });
-    const workspace = {
-      index: {
-        async reindex(uri: string, _text: string, shouldStore: () => boolean) {
-          await reindexStarted;
-          if (shouldStore()) calls.push(`reindex:${uri}`);
-        },
-        closeDocument(uri: string) {
-          calls.push(`close:${uri}`);
-        },
-      },
-    };
-    const manager = {
-      workspaceFor(uri: string) {
-        return uri === 'file:///t/closed.hlsl' ? workspace : undefined;
-      },
-      async workspaceForOrCreateFile(uri: string) {
-        return this.workspaceFor(uri);
-      },
-    } as never;
-
-    registerDocuments(harness.connection, manager);
-    harness.open({
-      textDocument: {
-        uri: 'file:///t/closed.hlsl',
-        languageId: 'hlsl',
-        version: 1,
-        text: 'float4 helper(float4 v) { return v; }',
-      },
-    });
-    harness.close({ textDocument: { uri: 'file:///t/closed.hlsl' } });
-    allowReindex();
-
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
-    expect(calls).toEqual(['close:file:///t/closed.hlsl']);
-  });
-
-  it('does not store stale text after a newer document version arrives during indexing', async () => {
-    const harness = createConnectionHarness();
-    const calls: string[] = [];
-    let allowStaleReindex!: () => void;
-    const staleReindex = new Promise<void>((resolve) => {
-      allowStaleReindex = resolve;
-    });
-    const workspace = {
-      index: {
-        async reindex(_uri: string, text: string, shouldStore: () => boolean) {
-          if (text.includes('Stale')) await staleReindex;
-          if (shouldStore()) calls.push(`store:${text}`);
-        },
-        closeDocument() {},
-      },
-    };
-    const manager = {
-      workspaceFor(uri: string) {
-        return uri === 'file:///t/versioned.hlsl' ? workspace : undefined;
-      },
-      async workspaceForOrCreateFile(uri: string) {
-        return this.workspaceFor(uri);
-      },
-    } as never;
-
-    registerDocuments(harness.connection, manager);
-    harness.open({
-      textDocument: {
-        uri: 'file:///t/versioned.hlsl',
-        languageId: 'hlsl',
-        version: 1,
-        text: 'float4 Stale() { return 0; }',
-      },
-    });
     harness.change({
-      textDocument: {
-        uri: 'file:///t/versioned.hlsl',
-        version: 2,
-      },
-      contentChanges: [{ text: 'float4 Fresh() { return 0; }' }],
+      textDocument: { uri: lowerUri, version: 2 },
+      contentChanges: [{ text: 'float4 Changed() { return 0; }' }],
     });
-    allowStaleReindex();
+    await flushPromises();
+    expect(registered.snapshot(upperUri)).toMatchObject({
+      uri: lowerUri,
+      openId: 1,
+      version: 2,
+      text: 'float4 Changed() { return 0; }',
+    });
 
-    await waitFor(() => calls.includes('store:float4 Fresh() { return 0; }'));
-
-    expect(calls).toEqual(['store:float4 Fresh() { return 0; }']);
+    harness.close({ textDocument: { uri: lowerUri } });
+    await flushPromises();
+    expect(workspace.closeDocument).toHaveBeenCalledWith({ uri: lowerUri, openId: 1 });
+    expect(manager.releaseDocument).toHaveBeenCalledWith(lowerUri);
+    expect(registered.snapshot(upperUri)).toBeUndefined();
   });
 
-  it('does not store stale text after the same URI closes and reopens at the same version', async () => {
+  it('deduplicates didOpen content and routes close through behavior methods', async () => {
     const harness = createConnectionHarness();
-    const calls: string[] = [];
-    let allowStaleReindex!: () => void;
-    const staleReindex = new Promise<void>((resolve) => {
-      allowStaleReindex = resolve;
-    });
-    const workspace = {
-      index: {
-        async reindex(_uri: string, text: string, shouldStore: () => boolean) {
-          if (text.includes('Stale')) await staleReindex;
-          if (shouldStore()) calls.push(`store:${text}`);
-        },
-        closeDocument(uri: string) {
-          calls.push(`close:${uri}`);
-        },
-      },
-    };
+    const workspace = workspaceFixture();
     const manager = {
-      workspaceFor(uri: string) {
-        return uri === 'file:///t/reopened.hlsl' ? workspace : undefined;
-      },
-      async workspaceForOrCreateFile(uri: string) {
-        return this.workspaceFor(uri);
-      },
-    } as never;
+      workspaceFor: () => workspace,
+      servingWorkspaceFor: () => workspace,
+      workspaceForOrCreateFile: vi.fn(async () => workspace),
+      releaseDocument: vi.fn(async () => {}),
+      configureOpenDocumentsProvider: vi.fn(),
+    };
 
+    const registered = registerDocuments(harness.connection, manager);
+    harness.open(openEvent('float4 Opened() { return 0; }'));
+    await flushPromises();
+
+    expect(workspace.updateDocument).toHaveBeenCalledTimes(1);
+    expect(registered.snapshot(uri)).toMatchObject({ openId: 1, version: 1 });
+
+    harness.close({ textDocument: { uri } });
+    await flushPromises();
+    expect(workspace.closeDocument).toHaveBeenCalledWith({ uri, openId: 1 });
+    expect(registered.snapshot(uri)).toBeUndefined();
+  });
+
+  it('keeps one lazy ensure and submits only the latest edit', async () => {
+    const harness = createConnectionHarness();
+    const workspace = workspaceFixture();
+    const pending = deferred<IndexedWorkspace | undefined>();
+    const manager = {
+      workspaceFor: () => undefined,
+      servingWorkspaceFor: () => undefined,
+      workspaceForOrCreateFile: vi.fn(() => pending.promise),
+      releaseDocument: vi.fn(async () => {}),
+      configureOpenDocumentsProvider: vi.fn(),
+    };
+    const registered = registerDocuments(harness.connection, manager);
+
+    harness.open(openEvent('float4 V1() { return 0; }'));
+    harness.change(changeEvent('float4 V2() { return 0; }', 2));
+    harness.change(changeEvent('float4 V3() { return 0; }', 3));
+    expect(manager.workspaceForOrCreateFile).toHaveBeenCalledTimes(1);
+    expect(registered.snapshot(uri)).toMatchObject({
+      text: 'float4 V3() { return 0; }',
+      version: 3,
+    });
+
+    pending.resolve(workspace);
+    await flushPromises();
+    expect(workspace.updateDocument).toHaveBeenCalledTimes(1);
+    expect(workspace.updateDocument).toHaveBeenCalledWith(expect.objectContaining({
+      text: 'float4 V3() { return 0; }',
+      version: 3,
+    }));
+  });
+
+  it('does not resurrect a document closed while lazy routing is pending', async () => {
+    const harness = createConnectionHarness();
+    const workspace = workspaceFixture();
+    const pending = deferred<IndexedWorkspace | undefined>();
+    const manager = {
+      workspaceFor: () => undefined,
+      servingWorkspaceFor: () => undefined,
+      workspaceForOrCreateFile: vi.fn(() => pending.promise),
+      releaseDocument: vi.fn(async () => {}),
+      configureOpenDocumentsProvider: vi.fn(),
+    };
     registerDocuments(harness.connection, manager);
-    harness.open({
-      textDocument: {
-        uri: 'file:///t/reopened.hlsl',
-        languageId: 'hlsl',
-        version: 1,
-        text: 'float4 Stale() { return 0; }',
-      },
-    });
-    harness.close({ textDocument: { uri: 'file:///t/reopened.hlsl' } });
-    harness.open({
-      textDocument: {
-        uri: 'file:///t/reopened.hlsl',
-        languageId: 'hlsl',
-        version: 1,
-        text: 'float4 Fresh() { return 0; }',
-      },
-    });
-    allowStaleReindex();
 
-    await waitFor(() => calls.includes('store:float4 Fresh() { return 0; }'));
+    harness.open(openEvent('float4 Closed() { return 0; }'));
+    harness.close({ textDocument: { uri } });
+    pending.resolve(workspace);
+    await flushPromises();
 
-    expect(calls).toContain('close:file:///t/reopened.hlsl');
-    expect(calls).toContain('store:float4 Fresh() { return 0; }');
-    expect(calls).not.toContain('store:float4 Stale() { return 0; }');
+    expect(workspace.updateDocument).not.toHaveBeenCalled();
+    expect(workspace.closeDocument).not.toHaveBeenCalled();
+    expect(manager.workspaceForOrCreateFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses a new openId when the same URI reopens at the same version', async () => {
+    const harness = createConnectionHarness();
+    const workspace = workspaceFixture();
+    const pending = deferred<IndexedWorkspace | undefined>();
+    const manager = {
+      workspaceFor: () => undefined,
+      servingWorkspaceFor: () => undefined,
+      workspaceForOrCreateFile: vi.fn(() => pending.promise),
+      releaseDocument: vi.fn(async () => {}),
+      configureOpenDocumentsProvider: vi.fn(),
+    };
+    registerDocuments(harness.connection, manager);
+
+    harness.open(openEvent('float4 Stale() { return 0; }'));
+    harness.close({ textDocument: { uri } });
+    harness.open(openEvent('float4 Fresh() { return 0; }'));
+    pending.resolve(workspace);
+    await flushPromises();
+
+    expect(workspace.updateDocument).toHaveBeenCalledTimes(1);
+    expect(workspace.updateDocument).toHaveBeenCalledWith(expect.objectContaining({
+      openId: 2,
+      version: 1,
+      text: 'float4 Fresh() { return 0; }',
+    }));
+  });
+
+  it('reroutes a reopened session when the retired lazy route returns no workspace', async () => {
+    const harness = createConnectionHarness();
+    const workspace = workspaceFixture();
+    const retiredRoute = deferred<IndexedWorkspace | undefined>();
+    const manager = {
+      workspaceFor: () => undefined,
+      servingWorkspaceFor: () => undefined,
+      workspaceForOrCreateFile: vi.fn()
+        .mockImplementationOnce(() => retiredRoute.promise)
+        .mockResolvedValueOnce(workspace),
+      releaseDocument: vi.fn(async () => {}),
+      configureOpenDocumentsProvider: vi.fn(),
+    };
+    registerDocuments(harness.connection, manager);
+
+    harness.open(openEvent('float4 FirstSession() { return 0; }'));
+    harness.close({ textDocument: { uri } });
+    harness.open(openEvent('float4 ReopenedSession() { return 0; }'));
+    retiredRoute.resolve(undefined);
+    await flushPromises();
+
+    expect(manager.workspaceForOrCreateFile).toHaveBeenCalledTimes(2);
+    expect(workspace.updateDocument).toHaveBeenCalledWith(expect.objectContaining({
+      openId: 2,
+      version: 1,
+      text: 'float4 ReopenedSession() { return 0; }',
+    }));
+  });
+
+  it('logs a lazy routing rejection and retries on the next edit', async () => {
+    const harness = createConnectionHarness();
+    const workspace = workspaceFixture();
+    const first = deferred<IndexedWorkspace | undefined>();
+    const manager = {
+      workspaceFor: () => undefined,
+      servingWorkspaceFor: () => undefined,
+      workspaceForOrCreateFile: vi.fn()
+        .mockImplementationOnce(() => first.promise)
+        .mockResolvedValueOnce(workspace),
+      releaseDocument: vi.fn(async () => {}),
+      configureOpenDocumentsProvider: vi.fn(),
+    };
+    registerDocuments(harness.connection, manager);
+
+    harness.open(openEvent('float4 First() { return 0; }'));
+    first.reject(new Error('bootstrap failed'));
+    await flushPromises();
+    expect(harness.errors).toEqual([
+      '[UnityShaderNav] document routing failed for file:///t/doc.hlsl: bootstrap failed',
+    ]);
+
+    harness.change(changeEvent('float4 Retried() { return 0; }', 2));
+    await flushPromises();
+    expect(manager.workspaceForOrCreateFile).toHaveBeenCalledTimes(2);
+    expect(workspace.updateDocument).toHaveBeenCalledWith(expect.objectContaining({
+      version: 2,
+      text: 'float4 Retried() { return 0; }',
+    }));
   });
 });

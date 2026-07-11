@@ -179,17 +179,19 @@ describe('registerCompletionHandler', () => {
     });
   });
 
-  it('reindexes the open document on store miss', async () => {
+  it('returns neutral on store miss without mutating the workspace', async () => {
     const uri = 'file:///t/live.hlsl';
     const text = 'float4 helper(float4 v) { return v; }\nfloat4 main() { return hel; }';
     const store = new IndexStore();
     const global = new GlobalSymbolIndex();
+    let reindexCalls = 0;
     const workspace = {
       packages: { includeCtx: { unityProjectRoot: undefined, includeDirectories: [] } },
       index: {
         store,
         global,
         async reindex(requestedUri: string, requestedText: string) {
+          reindexCalls++;
           const index = await indexFile(requestedUri, requestedText);
           store.set(index.uri, index);
           global.upsert(index);
@@ -203,7 +205,8 @@ describe('registerCompletionHandler', () => {
       position: { line: 1, character: 28 },
     });
 
-    expect(itemNames(result)).toContain('helper');
+    expect(itemNames(result)).toEqual([]);
+    expect(reindexCalls).toBe(0);
   });
 
   it('returns include-visible function completions', async () => {

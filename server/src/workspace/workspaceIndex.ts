@@ -3,12 +3,26 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { Connection } from 'vscode-languageserver/node';
 import type { FileIndex, UserDeclarationMacro } from '@unity-shader-nav/shared';
 import { GlobalReferenceIndex, GlobalSymbolIndex, IndexStore } from '../index';
+import { uriKey } from '../uriKey';
 import { MacroPatternTable } from '../macros';
 import { indexFile } from '../parser/hlsl';
 
 export interface FileEvent {
   uri: string;
   type: 'created' | 'changed' | 'deleted';
+}
+
+export type DocumentIndexer = (
+  uri: string,
+  text: string,
+  table: MacroPatternTable,
+) => Promise<FileIndex>;
+
+export interface PreparedDocumentIndex {
+  readonly uri: string;
+  readonly liveIndex: FileIndex;
+  /** undefined: keep Unity scan state; null: standalone file has no disk form. */
+  readonly diskIndex: FileIndex | null | undefined;
 }
 
 /**
@@ -25,10 +39,16 @@ export class WorkspaceIndex {
   private readonly diskIndexes = new Map<string, FileIndex>();
   private _table: MacroPatternTable;
   private readonly isStandalone: () => boolean;
+  private readonly indexDocument: DocumentIndexer;
 
-  constructor(table: MacroPatternTable, isStandalone: () => boolean) {
+  constructor(
+    table: MacroPatternTable,
+    isStandalone: () => boolean,
+    indexDocument: DocumentIndexer = indexFile,
+  ) {
     this._table = table;
     this.isStandalone = isStandalone;
+    this.indexDocument = indexDocument;
   }
 
   get table(): MacroPatternTable {
@@ -49,7 +69,7 @@ export class WorkspaceIndex {
    * Used by Workspace.bootstrapFromCache; mirrors indexAndStore's ordering.
    */
   restoreFromCache(uri: string, index: FileIndex): void {
-    this.diskIndexes.set(uri, index);
+    this.diskIndexes.set(uriKey(uri), index);
     this.store.set(uri, index);
     this.global.upsert(index);
     this.globalRefs.upsert(index);
@@ -57,7 +77,14 @@ export class WorkspaceIndex {
 
   /** Invariant 4: persist() snapshots diskIndexes, never store. Open documents are excluded. */
   diskIndexEntries(): Array<[string, FileIndex]> {
-    return Array.from(this.diskIndexes);
+    return Array.from(
+      this.diskIndexes.values(),
+      (index): [string, FileIndex] => [index.uri, index],
+    );
+  }
+
+  hasDiskIndex(uri: string): boolean {
+    return this.diskIndexes.has(uriKey(uri));
   }
 
   /** Invariant 3: rebuild() clears all three indexes + diskIndexes before re-bootstrapping. */
@@ -87,10 +114,10 @@ export class WorkspaceIndex {
 
     // Parser/index exceptions are infrastructure failures. They must abort the
     // current operation instead of being mistaken for a valid empty project.
-    const idx = await indexFile(uri, text, this.table);
+    const idx = await this.indexDocument(uri, text, this.table);
     if (!shouldStore()) return false;
     // Invariant 1 order: diskIndexes -> store -> global -> globalRefs.
-    this.diskIndexes.set(uri, idx);
+    this.diskIndexes.set(uriKey(uri), idx);
     this.store.set(uri, idx);
     this.global.upsert(idx);
     this.globalRefs.upsert(idx);
@@ -98,35 +125,66 @@ export class WorkspaceIndex {
     return true;
   }
 
+  /**
+   * Prepare a live document without mutating serving state. The final validity
+   * check and the commit are adjacent and synchronous, so a close/newer edit
+   * cannot publish stale text after standalone disk I/O completes.
+   */
+  async prepareDocument(
+    uri: string,
+    text: string,
+    shouldContinue: () => boolean = () => true,
+  ): Promise<PreparedDocumentIndex | undefined> {
+    const liveIndex = await this.indexDocument(uri, text, this.table);
+    if (!shouldContinue()) return undefined;
+
+    let diskIndex: FileIndex | null | undefined;
+    if (this.isStandalone()) {
+      diskIndex = await this.readStandaloneDiskIndex(uri, text, liveIndex);
+      if (!shouldContinue()) return undefined;
+    }
+    return { uri, liveIndex, diskIndex };
+  }
+
+  commitDocument(
+    candidate: PreparedDocumentIndex,
+    shouldStore: () => boolean = () => true,
+  ): boolean {
+    if (!shouldStore()) return false;
+    if (candidate.diskIndex === null) {
+      this.diskIndexes.delete(uriKey(candidate.uri));
+    } else if (candidate.diskIndex !== undefined) {
+      this.diskIndexes.set(uriKey(candidate.uri), candidate.diskIndex);
+    }
+    this.store.set(candidate.uri, candidate.liveIndex);
+    this.global.upsert(candidate.liveIndex);
+    this.globalRefs.upsert(candidate.liveIndex);
+    return true;
+  }
+
   async reindex(
     uri: string,
     text: string,
     shouldStore: () => boolean = () => true,
-  ): Promise<void> {
-    const idx = await indexFile(uri, text, this.table);
-    if (!shouldStore()) return;
-    if (this.isStandalone()) {
-      await this.refreshStandaloneDiskIndex(uri, text, idx);
-    }
-    this.store.set(uri, idx);
-    this.global.upsert(idx);
-    this.globalRefs.upsert(idx);
+  ): Promise<boolean> {
+    const candidate = await this.prepareDocument(uri, text, shouldStore);
+    return candidate ? this.commitDocument(candidate, shouldStore) : false;
   }
 
-  private async refreshStandaloneDiskIndex(
+  private async readStandaloneDiskIndex(
     uri: string,
     liveText: string,
     liveIndex: FileIndex,
-  ): Promise<void> {
+  ): Promise<FileIndex | null> {
+    let diskText: string;
     try {
-      const diskText = await fs.readFile(fileURLToPath(uri), 'utf8');
-      const diskIndex = diskText === liveText
-        ? liveIndex
-        : await indexFile(uri, diskText, this.table);
-      this.diskIndexes.set(uri, diskIndex);
+      diskText = await fs.readFile(fileURLToPath(uri), 'utf8');
     } catch {
-      this.diskIndexes.delete(uri);
+      return null;
     }
+    return diskText === liveText
+      ? liveIndex
+      : this.indexDocument(uri, diskText, this.table);
   }
 
   /**
@@ -150,21 +208,55 @@ export class WorkspaceIndex {
     }
   }
 
-  /** Invariant 2: fall back to the on-disk index if present; otherwise drop from all three. */
+  /**
+   * Restore the last valid disk index. If a document opened before any scan,
+   * read its disk form now; an absent file removes the live-only entry.
+   */
+  async restoreClosedDocument(
+    uri: string,
+    shouldStore: () => boolean = () => true,
+  ): Promise<boolean> {
+    const diskIndex = this.diskIndexes.get(uriKey(uri));
+    if (diskIndex) {
+      if (!shouldStore()) return false;
+      this.store.set(uri, diskIndex);
+      this.global.upsert(diskIndex);
+      this.globalRefs.upsert(diskIndex);
+      return true;
+    }
+
+    let diskText: string;
+    try {
+      diskText = await fs.readFile(fileURLToPath(uri), 'utf8');
+    } catch {
+      if (!shouldStore()) return false;
+      this.drop(uri);
+      return true;
+    }
+    if (!shouldStore()) return false;
+    const restored = await this.indexDocument(uri, diskText, this.table);
+    if (!shouldStore()) return false;
+    this.diskIndexes.set(uriKey(uri), restored);
+    this.store.set(uri, restored);
+    this.global.upsert(restored);
+    this.globalRefs.upsert(restored);
+    return true;
+  }
+
+  /** Backward-compatible low-level helper; production document flow uses Workspace. */
   closeDocument(uri: string): void {
-    const diskIndex = this.diskIndexes.get(uri);
+    const diskIndex = this.diskIndexes.get(uriKey(uri));
     if (diskIndex) {
       this.store.set(uri, diskIndex);
       this.global.upsert(diskIndex);
       this.globalRefs.upsert(diskIndex);
-      return;
+    } else {
+      this.drop(uri);
     }
-
-    this.drop(uri);
   }
 
   drop(uri: string): void {
-    this.diskIndexes.delete(uri);
+    this.diskIndexes.delete(uriKey(uri));
     this.store.delete(uri);
     this.global.delete(uri);
     this.globalRefs.delete(uri);

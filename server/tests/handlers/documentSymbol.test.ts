@@ -96,7 +96,7 @@ describe('registerDocumentSymbolHandler', () => {
     await expect(result).resolves.toMatchObject([{ name: 'main' }]);
   });
 
-  it('indexes the open document on demand when the store is not ready yet', async () => {
+  it('returns neutral when lifecycle has not published the document index', async () => {
     let handler: ((params: DocumentSymbolParams) => unknown) | undefined;
     const connection = {
       onDocumentSymbol(fn: (params: DocumentSymbolParams) => unknown) {
@@ -107,10 +107,12 @@ describe('registerDocumentSymbolHandler', () => {
     const uri = 'file:///t/live.hlsl';
     const doc = TextDocument.create(uri, 'hlsl', 1, 'float4 LiveOutline() { return 0; }');
     const store = new IndexStore();
+    let reindexCalls = 0;
     const workspace = {
       index: {
         store,
         async reindex(requestedUri: string) {
+        reindexCalls++;
         const idx: FileIndex = {
           uri: requestedUri,
           symbols: [{
@@ -145,6 +147,7 @@ describe('registerDocumentSymbolHandler', () => {
 
     const result = handler?.({ textDocument: { uri } });
 
-    await expect(result).resolves.toMatchObject([{ name: 'LiveOutline' }]);
+    await expect(result).resolves.toBeNull();
+    expect(reindexCalls).toBe(0);
   });
 });

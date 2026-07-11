@@ -1,3 +1,4 @@
+/** Canonical identity for file URIs used across registries and indexes. */
 export function uriKey(uri: string): string {
   try {
     const parsed = new URL(uri);

@@ -112,6 +112,63 @@ global request suspension; a timeout detaches its waiter and returns the
 request's neutral result. Clients and test harnesses can therefore diagnose
 progress and failure without guessing a settle time.
 
+## Live Documents and Request Consistency
+
+The server represents each open editor state as an immutable snapshot with
+`uri`, `languageId`, `text`, `openId`, and `version`. `openId` changes for every
+open/close lifecycle; `version` orders edits only within one open lifecycle.
+The document registry coalesces edits during workspace discovery and supplies
+the same latest snapshots to initial indexing, rebuild, and remove/re-add
+replacement workspaces.
+
+Live text is an overlay over the last valid disk index. Parsing and standalone
+disk reads complete before one final attempt check; only the current
+`openId + version` may synchronously update the file, global-symbol, and
+global-reference indexes. Close restores the disk baseline, or removes a file
+that has no disk form. Equivalent file URIs use one canonical key for both live
+attempts and disk baselines. Parser/index exceptions fail the workspace
+lifecycle and are observed by fire-and-forget document routing instead of
+becoming unhandled promise rejections.
+
+Workspace routing changes also form an ownership boundary. Adding a nested root
+removes its open-document overlays from the former parent before the nested
+Workspace serves them; removing that root republishes current snapshots into
+the new longest-match owner. Affected serving owners are temporarily excluded
+from request routing until synchronization settles; initializing/rebuilding
+owners replay the provider before publication instead of blocking an unrelated
+root. Transient lazy owners with no remaining open documents are retired. A
+close/reopen during lazy discovery starts a new route for the new `openId` even
+if the retired route finishes later. Removing the final owner starts no
+background Workspace: the next Definition or References request may start lazy
+discovery only while that request's `openId` remains current.
+
+File-watcher events fan out to every serving Workspace whose standalone,
+Unity-project, or Package scope contains the URI. Each Workspace updates its
+own disk baseline and reapplies its live overlay. Fan-out waits for every owner,
+so one failed owner cannot leave the remaining caches silently stale. A URI is
+eligible only when that Workspace already has a disk baseline or when the path
+passes the same extension, exclusion, and resolved-Package rules as scanning.
+
+Definition and Find References consume an Indexed Workspace behavior interface.
+The Workspace first synchronizes the request document, orders the query behind
+earlier accepted mutations, and then performs include visibility, scope,
+proximity, member, property, Package, and ambiguity resolution internally.
+Request handlers do not assemble mutable index stores. No query handler may
+repair a store miss by calling an index implementation; adapters not yet moved
+to the deep navigation interface may join the registry's current attempt only
+through Workspace behavior. The document/file lifecycle remains the mutation
+owner, and an unpublished miss returns the feature's neutral LSP result.
+
+An include Definition does not require a request-document index: it uses the
+immutable snapshot to identify the include path and resolves it through the
+Workspace-owned include context. Other Definition and References requests join
+the current document attempt before reading indexed state.
+
+Successful initialization and rebuild advance the observable index revision.
+Current live-document and watcher transactions are ordered and synchronously
+committed but do not advance that revision. ADR-0006 defines the stricter future
+boundary where every transaction publishes an immutable revision.
+
 ## Indexing Scope
 
 The server indexes:

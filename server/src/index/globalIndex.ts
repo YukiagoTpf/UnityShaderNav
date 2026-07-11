@@ -1,5 +1,5 @@
 import type { FileIndex, SymbolEntry } from '@unity-shader-nav/shared';
-import { uriKey } from './uriKey';
+import { uriKey } from '../uriKey';
 
 export class GlobalSymbolIndex {
   private readonly byName = new Map<string, SymbolEntry[]>();

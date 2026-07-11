@@ -3,9 +3,11 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { Connection, DefinitionParams } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
-import { GlobalSymbolIndex, IndexStore } from '../../src/index';
 import { registerDefinitionHandler } from '../../src/handlers/definition';
-import type { IncludeContext } from '../../src/include';
+import {
+  createDocumentRegistry,
+  createIndexedWorkspaceFixture,
+} from '../helpers/indexedWorkspaceFixture';
 
 const root = resolve(__dirname, '../include/fixtures/projectA');
 
@@ -34,27 +36,15 @@ describe('registerDefinitionHandler: include definitions', () => {
       '}',
     ].join('\n');
     const doc = TextDocument.create(uri, 'shaderlab', 1, text);
-    const documents = {
-      get(requestedUri: string) {
-        return requestedUri === uri ? doc : undefined;
-      },
-    } as never;
-    const includeCtx: IncludeContext = { unityProjectRoot: root, includeDirectories: [] };
-    const workspace = {
-      packages: { includeCtx },
-      index: {
-        store: new IndexStore(),
-        global: new GlobalSymbolIndex(),
-      },
-    };
+    const documents = createDocumentRegistry(doc);
+    const workspace = createIndexedWorkspaceFixture([], {
+      includeCtx: { unityProjectRoot: root, includeDirectories: [] },
+    });
     const manager = {
-      workspaceFor(requestedUri: string) {
+      servingWorkspaceFor(requestedUri: string) {
         return requestedUri === uri ? workspace : undefined;
       },
-      servingWorkspaceFor(requestedUri: string) {
-        return this.workspaceFor(requestedUri);
-      },
-    } as never;
+    };
 
     registerDefinitionHandler(
       connection,
@@ -97,26 +87,15 @@ describe('registerDefinitionHandler: include definitions', () => {
       '}',
     ].join('\n');
     const doc = TextDocument.create(uri, 'shaderlab', 1, text);
-    const documents = {
-      get(requestedUri: string) {
-        return requestedUri === uri ? doc : undefined;
-      },
-    } as never;
-    const workspace = {
-      packages: { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
-      index: {
-        store: new IndexStore(),
-        global: new GlobalSymbolIndex(),
-      },
-    };
+    const documents = createDocumentRegistry(doc);
+    const workspace = createIndexedWorkspaceFixture([], {
+      includeCtx: { unityProjectRoot: root, includeDirectories: [] },
+    });
     const manager = {
-      workspaceFor(requestedUri: string) {
+      servingWorkspaceFor(requestedUri: string) {
         return requestedUri === uri ? workspace : undefined;
       },
-      servingWorkspaceFor(requestedUri: string) {
-        return this.workspaceFor(requestedUri);
-      },
-    } as never;
+    };
 
     registerDefinitionHandler(connection, documents, manager);
 

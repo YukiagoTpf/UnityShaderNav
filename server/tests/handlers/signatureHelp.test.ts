@@ -225,17 +225,19 @@ describe('registerSignatureHelpHandler', () => {
     await expect(handler({ textDocument: { uri }, position: { line: 5, character: 28 } })).resolves.toBeNull();
   });
 
-  it('reindexes the open document on store miss', async () => {
+  it('returns neutral on store miss without mutating the workspace', async () => {
     const uri = 'file:///t/live.hlsl';
     const text = 'float4 Lighting(float3 n) { return 1; }\nfloat4 main() { return Lighting(';
     const store = new IndexStore();
     const global = new GlobalSymbolIndex();
+    let reindexCalls = 0;
     const workspace = {
       packages: { includeCtx: { unityProjectRoot: undefined, includeDirectories: [] } },
       index: {
         store,
         global,
         async reindex(requestedUri: string, requestedText: string) {
+          reindexCalls++;
           const index = await indexFile(requestedUri, requestedText);
           store.set(index.uri, index);
           global.upsert(index);
@@ -246,7 +248,8 @@ describe('registerSignatureHelpHandler', () => {
 
     const result = await handler({ textDocument: { uri }, position: { line: 1, character: 32 } });
 
-    expect(result?.signatures[0]?.label).toBe('float4 Lighting(float3 n)');
+    expect(result).toBeNull();
+    expect(reindexCalls).toBe(0);
   });
 
   it('waits on RequestSuspender', async () => {

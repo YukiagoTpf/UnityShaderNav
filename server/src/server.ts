@@ -16,7 +16,7 @@ import { registerSemanticTokensHandler } from './handlers/semanticTokens';
 import { registerSignatureHelpHandler } from './handlers/signatureHelp';
 import { registerWorkspaceSymbolHandler } from './handlers/workspaceSymbol';
 import { registerFileWatchers } from './lifecycle/fileWatcher';
-import { applyScopedSettingsAndRebuild, reindexOpenDocuments } from './lifecycle/rebuild';
+import { applyScopedSettingsAndRebuild } from './lifecycle/rebuild';
 import { RequestSuspender } from './lifecycle/requestSuspender';
 import { initializeWorkspaceFolders } from './lifecycle/workspaceFolderCoordinator';
 import { WorkspaceManager } from './workspace';
@@ -38,11 +38,12 @@ connection.onInitialize((params) => {
   globalStorageDir = typeof options?.globalStorageDir === 'string'
     ? options.globalStorageDir
     : undefined;
+  manager.configureRuntime(connection, globalStorageDir);
   return createInitializeResult();
 });
 
-const documents = registerDocuments(connection, manager);
-const openDocuments = () => documents.all();
+const documentRegistry = registerDocuments(connection, manager);
+const documents = documentRegistry.documents;
 manager.configureSettingsResolver((scopeUri) => loadSettings(connection, scopeUri));
 
 connection.onInitialized(async () => {
@@ -63,7 +64,6 @@ connection.onInitialized(async () => {
     });
 
     await initializations;
-    await reindexOpenDocuments(manager, openDocuments);
 
     connection.console.log('[UnityShaderNav] server initialized');
   } finally {
@@ -77,12 +77,11 @@ onSettingsChanged(connection, async (settings) => {
     connection,
     manager,
     (folderUri) => loadSettings(connection, folderUri),
-    openDocuments,
     suspender,
   );
 });
 
-registerDefinitionHandler(connection, documents, manager, suspender);
+registerDefinitionHandler(connection, documentRegistry, manager, suspender);
 registerHoverHandler(connection, documents, manager, suspender);
 registerCompletionHandler(connection, documents, manager, suspender);
 registerSignatureHelpHandler(connection, documents, manager, suspender);
@@ -92,7 +91,7 @@ registerWorkspaceSymbolHandler(connection, manager, suspender);
 registerSemanticTokensHandler(connection, documents, manager, suspender);
 registerReferencesHandler(
   connection,
-  documents,
+  documentRegistry,
   manager,
   suspender,
 );
@@ -103,7 +102,7 @@ registerInactiveRegionsHandler(
   (uri) => loadSettings(connection, uri),
   suspender,
 );
-registerFileWatchers(connection, manager, suspender, openDocuments);
+registerFileWatchers(connection, manager, suspender);
 
 connection.onShutdown(async () => {
   await manager.persistAll();

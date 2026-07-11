@@ -44,12 +44,14 @@ handling. Important modules:
 - `suggestions`: classifies completion/signature contexts, enumerates visible
   project symbols, formats LSP completion/signature items, and adapts filtered
   vocabulary entries to suggestion results.
-- `handlers`: implements definition, references, document symbols, document
-  highlights, hover, completion, signature help, semantic tokens,
-  inactive-region dimming, and open-document behavior.
+- `handlers`: adapts LSP messages to domain behavior. The document adapter owns
+  the open-document registry; Definition and References are thin adapters over
+  the Indexed Workspace interface. Other query adapters remain independently
+  implemented.
 - `workspace`: detects Unity roots, owns each root's index lifecycle, scans
-  files, applies changes, and manages persistent cache. `WorkspaceManager`
-  owns root routing and the separate status-snapshot sequence.
+  files, applies changes, owns live-document attempts and navigation behavior,
+  and manages persistent cache. `WorkspaceManager` owns root routing, the
+  current-open-document provider, and the separate status-snapshot sequence.
 
 ## Indexing Model
 
@@ -73,6 +75,61 @@ The index is intentionally pragmatic:
   changes index results. See
   [ADR-0005](adr/0005-conservative-preprocessor-branch-dimming.md).
 
+## Live Documents and Navigation Boundary
+
+The document adapter is the only source of editor document identity. Each open
+session receives an `openId`; each immutable snapshot also carries the LSP
+version. The registry coalesces edits while lazy workspace creation is pending
+and always routes the current snapshot rather than a captured stale value.
+
+```text
+didOpen / didChange / didClose
+  -> open-document snapshot registry
+  -> Workspace.updateDocument / closeDocument
+  -> prepare parse + optional disk baseline
+  -> validate openId + version
+  -> synchronous WorkspaceIndex commit
+```
+
+`Workspace` coalesces each URI behind its operation queue. A parse that finishes
+after a newer edit, close, or close/reopen pair cannot commit. Closing restores
+the last valid disk index; a live-only file is removed. File-watcher changes
+update the disk baseline in every serving Workspace whose index scope contains
+the URI, then republish any still-open overlay before the operation completes.
+Eligibility means an existing disk baseline or the same exact user/package
+candidate rules used by scanning; excluded paths and packages absent from the
+lockfile cannot enter through a watcher. One Workspace failure does not prevent
+the other baseline owners from applying the event. Initial indexing and rebuild
+both replay the registry's latest
+snapshots before publishing `ready`, including after a workspace remove/re-add
+with the editor document still open. Disk baselines and live attempts share the
+same canonical file-URI key, so equivalent Windows drive-letter casing cannot
+preserve or resurrect a deleted baseline.
+
+The longest matching Workspace is the sole owner of an open document. When a
+more-specific root is added or removed, `WorkspaceManager` synchronizes the
+provider across both sides of the routing change: the previous owner restores
+disk state, while the new owner publishes the registry's current snapshot.
+Only owners whose route changed participate, non-serving owners rely on their
+pre-publication replay, and a replacement is not request-visible until its sync
+settles. A transient lazy Workspace is retired after losing its final open
+document. If removing the last owner leaves that document open, the registry
+keeps its immutable snapshot; the next Definition or References request can
+re-enter lazy discovery without waiting for another edit. Closing during the
+transition removes the overlay from every former owner.
+
+Definition and Find References ask the serving Workspace for behavior; they do
+not receive `IndexStore`, global symbol, global reference, or include-context
+implementations. Their query is ordered behind previously accepted document,
+watcher, and rebuild work. Include visibility, scope resolution, proximity
+tie-breaks, property bridging, Package filtering, and multi-candidate results
+remain inside workspace-owned navigation. Other handlers never call an index
+implementation to repair a miss. During their migration they may join the
+registry's current attempt through `Workspace.updateDocument`; if no current
+snapshot can be published, the miss remains a neutral lifecycle result.
+Include Definition is the intentional exception to request-document parsing:
+it resolves from immutable request text and include context alone.
+
 ## Index Lifecycle and Publication
 
 Each workspace reports monotonically ordered successful index revisions.
@@ -85,6 +142,13 @@ neutral LSP result instead of waiting indefinitely or observing partial data.
 The immutable candidate/publication boundary required by
 [ADR-0006](adr/0006-index-lifecycle-and-failure-semantics.md) is a stricter
 stage beyond this readiness contract.
+
+At the current stage, revisions advance for successful initialization and
+rebuild only. Live-document and watcher mutations are serialized and commit all
+affected mutable index structures synchronously, but do not claim a new status
+revision. Definition and References are protected by the Workspace operation
+queue; the immutable retained-revision swap described by ADR-0006 remains the
+next publication boundary.
 
 An unreadable source is retained on the incremental path when a previous record
 exists, or skipped with a warning during a full scan. Failures that invalidate

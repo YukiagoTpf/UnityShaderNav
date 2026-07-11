@@ -4,6 +4,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import type { TextDocuments } from 'vscode-languageserver/node';
 import { GlobalReferenceIndex, GlobalSymbolIndex, IndexStore } from '../../src/index';
 import type { WorkspaceManager } from '../../src/workspace';
+import type { IndexedDocumentSnapshot } from '../../src/workspace/indexedWorkspace';
 import { resolveRequestContext } from '../../src/handlers/requestContext';
 
 const URI = 'file:///proj/Main.shader';
@@ -23,13 +24,21 @@ function fakeDocuments(docs: Record<string, TextDocument>): TextDocuments<TextDo
 interface FakeWorkspaceOptions {
   store?: IndexStore;
   reindex?: (uri: string, text: string) => Promise<void> | void;
+  updateDocument?: (document: IndexedDocumentSnapshot) => Promise<boolean>;
   includeCtx?: { unityProjectRoot: string | undefined; includeDirectories: string[] };
 }
 
-function fakeManager(uri: string, workspace: unknown): WorkspaceManager {
+function fakeManager(
+  uri: string,
+  workspace: unknown,
+  document?: IndexedDocumentSnapshot,
+): WorkspaceManager {
   return {
     servingWorkspaceFor(requestedUri: string) {
       return requestedUri === uri ? workspace : undefined;
+    },
+    openDocumentSnapshot(requestedUri: string) {
+      return requestedUri === uri ? document : undefined;
     },
   } as unknown as WorkspaceManager;
 }
@@ -37,6 +46,7 @@ function fakeManager(uri: string, workspace: unknown): WorkspaceManager {
 function fullWorkspace(options: FakeWorkspaceOptions = {}) {
   const store = options.store ?? new IndexStore();
   return {
+    ...(options.updateDocument ? { updateDocument: options.updateDocument } : {}),
     index: {
       store,
       global: new GlobalSymbolIndex(),
@@ -120,28 +130,38 @@ describe('resolveRequestContext', () => {
     expect(reindexCalls).toBe(0);
   });
 
-  it('index() reindexes once on a store miss, then re-reads the store', async () => {
+  it('index() joins the registry snapshot through Workspace behavior on a live miss', async () => {
     const store = new IndexStore();
-    let reindexCalls = 0;
     const doc = TextDocument.create(URI, 'shaderlab', 1, 'live text');
-    const reindex = (uri: string, text: string) => {
-      reindexCalls += 1;
-      expect(text).toBe('live text');
-      store.set(uri, fileIndex(uri));
+    const snapshot: IndexedDocumentSnapshot = {
+      uri: URI,
+      languageId: 'shaderlab',
+      text: 'live text',
+      openId: 4,
+      version: 2,
     };
+    let updateCalls = 0;
     const ctx = await resolveRequestContext(
       URI,
       fakeDocuments({ [URI]: doc }),
-      fakeManager(URI, fullWorkspace({ store, reindex })),
+      fakeManager(URI, fullWorkspace({
+        store,
+        updateDocument: async (document) => {
+          updateCalls++;
+          expect(document).toBe(snapshot);
+          store.set(document.uri, fileIndex(document.uri));
+          return true;
+        },
+      }), snapshot),
     );
     const first = await ctx!.index();
     const second = await ctx!.index();
     expect(first).toMatchObject({ uri: URI });
     expect(second).toBe(first);
-    expect(reindexCalls).toBe(1);
+    expect(updateCalls).toBe(1);
   });
 
-  it('index() returns undefined when reindex still produces nothing', async () => {
+  it('index() never invokes a legacy reindex implementation on a miss', async () => {
     const store = new IndexStore();
     let reindexCalls = 0;
     const doc = TextDocument.create(URI, 'shaderlab', 1, 'live');
@@ -157,7 +177,7 @@ describe('resolveRequestContext', () => {
     );
     expect(await ctx!.index()).toBeUndefined();
     expect(await ctx!.index()).toBeUndefined();
-    expect(reindexCalls).toBe(1);
+    expect(reindexCalls).toBe(0);
   });
 
   it('index() does not throw when reindex is absent and the store misses', async () => {

@@ -4,50 +4,14 @@ import type { Workspace } from '../workspace/workspace';
 import type { WorkspaceManager } from '../workspace/workspaceManager';
 import type { RequestSuspender } from './requestSuspender';
 
-export const openDocumentGenerationKey = '__unityShaderNavOpenGeneration' as const;
-
-export interface OpenDocumentSnapshot {
-  uri: string;
-  version: number;
-  [openDocumentGenerationKey]?: number;
-  getText(): string;
-}
-
-export type OpenDocumentsProvider = () => Iterable<OpenDocumentSnapshot>;
-
 type RebuildSuspender = Pick<RequestSuspender, 'suspend' | 'release'>;
 type RebuildSettingsProvider = (
   workspace: Workspace,
 ) => ExtensionSettings | undefined | Promise<ExtensionSettings | undefined>;
 
-async function reindexOpenDocuments(
-  manager: WorkspaceManager,
-  getOpenDocuments: OpenDocumentsProvider,
-): Promise<void> {
-  for (const document of getOpenDocuments()) {
-    const uri = document.uri;
-    const version = document.version;
-    const generation = document[openDocumentGenerationKey] ?? document;
-    const text = document.getText();
-    const routed = typeof manager.workspaceFor === 'function'
-      ? manager.workspaceFor(uri)
-      : undefined;
-    if (routed && typeof routed.canServe === 'function' && !routed.canServe()) continue;
-    const workspace = await manager.workspaceForOrCreateFile(uri);
-    await workspace?.index.reindex(uri, text, () =>
-      Array.from(getOpenDocuments()).some((current) =>
-        current.uri === uri
-        && current.version === version
-        && (current[openDocumentGenerationKey] ?? current) === generation,
-      ),
-    );
-  }
-}
-
-export async function rebuildWorkspacesWithOpenDocuments(
+export async function rebuildWorkspaces(
   connection: Connection,
   manager: WorkspaceManager,
-  getOpenDocuments: OpenDocumentsProvider,
   suspender?: RebuildSuspender,
   settingsForRebuild?: RebuildSettingsProvider,
 ): Promise<void> {
@@ -69,7 +33,6 @@ export async function rebuildWorkspacesWithOpenDocuments(
         );
       }
     }));
-    await reindexOpenDocuments(manager, getOpenDocuments);
   } finally {
     suspender?.release();
   }
@@ -79,14 +42,12 @@ export async function applySettingsAndRebuild(
   connection: Connection,
   manager: WorkspaceManager,
   settings: ExtensionSettings,
-  getOpenDocuments: OpenDocumentsProvider,
   suspender?: RebuildSuspender,
 ): Promise<void> {
   manager.configure(settings, connection);
-  await rebuildWorkspacesWithOpenDocuments(
+  await rebuildWorkspaces(
     connection,
     manager,
-    getOpenDocuments,
     suspender,
     () => settings,
   );
@@ -96,7 +57,6 @@ export async function applyScopedSettingsAndRebuild(
   connection: Connection,
   manager: WorkspaceManager,
   settingsForWorkspace: (folderUri: string) => ExtensionSettings | Promise<ExtensionSettings>,
-  getOpenDocuments: OpenDocumentsProvider,
   suspender?: RebuildSuspender,
 ): Promise<void> {
   const updates = await Promise.all(manager.list().map(async (workspace) => {
@@ -129,9 +89,6 @@ export async function applyScopedSettingsAndRebuild(
   const deferred = updates.filter((update) => update.initiallyIndexing);
   for (const update of deferred) {
     void reconfigure(update)
-      .then(async (rebuilt) => {
-        if (rebuilt) await reindexOpenDocuments(manager, getOpenDocuments);
-      })
       .catch((error: unknown) => reportFailure(update.workspace, error));
   }
 
@@ -144,13 +101,8 @@ export async function applyScopedSettingsAndRebuild(
   // honest boundary; no-op index updates do not restore document overlays.
   suspender?.suspend();
   try {
-    const rebuilt = await Promise.all(blocking.map(reconfigure));
-    if (rebuilt.some(Boolean)) {
-      await reindexOpenDocuments(manager, getOpenDocuments);
-    }
+    await Promise.all(blocking.map(reconfigure));
   } finally {
     suspender?.release();
   }
 }
-
-export { reindexOpenDocuments };

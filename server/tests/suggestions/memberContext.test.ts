@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { FileIndex, SymbolEntry } from '@unity-shader-nav/shared';
 import { GlobalSymbolIndex, IndexStore } from '../../src/index';
 import { collectMemberSuggestions } from '../../src/suggestions';
-import { uriKey } from '../../src/index/uriKey';
+import { uriKey } from '../../src/uriKey';
 
 const uri = 'file:///t/main.hlsl';
 const typesUri = 'file:///t/types.hlsl';

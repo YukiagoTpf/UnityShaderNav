@@ -71,6 +71,23 @@ describe('WorkspaceIndex invariant 2: closeDocument fallback', () => {
     expect(wi.global.lookup('OnlyLive')).toEqual([]);
     expect(wi.globalRefs.lookup('OnlyRef')).toEqual([]);
   });
+
+  it('does not restore a deleted disk baseline through equivalent drive-letter URIs', async () => {
+    const wi = newIndex();
+    const openUri = 'file:///C:/Project/Deleted.hlsl';
+    const watcherUri = 'file:///c:/Project/Deleted.hlsl';
+    const diskIdx = await indexFile(openUri, 'float4 DeletedDisk() { return 0; }');
+
+    wi.restoreFromCache(openUri, diskIdx);
+    await wi.reindex(openUri, 'float4 LiveBeforeDelete() { return 0; }');
+    await wi.applyChanges([{ uri: watcherUri, type: 'deleted' }], fakeConnection);
+    wi.closeDocument(openUri);
+
+    expect(wi.diskIndexEntries()).toEqual([]);
+    expect(wi.store.get(openUri)).toBeUndefined();
+    expect(wi.global.lookup('DeletedDisk')).toEqual([]);
+    expect(wi.global.lookup('LiveBeforeDelete')).toEqual([]);
+  });
 });
 
 describe('WorkspaceIndex invariant 3: clear', () => {

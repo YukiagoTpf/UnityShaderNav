@@ -1,15 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join, resolve as pathResolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import type { Connection, Location, ReferenceParams } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
-import { DEFAULT_SETTINGS, type FileIndex, type Range } from '@unity-shader-nav/shared';
-import { GlobalReferenceIndex, GlobalSymbolIndex, IndexStore } from '../../src/index';
+import type { FileIndex, Range } from '@unity-shader-nav/shared';
 import { registerReferencesHandler } from '../../src/handlers/references';
 import { RequestSuspender } from '../../src/lifecycle/requestSuspender';
 import { indexFile } from '../../src/parser/hlsl/fileIndexer';
+import {
+  createDocumentRegistry,
+  createIndexedWorkspaceFixture,
+} from '../helpers/indexedWorkspaceFixture';
 
 const includeFixtureRoot = pathResolve(__dirname, '../include/fixtures/projectA');
 
@@ -34,6 +37,19 @@ function captureReferencesHandler(): {
   };
 }
 
+function registerFixture(
+  connection: Connection,
+  document: TextDocument,
+  indexes: readonly FileIndex[],
+  options: Parameters<typeof createIndexedWorkspaceFixture>[1] = {},
+): void {
+  const documents = createDocumentRegistry(document);
+  const workspace = createIndexedWorkspaceFixture(indexes, options);
+  registerReferencesHandler(connection, documents, {
+    servingWorkspaceFor: (uri) => documents.snapshot(uri) ? workspace : undefined,
+  });
+}
+
 const defRange = {
   start: { line: 0, character: 7 },
   end: { line: 0, character: 13 },
@@ -54,7 +70,12 @@ function contains(range: Range, line: number, character: number): boolean {
   return true;
 }
 
-function tokenPosition(text: string, line: number, token: string, occurrence = 0): { line: number; character: number } {
+function tokenPosition(
+  text: string,
+  line: number,
+  token: string,
+  occurrence = 0,
+): { line: number; character: number } {
   const lines = text.split(/\r?\n/);
   let character = -1;
   let from = 0;
@@ -69,17 +90,21 @@ function tokenPosition(text: string, line: number, token: string, occurrence = 0
 function expectedScopedLocations(index: FileIndex, name: string, scopeRange: Range): Location[] {
   const declaration = index.symbols.find(
     (symbol) =>
-      symbol.name === name &&
-      (symbol.kind === 'localVariable' || symbol.kind === 'parameter') &&
-      symbol.scopeRange === scopeRange,
+      symbol.name === name
+      && (symbol.kind === 'localVariable' || symbol.kind === 'parameter')
+      && symbol.scopeRange === scopeRange,
   );
   if (!declaration) throw new Error(`missing scoped declaration for ${name}`);
 
   const references = index.references.filter(
     (reference) =>
-      reference.name === name &&
-      reference.context === 'identifier' &&
-      contains(scopeRange, reference.location.range.start.line, reference.location.range.start.character),
+      reference.name === name
+      && reference.context === 'identifier'
+      && contains(
+        scopeRange,
+        reference.location.range.start.line,
+        reference.location.range.start.character,
+      ),
   );
 
   return [
@@ -127,14 +152,6 @@ describe('registerReferencesHandler', () => {
         indexFile(otherSharedUri, otherSharedText),
       ]);
       const [mainIndex, sharedIndex] = indexes;
-      const store = new IndexStore();
-      const global = new GlobalSymbolIndex();
-      const globalRefs = new GlobalReferenceIndex();
-      for (const index of indexes) {
-        store.set(index.uri, index);
-        global.upsert(index);
-        globalRefs.upsert(index);
-      }
       const sharedHelper = sharedIndex.symbols.find(
         (symbol) => symbol.name === 'Helper' && symbol.kind === 'function',
       );
@@ -144,28 +161,14 @@ describe('registerReferencesHandler', () => {
       if (!sharedHelper || !mainCall) {
         throw new Error('missing canonical Helper declaration/call');
       }
-      const { connection, handler } = captureReferencesHandler();
-      const doc = TextDocument.create(mainUri, 'hlsl', 1, mainText);
-      const documents = {
-        get(requestedUri: string) {
-          return requestedUri === mainUri ? doc : undefined;
-        },
-      } as never;
-      const workspace = {
-        settings: DEFAULT_SETTINGS,
-        packages: {
-          includeCtx: { unityProjectRoot: root, includeDirectories: [] },
-          isInPackages: () => false,
-        },
-        index: { store, global, globalRefs },
-      };
-      const manager = {
-        servingWorkspaceFor(requestedUri: string) {
-          return requestedUri === mainUri ? workspace : undefined;
-        },
-      } as never;
 
-      registerReferencesHandler(connection, documents, manager);
+      const { connection, handler } = captureReferencesHandler();
+      registerFixture(
+        connection,
+        TextDocument.create(mainUri, 'hlsl', 1, mainText),
+        indexes,
+        { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
+      );
 
       const result = await handler()({
         textDocument: { uri: mainUri },
@@ -212,14 +215,6 @@ describe('registerReferencesHandler', () => {
         indexFile(otherUri, otherText),
       ]);
       const [mainIndex, sharedIndex] = indexes;
-      const store = new IndexStore();
-      const global = new GlobalSymbolIndex();
-      const globalRefs = new GlobalReferenceIndex();
-      for (const index of indexes) {
-        store.set(index.uri, index);
-        global.upsert(index);
-        globalRefs.upsert(index);
-      }
       const sharedHelper = sharedIndex.symbols.find(
         (symbol) => symbol.name === 'Helper' && symbol.kind === 'function',
       );
@@ -229,28 +224,14 @@ describe('registerReferencesHandler', () => {
       if (!sharedHelper || !mainCall) {
         throw new Error('missing canonical Helper declaration/call');
       }
-      const { connection, handler } = captureReferencesHandler();
-      const doc = TextDocument.create(mainUri, 'hlsl', 1, mainText);
-      const documents = {
-        get(requestedUri: string) {
-          return requestedUri === mainUri ? doc : undefined;
-        },
-      } as never;
-      const workspace = {
-        settings: DEFAULT_SETTINGS,
-        packages: {
-          includeCtx: { unityProjectRoot: root, includeDirectories: [] },
-          isInPackages: () => false,
-        },
-        index: { store, global, globalRefs },
-      };
-      const manager = {
-        servingWorkspaceFor(requestedUri: string) {
-          return requestedUri === mainUri ? workspace : undefined;
-        },
-      } as never;
 
-      registerReferencesHandler(connection, documents, manager);
+      const { connection, handler } = captureReferencesHandler();
+      registerFixture(
+        connection,
+        TextDocument.create(mainUri, 'hlsl', 1, mainText),
+        indexes,
+        { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
+      );
 
       const result = await handler()({
         textDocument: { uri: mainUri },
@@ -271,12 +252,8 @@ describe('registerReferencesHandler', () => {
     const { connection, handler } = captureReferencesHandler();
     const uri = 'file:///project/Assets/Use.hlsl';
     const packageUri = 'file:///project/Packages/com.example.render/Core.hlsl';
-    const doc = TextDocument.create(
-      uri,
-      'hlsl',
-      1,
-      'float4 helper() { return 0; }\nfloat4 main() { return helper(); }',
-    );
+    const text = 'float4 helper() { return 0; }\nfloat4 main() { return helper(); }';
+    const doc = TextDocument.create(uri, 'hlsl', 1, text);
     const index: FileIndex = {
       uri,
       symbols: [{
@@ -299,33 +276,9 @@ describe('registerReferencesHandler', () => {
         location: { uri: packageUri, range: packageRefRange },
       }],
     };
-    const workspace = {
-      settings: DEFAULT_SETTINGS,
-      index: {
-        global: new GlobalSymbolIndex(),
-        globalRefs: new GlobalReferenceIndex(),
-      },
-      packages: {
-        isInPackages(requestedUri: string) {
-          return requestedUri === packageUri;
-        },
-      },
-    };
-    workspace.index.global.upsert(index);
-    workspace.index.globalRefs.upsert(index);
-    workspace.index.globalRefs.upsert(packageIndex);
-    const documents = {
-      get(requestedUri: string) {
-        return requestedUri === uri ? doc : undefined;
-      },
-    } as never;
-    const manager = {
-      servingWorkspaceFor(requestedUri: string) {
-        return requestedUri === uri ? workspace : undefined;
-      },
-    } as never;
-
-    registerReferencesHandler(connection, documents, manager);
+    registerFixture(connection, doc, [index, packageIndex], {
+      isInPackages: (requestedUri) => requestedUri === packageUri,
+    });
 
     const result = await handler()({
       textDocument: { uri },
@@ -358,32 +311,8 @@ describe('registerReferencesHandler', () => {
       '  }',
       '}',
     ].join('\n');
-    const doc = TextDocument.create(uri, 'shaderlab', 1, text);
     const index = await indexFile(uri, text);
-    const store = new IndexStore();
-    store.set(uri, index);
-    const workspace = {
-      settings: DEFAULT_SETTINGS,
-      index: {
-        store,
-        global: new GlobalSymbolIndex(),
-        globalRefs: new GlobalReferenceIndex(),
-      },
-      packages: { isInPackages: () => false },
-    };
-    workspace.index.global.upsert(index);
-    workspace.index.globalRefs.upsert(index);
-    const documents = {
-      get(requestedUri: string) {
-        return requestedUri === uri ? doc : undefined;
-      },
-    } as never;
-    const manager = {
-      servingWorkspaceFor() {
-        return workspace;
-      },
-    } as never;
-    registerReferencesHandler(connection, documents, manager);
+    registerFixture(connection, TextDocument.create(uri, 'shaderlab', 1, text), [index]);
 
     for (const name of ['_MainTex', '_Color', '_Cutoff']) {
       const declaration = index.symbols.find(
@@ -391,9 +320,9 @@ describe('registerReferencesHandler', () => {
       );
       const usage = index.references.find(
         (reference) =>
-          reference.name === name &&
-          reference.context === 'identifier' &&
-          reference.location.range.start.line === 8,
+          reference.name === name
+          && reference.context === 'identifier'
+          && reference.location.range.start.line === 8,
       );
       if (!declaration || !usage) {
         throw new Error(`missing issue 8 legacy CG declaration or usage for ${name}`);
@@ -417,22 +346,7 @@ describe('registerReferencesHandler', () => {
     const uri = 'file:///project/Assets/Use.hlsl';
     const packageUri = 'file:///project/Packages/com.example.render/Core.hlsl';
     const doc = TextDocument.create(uri, 'hlsl', 1, 'float4 main() { return helper(); }');
-    const workspace = {
-      settings: {
-        ...DEFAULT_SETTINGS,
-        findReferences: { includePackages: true },
-      },
-      index: {
-        global: new GlobalSymbolIndex(),
-        globalRefs: new GlobalReferenceIndex(),
-      },
-      packages: {
-        isInPackages(requestedUri: string) {
-          return requestedUri === packageUri;
-        },
-      },
-    };
-    workspace.index.globalRefs.upsert({
+    const packageIndex: FileIndex = {
       uri: packageUri,
       symbols: [],
       references: [{
@@ -440,19 +354,11 @@ describe('registerReferencesHandler', () => {
         context: 'call',
         location: { uri: packageUri, range: packageRefRange },
       }],
+    };
+    registerFixture(connection, doc, [{ uri, symbols: [], references: [] }, packageIndex], {
+      includePackages: true,
+      isInPackages: (requestedUri) => requestedUri === packageUri,
     });
-    const documents = {
-      get(requestedUri: string) {
-        return requestedUri === uri ? doc : undefined;
-      },
-    } as never;
-    const manager = {
-      servingWorkspaceFor() {
-        return workspace;
-      },
-    } as never;
-
-    registerReferencesHandler(connection, documents, manager);
 
     const result = await handler()({
       textDocument: { uri },
@@ -468,22 +374,7 @@ describe('registerReferencesHandler', () => {
     const uri = 'file:///project-a/Assets/Use.hlsl';
     const packageUri = 'file:///project-a/Packages/com.example.render/Core.hlsl';
     const doc = TextDocument.create(uri, 'hlsl', 1, 'float4 main() { return helper(); }');
-    const workspace = {
-      settings: {
-        ...DEFAULT_SETTINGS,
-        findReferences: { includePackages: true },
-      },
-      index: {
-        global: new GlobalSymbolIndex(),
-        globalRefs: new GlobalReferenceIndex(),
-      },
-      packages: {
-        isInPackages(requestedUri: string) {
-          return requestedUri === packageUri;
-        },
-      },
-    };
-    workspace.index.globalRefs.upsert({
+    const packageIndex: FileIndex = {
       uri: packageUri,
       symbols: [],
       references: [{
@@ -491,19 +382,11 @@ describe('registerReferencesHandler', () => {
         context: 'call',
         location: { uri: packageUri, range: packageRefRange },
       }],
+    };
+    registerFixture(connection, doc, [{ uri, symbols: [], references: [] }, packageIndex], {
+      includePackages: true,
+      isInPackages: (requestedUri) => requestedUri === packageUri,
     });
-    const documents = {
-      get(requestedUri: string) {
-        return requestedUri === uri ? doc : undefined;
-      },
-    } as never;
-    const manager = {
-      servingWorkspaceFor() {
-        return workspace;
-      },
-    } as never;
-
-    registerReferencesHandler(connection, documents, manager);
 
     const result = await handler()({
       textDocument: { uri },
@@ -519,19 +402,7 @@ describe('registerReferencesHandler', () => {
     const uri = 'file:///project/Assets/Use.hlsl';
     const packageUri = 'file:///project/Packages/com.example.render/Core.hlsl';
     const doc = TextDocument.create(uri, 'hlsl', 1, 'float4 main() { return helper(); }');
-    const workspace = {
-      settings: DEFAULT_SETTINGS,
-      index: {
-        global: new GlobalSymbolIndex(),
-        globalRefs: new GlobalReferenceIndex(),
-      },
-      packages: {
-        isInPackages(requestedUri: string) {
-          return requestedUri === packageUri;
-        },
-      },
-    };
-    workspace.index.global.upsert({
+    const packageDeclaration: FileIndex = {
       uri: packageUri,
       references: [],
       symbols: [{
@@ -539,8 +410,8 @@ describe('registerReferencesHandler', () => {
         kind: 'function',
         location: { uri: packageUri, range: defRange },
       }],
-    });
-    workspace.index.globalRefs.upsert({
+    };
+    const userReferences: FileIndex = {
       uri,
       symbols: [],
       references: [{
@@ -548,19 +419,10 @@ describe('registerReferencesHandler', () => {
         context: 'call',
         location: { uri, range: userRefRange },
       }],
+    };
+    registerFixture(connection, doc, [packageDeclaration, userReferences], {
+      isInPackages: (requestedUri) => requestedUri === packageUri,
     });
-    const documents = {
-      get(requestedUri: string) {
-        return requestedUri === uri ? doc : undefined;
-      },
-    } as never;
-    const manager = {
-      servingWorkspaceFor() {
-        return workspace;
-      },
-    } as never;
-
-    registerReferencesHandler(connection, documents, manager);
 
     const result = await handler()({
       textDocument: { uri },
@@ -586,37 +448,12 @@ describe('registerReferencesHandler', () => {
       '  return i;',
       '}',
     ].join('\n');
-    const doc = TextDocument.create(uri, 'hlsl', 1, text);
     const index = await indexFile(uri, text);
-    const store = new IndexStore();
-    store.set(uri, index);
-    const workspace = {
-      settings: DEFAULT_SETTINGS,
-      index: {
-        store,
-        global: new GlobalSymbolIndex(),
-        globalRefs: new GlobalReferenceIndex(),
-      },
-      packages: { isInPackages: () => false },
-    };
-    workspace.index.global.upsert(index);
-    workspace.index.globalRefs.upsert(index);
-    const documents = {
-      get(requestedUri: string) {
-        return requestedUri === uri ? doc : undefined;
-      },
-    } as never;
-    const manager = {
-      servingWorkspaceFor() {
-        return workspace;
-      },
-    } as never;
     const firstLocal = index.symbols.find(
       (symbol) => symbol.name === 'i' && symbol.kind === 'localVariable' && symbol.scope === 'First',
     );
     if (!firstLocal?.scopeRange) throw new Error('missing First.i scope range');
-
-    registerReferencesHandler(connection, documents, manager);
+    registerFixture(connection, TextDocument.create(uri, 'hlsl', 1, text), [index]);
 
     const result = await handler()({
       textDocument: { uri },
@@ -639,37 +476,12 @@ describe('registerReferencesHandler', () => {
       '  return uv;',
       '}',
     ].join('\n');
-    const doc = TextDocument.create(uri, 'hlsl', 1, text);
     const index = await indexFile(uri, text);
-    const store = new IndexStore();
-    store.set(uri, index);
-    const workspace = {
-      settings: DEFAULT_SETTINGS,
-      index: {
-        store,
-        global: new GlobalSymbolIndex(),
-        globalRefs: new GlobalReferenceIndex(),
-      },
-      packages: { isInPackages: () => false },
-    };
-    workspace.index.global.upsert(index);
-    workspace.index.globalRefs.upsert(index);
-    const documents = {
-      get(requestedUri: string) {
-        return requestedUri === uri ? doc : undefined;
-      },
-    } as never;
-    const manager = {
-      servingWorkspaceFor() {
-        return workspace;
-      },
-    } as never;
     const firstParameter = index.symbols.find(
       (symbol) => symbol.name === 'uv' && symbol.kind === 'parameter' && symbol.scope === 'TransformA',
     );
     if (!firstParameter?.scopeRange) throw new Error('missing TransformA.uv scope range');
-
-    registerReferencesHandler(connection, documents, manager);
+    registerFixture(connection, TextDocument.create(uri, 'hlsl', 1, text), [index]);
 
     const result = await handler()({
       textDocument: { uri },
@@ -691,37 +503,12 @@ describe('registerReferencesHandler', () => {
       '  return uv;',
       '}',
     ].join('\n');
-    const doc = TextDocument.create(uri, 'hlsl', 1, text);
     const index = await indexFile(uri, text);
-    const store = new IndexStore();
-    store.set(uri, index);
-    const workspace = {
-      settings: DEFAULT_SETTINGS,
-      index: {
-        store,
-        global: new GlobalSymbolIndex(),
-        globalRefs: new GlobalReferenceIndex(),
-      },
-      packages: { isInPackages: () => false },
-    };
-    workspace.index.global.upsert(index);
-    workspace.index.globalRefs.upsert(index);
-    const documents = {
-      get(requestedUri: string) {
-        return requestedUri === uri ? doc : undefined;
-      },
-    } as never;
-    const manager = {
-      servingWorkspaceFor() {
-        return workspace;
-      },
-    } as never;
     const firstParameter = index.symbols.find(
       (symbol) => symbol.name === 'uv' && symbol.kind === 'parameter' && symbol.scope === 'TransformA',
     );
     if (!firstParameter?.scopeRange) throw new Error('missing TransformA.uv scope range');
-
-    registerReferencesHandler(connection, documents, manager);
+    registerFixture(connection, TextDocument.create(uri, 'hlsl', 1, text), [index]);
 
     const result = await handler()({
       textDocument: { uri },
@@ -742,37 +529,12 @@ describe('registerReferencesHandler', () => {
       '  s.i = i;',
       '}',
     ].join('\n');
-    const doc = TextDocument.create(uri, 'hlsl', 1, text);
     const index = await indexFile(uri, text);
-    const store = new IndexStore();
-    store.set(uri, index);
-    const workspace = {
-      settings: DEFAULT_SETTINGS,
-      index: {
-        store,
-        global: new GlobalSymbolIndex(),
-        globalRefs: new GlobalReferenceIndex(),
-      },
-      packages: { isInPackages: () => false },
-    };
-    workspace.index.global.upsert(index);
-    workspace.index.globalRefs.upsert(index);
-    const documents = {
-      get(requestedUri: string) {
-        return requestedUri === uri ? doc : undefined;
-      },
-    } as never;
-    const manager = {
-      servingWorkspaceFor() {
-        return workspace;
-      },
-    } as never;
     const local = index.symbols.find(
       (symbol) => symbol.name === 'i' && symbol.kind === 'localVariable',
     );
     if (!local?.scopeRange) throw new Error('missing local i scope range');
-
-    registerReferencesHandler(connection, documents, manager);
+    registerFixture(connection, TextDocument.create(uri, 'hlsl', 1, text), [index]);
 
     const result = await handler()({
       textDocument: { uri },
@@ -796,48 +558,23 @@ describe('registerReferencesHandler', () => {
       '  return other.positionWS;',
       '}',
     ].join('\n');
-    const doc = TextDocument.create(uri, 'hlsl', 1, text);
     const index = await indexFile(uri, text);
-    const store = new IndexStore();
-    store.set(uri, index);
-    const workspace = {
-      settings: DEFAULT_SETTINGS,
-      index: {
-        store,
-        global: new GlobalSymbolIndex(),
-        globalRefs: new GlobalReferenceIndex(),
-      },
-      packages: { isInPackages: () => false },
-    };
-    workspace.index.global.upsert(index);
-    workspace.index.globalRefs.upsert(index);
-    const documents = {
-      get(requestedUri: string) {
-        return requestedUri === uri ? doc : undefined;
-      },
-    } as never;
-    const manager = {
-      servingWorkspaceFor() {
-        return workspace;
-      },
-    } as never;
     const surfaceMember = index.symbols.find(
       (symbol) =>
-        symbol.name === 'positionWS' &&
-        symbol.kind === 'structMember' &&
-        symbol.parentType === 'Surface',
+        symbol.name === 'positionWS'
+        && symbol.kind === 'structMember'
+        && symbol.parentType === 'Surface',
     );
     const surfaceReference = index.references.find(
       (reference) =>
-        reference.name === 'positionWS' &&
-        reference.context === 'member' &&
-        reference.location.range.start.line === 3,
+        reference.name === 'positionWS'
+        && reference.context === 'member'
+        && reference.location.range.start.line === 3,
     );
     if (!surfaceMember || !surfaceReference) {
       throw new Error('missing Surface.positionWS fixture locations');
     }
-
-    registerReferencesHandler(connection, documents, manager);
+    registerFixture(connection, TextDocument.create(uri, 'hlsl', 1, text), [index]);
 
     const result = await handler()({
       textDocument: { uri },
@@ -864,48 +601,23 @@ describe('registerReferencesHandler', () => {
       '  return other.color;',
       '}',
     ].join('\n');
-    const doc = TextDocument.create(uri, 'hlsl', 1, text);
     const index = await indexFile(uri, text);
-    const store = new IndexStore();
-    store.set(uri, index);
-    const workspace = {
-      settings: DEFAULT_SETTINGS,
-      index: {
-        store,
-        global: new GlobalSymbolIndex(),
-        globalRefs: new GlobalReferenceIndex(),
-      },
-      packages: { isInPackages: () => false },
-    };
-    workspace.index.global.upsert(index);
-    workspace.index.globalRefs.upsert(index);
-    const documents = {
-      get(requestedUri: string) {
-        return requestedUri === uri ? doc : undefined;
-      },
-    } as never;
-    const manager = {
-      servingWorkspaceFor() {
-        return workspace;
-      },
-    } as never;
     const lightMember = index.symbols.find(
       (symbol) =>
-        symbol.name === 'color' &&
-        symbol.kind === 'structMember' &&
-        symbol.parentType === 'Light',
+        symbol.name === 'color'
+        && symbol.kind === 'structMember'
+        && symbol.parentType === 'Light',
     );
     const lightReference = index.references.find(
       (reference) =>
-        reference.name === 'color' &&
-        reference.context === 'member' &&
-        reference.location.range.start.line === 3,
+        reference.name === 'color'
+        && reference.context === 'member'
+        && reference.location.range.start.line === 3,
     );
     if (!lightMember || !lightReference) {
       throw new Error('missing Light.color fixture locations');
     }
-
-    registerReferencesHandler(connection, documents, manager);
+    registerFixture(connection, TextDocument.create(uri, 'hlsl', 1, text), [index]);
 
     const result = await handler()({
       textDocument: { uri },
@@ -932,48 +644,23 @@ describe('registerReferencesHandler', () => {
       '  return other.positionWS;',
       '}',
     ].join('\n');
-    const doc = TextDocument.create(uri, 'hlsl', 1, text);
     const index = await indexFile(uri, text);
-    const store = new IndexStore();
-    store.set(uri, index);
-    const workspace = {
-      settings: DEFAULT_SETTINGS,
-      index: {
-        store,
-        global: new GlobalSymbolIndex(),
-        globalRefs: new GlobalReferenceIndex(),
-      },
-      packages: { isInPackages: () => false },
-    };
-    workspace.index.global.upsert(index);
-    workspace.index.globalRefs.upsert(index);
-    const documents = {
-      get(requestedUri: string) {
-        return requestedUri === uri ? doc : undefined;
-      },
-    } as never;
-    const manager = {
-      servingWorkspaceFor() {
-        return workspace;
-      },
-    } as never;
     const surfaceMember = index.symbols.find(
       (symbol) =>
-        symbol.name === 'positionWS' &&
-        symbol.kind === 'structMember' &&
-        symbol.parentType === 'Surface',
+        symbol.name === 'positionWS'
+        && symbol.kind === 'structMember'
+        && symbol.parentType === 'Surface',
     );
     const surfaceReference = index.references.find(
       (reference) =>
-        reference.name === 'positionWS' &&
-        reference.context === 'member' &&
-        reference.location.range.start.line === 3,
+        reference.name === 'positionWS'
+        && reference.context === 'member'
+        && reference.location.range.start.line === 3,
     );
     if (!surfaceMember || !surfaceReference) {
       throw new Error('missing Surface.positionWS fixture locations');
     }
-
-    registerReferencesHandler(connection, documents, manager);
+    registerFixture(connection, TextDocument.create(uri, 'hlsl', 1, text), [index]);
 
     const result = await handler()({
       textDocument: { uri },
@@ -1001,45 +688,20 @@ describe('registerReferencesHandler', () => {
       '  return Helper;',
       '}',
     ].join('\n');
-    const doc = TextDocument.create(uri, 'hlsl', 1, text);
     const index = await indexFile(uri, text);
-    const store = new IndexStore();
-    store.set(uri, index);
-    const workspace = {
-      settings: DEFAULT_SETTINGS,
-      index: {
-        store,
-        global: new GlobalSymbolIndex(),
-        globalRefs: new GlobalReferenceIndex(),
-      },
-      packages: { isInPackages: () => false },
-    };
-    workspace.index.global.upsert(index);
-    workspace.index.globalRefs.upsert(index);
-    const documents = {
-      get(requestedUri: string) {
-        return requestedUri === uri ? doc : undefined;
-      },
-    } as never;
-    const manager = {
-      servingWorkspaceFor() {
-        return workspace;
-      },
-    } as never;
     const functionSymbol = index.symbols.find(
       (symbol) => symbol.name === 'Helper' && symbol.kind === 'function',
     );
     const functionCall = index.references.find(
       (reference) =>
-        reference.name === 'Helper' &&
-        reference.context === 'call' &&
-        reference.location.range.start.line === 2,
+        reference.name === 'Helper'
+        && reference.context === 'call'
+        && reference.location.range.start.line === 2,
     );
     if (!functionSymbol || !functionCall) {
       throw new Error('missing Helper function fixture locations');
     }
-
-    registerReferencesHandler(connection, documents, manager);
+    registerFixture(connection, TextDocument.create(uri, 'hlsl', 1, text), [index]);
 
     const result = await handler()({
       textDocument: { uri },
@@ -1066,39 +728,15 @@ describe('registerReferencesHandler', () => {
       '  return value.value;',
       '}',
     ].join('\n');
-    const doc = TextDocument.create(uri, 'hlsl', 1, text);
     const index = await indexFile(uri, text);
-    const store = new IndexStore();
-    store.set(uri, index);
-    const workspace = {
-      settings: DEFAULT_SETTINGS,
-      index: {
-        store,
-        global: new GlobalSymbolIndex(),
-        globalRefs: new GlobalReferenceIndex(),
-      },
-      packages: { isInPackages: () => false },
-    };
-    workspace.index.global.upsert(index);
-    workspace.index.globalRefs.upsert(index);
-    const documents = {
-      get(requestedUri: string) {
-        return requestedUri === uri ? doc : undefined;
-      },
-    } as never;
-    const manager = {
-      servingWorkspaceFor() {
-        return workspace;
-      },
-    } as never;
     const functionSymbol = index.symbols.find(
       (symbol) => symbol.name === 'Helper' && symbol.kind === 'function',
     );
     const functionCall = index.references.find(
       (reference) =>
-        reference.name === 'Helper' &&
-        reference.context === 'call' &&
-        reference.location.range.start.line === 3,
+        reference.name === 'Helper'
+        && reference.context === 'call'
+        && reference.location.range.start.line === 3,
     );
     const typeReference = index.references.find(
       (reference) => reference.name === 'Helper' && reference.context === 'type',
@@ -1106,8 +744,7 @@ describe('registerReferencesHandler', () => {
     if (!functionSymbol || !functionCall || !typeReference) {
       throw new Error('missing Helper function/struct fixture locations');
     }
-
-    registerReferencesHandler(connection, documents, manager);
+    registerFixture(connection, TextDocument.create(uri, 'hlsl', 1, text), [index]);
 
     const result = await handler()({
       textDocument: { uri },
@@ -1135,45 +772,20 @@ describe('registerReferencesHandler', () => {
       '  return SAMPLE_TEXTURE2D;',
       '}',
     ].join('\n');
-    const doc = TextDocument.create(uri, 'hlsl', 1, text);
     const index = await indexFile(uri, text);
-    const store = new IndexStore();
-    store.set(uri, index);
-    const workspace = {
-      settings: DEFAULT_SETTINGS,
-      index: {
-        store,
-        global: new GlobalSymbolIndex(),
-        globalRefs: new GlobalReferenceIndex(),
-      },
-      packages: { isInPackages: () => false },
-    };
-    workspace.index.global.upsert(index);
-    workspace.index.globalRefs.upsert(index);
-    const documents = {
-      get(requestedUri: string) {
-        return requestedUri === uri ? doc : undefined;
-      },
-    } as never;
-    const manager = {
-      servingWorkspaceFor() {
-        return workspace;
-      },
-    } as never;
     const macroSymbol = index.symbols.find(
       (symbol) => symbol.name === 'SAMPLE_TEXTURE2D' && symbol.kind === 'macro',
     );
     const macroCall = index.references.find(
       (reference) =>
-        reference.name === 'SAMPLE_TEXTURE2D' &&
-        reference.context === 'call' &&
-        reference.location.range.start.line === 2,
+        reference.name === 'SAMPLE_TEXTURE2D'
+        && reference.context === 'call'
+        && reference.location.range.start.line === 2,
     );
     if (!macroSymbol || !macroCall) {
       throw new Error('missing SAMPLE_TEXTURE2D fixture locations');
     }
-
-    registerReferencesHandler(connection, documents, manager);
+    registerFixture(connection, TextDocument.create(uri, 'hlsl', 1, text), [index]);
 
     const result = await handler()({
       textDocument: { uri },
@@ -1197,39 +809,15 @@ describe('registerReferencesHandler', () => {
       '#include "Packages/com.example.assets/Shaders/Common.hlsl"',
       '#include "Inner/Lighting.hlsl"',
     ].join('\n');
-    const doc = TextDocument.create(uri, 'hlsl', 1, text);
     const index = await indexFile(uri, text);
-    const store = new IndexStore();
-    store.set(uri, index);
-    const workspace = {
-      settings: DEFAULT_SETTINGS,
-      packages: {
-        includeCtx: {
-          unityProjectRoot: includeFixtureRoot,
-          includeDirectories: [],
-          packagePhysicalPaths: new Map([['com.example.assets', join(includeFixtureRoot, 'Assets')]]),
-        },
-        isInPackages: () => false,
+    const document = TextDocument.create(uri, 'hlsl', 1, text);
+    registerFixture(connection, document, [index], {
+      includeCtx: {
+        unityProjectRoot: includeFixtureRoot,
+        includeDirectories: [],
+        packagePhysicalPaths: new Map([['com.example.assets', join(includeFixtureRoot, 'Assets')]]),
       },
-      index: {
-        store,
-        global: new GlobalSymbolIndex(),
-        globalRefs: new GlobalReferenceIndex(),
-      },
-    };
-    workspace.index.globalRefs.upsert(index);
-    const documents = {
-      get(requestedUri: string) {
-        return requestedUri === uri ? doc : undefined;
-      },
-    } as never;
-    const manager = {
-      servingWorkspaceFor() {
-        return workspace;
-      },
-    } as never;
-
-    registerReferencesHandler(connection, documents, manager);
+    });
 
     const result = await handler()({
       textDocument: { uri },
@@ -1247,23 +835,11 @@ describe('registerReferencesHandler', () => {
   it('waits for RequestSuspender release before resolving references', async () => {
     const { connection, handler } = captureReferencesHandler();
     const uri = 'file:///project/Assets/Use.hlsl';
-    const doc = TextDocument.create(uri, 'hlsl', 1, 'float4 main() { return 0; }');
-    const documents = {
-      get(requestedUri: string) {
-        return requestedUri === uri ? doc : undefined;
-      },
-    } as never;
+    const document = TextDocument.create(uri, 'hlsl', 1, 'float4 main() { return 0; }');
+    const documents = createDocumentRegistry(document);
+    const referencesAt = vi.fn(async () => [] as Location[]);
     const manager = {
-      servingWorkspaceFor() {
-        return {
-          settings: DEFAULT_SETTINGS,
-          index: {
-            global: new GlobalSymbolIndex(),
-            globalRefs: new GlobalReferenceIndex(),
-          },
-          packages: { isInPackages: () => false },
-        };
-      },
+      servingWorkspaceFor: () => ({ referencesAt }),
     } as never;
     const suspender = new RequestSuspender({ timeoutMs: 1000 });
     suspender.suspend();
@@ -1282,7 +858,9 @@ describe('registerReferencesHandler', () => {
     for (let i = 0; i < 5; i++) await Promise.resolve();
 
     expect(settled).toBe(false);
+    expect(referencesAt).not.toHaveBeenCalled();
     suspender.release();
     await expect(promise).resolves.toEqual([]);
+    expect(referencesAt).toHaveBeenCalledOnce();
   });
 });
