@@ -1,324 +1,123 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type {
   Connection,
   SemanticTokens,
   SemanticTokensParams,
 } from 'vscode-languageserver/node';
-import { TextDocument } from 'vscode-languageserver-textdocument';
-import { GlobalReferenceIndex, GlobalSymbolIndex, IndexStore } from '../../src/index';
-import { registerSemanticTokensHandler, SEMANTIC_TOKEN_TYPES } from '../../src/handlers/semanticTokens';
-import { indexFile } from '../../src/parser/hlsl/fileIndexer';
-import { MacroPatternTable } from '../../src/macros';
+import {
+  registerSemanticTokensHandler,
+  SEMANTIC_TOKEN_TYPES,
+} from '../../src/handlers/semanticTokens';
+import type {
+  IndexedDocumentRegistry,
+  IndexedDocumentSnapshot,
+  IndexedWorkspace,
+  IndexedWorkspaceRequestRouter,
+} from '../../src/workspace/indexedWorkspace';
+import { SEMANTIC_TOKEN_TYPES as QUERY_TOKEN_TYPES } from '../../src/workspace/queries';
 
-function captureSemanticTokensHandler(): {
-  connection: Connection;
-  handler: () => ((params: SemanticTokensParams) => Promise<SemanticTokens>);
-} {
-  let handler: ((params: SemanticTokensParams) => Promise<SemanticTokens>) | undefined;
+type Handler = (params: SemanticTokensParams) => Promise<SemanticTokens>;
+
+function captureHandler(): { connection: Connection; handler: () => Handler } {
+  let registered: Handler | undefined;
   const connection = {
     languages: {
       semanticTokens: {
-        on(fn: (params: SemanticTokensParams) => Promise<SemanticTokens>) {
-          handler = fn;
+        on(handler: Handler) {
+          registered = handler;
           return { dispose() {} };
         },
       },
     },
   } as unknown as Connection;
-
   return {
     connection,
     handler: () => {
-      if (!handler) throw new Error('semantic tokens handler was not registered');
-      return handler;
+      if (!registered) throw new Error('semantic tokens handler was not registered');
+      return registered;
     },
   };
 }
 
-function decodeTokens(tokens: SemanticTokens): Array<{
-  line: number;
-  character: number;
-  length: number;
-  type: string;
-}> {
-  const decoded: Array<{ line: number; character: number; length: number; type: string }> = [];
-  let line = 0;
-  let character = 0;
-  for (let i = 0; i < tokens.data.length; i += 5) {
-    line += tokens.data[i];
-    character = tokens.data[i] === 0 ? character + tokens.data[i + 1] : tokens.data[i + 1];
-    decoded.push({
-      line,
-      character,
-      length: tokens.data[i + 2],
-      type: SEMANTIC_TOKEN_TYPES[tokens.data[i + 3]],
-    });
-  }
-  return decoded;
+function registry(document?: IndexedDocumentSnapshot): Pick<IndexedDocumentRegistry, 'snapshot'> {
+  return {
+    snapshot: (uri) => document?.uri === uri ? document : undefined,
+  };
 }
 
-function expectSortedAndNonOverlapping(tokens: Array<{
-  line: number;
-  character: number;
-  length: number;
-}>): void {
-  let previous: { line: number; character: number; length: number } | undefined;
-  for (const token of tokens) {
-    if (!previous) {
-      previous = token;
-      continue;
-    }
-
-    if (token.line === previous.line) {
-      expect(token.character).toBeGreaterThanOrEqual(previous.character + previous.length);
-    } else {
-      expect(token.line).toBeGreaterThan(previous.line);
-    }
-    previous = token;
-  }
+function fakeWorkspace(semanticTokens: IndexedWorkspace['semanticTokens']): IndexedWorkspace {
+  return { semanticTokens } as IndexedWorkspace;
 }
 
-function tokenTexts(
-  text: string,
-  tokens: Array<{ line: number; character: number; length: number; type: string }>,
-): Array<{ text: string; type: string }> {
-  const lines = text.split(/\r?\n/);
-  return tokens.map((token) => ({
-    text: lines[token.line].slice(token.character, token.character + token.length),
-    type: token.type,
-  }));
-}
+const uri = 'file:///project/Assets/Live.shader';
+const document: IndexedDocumentSnapshot = {
+  uri,
+  languageId: 'shaderlab',
+  text: 'Shader "Live" {}',
+  openId: 4,
+  version: 2,
+};
 
 describe('registerSemanticTokensHandler', () => {
-  it('colors struct types, variables, members, functions, and macros', async () => {
-    const { connection, handler } = captureSemanticTokensHandler();
-    const uri = 'file:///project/Assets/Semantic.hlsl';
-    const includeUri = 'file:///project/Assets/Includes/Macros.hlsl';
-    const text = [
-      '#define SAMPLE_TEXTURE2D(tex, sampler, uv) tex.Sample(sampler, uv)',
-      'struct InputData { float3 positionWS; };',
-      'float4 Helper(InputData inputData) {',
-      '  inputData = (InputData)0;',
-      '  inputData.positionWS = 0;',
-      '  return SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, inputData.positionWS);',
-      '  return INCLUDED_MACRO(inputData.positionWS);',
-      '}',
-      'float4 LocalExample() {',
-      '  InputData inputData;',
-      '  return float4(inputData.positionWS, 1);',
-      '}',
-    ].join('\n');
-    const includeText = '#define INCLUDED_MACRO(v) v';
-    const doc = TextDocument.create(uri, 'hlsl', 1, text);
-    const index = await indexFile(uri, text);
-    const includeIndex = await indexFile(includeUri, includeText);
-    const store = new IndexStore();
-    store.set(uri, index);
-    const global = new GlobalSymbolIndex();
-    const globalRefs = new GlobalReferenceIndex();
-    global.upsert(index);
-    global.upsert(includeIndex);
-    globalRefs.upsert(index);
-    globalRefs.upsert(includeIndex);
-    const documents = {
-      get(requestedUri: string) {
-        return requestedUri === uri ? doc : undefined;
-      },
-    } as never;
-    const workspace = {
-      index: { store, global, globalRefs },
-    };
-    const manager = {
-      servingWorkspaceFor(requestedUri: string) {
-        return requestedUri === uri ? workspace : undefined;
-      },
-    } as never;
-
-    registerSemanticTokensHandler(connection, documents, manager);
-
-    const tokens = decodeTokens(await handler()({ textDocument: { uri } }));
-    expectSortedAndNonOverlapping(tokens);
-    expect(tokens).toEqual(expect.arrayContaining([
-      { line: 0, character: 8, length: 'SAMPLE_TEXTURE2D'.length, type: 'macro' },
-      { line: 1, character: 7, length: 'InputData'.length, type: 'type' },
-      { line: 1, character: 26, length: 'positionWS'.length, type: 'property' },
-      { line: 2, character: 7, length: 'Helper'.length, type: 'function' },
-      { line: 2, character: 14, length: 'InputData'.length, type: 'type' },
-      { line: 2, character: 24, length: 'inputData'.length, type: 'parameter' },
-      { line: 3, character: 15, length: 'InputData'.length, type: 'type' },
-      { line: 4, character: 12, length: 'positionWS'.length, type: 'property' },
-      { line: 5, character: 9, length: 'SAMPLE_TEXTURE2D'.length, type: 'macro' },
-      { line: 6, character: 9, length: 'INCLUDED_MACRO'.length, type: 'macro' },
-      { line: 9, character: 2, length: 'InputData'.length, type: 'type' },
-      { line: 9, character: 12, length: 'inputData'.length, type: 'variable' },
-      { line: 10, character: 26, length: 'positionWS'.length, type: 'property' },
-    ]));
+  it('re-exports the revision-owned semantic token legend', () => {
+    expect(SEMANTIC_TOKEN_TYPES).toBe(QUERY_TOKEN_TYPES);
   });
 
-  it('colors ShaderLab wrapper syntax, properties, tags, preprocessor, and HLSL symbols', async () => {
-    const { connection, handler } = captureSemanticTokensHandler();
-    const uri = 'file:///project/Assets/Mixed.shader';
-    const text = [
-      'Shader "Custom/Mixed" {',
-      '  Properties {',
-      '    [Header(Main)] [Space]',
-      '    _BaseMap ("Base Map", 2D) = "white" {}',
-      '    _Tint ("Tint", Color) = (1, 0.5, 0, 1)',
-      '    _Roughness ("Roughness", Range(0, 1)) = 0.5',
-      '  }',
-      '  SubShader {',
-      '    Tags { "LightMode"="UniversalForward" "RenderType"="Opaque" }',
-      '    LOD 100',
-      '    Pass {',
-      '      Name "Forward"',
-      '      Cull Back',
-      '      ZWrite On',
-      '      HLSLPROGRAM',
-      '      #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"',
-      '      #pragma vertex vert',
-      '      #define SAMPLE_ALBEDO(tex, uv) tex.Sample(sampler##tex, uv)',
-      '      TEXTURE2D(_BaseMap);',
-      '      SAMPLER(sampler_BaseMap);',
-      '      Texture2D _DetailMap;',
-      '      SamplerState sampler_DetailMap;',
-      '      CBUFFER_START(UnityPerMaterial)',
-      '      float4 _Tint;',
-      '      CBUFFER_END',
-      '      struct Attributes { float3 positionOS : POSITION; float2 uv : TEXCOORD0; };',
-      '      float4 vert(Attributes input) : SV_POSITION { return TransformObjectToHClip(input.positionOS).xyxy; }',
-      '      ENDHLSL',
-      '    }',
-      '  }',
-      '}',
-    ].join('\n');
-    const doc = TextDocument.create(uri, 'shaderlab', 1, text);
-    const index = await indexFile(uri, text, new MacroPatternTable());
-    const store = new IndexStore();
-    store.set(uri, index);
-    const global = new GlobalSymbolIndex();
-    const globalRefs = new GlobalReferenceIndex();
-    global.upsert(index);
-    globalRefs.upsert(index);
-    const documents = {
-      get(requestedUri: string) {
-        return requestedUri === uri ? doc : undefined;
-      },
-    } as never;
-    const workspace = {
-      index: { store, global, globalRefs },
+  it('routes an open snapshot and delegates the immutable query input', async () => {
+    const { connection, handler } = captureHandler();
+    const tokens = { data: [0, 0, 6, 6, 0] };
+    const semanticTokens = vi.fn(async () => tokens);
+    const workspace = fakeWorkspace(semanticTokens);
+    const documents = registry(document);
+    const manager: IndexedWorkspaceRequestRouter = {
+      servingWorkspaceFor: () => workspace,
     };
-    const manager = {
-      servingWorkspaceFor(requestedUri: string) {
-        return requestedUri === uri ? workspace : undefined;
-      },
-    } as never;
-
     registerSemanticTokensHandler(connection, documents, manager);
 
-    const tokens = decodeTokens(await handler()({ textDocument: { uri } }));
-    expectSortedAndNonOverlapping(tokens);
-    expect(tokenTexts(text, tokens)).toEqual(expect.arrayContaining([
-      { text: 'Shader', type: 'keyword' },
-      { text: 'Properties', type: 'keyword' },
-      { text: 'Header', type: 'decorator' },
-      { text: '_BaseMap', type: 'property' },
-      { text: 'Base Map', type: 'string' },
-      { text: '2D', type: 'type' },
-      { text: 'Color', type: 'type' },
-      { text: 'Range', type: 'type' },
-      { text: 'LightMode', type: 'property' },
-      { text: 'UniversalForward', type: 'string' },
-      { text: 'LOD', type: 'keyword' },
-      { text: 'Cull', type: 'keyword' },
-      { text: 'ZWrite', type: 'keyword' },
-      { text: 'HLSLPROGRAM', type: 'keyword' },
-      { text: '#include', type: 'keyword' },
-      { text: 'Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl', type: 'string' },
-      { text: '#pragma', type: 'keyword' },
-      { text: 'vert', type: 'function' },
-      { text: 'SAMPLE_ALBEDO', type: 'macro' },
-      { text: 'TEXTURE2D', type: 'macro' },
-      { text: 'SAMPLER', type: 'macro' },
-      { text: 'Texture2D', type: 'type' },
-      { text: 'SamplerState', type: 'type' },
-      { text: 'CBUFFER_START', type: 'macro' },
-      { text: 'UnityPerMaterial', type: 'variable' },
-      { text: 'Attributes', type: 'type' },
-      { text: 'POSITION', type: 'enumMember' },
-      { text: 'TEXCOORD0', type: 'enumMember' },
-      { text: 'SV_POSITION', type: 'enumMember' },
-      { text: 'TransformObjectToHClip', type: 'function' },
-      { text: 'positionOS', type: 'property' },
-      { text: 'xyxy', type: 'property' },
-      { text: 'ENDHLSL', type: 'keyword' },
-    ]));
+    await expect(handler()({ textDocument: { uri } })).resolves.toEqual(tokens);
+    expect(semanticTokens).toHaveBeenCalledOnce();
+    expect(semanticTokens).toHaveBeenCalledWith({ uri, document });
   });
 
-  it('preserves HLSL semantic tokens for identifiers that look like ShaderLab keywords', async () => {
-    const { connection, handler } = captureSemanticTokensHandler();
-    const uri = 'file:///project/Assets/KeywordCollision.shader';
-    const text = [
-      'Shader "Custom/KeywordCollision" {',
-      '  SubShader {',
-      '    Pass {',
-      '      HLSLPROGRAM',
-      '      float4 Name(float4 Pass) : SV_Target {',
-      '        return Pass;',
-      '      }',
-      '      ENDHLSL',
-      '    }',
-      '  }',
-      '}',
-    ].join('\n');
-    const doc = TextDocument.create(uri, 'shaderlab', 1, text);
-    const index = await indexFile(uri, text);
-    const store = new IndexStore();
-    store.set(uri, index);
-    const global = new GlobalSymbolIndex();
-    const globalRefs = new GlobalReferenceIndex();
-    global.upsert(index);
-    globalRefs.upsert(index);
-    const documents = {
-      get(requestedUri: string) {
-        return requestedUri === uri ? doc : undefined;
-      },
-    } as never;
-    const workspace = {
-      index: { store, global, globalRefs },
-    };
-    const manager = {
-      servingWorkspaceFor(requestedUri: string) {
-        return requestedUri === uri ? workspace : undefined;
-      },
-    } as never;
+  it('lazily restores a missing route for a current open session', async () => {
+    const { connection, handler } = captureHandler();
+    const semanticTokens = vi.fn(async () => ({ data: [] }));
+    const workspace = fakeWorkspace(semanticTokens);
+    const documents = registry(document);
+    const workspaceForOrCreateFile = vi.fn(async (
+      _uri: string,
+      shouldCreate?: () => boolean,
+    ) => shouldCreate?.() ? workspace : undefined);
+    registerSemanticTokensHandler(connection, documents, {
+      servingWorkspaceFor: () => undefined,
+      workspaceFor: () => undefined,
+      workspaceForOrCreateFile,
+    });
 
-    registerSemanticTokensHandler(connection, documents, manager);
+    await expect(handler()({ textDocument: { uri } })).resolves.toEqual({ data: [] });
+    expect(workspaceForOrCreateFile).toHaveBeenCalledWith(uri, expect.any(Function));
+    expect(semanticTokens).toHaveBeenCalledWith({ uri, document });
+  });
 
-    const tokens = decodeTokens(await handler()({ textDocument: { uri } }));
-    const rendered = tokenTexts(text, tokens);
-    expect(rendered).toEqual(expect.arrayContaining([
-      { text: 'Name', type: 'function' },
-      { text: 'Pass', type: 'parameter' },
-      { text: 'SV_Target', type: 'enumMember' },
-    ]));
-    expect(rendered).not.toContainEqual({ text: 'Name', type: 'keyword' });
-    expect(tokens).not.toContainEqual({
-      line: 4,
-      character: 13,
-      length: 'Name'.length,
-      type: 'keyword',
+  it('queries a serving disk revision when the document is closed', async () => {
+    const { connection, handler } = captureHandler();
+    const tokens = { data: [0, 1, 2, 0, 0] };
+    const semanticTokens = vi.fn(async () => tokens);
+    const workspace = fakeWorkspace(semanticTokens);
+    registerSemanticTokensHandler(connection, registry(), {
+      servingWorkspaceFor: (requestedUri) => requestedUri === uri ? workspace : undefined,
     });
-    expect(tokens).not.toContainEqual({
-      line: 4,
-      character: 26,
-      length: 'Pass'.length,
-      type: 'keyword',
+
+    await expect(handler()({ textDocument: { uri } })).resolves.toEqual(tokens);
+    expect(semanticTokens).toHaveBeenCalledWith({ uri, document: undefined });
+  });
+
+  it('returns an empty stream when no serving revision owns the request', async () => {
+    const { connection, handler } = captureHandler();
+    registerSemanticTokensHandler(connection, registry(), {
+      servingWorkspaceFor: () => undefined,
     });
-    expect(tokens).not.toContainEqual({
-      line: 5,
-      character: 15,
-      length: 'Pass'.length,
-      type: 'keyword',
-    });
+
+    await expect(handler()({ textDocument: { uri } })).resolves.toEqual({ data: [] });
   });
 });

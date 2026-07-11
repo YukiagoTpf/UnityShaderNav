@@ -32,15 +32,15 @@ describe('cold start with cache', () => {
     try {
       const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
       const coldStart = Date.now();
-      await ws1.bootstrap(fakeConnection);
+      await ws1.initialize(fakeConnection);
       const coldMs = Date.now() - coldStart;
 
       const ws2 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
       const warmStart = Date.now();
-      await ws2.bootstrap(fakeConnection);
+      await ws2.initialize(fakeConnection);
       const warmMs = Date.now() - warmStart;
 
-      expect(ws2.index.global.lookup('Common').length).toBeGreaterThanOrEqual(1);
+      expect(ws2.workspaceSymbols('Common').some((symbol) => symbol.name === 'Common')).toBe(true);
       expect(warmMs).toBeLessThanOrEqual(coldMs + 100);
     } finally {
       await rm(root, { recursive: true, force: true });

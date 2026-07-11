@@ -82,16 +82,25 @@ Workspace mode and index readiness are independent. A root reports one mode
 | `ready` | A complete index revision is available; the status includes its revision and source-warning count |
 | `failed` | The indexing operation failed; the status includes a stable category and concise actionable message |
 
-A successful initialization or rebuild increments that root's revision. A
-failed operation does not. Missing, unreadable, or malformed
+A successful initial, rebuild, watcher, live-document, or settings-only
+publication increments that root's revision exactly once. An empty event batch
+or watcher transaction with no effective change does not publish; neither does
+a stale, superseded, or failed attempt. Missing, unreadable, or malformed
 `Packages/packages-lock.json` for a Unity root and shader parser initialization
 or bootstrap/rebuild/watcher indexing-engine failures are infrastructure
 failures, not valid empty indexes. Root inspection and directory traversal
 failures are also surfaced instead of being interpreted as an empty project. A
-source file that disappears or cannot be read during initialization or rebuild
-is skipped and contributes to that revision's warning count. The failed root
-remains present in the manager until it is removed or a later recovery
-succeeds.
+source discovered for indexing but unreadable when processed is retained from
+the previous revision when its index identity is compatible, or skipped when no
+previous record exists; either case contributes to the candidate revision's
+warning count. An explicit delete still removes the record when its candidate
+publishes. The failed root remains present in the manager until it is removed or
+a later recovery succeeds. When a previous revision exists, rebuild and
+recovery continue serving it; a failed candidate leaves that last-known-good
+revision available under `failed(servingRevision)`. Each disk index is paired
+with the size and modification time from its stable source read. Retaining an
+older index retains that identity as well; cache persistence never samples new
+metadata for an older index value.
 
 Recognized package source kinds must contain the fields needed for deterministic
 physical-path resolution. For example, git entries require a non-empty hash and
@@ -103,14 +112,15 @@ package-resolution lifecycle instead of silently dropping a package.
 The language server provides a pull request plus full-snapshot change
 notifications on the normal client connection. Snapshots carry a session-local
 `statusSequence` that changes independently of index revisions. The status
-request remains available while ordinary language requests are suspended for
-startup or rebuild work. Once a root is registered without a serving revision,
-indexed requests return their neutral LSP result immediately rather than wait
-on an unbounded bootstrap. Outside a full rebuild, cross-root requests use the
-roots already serving. The current mutable full-rebuild path retains a bounded
-global request suspension; a timeout detaches its waiter and returns the
-request's neutral result. Clients and test harnesses can therefore diagnose
-progress and failure without guessing a settle time.
+request remains available during startup and rebuild work. A short bounded
+request gate exists only while initial global settings and the workspace-folder
+snapshot are acquired. Once per-root initialization is scheduled, a root
+without a serving revision returns the query's neutral LSP result immediately.
+During rebuild/recovery, a request already satisfied by the retained revision
+captures it instead of waiting; a new unpublished document attempt joins the
+queued candidate/reconcile path. Cross-root requests capture the currently
+serving roots and never wait for an unrelated root. Clients and test harnesses
+can therefore diagnose progress and failure without guessing a settle time.
 
 ## Live Documents and Request Consistency
 
@@ -121,64 +131,88 @@ The document registry coalesces edits during workspace discovery and supplies
 the same latest snapshots to initial indexing, rebuild, and remove/re-add
 replacement workspaces.
 
-Live text is an overlay over the last valid disk index. Parsing and standalone
-disk reads complete before one final attempt check; only the current
-`openId + version` may synchronously update the file, global-symbol, and
-global-reference indexes. Close restores the disk baseline, or removes a file
-that has no disk form. Equivalent file URIs use one canonical key for both live
-attempts and disk baselines. Parser/index exceptions fail the workspace
-lifecycle and are observed by fire-and-forget document routing instead of
-becoming unhandled promise rejections.
+Live text is an overlay over the last valid disk index. Each accepted edit or
+close forks the immutable published revision into a private copy-on-write
+candidate. Parsing and standalone disk reads complete before one final attempt
+check; only the current `openId + version` may publish. Close restores the disk
+baseline in the candidate, or removes a file that has no disk form in the
+candidate's configured scan scope. A closed `openId` remains a tombstone so a
+late snapshot from that editor session cannot recreate the overlay. One pointer
+swap makes the complete file, global-symbol, global-reference, disk-baseline,
+and committed-attempt state visible together. Equivalent file URIs use one
+canonical key for both live attempts and disk baselines. Parser/index exceptions
+discard the candidate, fail the workspace lifecycle, and are observed by
+fire-and-forget document routing instead of becoming unhandled promise
+rejections.
 
 Workspace routing changes also form an ownership boundary. Adding a nested root
 removes its open-document overlays from the former parent before the nested
 Workspace serves them; removing that root republishes current snapshots into
-the new longest-match owner. Affected serving owners are temporarily excluded
+the new longest-match owner. Provider-backed workspaces reject external
+snapshots once that exact attempt belongs to another owner. Affected serving
+owners are temporarily excluded
 from request routing until synchronization settles; initializing/rebuilding
 owners replay the provider before publication instead of blocking an unrelated
 root. Transient lazy owners with no remaining open documents are retired. A
 close/reopen during lazy discovery starts a new route for the new `openId` even
 if the retired route finishes later. Removing the final owner starts no
-background Workspace: the next Definition or References request may start lazy
+background Workspace: the next index-backed document request may start lazy
 discovery only while that request's `openId` remains current.
 
 File-watcher events fan out to every serving Workspace whose standalone,
-Unity-project, or Package scope contains the URI. Each Workspace updates its
-own disk baseline and reapplies its live overlay. Fan-out waits for every owner,
-so one failed owner cannot leave the remaining caches silently stale. A URI is
-eligible only when that Workspace already has a disk baseline or when the path
-passes the same extension, exclusion, and resolved-Package rules as scanning.
+Unity-project, or Package scope contains the URI. Each owner that can accept
+incremental work updates a copy-on-write candidate without replacing its live
+overlay, then publishes once. Because a queued rebuild may change exclusions or
+Package roots, each owner revalidates event scope against its execution-time
+base revision before indexing. A failed owner retains its published revision;
+fan-out still lets the remaining owners update, so that failure cannot leave
+their caches silently stale. A URI is eligible only when that Workspace already
+has a disk baseline or when the path passes the same extension, exclusion, and
+resolved-Package rules as scanning.
 
-Definition and Find References consume an Indexed Workspace behavior interface.
-The Workspace first synchronizes the request document, orders the query behind
-earlier accepted mutations, and then performs include visibility, scope,
-proximity, member, property, Package, and ambiguity resolution internally.
-Request handlers do not assemble mutable index stores. No query handler may
-repair a store miss by calling an index implementation; adapters not yet moved
-to the deep navigation interface may join the registry's current attempt only
-through Workspace behavior. The document/file lifecycle remains the mutation
-owner, and an unpublished miss returns the feature's neutral LSP result.
+Every index-backed LSP query consumes the Indexed Workspace behavior interface:
+Definition, References, Hover, Completion, Signature Help, Document Highlight,
+Document Symbols, Semantic Tokens, and Workspace Symbols. Request handlers do
+not receive or assemble mutable index stores. When behavior reads indexed
+state, the Workspace captures one immutable published revision and performs
+include visibility, scope, proximity, member, property, Package, token,
+symbol-formatting, and ambiguity behavior inside that boundary. Async work
+cannot mix settings or stores from two revisions.
+
+If an index-dependent open-document request's exact attempt is not yet
+published, the Workspace first joins that `openId + version` transaction. A
+current attempt publishes a complete new revision before the query captures it;
+a superseded or failed attempt returns the feature's neutral LSP result. Pure
+lexical Completion/Signature Help exits still require a serving Workspace route,
+but they neither publish that request document attempt nor read indexed state.
+Queries that already match a published attempt do not wait for an unrelated
+candidate. No handler repairs a miss by calling an index implementation.
 
 An include Definition does not require a request-document index: it uses the
 immutable snapshot to identify the include path and resolves it through the
 Workspace-owned include context. Other Definition and References requests join
 the current document attempt before reading indexed state.
 
-Successful initialization and rebuild advance the observable index revision.
-Current live-document and watcher transactions are ordered and synchronously
-committed but do not advance that revision. ADR-0006 defines the stricter future
-boundary where every transaction publishes an immutable revision.
+Every query that reads indexed state captures one `PublishedIndexedRevision`.
+Full indexing builds a new `IndexedRevisionBuilder`; incremental transactions
+fork the current revision, copy mutable maps/global arrays, and share immutable
+per-file index values. All work completes inside the one-shot candidate before
+a single synchronous Workspace pointer swap. Rebuild or recovery failure
+discards its candidate and continues serving the retained revision. See
+[ADR-0006](adr/0006-index-lifecycle-and-failure-semantics.md).
 
 ## Indexing Scope
 
-The server indexes:
+In Unity mode, the server scans user shader files under the detected or
+configured Unity project root and package files resolved from
+`Packages/packages-lock.json`. User-file scanning respects
+`unityShaderNav.excludePatterns`; package indexing instead follows the resolved
+lockfile roots and its own Documentation/Samples exclusions.
 
-- User shader files under the workspace or detected Unity project root.
-- Unity package files resolved from `Packages/packages-lock.json`.
-- Extra include directories configured through `unityShaderNav.includeDirectories`.
-
-User-file scanning respects `unityShaderNav.excludePatterns`. Package indexing
-does not use those globs; packages are selected from the Unity lock file.
+Standalone mode does not recursively scan the workspace. It indexes open
+documents and qualifying file-watcher events incrementally. Paths in
+`unityShaderNav.includeDirectories` are include-resolution search roots in both
+modes; they are not additional scan roots.
 
 ## Symbol Model
 

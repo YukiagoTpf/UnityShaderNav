@@ -1,5 +1,4 @@
 export { Workspace } from './workspace';
-export { WorkspaceIndex } from './workspaceIndex';
 export type { FileEvent } from './workspaceIndex';
 export { WorkspaceManager } from './workspaceManager';
 export { snapshotDocument } from './indexedWorkspace';

@@ -2,27 +2,30 @@ import type {
   Connection,
   DocumentSymbol,
   DocumentSymbolParams,
-  TextDocuments,
 } from 'vscode-languageserver/node';
-import type { TextDocument } from 'vscode-languageserver-textdocument';
-import { buildDocumentSymbols } from '../index/documentSymbols';
-import { resolveRequestContext } from './requestContext';
 import type { RequestSuspender } from '../lifecycle/requestSuspender';
-import type { WorkspaceManager } from '../workspace';
+import type {
+  IndexedDocumentRegistry,
+  IndexedWorkspaceRequestRouter,
+} from '../workspace/indexedWorkspace';
+import { workspaceForDocumentRequest } from '../workspace/indexedWorkspace';
 
 export function registerDocumentSymbolHandler(
   connection: Connection,
-  documents: TextDocuments<TextDocument>,
-  manager: WorkspaceManager,
+  documents: Pick<IndexedDocumentRegistry, 'snapshot'>,
+  manager: IndexedWorkspaceRequestRouter,
   suspender?: Pick<RequestSuspender, 'run'>,
 ): void {
   connection.onDocumentSymbol(async (params: DocumentSymbolParams): Promise<DocumentSymbol[] | null> => {
     const resolveRequest = async (): Promise<DocumentSymbol[] | null> => {
-      const ctx = await resolveRequestContext(params.textDocument.uri, documents, manager, { requireDocument: false });
-      if (!ctx) return null;
-      const index = await ctx.index();
-      if (!index) return null;
-      return buildDocumentSymbols(index);
+      const uri = params.textDocument.uri;
+      const document = documents.snapshot(uri);
+      const workspace = document
+        ? await workspaceForDocumentRequest(document, documents, manager)
+        : manager.servingWorkspaceFor(uri);
+      if (!workspace) return null;
+
+      return workspace.documentSymbols({ uri, document });
     };
 
     return suspender ? suspender.run(resolveRequest) : resolveRequest();

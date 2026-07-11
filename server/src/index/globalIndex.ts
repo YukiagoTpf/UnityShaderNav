@@ -1,7 +1,12 @@
 import type { FileIndex, SymbolEntry } from '@unity-shader-nav/shared';
 import { uriKey } from '../uriKey';
 
-export class GlobalSymbolIndex {
+export interface GlobalSymbolReader {
+  lookup(name: string): SymbolEntry[];
+  entries(): IterableIterator<SymbolEntry>;
+}
+
+export class GlobalSymbolIndex implements GlobalSymbolReader {
   private readonly byName = new Map<string, SymbolEntry[]>();
   private readonly byUri = new Map<string, SymbolEntry[]>();
 

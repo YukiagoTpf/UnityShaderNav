@@ -9,6 +9,7 @@ import {
   applySettingsAndRebuild,
   rebuildWorkspaces,
 } from '../../src/lifecycle/rebuild';
+import { indexFile } from '../../src/parser/hlsl';
 import { Workspace, WorkspaceManager } from '../../src/workspace';
 import type { IndexedDocumentSnapshot } from '../../src/workspace/indexedWorkspace';
 import {
@@ -17,7 +18,7 @@ import {
 } from '../helpers/copiedUnityProject';
 
 const fakeConnection = {
-  console: { log() {} },
+  console: { log() {}, warn() {}, error() {} },
   sendNotification() {},
   window: {
     createWorkDoneProgress: async () => ({
@@ -53,38 +54,70 @@ function openDocument(
 }
 
 describe('rebuildWorkspaces', () => {
-  it('relies on Workspace replay and releases without external document routing', async () => {
-    const calls: string[] = [];
-    const workspace = {
-      rebuild: vi.fn(async () => {
-        calls.push('rebuild');
-      }),
-    };
-    const manager = {
-      list: () => [workspace],
-      rebuildableList: async () => [workspace],
-      workspaceForOrCreateFile: vi.fn(),
-    };
-    const suspender = {
-      suspend: vi.fn(() => calls.push('suspend')),
-      release: vi.fn(() => calls.push('release')),
-    };
+  it('serves the retained published revision while replaying open documents into a rebuild candidate', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-rebuild-serving-revision-'));
+    const uri = pathToFileURL(join(root, 'Open.hlsl')).href;
+    const candidateStarted = deferred();
+    const releaseCandidate = deferred();
+    let current = openDocument('float4 BeforeRebuild() { return 0; }', 1, 1, uri);
 
-    await rebuildWorkspaces(
-      fakeConnection,
-      manager as never,
-      suspender,
-    );
+    try {
+      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
+        ensureParserReady: async () => {},
+        indexImplementation: null,
+        openDocuments: () => [current],
+        async indexDocument(indexUri, text, table) {
+          if (text.includes('AfterRebuild')) {
+            candidateStarted.resolve();
+            await releaseCandidate.promise;
+          }
+          return indexFile(indexUri, text, table);
+        },
+      });
+      await workspace.initialize(fakeConnection);
+      expect(workspace.workspaceSymbols('BeforeRebuild')).toHaveLength(1);
 
-    expect(calls).toEqual([
-      'suspend',
-      'rebuild',
-      'release',
-    ]);
-    expect(manager.workspaceForOrCreateFile).not.toHaveBeenCalled();
+      current = openDocument('float4 AfterRebuild() { return 0; }', 1, 2, uri);
+      const manager = {
+        rebuildableList: async () => [workspace],
+        workspaceForOrCreateFile: vi.fn(),
+      };
+      const suspender = { suspend: vi.fn(), release: vi.fn() };
+      const rebuilding = rebuildWorkspaces(
+        fakeConnection,
+        manager as never,
+        suspender,
+      );
+
+      await candidateStarted.promise;
+      expect(workspace.indexStatus().lifecycle).toEqual({
+        state: 'indexing',
+        operation: 'rebuild',
+        servingRevision: 1,
+      });
+      expect(workspace.workspaceSymbols('BeforeRebuild')).toHaveLength(1);
+      expect(workspace.workspaceSymbols('AfterRebuild')).toEqual([]);
+      expect(suspender.suspend).not.toHaveBeenCalled();
+      expect(suspender.release).not.toHaveBeenCalled();
+      expect(manager.workspaceForOrCreateFile).not.toHaveBeenCalled();
+
+      releaseCandidate.resolve();
+      await rebuilding;
+
+      expect(workspace.workspaceSymbols('BeforeRebuild')).toEqual([]);
+      expect(workspace.workspaceSymbols('AfterRebuild')).toHaveLength(1);
+      expect(workspace.indexStatus().lifecycle).toEqual({
+        state: 'ready',
+        revision: 2,
+        warningCount: 0,
+      });
+    } finally {
+      releaseCandidate.resolve();
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
-  it('waits for ready workspaces before rebuilding', async () => {
+  it('waits for rebuildable workspaces without globally suspending requests', async () => {
     const calls: string[] = [];
     const ready = deferred();
     const workspace = {
@@ -100,9 +133,6 @@ describe('rebuildWorkspaces', () => {
         calls.push('ready');
         return [workspace];
       }),
-      workspaceForOrCreateFile: vi.fn(async () => ({
-        index: { reindex: vi.fn(async () => {}) },
-      })),
     };
     const suspender = {
       suspend: vi.fn(() => calls.push('suspend')),
@@ -116,14 +146,17 @@ describe('rebuildWorkspaces', () => {
     );
     await flushPromises();
 
-    expect(calls).toEqual(['suspend', 'rebuildableList']);
+    expect(calls).toEqual(['rebuildableList']);
     expect(workspace.rebuild).not.toHaveBeenCalled();
+    expect(suspender.suspend).not.toHaveBeenCalled();
     expect(suspender.release).not.toHaveBeenCalled();
 
     ready.resolve();
     await rebuild;
 
-    expect(calls).toEqual(['suspend', 'rebuildableList', 'ready', 'rebuild', 'release']);
+    expect(calls).toEqual(['rebuildableList', 'ready', 'rebuild']);
+    expect(suspender.suspend).not.toHaveBeenCalled();
+    expect(suspender.release).not.toHaveBeenCalled();
   });
 
   it('starts rebuildable roots independently', async () => {
@@ -173,8 +206,8 @@ describe('rebuildWorkspaces', () => {
     manager.configure(DEFAULT_SETTINGS, fakeConnection);
     await manager.addFolder(pathToFileURL(root).href, DEFAULT_SETTINGS, fakeConnection);
     const workspace = manager.list()[0];
-    expect(workspace.index.global.lookup('KeepSymbol').length).toBeGreaterThanOrEqual(1);
-    expect(workspace.index.global.lookup('StaleSymbol').length).toBeGreaterThanOrEqual(1);
+    expect(workspace.workspaceSymbols('KeepSymbol').length).toBeGreaterThanOrEqual(1);
+    expect(workspace.workspaceSymbols('StaleSymbol').length).toBeGreaterThanOrEqual(1);
 
     await applySettingsAndRebuild(
       fakeConnection,
@@ -185,8 +218,8 @@ describe('rebuildWorkspaces', () => {
       },
     );
 
-    expect(workspace.index.global.lookup('KeepSymbol').length).toBeGreaterThanOrEqual(1);
-    expect(workspace.index.global.lookup('StaleSymbol')).toEqual([]);
+    expect(workspace.workspaceSymbols('KeepSymbol').length).toBeGreaterThanOrEqual(1);
+    expect(workspace.workspaceSymbols('StaleSymbol')).toEqual([]);
   });
 
   it('settings rebuild can apply folder-scoped projectRoot without polluting other roots', async () => {
@@ -217,9 +250,9 @@ describe('rebuildWorkspaces', () => {
       const workspaceA = manager.workspaceFor(pathToFileURL(join(projectA, 'Assets', 'Shaders', 'Common.hlsl')).href);
       const workspaceB = manager.workspaceFor(pathToFileURL(join(projectB, 'Assets', 'Shaders', 'OnlyInB.hlsl')).href);
 
-      expect(workspaceA?.index.global.lookup('Common').length).toBeGreaterThanOrEqual(1);
-      expect(workspaceB?.index.global.lookup('OnlyInB').length).toBeGreaterThanOrEqual(1);
-      expect(workspaceB?.index.global.lookup('Common')).toEqual([]);
+      expect(workspaceA?.workspaceSymbols('Common').length).toBeGreaterThanOrEqual(1);
+      expect(workspaceB?.workspaceSymbols('OnlyInB').length).toBeGreaterThanOrEqual(1);
+      expect(workspaceB?.workspaceSymbols('Common')).toEqual([]);
     } finally {
       await removeCopiedUnityProject(projectA);
       await rm(projectB, { recursive: true, force: true });
@@ -254,7 +287,6 @@ describe('rebuildWorkspaces', () => {
     const workspace = {
       folderUri: 'file:///project-a',
       settings: DEFAULT_SETTINGS,
-      index: { table: undefined as unknown },
       indexStatus: () => ({
         folderUri: 'file:///project-a',
         mode: 'unity' as const,
@@ -269,9 +301,7 @@ describe('rebuildWorkspaces', () => {
     const manager = {
       list: () => [workspace],
       rebuildableList: async () => [workspace],
-      workspaceForOrCreateFile: vi.fn(async () => ({
-        index: { reindex: vi.fn(async () => {}) },
-      })),
+      workspaceForOrCreateFile: vi.fn(),
     };
 
     await applyScopedSettingsAndRebuild(
@@ -331,13 +361,19 @@ describe('rebuildWorkspaces', () => {
 
   it('decides queued S0 -> S1 -> S0 rebuilds from the settings active at execution time', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-settings-reversal-'));
+    const releaseInitial = deferred();
+    const initialIndexingStarted = deferred();
+    const releaseFinal = deferred();
+    const finalIndexingStarted = deferred();
     try {
       const open = openDocument(
-        'float4 Unsaved() { return 0; }',
+        'QUEUED_DECL(Unsaved)',
         1,
         1,
         pathToFileURL(join(root, 'Open.hlsl')).href,
       );
+      const tableStates: boolean[] = [];
+      let indexingAttempt = 0;
       const workspace = new Workspace(
         pathToFileURL(root).href,
         DEFAULT_SETTINGS,
@@ -345,33 +381,30 @@ describe('rebuildWorkspaces', () => {
           ensureParserReady: async () => {},
           indexImplementation: null,
           openDocuments: () => [open],
+          async indexDocument(uri, text, table) {
+            indexingAttempt++;
+            tableStates.push(table.findDecl('QUEUED_DECL').length > 0);
+            if (indexingAttempt === 1) {
+              initialIndexingStarted.resolve();
+              await releaseInitial.promise;
+            } else if (indexingAttempt === 3) {
+              finalIndexingStarted.resolve();
+              await releaseFinal.promise;
+            }
+            return indexFile(uri, text, table);
+          },
         },
       );
-      const initial = deferred();
-      const settingsSeenByBootstrap: ExtensionSettings[] = [];
-      vi.spyOn(workspace, 'bootstrap').mockImplementation(async () => {
-        if (settingsSeenByBootstrap.length === 0) await initial.promise;
-        settingsSeenByBootstrap.push(workspace.settings);
-        return 0;
-      });
-      const overlaySettings: ExtensionSettings[] = [];
-      const prepareDocument = workspace.index.prepareDocument.bind(workspace.index);
-      vi.spyOn(workspace.index, 'prepareDocument').mockImplementation(async (...args) => {
-        overlaySettings.push(workspace.settings);
-        return prepareDocument(...args);
-      });
       const manager = {
         list: () => [workspace],
-        workspaceFor: () => workspace,
-        workspaceForOrCreateFile: vi.fn(async () => workspace),
       };
       const settings1 = {
         ...DEFAULT_SETTINGS,
-        excludePatterns: [...DEFAULT_SETTINGS.excludePatterns, 'Assets/Hidden/**'],
+        declarationMacros: [{ pattern: 'QUEUED_DECL($name)', kind: 'variable' as const }],
       };
 
       const initializing = workspace.initialize(fakeConnection);
-      await flushPromises();
+      await initialIndexingStarted.promise;
       await applyScopedSettingsAndRebuild(
         fakeConnection,
         manager as never,
@@ -383,27 +416,39 @@ describe('rebuildWorkspaces', () => {
         async () => DEFAULT_SETTINGS,
       );
 
-      initial.resolve();
+      releaseInitial.resolve();
+      await finalIndexingStarted.promise;
+
+      expect(tableStates).toEqual([false, true, false]);
+      expect(workspace.settings.declarationMacros).toEqual(settings1.declarationMacros);
+      expect(workspace.workspaceSymbols('Unsaved')).toHaveLength(1);
+      expect(workspace.indexStatus().lifecycle).toEqual({
+        state: 'indexing',
+        operation: 'rebuild',
+        servingRevision: 2,
+      });
+
+      releaseFinal.resolve();
       await initializing;
       for (let i = 0; i < 100; i++) {
         const lifecycle = workspace.indexStatus().lifecycle;
         if (
           lifecycle.state === 'ready'
           && lifecycle.revision === 3
-          && overlaySettings.length > 0
         ) break;
         await new Promise((resolveWait) => setTimeout(resolveWait, 0));
       }
 
-      expect(settingsSeenByBootstrap).toEqual([DEFAULT_SETTINGS, settings1, DEFAULT_SETTINGS]);
-      expect(overlaySettings.at(-1)).toBe(DEFAULT_SETTINGS);
-      expect(workspace.settings).toBe(DEFAULT_SETTINGS);
+      expect(workspace.workspaceSymbols('Unsaved')).toEqual([]);
+      expect(workspace.settings).toEqual(DEFAULT_SETTINGS);
       expect(workspace.indexStatus().lifecycle).toEqual({
         state: 'ready',
         revision: 3,
         warningCount: 0,
       });
     } finally {
+      releaseInitial.resolve();
+      releaseFinal.resolve();
       await rm(root, { recursive: true, force: true });
     }
   });

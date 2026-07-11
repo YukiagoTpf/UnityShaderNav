@@ -1,0 +1,496 @@
+import {
+  DocumentHighlightKind,
+  SemanticTokensBuilder,
+  SymbolKind as LspSymbolKind,
+  type CompletionItem,
+  type DocumentHighlight,
+  type DocumentSymbol,
+  type Hover,
+  type SemanticTokens,
+  type SignatureHelp,
+  type SymbolInformation,
+} from 'vscode-languageserver/node';
+import type {
+  FileIndex,
+  Range,
+  ReferenceEntry,
+  SymbolEntry,
+  SymbolKind,
+} from '@unity-shader-nav/shared';
+import { formatHoverCandidates, type HoverInput } from '../hover';
+import {
+  collectVisibleUriKeys,
+  cursorTargetAt,
+  findHighlights,
+  resolveDefinitionSymbols,
+  resolveMemberSymbols,
+} from '../index';
+import { buildDocumentSymbols } from '../index/documentSymbols';
+import { HIDDEN_SYMBOL_KINDS, SYMBOL_KIND_MAP } from '../index/symbolKindMap';
+import { isGenericDefinitionContext } from '../parser/lexical/context';
+import { scanShaderLabTokens } from '../parser/shaderlab/tokenScanner';
+import {
+  callContextAt,
+  collectBuiltinFunctionSuggestions,
+  collectBuiltinSuggestions,
+  collectMemberSuggestions,
+  collectVisibleProjectFunctionSuggestions,
+  collectVisibleProjectSuggestions,
+  suggestionContextAt,
+  toCompletionItem,
+  toSignatureInformation,
+  type ShaderSuggestion,
+} from '../suggestions';
+import { BUILTIN_ENTRIES } from '../vocabulary';
+import type { PackageContext } from '../packages';
+import type {
+  DocumentPositionInput,
+  IndexedDocumentQueryInput,
+} from './indexedWorkspace';
+import type { WorkspaceIndexReadView } from './workspaceIndex';
+import { SEMANTIC_TOKEN_TYPES } from './semanticTokenLegend';
+
+export { SEMANTIC_TOKEN_TYPES } from './semanticTokenLegend';
+
+export interface WorkspaceQueryState {
+  readonly folderUri: string;
+  readonly index: WorkspaceIndexReadView;
+  readonly packages: PackageContext;
+  readonly includePackages: boolean;
+}
+
+/** Preserve completion's lexical early exit without publishing a document index. */
+export function completionWithoutIndex(
+  input: DocumentPositionInput,
+): CompletionItem[] | undefined {
+  const { document, position } = input;
+  const context = suggestionContextAt(
+    document.text,
+    position,
+    document.languageId,
+    document.uri,
+  );
+  return context.kind === 'comment' || context.kind === 'string' ? [] : undefined;
+}
+
+/** Signature Help needs an index only for a syntactically eligible call site. */
+export function signatureHelpNeedsIndex(input: DocumentPositionInput): boolean {
+  const { document, position } = input;
+  const context = suggestionContextAt(
+    document.text,
+    position,
+    document.languageId,
+    document.uri,
+  );
+  return context.kind !== 'comment'
+    && context.kind !== 'string'
+    && context.kind !== 'shaderLabCode'
+    && callContextAt(document.text, position) !== null;
+}
+
+export async function queryHover(
+  state: WorkspaceQueryState,
+  input: DocumentPositionInput,
+): Promise<Hover | null> {
+  const { document, position } = input;
+  const index = state.index.store.get(document.uri);
+  if (!index) return null;
+  if (!isGenericDefinitionContext(document.text, position, document.languageId, document.uri)) {
+    return null;
+  }
+
+  const target = cursorTargetAt(document.text, position, { detectIncludes: false });
+  if (target.kind === 'none') return null;
+  const visibleUriKeys = await collectVisibleUriKeys(
+    state.index.store,
+    state.packages.includeCtx,
+    document.uri,
+  );
+  const options = { visibleUriKeys };
+
+  if (target.kind === 'member') {
+    const symbols = resolveMemberSymbols(
+      index,
+      state.index.global,
+      target.receiver.text,
+      target.member.text,
+      position,
+      options,
+    );
+    if (symbols.length > 0) {
+      const contents = formatHoverCandidates(symbols.map((symbol): HoverInput => ({
+        source: 'project',
+        symbol,
+        workspaceRootUri: state.folderUri,
+      })));
+      return contents.value.length > 0
+        ? { contents, range: target.member.range }
+        : null;
+    }
+  }
+
+  if (target.kind !== 'member' && target.kind !== 'symbol') return null;
+  const word = target.kind === 'member' ? target.member : target.word;
+  const projectSymbols = resolveDefinitionSymbols(
+    index,
+    word.text,
+    position,
+    state.index.global,
+    options,
+  );
+  if (projectSymbols.length > 0) {
+    const contents = formatHoverCandidates(projectSymbols.map((symbol): HoverInput => ({
+      source: 'project',
+      symbol,
+      workspaceRootUri: state.folderUri,
+    })));
+    return contents.value.length > 0 ? { contents, range: word.range } : null;
+  }
+
+  const builtins = BUILTIN_ENTRIES.filter((entry) => entry.name === word.text);
+  if (builtins.length === 0) return null;
+  const contents = formatHoverCandidates(builtins.map((entry): HoverInput => ({
+    source: 'builtin',
+    entry,
+  })));
+  return contents.value.length > 0 ? { contents, range: word.range } : null;
+}
+
+export async function queryCompletion(
+  state: WorkspaceQueryState,
+  input: DocumentPositionInput,
+): Promise<CompletionItem[] | null> {
+  const { document, position } = input;
+  const context = suggestionContextAt(
+    document.text,
+    position,
+    document.languageId,
+    document.uri,
+  );
+  if (context.kind === 'comment' || context.kind === 'string') return [];
+  const index = state.index.store.get(document.uri);
+  if (!index) return null;
+  const visibleUriKeys = await collectVisibleUriKeys(
+    state.index.store,
+    state.packages.includeCtx,
+    document.uri,
+  );
+
+  const suggestions = context.member
+    ? collectMemberSuggestions(
+      index,
+      state.index.store,
+      state.index.global,
+      visibleUriKeys,
+      context.member.receiver,
+      context.member.memberPrefix.text,
+      position,
+    )
+    : mergeProjectAndBuiltinSuggestions(
+      context.kind === 'hlslCode'
+        ? collectVisibleProjectSuggestions({
+          index,
+          store: state.index.store,
+          visibleUriKeys,
+          position,
+        }).filter((suggestion) => suggestion.name.startsWith(context.prefix.text))
+        : [],
+      collectBuiltinSuggestions(context),
+    );
+  return suggestions.map(toCompletionItem);
+}
+
+export async function querySignatureHelp(
+  state: WorkspaceQueryState,
+  input: DocumentPositionInput,
+): Promise<SignatureHelp | null> {
+  const { document, position } = input;
+  const context = suggestionContextAt(
+    document.text,
+    position,
+    document.languageId,
+    document.uri,
+  );
+  if (context.kind === 'comment' || context.kind === 'string' || context.kind === 'shaderLabCode') {
+    return null;
+  }
+  const call = callContextAt(document.text, position);
+  if (!call) return null;
+  const index = state.index.store.get(document.uri);
+  if (!index) return null;
+  const visibleUriKeys = await collectVisibleUriKeys(
+    state.index.store,
+    state.packages.includeCtx,
+    document.uri,
+  );
+  const projectSuggestions = collectVisibleProjectFunctionSuggestions({
+    index,
+    store: state.index.store,
+    visibleUriKeys,
+    position,
+    name: call.calleeName,
+  });
+  const builtinSuggestions = projectSuggestions.some((suggestion) => (
+    suggestion.name === call.calleeName
+  ))
+    ? []
+    : collectBuiltinFunctionSuggestions(call.calleeName, context);
+  const signatures = [...projectSuggestions, ...builtinSuggestions]
+    .map(toSignatureInformation)
+    .filter((signature): signature is NonNullable<typeof signature> => signature !== null);
+  if (signatures.length === 0) return null;
+  const maxParameterIndex = Math.max(0, (signatures[0]?.parameters?.length ?? 0) - 1);
+  return {
+    signatures,
+    activeSignature: 0,
+    activeParameter: Math.min(call.activeParameter, maxParameterIndex),
+  };
+}
+
+export async function queryHighlights(
+  state: WorkspaceQueryState,
+  input: DocumentPositionInput,
+): Promise<DocumentHighlight[] | null> {
+  const { document, position } = input;
+  const index = state.index.store.get(document.uri);
+  if (!index) return null;
+  if (!isGenericDefinitionContext(document.text, position, document.languageId, document.uri)) {
+    return null;
+  }
+  const target = cursorTargetAt(document.text, position, { detectIncludes: false });
+  if (target.kind === 'none') return null;
+  const visibleUriKeys = await collectVisibleUriKeys(
+    state.index.store,
+    state.packages.includeCtx,
+    document.uri,
+  );
+  const highlights = findHighlights(target, {
+    index,
+    position,
+    global: state.index.global,
+    options: { visibleUriKeys },
+  }).map((location): DocumentHighlight => ({
+    range: location.range,
+    kind: DocumentHighlightKind.Text,
+  }));
+  return highlights.length > 0 ? highlights : null;
+}
+
+export function queryDocumentSymbols(
+  state: WorkspaceQueryState,
+  input: IndexedDocumentQueryInput,
+): DocumentSymbol[] | null {
+  const index = state.index.store.get(input.uri);
+  return index ? buildDocumentSymbols(index) : null;
+}
+
+export function querySemanticTokens(
+  state: WorkspaceQueryState,
+  input: IndexedDocumentQueryInput,
+): SemanticTokens {
+  const index = state.index.store.get(input.uri);
+  return index
+    ? semanticTokensForIndex(index, state.index.global, input.document?.text)
+    : { data: [] };
+}
+
+export function queryWorkspaceSymbols(
+  state: WorkspaceQueryState,
+  query: string,
+): SymbolInformation[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [];
+  const matches: SymbolEntry[] = [];
+  for (const entry of state.index.global.entries()) {
+    if (HIDDEN_SYMBOL_KINDS.has(entry.kind)) continue;
+    if (!entry.name.trim()) continue;
+    if (!state.includePackages && state.packages.isInPackages(entry.location.uri)) continue;
+    if (entry.name.toLowerCase().includes(needle)) matches.push(entry);
+  }
+  return matches.sort(compareEntries).map(toSymbolInformation);
+}
+
+export function compareWorkspaceSymbols(
+  left: SymbolInformation,
+  right: SymbolInformation,
+): number {
+  return left.name.localeCompare(right.name)
+    || left.location.uri.localeCompare(right.location.uri)
+    || left.location.range.start.line - right.location.range.start.line
+    || left.location.range.start.character - right.location.range.start.character;
+}
+
+function mergeProjectAndBuiltinSuggestions(
+  projectSuggestions: ShaderSuggestion[],
+  builtinSuggestions: ShaderSuggestion[],
+): ShaderSuggestion[] {
+  const projectNames = new Set(projectSuggestions.map((suggestion) => suggestion.name));
+  const seenBuiltinNames = new Set<string>();
+  const visibleBuiltins: ShaderSuggestion[] = [];
+  for (const suggestion of builtinSuggestions) {
+    if (projectNames.has(suggestion.name) || seenBuiltinNames.has(suggestion.name)) continue;
+    seenBuiltinNames.add(suggestion.name);
+    visibleBuiltins.push(suggestion);
+  }
+  return [...projectSuggestions, ...visibleBuiltins];
+}
+
+function basenameFromUri(uri: string): string | undefined {
+  const withoutQuery = uri.split('?', 1)[0].split('#', 1)[0];
+  const lastSlash = withoutQuery.lastIndexOf('/');
+  if (lastSlash === -1 || lastSlash === withoutQuery.length - 1) return undefined;
+  try {
+    return decodeURIComponent(withoutQuery.slice(lastSlash + 1));
+  } catch {
+    return withoutQuery.slice(lastSlash + 1);
+  }
+}
+
+function containerNameFor(symbol: SymbolEntry): string | undefined {
+  if (symbol.kind === 'structMember' && symbol.parentType) return symbol.parentType;
+  return basenameFromUri(symbol.location.uri);
+}
+
+function compareEntries(left: SymbolEntry, right: SymbolEntry): number {
+  return left.name.localeCompare(right.name)
+    || left.location.uri.localeCompare(right.location.uri)
+    || left.location.range.start.line - right.location.range.start.line
+    || left.location.range.start.character - right.location.range.start.character;
+}
+
+function toSymbolInformation(symbol: SymbolEntry): SymbolInformation {
+  return {
+    name: symbol.name,
+    kind: SYMBOL_KIND_MAP[symbol.kind] ?? LspSymbolKind.Object,
+    location: symbol.location,
+    containerName: containerNameFor(symbol),
+  };
+}
+
+const TOKEN_TYPE_INDEX = new Map<string, number>(
+  SEMANTIC_TOKEN_TYPES.map((tokenType, index) => [tokenType, index]),
+);
+type SemanticTokenType = typeof SEMANTIC_TOKEN_TYPES[number];
+interface TokenRange {
+  range: Range;
+  tokenType: SemanticTokenType;
+}
+interface SymbolLookup {
+  lookup(name: string): SymbolEntry[];
+}
+const TOKEN_PRIORITY: Record<SemanticTokenType, number> = {
+  enumMember: 0,
+  macro: 1,
+  type: 2,
+  property: 3,
+  function: 4,
+  keyword: 5,
+  decorator: 6,
+  string: 7,
+  number: 8,
+  parameter: 9,
+  variable: 10,
+  operator: 11,
+};
+
+function symbolTokenType(kind: SymbolKind): SemanticTokenType {
+  switch (kind) {
+    case 'struct': return 'type';
+    case 'structMember': return 'property';
+    case 'function': return 'function';
+    case 'macro': return 'macro';
+    case 'parameter': return 'parameter';
+    case 'variable':
+    case 'localVariable':
+    case 'cbuffer': return 'variable';
+  }
+}
+
+function referenceTokenType(
+  reference: ReferenceEntry,
+  macroNames: ReadonlySet<string>,
+): SemanticTokenType | undefined {
+  switch (reference.context) {
+    case 'type': return 'type';
+    case 'member': return 'property';
+    case 'call':
+    case 'pragma': return macroNames.has(reference.name) ? 'macro' : 'function';
+    case 'identifier': return 'variable';
+    case 'include': return undefined;
+  }
+}
+
+function semanticTokensForIndex(
+  index: FileIndex,
+  global?: SymbolLookup,
+  text?: string,
+): SemanticTokens {
+  const macroNames = new Set(index.symbols
+    .filter((symbol) => symbol.kind === 'macro')
+    .map((symbol) => symbol.name));
+  for (const reference of index.references) {
+    if (reference.context !== 'call' && reference.context !== 'pragma') continue;
+    if (!macroNames.has(reference.name)
+      && global?.lookup(reference.name).some((symbol) => symbol.kind === 'macro')) {
+      macroNames.add(reference.name);
+    }
+  }
+
+  const tokens: TokenRange[] = [];
+  for (const symbol of index.symbols) {
+    tokens.push({ range: symbol.location.range, tokenType: symbolTokenType(symbol.kind) });
+  }
+  for (const reference of index.references) {
+    const tokenType = referenceTokenType(reference, macroNames);
+    if (tokenType) tokens.push({ range: reference.location.range, tokenType });
+  }
+  if (text && /\.shader(?:$|[?#])/i.test(index.uri)) {
+    for (const token of scanShaderLabTokens(text)) {
+      tokens.push({ range: token.range, tokenType: token.tokenType });
+    }
+  }
+
+  const builder = new SemanticTokensBuilder();
+  const seen = new Set<string>();
+  const accepted: TokenRange[] = [];
+  for (const token of tokens.sort(compareTokens)) {
+    if (token.range.start.line !== token.range.end.line) continue;
+    const key = tokenKey(token);
+    if (seen.has(key)) continue;
+    if (accepted.some((existing) => rangesOverlap(existing.range, token.range))) continue;
+    const tokenType = TOKEN_TYPE_INDEX.get(token.tokenType);
+    if (tokenType === undefined) continue;
+    seen.add(key);
+    accepted.push(token);
+    builder.push(
+      token.range.start.line,
+      token.range.start.character,
+      token.range.end.character - token.range.start.character,
+      tokenType,
+      0,
+    );
+  }
+  return builder.build();
+}
+
+function tokenKey(token: TokenRange): string {
+  const { range } = token;
+  return [
+    range.start.line,
+    range.start.character,
+    range.end.line,
+    range.end.character,
+  ].join(':');
+}
+
+function compareTokens(left: TokenRange, right: TokenRange): number {
+  return left.range.start.line - right.range.start.line
+    || left.range.start.character - right.range.start.character
+    || left.range.end.character - right.range.end.character
+    || TOKEN_PRIORITY[left.tokenType] - TOKEN_PRIORITY[right.tokenType];
+}
+
+function rangesOverlap(left: Range, right: Range): boolean {
+  if (left.start.line !== right.start.line || left.end.line !== right.end.line) return false;
+  return left.start.character < right.end.character && right.start.character < left.end.character;
+}

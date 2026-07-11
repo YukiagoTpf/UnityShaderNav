@@ -1,12 +1,20 @@
-import { existsSync } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type {
+  CompletionItem,
   Connection,
+  DocumentHighlight,
+  DocumentSymbol,
+  Hover,
   Location,
   LocationLink,
+  SemanticTokens,
+  SignatureHelp,
+  SymbolInformation,
 } from 'vscode-languageserver/node';
 import {
+  normalizeSettings,
   settingsRequireReindex,
   type CachedFile,
   type CacheFingerprint,
@@ -18,32 +26,32 @@ import { CacheManager } from '../cache';
 import { buildFingerprint } from '../cache/fingerprint';
 import { INDEX_IMPLEMENTATION_IDENTITY } from '../cache/implementationIdentity';
 import { PackageContext } from '../packages';
-import { MacroPatternTable } from '../macros';
 import { ensureParserReady } from '../parser/hlsl';
 import { uriKey } from '../uriKey';
-import {
-  WorkspaceIndex,
-  type DocumentIndexer,
-  type FileEvent,
-} from './workspaceIndex';
 import type {
   DefinitionAtInput,
+  DocumentPositionInput,
   IndexedDocumentSnapshot,
+  IndexedDocumentQueryInput,
   IndexedWorkspace,
   OpenDocumentsProvider,
   ReferencesAtInput,
 } from './indexedWorkspace';
-import {
-  canNavigateDefinitionWithoutDocumentIndex,
-  navigateDefinition,
-  navigateReferences,
-  type WorkspaceNavigationState,
-} from './navigation';
+import { canNavigateDefinitionWithoutDocumentIndex } from './navigation';
 import { detectUnityRoot } from './detectUnityRoot';
 import { containsPath } from './pathUtils';
 import { mapWithConcurrency } from './concurrency';
 import { IndexInfrastructureError, IndexLifecycle } from './indexLifecycle';
-import { isIndexableFilePath, walkFiles } from './walkFiles';
+import {
+  IndexedRevisionBuilder,
+  PublishedIndexedRevision,
+} from './indexedRevision';
+import {
+  completionWithoutIndex,
+  signatureHelpNeedsIndex,
+} from './queries';
+import type { DocumentIndexer, FileEvent } from './workspaceIndex';
+import { walkFiles } from './walkFiles';
 
 export type { FileEvent } from './workspaceIndex';
 
@@ -60,37 +68,48 @@ export interface WorkspaceRuntimeOptions {
 
 type DesiredDocumentState =
   | { readonly kind: 'open'; readonly document: IndexedDocumentSnapshot }
-  | { readonly kind: 'closed'; readonly uri: string; readonly openId: number };
+  | {
+    readonly kind: 'closed';
+    readonly uri: string;
+    readonly openId: number;
+    readonly tombstone: boolean;
+  };
 
-interface CommittedDocumentAttempt {
-  readonly openId: number;
-  readonly version: number;
-  readonly indexEpoch: number;
+type ClosedDocumentState = Extract<DesiredDocumentState, { readonly kind: 'closed' }>;
+
+interface ReconciledClose {
+  readonly key: string;
+  readonly close: ClosedDocumentState;
 }
 
 interface DocumentReconcileRun {
   promise: Promise<void>;
 }
 
+interface CacheConfiguration {
+  readonly cache: CacheManager | undefined;
+  readonly fingerprint: CacheFingerprint | undefined;
+}
+
+/**
+ * Lifecycle owner for one root. Only `published` is request-visible; every
+ * mutation builds an isolated candidate and swaps this pointer once.
+ */
 export class Workspace implements IndexedWorkspace {
   readonly folderUri: string;
-  unityRoot: string | undefined;
-  packages: PackageContext;
-  readonly index: WorkspaceIndex;
-  private cache: CacheManager | undefined;
-  private fingerprint: CacheFingerprint | undefined;
+  private requestedSettings: ExtensionSettings;
+  private statusMode: WorkspaceIndexStatus['mode'];
+  private published: PublishedIndexedRevision | undefined;
+  private stagedCandidate: IndexedRevisionBuilder | undefined;
   private globalStorageDir: string | undefined;
-  private _settings: ExtensionSettings;
   private readonly indexImplementation: string | null;
   private readonly lifecycle: IndexLifecycle;
   private readonly parserReady: () => Promise<void>;
+  private readonly indexDocument: DocumentIndexer | undefined;
   private readonly openDocuments: OpenDocumentsProvider | undefined;
-  private statusMode: WorkspaceIndexStatus['mode'];
   private operationTail: Promise<void> = Promise.resolve();
-  private pendingMutations = 0;
-  private indexEpoch = 0;
   private readonly desiredDocuments = new Map<string, DesiredDocumentState>();
-  private readonly committedDocuments = new Map<string, CommittedDocumentAttempt>();
+  private readonly closedDocumentOpenIds = new Map<string, number>();
   private readonly documentReconciles = new Map<string, DocumentReconcileRun>();
   private readonly abortController = new AbortController();
   private disposed = false;
@@ -101,78 +120,57 @@ export class Workspace implements IndexedWorkspace {
     options: WorkspaceRuntimeOptions = {},
   ) {
     this.folderUri = folderUri;
-    this._settings = settings;
+    this.requestedSettings = normalizeSettings(settings);
+    this.statusMode = this.requestedSettings.projectRoot.trim() ? 'unity' : 'standalone';
     this.indexImplementation = options.indexImplementation === undefined
       ? INDEX_IMPLEMENTATION_IDENTITY ?? null
       : options.indexImplementation;
     this.lifecycle = new IndexLifecycle(options.onIndexStatusChanged);
     this.parserReady = options.ensureParserReady ?? ensureParserReady;
+    this.indexDocument = options.indexDocument;
     this.openDocuments = options.openDocuments;
-    this.statusMode = settings.projectRoot.trim() ? 'unity' : 'standalone';
-    this.index = new WorkspaceIndex(
-      new MacroPatternTable(settings.declarationMacros),
-      () => this.isStandalone(),
-      options.indexDocument,
-    );
-    this.packages = PackageContext.standalone(settings);
   }
 
+  /** Latest published settings, or requested settings before the first publish. */
   get settings(): ExtensionSettings {
-    return this._settings;
+    return this.published?.settings ?? this.requestedSettings;
+  }
+
+  get unityRoot(): string | undefined {
+    return this.published?.unityRoot;
+  }
+
+  get packages(): PackageContext {
+    return this.published?.packages ?? PackageContext.standalone(this.requestedSettings);
   }
 
   isStandalone(): boolean {
-    return this.unityRoot === undefined;
+    return this.published?.isStandalone() ?? !this.requestedSettings.projectRoot.trim();
   }
 
   containsIndexedUri(uri: string): boolean {
-    try {
-      const filePath = fileURLToPath(uri);
-      if (this.index.hasDiskIndex(uri)) return true;
-
-      const folderPath = fileURLToPath(this.folderUri);
-      if (!this.unityRoot) {
-        return isIndexableFilePath(folderPath, filePath, this.settings.excludePatterns);
-      }
-
-      const packageRoot = this.packages.packageRoots()
-        .find((root) => containsPath(root, filePath));
-      if (packageRoot) {
-        return isIndexableFilePath(
-          packageRoot,
-          filePath,
-          ['**/Documentation~/**', '**/Samples~/**'],
-        );
-      }
-
-      if (isIndexableFilePath(
-        this.unityRoot,
-        filePath,
-        [...this.settings.excludePatterns, 'Packages/**'],
-      )) return true;
-
-      return false;
-    } catch {
-      return false;
-    }
+    return this.published?.containsIndexedUri(uri) ?? false;
   }
 
   indexStatus(): WorkspaceIndexStatus {
     return {
       folderUri: this.folderUri,
-      mode: this.statusMode,
+      mode: this.published?.mode ?? this.statusMode,
       lifecycle: this.lifecycle.snapshot(),
     };
   }
 
   canServe(): boolean {
-    return !this.disposed && this.lifecycle.canServe();
+    return !this.disposed && this.published !== undefined && this.lifecycle.canServe();
   }
 
   updateDocument(document: IndexedDocumentSnapshot): Promise<boolean> {
-    if (this.disposed || !this.acceptDocument(document)) return Promise.resolve(false);
-    if (this.isDocumentCommitted(document, this.indexEpoch)) return Promise.resolve(true);
-
+    if (
+      this.disposed
+      || !this.ownsProvidedDocument(document)
+      || !this.acceptDocument(document)
+    ) return Promise.resolve(false);
+    if (this.published?.hasCommittedDocument(document)) return Promise.resolve(true);
     return this.reconcileDocumentAttempt(document);
   }
 
@@ -183,11 +181,144 @@ export class Workspace implements IndexedWorkspace {
     return this.reconcileDocumentClose(input.uri, input.openId);
   }
 
+  async definitionAt(
+    input: DefinitionAtInput,
+  ): Promise<LocationLink[] | Location[] | null> {
+    if (canNavigateDefinitionWithoutDocumentIndex(input)) {
+      const revision = this.captureServingRevision();
+      if (!revision) return null;
+      const result = await revision.definitionAt(input);
+      return this.disposed ? null : result;
+    }
+
+    try {
+      if (!await this.updateDocument(input.document)) return null;
+    } catch {
+      return null;
+    }
+    const revision = this.captureServingRevision();
+    if (!revision?.hasCommittedDocument(input.document)) return null;
+    const result = await revision.definitionAt(input);
+    return this.disposed ? null : result;
+  }
+
+  async referencesAt(input: ReferencesAtInput): Promise<Location[] | null> {
+    try {
+      if (!await this.updateDocument(input.document)) return null;
+    } catch {
+      return null;
+    }
+    const revision = this.captureServingRevision();
+    if (!revision?.hasCommittedDocument(input.document)) return null;
+    const result = await revision.referencesAt(input);
+    return this.disposed ? null : result;
+  }
+
+  async hoverAt(input: DocumentPositionInput): Promise<Hover | null> {
+    const revision = await this.revisionForDocument(input.document);
+    if (!revision) return null;
+    const result = await revision.hoverAt(input);
+    return this.disposed ? null : result;
+  }
+
+  async completionAt(input: DocumentPositionInput): Promise<CompletionItem[] | null> {
+    const withoutIndex = completionWithoutIndex(input);
+    if (withoutIndex !== undefined) return withoutIndex;
+    const revision = await this.revisionForDocument(input.document);
+    if (!revision) return null;
+    const result = await revision.completionAt(input);
+    return this.disposed ? null : result;
+  }
+
+  async signatureHelpAt(input: DocumentPositionInput): Promise<SignatureHelp | null> {
+    if (!signatureHelpNeedsIndex(input)) return null;
+    const revision = await this.revisionForDocument(input.document);
+    if (!revision) return null;
+    const result = await revision.signatureHelpAt(input);
+    return this.disposed ? null : result;
+  }
+
+  async highlightsAt(input: DocumentPositionInput): Promise<DocumentHighlight[] | null> {
+    const revision = await this.revisionForDocument(input.document);
+    if (!revision) return null;
+    const result = await revision.highlightsAt(input);
+    return this.disposed ? null : result;
+  }
+
+  async documentSymbols(input: IndexedDocumentQueryInput): Promise<DocumentSymbol[] | null> {
+    const revision = input.document
+      ? await this.revisionForDocument(input.document)
+      : this.captureServingRevision();
+    return revision?.documentSymbols(input) ?? null;
+  }
+
+  async semanticTokens(input: IndexedDocumentQueryInput): Promise<SemanticTokens> {
+    const revision = input.document
+      ? await this.revisionForDocument(input.document)
+      : this.captureServingRevision();
+    return revision?.semanticTokens(input) ?? { data: [] };
+  }
+
+  workspaceSymbols(query: string): SymbolInformation[] {
+    return this.captureServingRevision()?.workspaceSymbols(query) ?? [];
+  }
+
+  private async revisionForDocument(
+    document: IndexedDocumentSnapshot,
+  ): Promise<PublishedIndexedRevision | undefined> {
+    try {
+      if (!await this.updateDocument(document)) return undefined;
+    } catch {
+      return undefined;
+    }
+    const revision = this.captureServingRevision();
+    return revision?.hasCommittedDocument(document) ? revision : undefined;
+  }
+
+  private captureServingRevision(): PublishedIndexedRevision | undefined {
+    return this.canServe() ? this.published : undefined;
+  }
+
+  private acceptDocument(document: IndexedDocumentSnapshot): boolean {
+    const key = uriKey(document.uri);
+    const closedOpenId = this.closedDocumentOpenIds.get(key);
+    if (closedOpenId !== undefined && document.openId <= closedOpenId) return false;
+    const current = this.desiredDocuments.get(key);
+    if (current?.kind === 'open') {
+      const previous = current.document;
+      if (document.openId < previous.openId) return false;
+      if (document.openId === previous.openId) {
+        if (document.version < previous.version) return false;
+        if (document.version === previous.version) {
+          return document.languageId === previous.languageId
+            && document.text === previous.text;
+        }
+      }
+    } else if (current?.kind === 'closed') {
+      if (document.openId < current.openId) return false;
+      if (document.openId === current.openId && current.tombstone) return false;
+    }
+    this.desiredDocuments.set(key, { kind: 'open', document });
+    return true;
+  }
+
+  private acceptDocumentClose(uri: string, openId: number): boolean {
+    const key = uriKey(uri);
+    const current = this.desiredDocuments.get(key);
+    if (current?.kind === 'closed' && current.openId === openId && !current.tombstone) {
+      this.desiredDocuments.set(key, { kind: 'closed', uri, openId, tombstone: true });
+      return true;
+    }
+    if (current?.kind !== 'open' || openId !== current.document.openId) return false;
+    this.desiredDocuments.set(key, { kind: 'closed', uri, openId, tombstone: true });
+    return true;
+  }
+
   private async reconcileDocumentAttempt(document: IndexedDocumentSnapshot): Promise<boolean> {
-    while (this.isCurrentDocument(document, this.indexEpoch)) {
-      if (this.isDocumentCommitted(document, this.indexEpoch)) return true;
+    while (this.isCurrentDocument(document)) {
+      if (this.published?.hasCommittedDocument(document)) return true;
       await this.ensureDocumentReconcile(document.uri);
-      if (!this.lifecycle.canServe()) return false;
+      if (!this.canServe()) return false;
     }
     return false;
   }
@@ -198,90 +329,8 @@ export class Workspace implements IndexedWorkspace {
       const desired = this.desiredDocuments.get(key);
       if (desired?.kind !== 'closed' || desired.openId !== openId) return;
       await this.ensureDocumentReconcile(uri);
-      if (!this.lifecycle.canServe()) return;
+      if (!this.canServe()) return;
     }
-  }
-
-  definitionAt(input: DefinitionAtInput): Promise<LocationLink[] | Location[] | null> {
-    if (canNavigateDefinitionWithoutDocumentIndex(input)) {
-      if (!this.canServe()) return Promise.resolve(null);
-      return this.enqueueOperation(async () => {
-        if (!this.canServe()) return null;
-        const result = await navigateDefinition(this.navigationState(), input);
-        return this.canServe() ? result : null;
-      });
-    }
-
-    // updateDocument synchronously records/queues the caller's attempt. The
-    // reconcile run releases its URI slot atomically with its final desired-
-    // state check, so this query can safely retain its position ahead of later
-    // operations while it awaits that attempt.
-    const documentReady = this.updateDocument(input.document);
-    return this.enqueueOperation(async () => {
-      try {
-        if (!await documentReady || !this.canServe()) return null;
-      } catch {
-        return null;
-      }
-      const epoch = this.indexEpoch;
-      const result = await navigateDefinition(this.navigationState(), input);
-      return this.isDocumentCommitted(input.document, epoch) ? result : null;
-    });
-  }
-
-  referencesAt(input: ReferencesAtInput): Promise<Location[] | null> {
-    const documentReady = this.updateDocument(input.document);
-    return this.enqueueOperation(async () => {
-      try {
-        if (!await documentReady || !this.canServe()) return null;
-      } catch {
-        return null;
-      }
-      const epoch = this.indexEpoch;
-      const result = await navigateReferences(this.navigationState(), input);
-      return this.isDocumentCommitted(input.document, epoch) ? result : null;
-    });
-  }
-
-  private navigationState(): WorkspaceNavigationState {
-    const packages = this.packages;
-    const settings = this.settings;
-    return {
-      index: this.index,
-      includeCtx: packages.includeCtx,
-      isInPackages: (uri) => packages.isInPackages(uri),
-      includePackages: settings.findReferences.includePackages,
-      definitionTrace: settings.debug.definitionTrace,
-    };
-  }
-
-  private acceptDocument(document: IndexedDocumentSnapshot): boolean {
-    const key = uriKey(document.uri);
-    const current = this.desiredDocuments.get(key);
-    if (current?.kind === 'open') {
-      const previous = current.document;
-      if (document.openId < previous.openId) return false;
-      if (document.openId === previous.openId) {
-        if (document.version < previous.version) return false;
-        if (document.version === previous.version) {
-          return document.languageId === previous.languageId && document.text === previous.text;
-        }
-      }
-    } else if (current?.kind === 'closed' && document.openId <= current.openId) {
-      return false;
-    }
-
-    this.desiredDocuments.set(key, { kind: 'open', document });
-    return true;
-  }
-
-  private acceptDocumentClose(uri: string, openId: number): boolean {
-    const key = uriKey(uri);
-    const current = this.desiredDocuments.get(key);
-    if (current?.kind !== 'open' || openId !== current.document.openId) return false;
-
-    this.desiredDocuments.set(key, { kind: 'closed', uri, openId });
-    return true;
   }
 
   private ensureDocumentReconcile(uri: string): Promise<void> {
@@ -292,45 +341,34 @@ export class Workspace implements IndexedWorkspace {
     const run: DocumentReconcileRun = { promise: Promise.resolve() };
     this.documentReconciles.set(key, run);
     const release = (): void => {
-      if (this.documentReconciles.get(key) === run) {
-        this.documentReconciles.delete(key);
-      }
+      if (this.documentReconciles.get(key) === run) this.documentReconciles.delete(key);
     };
-    run.promise = this.enqueueMutation(() => {
-      if (this.disposed || !this.lifecycle.canServe()) {
-        release();
-        return Promise.resolve();
-      }
-      return this.performDocumentReconcile(key, false, release).catch((error: unknown) => {
+    run.promise = this.enqueueMutation(() => this.performDocumentReconcile(key, release))
+      .catch((error: unknown) => {
         if (!this.disposed && this.lifecycle.snapshot().state === 'ready') {
           this.lifecycle.fail(error);
         }
         throw error;
       });
-    });
     return run.promise;
   }
 
-  private async performDocumentReconcile(
-    key: string,
-    allowBeforePublish = false,
-    releaseRun?: () => void,
-  ): Promise<void> {
+  private async performDocumentReconcile(key: string, releaseRun?: () => void): Promise<void> {
     try {
-      if (!allowBeforePublish && !this.lifecycle.canServe()) return;
-
       while (!this.disposed && this.documentNeedsReconcile(key)) {
+        const base = this.published;
         const desired = this.desiredDocuments.get(key);
-        if (!desired) return;
-        const epoch = this.indexEpoch;
+        if (!base || !desired || !this.lifecycle.canServe()) return;
+        const builder = base.fork();
 
         if (desired.kind === 'closed') {
-          const isCurrent = (): boolean => this.isCurrentClose(desired, epoch);
+          const isCurrent = (): boolean => (
+            this.published === base && this.isCurrentClose(desired)
+          );
           try {
-            const restored = await this.index.restoreClosedDocument(desired.uri, isCurrent);
-            if (restored && isCurrent()) {
-              this.committedDocuments.delete(key);
-              this.desiredDocuments.delete(key);
+            if (await builder.closeDocument(desired.uri, desired.openId, isCurrent)) {
+              if (!isCurrent()) continue;
+              this.publishIncremental(builder, [{ key, close: desired }]);
             }
           } catch (error) {
             if (!isCurrent()) continue;
@@ -340,20 +378,15 @@ export class Workspace implements IndexedWorkspace {
         }
 
         const document = desired.document;
-        const isCurrent = (): boolean => this.isCurrentDocument(document, epoch);
+        const isCurrent = (): boolean => (
+          this.published === base && this.isCurrentDocument(document)
+        );
         try {
-          const candidate = await this.index.prepareDocument(
-            document.uri,
-            document.text,
-            isCurrent,
-          );
+          const candidate = await builder.prepareDocument(document, isCurrent);
           if (!candidate) continue;
-          if (this.index.commitDocument(candidate, isCurrent)) {
-            this.committedDocuments.set(key, {
-              openId: document.openId,
-              version: document.version,
-              indexEpoch: epoch,
-            });
+          if (builder.commitDocument(document, candidate, isCurrent)) {
+            if (!isCurrent()) continue;
+            this.publishIncremental(builder);
           }
         } catch (error) {
           if (!isCurrent()) continue;
@@ -361,25 +394,20 @@ export class Workspace implements IndexedWorkspace {
         }
       }
     } finally {
-      // The final documentNeedsReconcile check and URI-slot release happen in
-      // one JavaScript turn. An attempt accepted before release is consumed by
-      // this run; one accepted after release creates its successor before a
-      // caller can enqueue the dependent query.
       releaseRun?.();
     }
   }
 
-  private documentNeedsReconcile(uri: string): boolean {
-    const key = uriKey(uri);
+  private documentNeedsReconcile(key: string): boolean {
     const desired = this.desiredDocuments.get(key);
     if (!desired) return false;
     return desired.kind === 'open'
-      ? !this.isDocumentCommitted(desired.document, this.indexEpoch)
+      ? !this.published?.hasCommittedDocument(desired.document)
       : true;
   }
 
-  private isCurrentDocument(document: IndexedDocumentSnapshot, epoch: number): boolean {
-    if (this.disposed || this.indexEpoch !== epoch) return false;
+  private isCurrentDocument(document: IndexedDocumentSnapshot): boolean {
+    if (this.disposed) return false;
     const desired = this.desiredDocuments.get(uriKey(document.uri));
     return desired?.kind === 'open'
       && desired.document.openId === document.openId
@@ -388,21 +416,9 @@ export class Workspace implements IndexedWorkspace {
       && desired.document.languageId === document.languageId;
   }
 
-  private isCurrentClose(
-    close: Extract<DesiredDocumentState, { kind: 'closed' }>,
-    epoch: number,
-  ): boolean {
-    if (this.disposed || this.indexEpoch !== epoch) return false;
-    const desired = this.desiredDocuments.get(uriKey(close.uri));
-    return desired?.kind === 'closed' && desired.openId === close.openId;
-  }
-
-  private isDocumentCommitted(document: IndexedDocumentSnapshot, epoch: number): boolean {
-    const committed = this.committedDocuments.get(uriKey(document.uri));
-    return this.isCurrentDocument(document, epoch)
-      && committed?.openId === document.openId
-      && committed.version === document.version
-      && committed.indexEpoch === epoch;
+  private isCurrentClose(close: Extract<DesiredDocumentState, { kind: 'closed' }>): boolean {
+    if (this.disposed) return false;
+    return this.desiredDocuments.get(uriKey(close.uri)) === close;
   }
 
   private captureOpenDocuments(synchronizeOwnership = false): void {
@@ -420,8 +436,23 @@ export class Workspace implements IndexedWorkspace {
         kind: 'closed',
         uri: desired.document.uri,
         openId: desired.document.openId,
+        tombstone: false,
       });
     }
+  }
+
+  private ownsProvidedDocument(document: IndexedDocumentSnapshot): boolean {
+    if (!this.openDocuments) return true;
+    for (const current of this.openDocuments()) {
+      if (
+        uriKey(current.uri) === uriKey(document.uri)
+        && current.openId === document.openId
+        && current.version === document.version
+        && current.languageId === document.languageId
+        && current.text === document.text
+      ) return true;
+    }
+    return false;
   }
 
   private containsDocument(uri: string): boolean {
@@ -432,45 +463,54 @@ export class Workspace implements IndexedWorkspace {
     }
   }
 
-  private async reconcileOpenDocumentsBeforePublish(): Promise<void> {
+  private async reconcileOpenDocumentsBeforePublish(
+    builder: IndexedRevisionBuilder,
+  ): Promise<readonly ReconciledClose[]> {
+    const reconciledCloses = new Map<string, ReconciledClose>();
     while (!this.disposed) {
       this.captureOpenDocuments(true);
-      const uris = [...this.desiredDocuments.keys()]
-        .filter((uri) => this.documentNeedsReconcile(uri));
-      if (uris.length === 0) return;
-      for (const uri of uris) {
-        await this.performDocumentReconcile(uri, true);
+      for (const [key, reconciled] of reconciledCloses) {
+        if (this.desiredDocuments.get(key) !== reconciled.close) {
+          reconciledCloses.delete(key);
+        }
+      }
+      const pending = [...this.desiredDocuments.entries()]
+        .filter(([key, desired]) => desired.kind === 'closed'
+          ? reconciledCloses.get(key)?.close !== desired
+          : !builder.hasCommittedDocument(desired.document));
+      if (pending.length === 0) return [...reconciledCloses.values()];
+
+      for (const [key, desired] of pending) {
+        if (desired.kind === 'closed') {
+          const isCurrent = () => this.isCurrentClose(desired);
+          if (await builder.closeDocument(desired.uri, desired.openId, isCurrent)) {
+            if (isCurrent()) reconciledCloses.set(key, { key, close: desired });
+          }
+          continue;
+        }
+
+        const document = desired.document;
+        const isCurrent = () => this.isCurrentDocument(document);
+        const candidate = await builder.prepareDocument(document, isCurrent);
+        if (!candidate) continue;
+        builder.commitDocument(document, candidate, isCurrent);
       }
     }
+    return [];
   }
 
-  /** Reconcile live-document ownership after workspace routing topology changes. */
+  /** Reconcile live-document ownership after routing topology changes. */
   synchronizeOpenDocuments(): Promise<void> {
-    // An initial/rebuilding Workspace is already non-serving and will capture
-    // the provider before its next ready publication. Do not queue behind a
-    // bootstrap that may be intentionally long-running.
     if (!this.canServe()) return Promise.resolve();
     return this.enqueueMutation(async () => {
       if (this.disposed || !this.lifecycle.canServe()) return;
-      try {
-        while (!this.disposed && this.lifecycle.canServe()) {
-          this.captureOpenDocuments(true);
-          const uris = [...this.desiredDocuments.keys()]
-            .filter((uri) => this.documentNeedsReconcile(uri));
-          if (uris.length === 0) return;
-          for (const uri of uris) await this.performDocumentReconcile(uri);
-        }
-      } catch (error) {
-        if (!this.disposed) this.lifecycle.fail(error);
-        throw error;
+      this.captureOpenDocuments(true);
+      for (const key of [...this.desiredDocuments.keys()]) {
+        if (this.documentNeedsReconcile(key)) await this.performDocumentReconcile(key);
       }
     });
   }
 
-  /**
-   * Retire this workspace instance synchronously. In-flight I/O is allowed to
-   * drain, but it may no longer publish index or cache state after removal.
-   */
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -485,45 +525,69 @@ export class Workspace implements IndexedWorkspace {
     connection: Connection,
     globalStorageDir?: string,
   ): Promise<void> {
+    this.globalStorageDir = globalStorageDir;
     try {
       if (this.disposed) return;
-      const warningCount = await this.bootstrap(connection, globalStorageDir);
+      await this.bootstrap(connection, globalStorageDir);
+      const builder = this.takeStagedCandidate();
+      const reconciledCloses = await this.reconcileOpenDocumentsBeforePublish(builder);
       if (this.disposed) return;
-      await this.reconcileOpenDocumentsBeforePublish();
-      if (this.disposed) return;
-      this.statusMode = this.isStandalone() ? 'standalone' : 'unity';
-      this.lifecycle.complete(warningCount);
+      const revision = this.publishComplete(builder, reconciledCloses);
+      await this.persistRevision(revision);
     } catch (error) {
+      this.stagedCandidate = undefined;
       if (this.disposed) return;
-      this.statusMode = this.isStandalone() ? 'standalone' : 'unity';
       this.lifecycle.fail(error);
       throw error;
     }
   }
 
-  /**
-   * Decide whether settings require a rebuild inside the workspace operation
-   * queue. Comparing at execution time keeps queued S0 -> S1 -> S0 updates
-   * consistent with the index revision they produce.
-   */
-  reconfigure(connection: Connection, settings: ExtensionSettings): Promise<boolean> {
-    return this.enqueueMutation(async () => {
-      if (this.disposed) return false;
-      if (!settingsRequireReindex(this._settings, settings)) {
-        this.applySettingsNow(settings);
-        return false;
-      }
-      await this.performRebuild(connection, settings);
-      return !this.disposed;
-    });
+  /** Build and stage a candidate; publication remains the caller's responsibility. */
+  async bootstrap(connection: Connection, globalStorageDir?: string): Promise<number> {
+    const builder = await this.buildCandidate(
+      connection,
+      this.requestedSettings,
+      globalStorageDir,
+      this.published,
+    );
+    this.stagedCandidate = builder;
+    return builder.warningCount;
   }
 
-  private applySettingsNow(settings: ExtensionSettings): void {
-    // Settings and the compiled declaration-macro table are one invariant;
-    // production callers can reach this mutation only through reconfigure or
-    // rebuild inside the workspace operation queue.
-    this._settings = settings;
-    this.index.rebuildTable(settings.declarationMacros);
+  private takeStagedCandidate(): IndexedRevisionBuilder {
+    const staged = this.stagedCandidate;
+    this.stagedCandidate = undefined;
+    if (staged) return staged;
+
+    // Test seams may stub bootstrap only to control timing. Preserve the
+    // published base when present; initial stubs receive an empty candidate.
+    if (this.published) return this.published.fork(this.requestedSettings);
+    const unityRoot = this.requestedSettings.projectRoot.trim() || undefined;
+    return IndexedRevisionBuilder.create({
+      folderUri: this.folderUri,
+      settings: this.requestedSettings,
+      unityRoot,
+      packages: PackageContext.standalone(this.requestedSettings),
+      cache: undefined,
+      fingerprint: undefined,
+    }, this.indexDocument);
+  }
+
+  reconfigure(connection: Connection, settings: ExtensionSettings): Promise<boolean> {
+    const requested = normalizeSettings(settings);
+    return this.enqueueMutation(async () => {
+      if (this.disposed) return false;
+      const base = this.published;
+      this.requestedSettings = requested;
+      if (!base || settingsRequireReindex(base.settings, requested)) {
+        await this.performRebuild(connection, requested);
+        return !this.disposed;
+      }
+      if (JSON.stringify(base.settings) === JSON.stringify(requested)) return false;
+      const builder = base.fork(requested);
+      this.publishIncremental(builder);
+      return false;
+    });
   }
 
   applyChanges(events: FileEvent[], connection: Connection): Promise<void> {
@@ -531,68 +595,182 @@ export class Workspace implements IndexedWorkspace {
   }
 
   private async performApplyChanges(events: FileEvent[], connection: Connection): Promise<void> {
-    if (this.disposed || !this.lifecycle.canApplyIncrementalChanges()) return;
+    const base = this.published;
+    if (
+      this.disposed
+      || !base
+      || !this.lifecycle.canApplyIncrementalChanges()
+      || events.length === 0
+    ) return;
+    const applicableEvents = events.filter((event) => base.containsIndexedUri(event.uri));
+    if (applicableEvents.length === 0) return;
+
+    const builder = base.fork();
     try {
-      await this.index.applyChanges(events, connection, () => !this.disposed);
-      if (this.disposed) return;
-      // Watchers update the disk baseline. An accepted live document remains
-      // authoritative, so invalidate and republish its overlay before the
-      // mutation becomes observable or persistent work continues.
-      for (const { uri } of events) {
-        const key = uriKey(uri);
-        const desired = this.desiredDocuments.get(key);
-        if (desired?.kind !== 'open') continue;
-        this.committedDocuments.delete(key);
-        await this.performDocumentReconcile(key);
-      }
-      if (this.disposed) return;
-      await this.persistNow();
+      if (!await builder.applyChanges(applicableEvents, connection, () => (
+        !this.disposed && this.published === base
+      ))) return;
+      if (this.disposed || this.published !== base) return;
+      const revision = this.publishIncremental(builder);
+      await this.persistRevision(revision);
     } catch (error) {
+      if (this.disposed || this.published !== base) return;
+      this.lifecycle.fail(error);
+      throw error;
+    }
+  }
+
+  rebuild(connection: Connection, settings?: ExtensionSettings): Promise<void> {
+    const explicitSettings = settings === undefined ? undefined : normalizeSettings(settings);
+    return this.enqueueMutation(() => this.performRebuild(
+      connection,
+      explicitSettings ?? this.requestedSettings,
+    ));
+  }
+
+  private async performRebuild(
+    connection: Connection,
+    settings: ExtensionSettings,
+  ): Promise<void> {
+    if (this.disposed) return;
+    this.requestedSettings = settings;
+    this.lifecycle.begin(this.lifecycle.nextRebuildOperation());
+    try {
+      await this.bootstrap(connection, this.globalStorageDir);
+      const builder = this.takeStagedCandidate();
+      const reconciledCloses = await this.reconcileOpenDocumentsBeforePublish(builder);
+      if (this.disposed) return;
+      const revision = this.publishComplete(builder, reconciledCloses);
+      await this.persistRevision(revision);
+    } catch (error) {
+      this.stagedCandidate = undefined;
       if (this.disposed) return;
       this.lifecycle.fail(error);
       throw error;
     }
   }
 
-  async bootstrap(connection: Connection, _globalStorageDir?: string): Promise<number> {
-    this.throwIfDisposed();
-    this.globalStorageDir = _globalStorageDir;
-    const folderPath = fileURLToPath(this.folderUri);
-    const configuredRoot = this.settings.projectRoot.trim();
-    this.unityRoot = configuredRoot || (await detectUnityRoot(folderPath)) || undefined;
-    this.throwIfDisposed();
+  private publishComplete(
+    builder: IndexedRevisionBuilder,
+    reconciledCloses: readonly ReconciledClose[] = [],
+  ): PublishedIndexedRevision {
+    const next = this.lifecycle.nextRevision();
+    const revision = builder.publish(next);
+    this.published = revision;
+    this.commitReconciledCloses(reconciledCloses);
+    this.statusMode = revision.mode;
+    const publishedNumber = this.lifecycle.complete(revision.sourceWarningCount);
+    if (publishedNumber !== revision.revision) {
+      throw new Error('Index lifecycle revision diverged from the published candidate');
+    }
+    return revision;
+  }
 
-    if (!this.unityRoot) {
-      this.packages = PackageContext.standalone(this.settings);
-      await this.preflightParser();
-      await this.configureCache(folderPath, _globalStorageDir, connection);
-      const manifest = await this.cache?.load(this.fingerprint);
-      this.throwIfDisposed();
-      if (manifest && this.matchesWorkspace(manifest)) {
-        return this.bootstrapFromCache(connection, manifest);
+  private publishIncremental(
+    builder: IndexedRevisionBuilder,
+    reconciledCloses: readonly ReconciledClose[] = [],
+  ): PublishedIndexedRevision {
+    const next = this.lifecycle.nextRevision();
+    const revision = builder.publish(next);
+    this.published = revision;
+    this.commitReconciledCloses(reconciledCloses);
+    this.statusMode = revision.mode;
+    const publishedNumber = this.lifecycle.publish(revision.sourceWarningCount);
+    if (publishedNumber !== revision.revision) {
+      throw new Error('Index lifecycle revision diverged from the published candidate');
+    }
+    return revision;
+  }
+
+  private commitReconciledCloses(reconciledCloses: readonly ReconciledClose[]): void {
+    for (const { key, close } of reconciledCloses) {
+      if (this.desiredDocuments.get(key) !== close) continue;
+      this.desiredDocuments.delete(key);
+      if (close.tombstone) {
+        this.closedDocumentOpenIds.set(
+          key,
+          Math.max(this.closedDocumentOpenIds.get(key) ?? -1, close.openId),
+        );
       }
-      return 0;
     }
+  }
 
-    try {
-      this.packages = await PackageContext.load(this.unityRoot, this.settings);
-      this.throwIfDisposed();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new IndexInfrastructureError('package-resolution', message, { cause: error });
-    }
-    await this.preflightParser();
-
-    await this.configureCache(folderPath, _globalStorageDir, connection);
-    const manifest = await this.cache?.load(this.fingerprint);
+  private async buildCandidate(
+    connection: Connection,
+    settings: ExtensionSettings,
+    globalStorageDir: string | undefined,
+    previous: PublishedIndexedRevision | undefined,
+  ): Promise<IndexedRevisionBuilder> {
     this.throwIfDisposed();
-    if (manifest && this.matchesWorkspace(manifest)) {
-      return this.bootstrapFromCache(connection, manifest);
+    const folderPath = fileURLToPath(this.folderUri);
+    const configuredRoot = settings.projectRoot.trim();
+    const unityRoot = configuredRoot || await detectUnityRoot(folderPath) || undefined;
+    this.throwIfDisposed();
+    if (!this.published) this.statusMode = unityRoot ? 'unity' : 'standalone';
+
+    let packages: PackageContext;
+    if (!unityRoot) {
+      packages = PackageContext.standalone(settings);
+    } else {
+      try {
+        packages = await PackageContext.load(unityRoot, settings);
+        this.throwIfDisposed();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new IndexInfrastructureError('package-resolution', message, { cause: error });
+      }
     }
 
-    const warningCount = await this.fullScan(connection);
-    await this.persistNow();
-    return warningCount;
+    await this.preflightParser();
+    const cacheConfiguration = await this.configureCache(
+      folderPath,
+      unityRoot,
+      settings,
+      globalStorageDir,
+      connection,
+    );
+    const builder = IndexedRevisionBuilder.create({
+      folderUri: this.folderUri,
+      settings,
+      unityRoot,
+      packages,
+      ...cacheConfiguration,
+    }, this.indexDocument);
+    const compatiblePrevious = this.isCompatiblePrevious(
+      previous,
+      unityRoot,
+      packages,
+      cacheConfiguration.fingerprint,
+    );
+
+    const manifest = await cacheConfiguration.cache?.load(cacheConfiguration.fingerprint);
+    this.throwIfDisposed();
+    if (manifest && this.matchesWorkspace(manifest, unityRoot)) {
+      await this.bootstrapFromCache(
+        connection,
+        builder,
+        manifest,
+        cacheConfiguration.cache!,
+        unityRoot,
+        packages,
+        previous,
+        compatiblePrevious,
+      );
+      return builder;
+    }
+
+    if (unityRoot) {
+      await this.fullScan(
+        connection,
+        builder,
+        unityRoot,
+        packages,
+        settings,
+        previous,
+        compatiblePrevious,
+      );
+    }
+    return builder;
   }
 
   private async preflightParser(): Promise<void> {
@@ -611,31 +789,31 @@ export class Workspace implements IndexedWorkspace {
 
   private async configureCache(
     folderPath: string,
+    unityRoot: string | undefined,
+    settings: ExtensionSettings,
     globalStorageDir: string | undefined,
     connection: Connection,
-  ): Promise<void> {
-    this.cache = CacheManager.create({
-      unityProjectRoot: this.unityRoot,
+  ): Promise<CacheConfiguration> {
+    let cache = CacheManager.create({
+      unityProjectRoot: unityRoot,
       workspaceFolderUri: this.folderUri,
       globalStorageDir,
     });
-    if (!this.cache) {
-      this.fingerprint = undefined;
-      return;
-    }
+    if (!cache) return { cache: undefined, fingerprint: undefined };
 
-    this.fingerprint = await buildFingerprint(
-      this.settings,
+    const fingerprint = await buildFingerprint(
+      settings,
       this.resolveWasmPath(folderPath),
       this.indexImplementation ?? undefined,
     );
     this.throwIfDisposed();
-    if (!this.fingerprint) {
+    if (!fingerprint) {
       connection.console.warn(
         'Index cache disabled: the running index implementation could not be identified.',
       );
-      this.cache = undefined;
+      cache = undefined;
     }
+    return { cache, fingerprint: cache ? fingerprint : undefined };
   }
 
   private resolveWasmPath(folderPath: string): string {
@@ -647,30 +825,32 @@ export class Workspace implements IndexedWorkspace {
     return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0];
   }
 
-  private matchesWorkspace(manifest: CacheManifest): boolean {
+  private matchesWorkspace(manifest: CacheManifest, unityRoot: string | undefined): boolean {
     return manifest.workspaceFolderUri === this.folderUri
-      && manifest.unityProjectRoot === (this.unityRoot ?? null);
+      && manifest.unityProjectRoot === (unityRoot ?? null);
   }
 
   private async bootstrapFromCache(
     connection: Connection,
-    manifest: CacheManifest | undefined,
-  ): Promise<number> {
-    if (!manifest || !this.cache) return 0;
-
+    builder: IndexedRevisionBuilder,
+    manifest: CacheManifest,
+    cache: CacheManager,
+    unityRoot: string | undefined,
+    packages: PackageContext,
+    previous: PublishedIndexedRevision | undefined,
+    compatiblePrevious: boolean,
+  ): Promise<void> {
     const progress = await connection.window.createWorkDoneProgress();
     progress.begin('UnityShaderNav', undefined, 'restoring cache...', false);
     const refreshQueue: string[] = [];
-    let warningCount = 0;
-
     try {
       const restoreResults = await mapWithConcurrency(
         manifest.files,
         CACHE_IO_CONCURRENCY,
         async (cachedFile) => {
           this.throwIfDisposed();
-          const valid = this.shouldRestoreCachedFile(cachedFile.uri)
-            && await this.cache!.isValid(cachedFile);
+          const valid = this.shouldRestoreCachedFile(cachedFile.uri, unityRoot, packages)
+            && await cache.isValid(cachedFile);
           this.throwIfDisposed();
           return { cachedFile, valid };
         },
@@ -678,47 +858,55 @@ export class Workspace implements IndexedWorkspace {
 
       for (const { cachedFile, valid } of restoreResults) {
         this.throwIfDisposed();
-        if (!this.shouldRestoreCachedFile(cachedFile.uri)) continue;
-
+        if (!this.shouldRestoreCachedFile(cachedFile.uri, unityRoot, packages)) continue;
         if (valid) {
-          this.index.restoreFromCache(cachedFile.uri, cachedFile.index);
-        } else {
-          refreshQueue.push(cachedFile.uri);
+          builder.restoreFromCache(cachedFile.uri, cachedFile.index, {
+            mtimeMs: cachedFile.mtimeMs,
+            size: cachedFile.size,
+          });
         }
+        else if (await fileExists(cachedFile.uri)) refreshQueue.push(cachedFile.uri);
       }
 
       progress.report(`re-parsing ${refreshQueue.length} changed files...`);
-      const refreshResults = await mapWithConcurrency(
-        refreshQueue,
-        INDEX_CONCURRENCY,
-        async (uri) => {
-          this.throwIfDisposed();
-          const filePath = fileURLToPath(uri);
-          const indexed = await this.index.indexAndStore(
-            filePath,
-            connection,
-            () => !this.disposed,
-          );
-          this.throwIfDisposed();
-          if (!indexed) this.index.drop(uri);
-          return indexed;
-        },
-      );
-      const refreshWarnings = refreshResults.filter((indexed) => !indexed).length;
-      const missingWarnings = await this.indexMissingDiskFiles(connection);
-      warningCount = refreshWarnings + missingWarnings;
+      await mapWithConcurrency(refreshQueue, INDEX_CONCURRENCY, async (uri) => {
+        this.throwIfDisposed();
+        const indexed = await builder.indexAndStore(
+          fileURLToPath(uri),
+          connection,
+          () => !this.disposed,
+        );
+        this.throwIfDisposed();
+        this.retainCompatibleSourceFailure(
+          builder,
+          uri,
+          indexed,
+          previous,
+          compatiblePrevious,
+        );
+      });
+      if (unityRoot) {
+        await this.indexMissingDiskFiles(
+          connection,
+          builder,
+          unityRoot,
+          packages,
+          manifest.files,
+          previous,
+          compatiblePrevious,
+        );
+      }
     } finally {
       progress.done();
     }
-
-    await this.persistNow();
-    return warningCount;
   }
 
-  private shouldRestoreCachedFile(uri: string): boolean {
-    // packages resolver is present iff unityRoot is set (see bootstrap); checking unityRoot suffices.
-    if (!this.unityRoot) return true;
-
+  private shouldRestoreCachedFile(
+    uri: string,
+    unityRoot: string | undefined,
+    packages: PackageContext,
+  ): boolean {
+    if (!unityRoot) return true;
     let filePath: string;
     try {
       filePath = fileURLToPath(uri);
@@ -726,160 +914,193 @@ export class Workspace implements IndexedWorkspace {
       return false;
     }
 
-    const currentPackageRoots = this.packages.packageRoots();
-    if (currentPackageRoots.some((root) => containsPath(root, filePath))) {
-      return true;
-    }
-
+    if (packages.packageRoots().some((root) => containsPath(root, filePath))) return true;
     const packageAreas = [
-      join(this.unityRoot, 'Packages'),
-      join(this.unityRoot, 'Library', 'PackageCache'),
+      join(unityRoot, 'Packages'),
+      join(unityRoot, 'Library', 'PackageCache'),
     ];
     return !packageAreas.some((root) => containsPath(root, filePath));
   }
 
-  private async indexMissingDiskFiles(connection: Connection): Promise<number> {
-    if (!this.unityRoot) return 0;
-
+  private async indexMissingDiskFiles(
+    connection: Connection,
+    builder: IndexedRevisionBuilder,
+    unityRoot: string,
+    packages: PackageContext,
+    _cachedFiles: readonly { uri: string }[],
+    previous: PublishedIndexedRevision | undefined,
+    compatiblePrevious: boolean,
+  ): Promise<void> {
     const userFiles = await walkFiles(
-      this.unityRoot,
-      [...this.settings.excludePatterns, 'Packages/**'],
+      unityRoot,
+      [...builder.configuration.settings.excludePatterns, 'Packages/**'],
       this.abortController.signal,
     );
-    const userResults = await mapWithConcurrency(userFiles, INDEX_CONCURRENCY, async (filePath) => {
+    await mapWithConcurrency(userFiles, INDEX_CONCURRENCY, async (filePath) => {
       this.throwIfDisposed();
       const uri = pathToFileURL(filePath).href;
-      const indexed = this.index.store.get(uri)
-        ? true
-        : await this.index.indexAndStore(filePath, connection, () => !this.disposed);
+      if (builder.file(uri)) return;
+      const indexed = await builder.indexAndStore(filePath, connection, () => !this.disposed);
       this.throwIfDisposed();
-      return indexed;
+      this.retainCompatibleSourceFailure(
+        builder,
+        uri,
+        indexed,
+        previous,
+        compatiblePrevious,
+      );
     });
-    let warningCount = userResults.filter((indexed) => !indexed).length;
 
-    if (!this.packages.hasResolver()) return warningCount;
-    const packageWarningCounts = await mapWithConcurrency(
-      this.packages.packageRoots(),
-      INDEX_CONCURRENCY,
-      async (path) => {
-        const packageFiles = await walkFiles(
-          path,
-          ['**/Documentation~/**', '**/Samples~/**'],
-          this.abortController.signal,
+    await mapWithConcurrency(packages.packageRoots(), INDEX_CONCURRENCY, async (root) => {
+      const files = await walkFiles(
+        root,
+        ['**/Documentation~/**', '**/Samples~/**'],
+        this.abortController.signal,
+      );
+      await mapWithConcurrency(files, INDEX_CONCURRENCY, async (filePath) => {
+        this.throwIfDisposed();
+        const uri = pathToFileURL(filePath).href;
+        if (builder.file(uri)) return;
+        const indexed = await builder.indexAndStore(filePath, connection, () => !this.disposed);
+        this.throwIfDisposed();
+        this.retainCompatibleSourceFailure(
+          builder,
+          uri,
+          indexed,
+          previous,
+          compatiblePrevious,
         );
-        const results = await mapWithConcurrency(
-          packageFiles,
-          INDEX_CONCURRENCY,
-          async (filePath) => {
-            this.throwIfDisposed();
-            const uri = pathToFileURL(filePath).href;
-            const indexed = this.index.store.get(uri)
-              ? true
-              : await this.index.indexAndStore(
-                filePath,
-                connection,
-                () => !this.disposed,
-              );
-            this.throwIfDisposed();
-            return indexed;
-          },
-        );
-        return results.filter((indexed) => !indexed).length;
-      },
-    );
-    warningCount += packageWarningCounts.reduce((sum, count) => sum + count, 0);
-    return warningCount;
+      });
+    });
   }
 
-  async fullScan(connection: Connection): Promise<number> {
-    if (!this.unityRoot) return 0;
-
+  async fullScan(
+    connection: Connection,
+    builder: IndexedRevisionBuilder,
+    unityRoot: string,
+    packages: PackageContext,
+    settings: ExtensionSettings,
+    previous: PublishedIndexedRevision | undefined,
+    compatiblePrevious: boolean,
+  ): Promise<number> {
     const progress = await connection.window.createWorkDoneProgress();
     progress.begin('UnityShaderNav', undefined, 'indexing user files...', false);
-
+    const before = builder.warningCount;
     try {
       const userFiles = await walkFiles(
-        this.unityRoot,
-        [...this.settings.excludePatterns, 'Packages/**'],
+        unityRoot,
+        [...settings.excludePatterns, 'Packages/**'],
         this.abortController.signal,
       );
       let done = 0;
-      const userResults = await mapWithConcurrency(userFiles, INDEX_CONCURRENCY, async (file) => {
+      await mapWithConcurrency(userFiles, INDEX_CONCURRENCY, async (filePath) => {
         this.throwIfDisposed();
-        const indexed = await this.index.indexAndStore(file, connection, () => !this.disposed);
+        const uri = pathToFileURL(filePath).href;
+        const indexed = await builder.indexAndStore(filePath, connection, () => !this.disposed);
         this.throwIfDisposed();
+        this.retainCompatibleSourceFailure(
+          builder,
+          uri,
+          indexed,
+          previous,
+          compatiblePrevious,
+        );
         done++;
         if (done % 25 === 0) progress.report(`${done}/${userFiles.length} files`);
-        return indexed;
       });
-      let warningCount = userResults.filter((indexed) => !indexed).length;
-
-      if (!this.packages.hasResolver()) return warningCount;
 
       progress.report('indexing Packages...');
-      const packageWarningCounts = await mapWithConcurrency(
-        this.packages.packageRoots(),
-        INDEX_CONCURRENCY,
-        async (path) => {
-          const packageFiles = await walkFiles(
-            path,
-            ['**/Documentation~/**', '**/Samples~/**'],
-            this.abortController.signal,
+      await mapWithConcurrency(packages.packageRoots(), INDEX_CONCURRENCY, async (root) => {
+        const files = await walkFiles(
+          root,
+          ['**/Documentation~/**', '**/Samples~/**'],
+          this.abortController.signal,
+        );
+        await mapWithConcurrency(files, INDEX_CONCURRENCY, async (filePath) => {
+          this.throwIfDisposed();
+          const uri = pathToFileURL(filePath).href;
+          const indexed = await builder.indexAndStore(filePath, connection, () => !this.disposed);
+          this.throwIfDisposed();
+          this.retainCompatibleSourceFailure(
+            builder,
+            uri,
+            indexed,
+            previous,
+            compatiblePrevious,
           );
-          const results = await mapWithConcurrency(
-            packageFiles,
-            INDEX_CONCURRENCY,
-            async (file) => {
-              this.throwIfDisposed();
-              const indexed = await this.index.indexAndStore(
-                file,
-                connection,
-                () => !this.disposed,
-              );
-              this.throwIfDisposed();
-              return indexed;
-            },
-          );
-          return results.filter((indexed) => !indexed).length;
-        },
-      );
-      warningCount += packageWarningCounts.reduce((sum, count) => sum + count, 0);
-      return warningCount;
+        });
+      });
+      return builder.warningCount - before;
     } finally {
       progress.done();
     }
   }
 
-  rebuild(connection: Connection, settings?: ExtensionSettings): Promise<void> {
-    return this.enqueueMutation(() => this.performRebuild(connection, settings));
+  private retainCompatibleSourceFailure(
+    builder: IndexedRevisionBuilder,
+    uri: string,
+    indexed: boolean,
+    previous: PublishedIndexedRevision | undefined,
+    compatiblePrevious: boolean,
+  ): void {
+    if (indexed) return;
+    const previousRecord = previous?.diskRecord(uri);
+    if (!previousRecord) return;
+    if (!compatiblePrevious) {
+      throw new IndexInfrastructureError(
+        'indexing',
+        `Cannot retain unreadable source across incompatible index semantics: ${uri}`,
+      );
+    }
+    builder.restoreFromCache(uri, previousRecord.index, previousRecord.source);
+    builder.recordSourceResult(uri, false);
   }
 
-  private async performRebuild(
-    connection: Connection,
-    settings?: ExtensionSettings,
-  ): Promise<void> {
-    if (this.disposed) return;
-    this.lifecycle.begin(this.lifecycle.nextRebuildOperation());
+  private isCompatiblePrevious(
+    previous: PublishedIndexedRevision | undefined,
+    unityRoot: string | undefined,
+    packages: PackageContext,
+    fingerprint: CacheFingerprint | undefined,
+  ): boolean {
+    if (!previous || !previous.fingerprint || !fingerprint) return false;
+    if (previous.unityRoot !== unityRoot) return false;
+    if (JSON.stringify(previous.fingerprint) !== JSON.stringify(fingerprint)) return false;
+    return JSON.stringify([...previous.packages.packageRoots()].sort())
+      === JSON.stringify([...packages.packageRoots()].sort());
+  }
+
+  persist(): Promise<void> {
+    const revision = this.published;
+    return revision ? this.persistRevision(revision) : Promise.resolve();
+  }
+
+  private async persistRevision(revision: PublishedIndexedRevision): Promise<void> {
+    if (this.disposed || !revision.cache || !revision.fingerprint) return;
+    const snapshots = await mapWithConcurrency(
+      revision.diskCacheEntries(),
+      CACHE_IO_CONCURRENCY,
+      async ({ uri, index, source }) => (
+        this.disposed ? null : revision.cache!.snapshot(uri, index, source)
+      ),
+    );
+    if (this.disposed || this.published !== revision) return;
+    const records: CachedFile[] = snapshots
+      .filter((snapshot): snapshot is CachedFile => snapshot !== null)
+      .sort((a, b) => a.uri.localeCompare(b.uri));
+    const manifest = revision.cache.buildManifest(
+      revision.folderUri,
+      revision.unityRoot ?? null,
+      revision.fingerprint,
+      records,
+    );
     try {
-      if (settings) this.applySettingsNow(settings);
-      this.indexEpoch++;
-      this.committedDocuments.clear();
-      this.index.clear();
-      const warningCount = await this.bootstrap(connection, this.globalStorageDir);
-      if (this.disposed) return;
-      await this.reconcileOpenDocumentsBeforePublish();
-      if (this.disposed) return;
-      this.statusMode = this.isStandalone() ? 'standalone' : 'unity';
-      this.lifecycle.complete(warningCount);
-    } catch (error) {
-      if (this.disposed) return;
-      this.statusMode = this.isStandalone() ? 'standalone' : 'unity';
-      this.lifecycle.fail(error);
-      throw error;
+      if (!this.disposed && this.published === revision) await revision.cache.save(manifest);
+    } catch {
+      // Cache persistence is derived, best-effort work.
     }
   }
 
-  private enqueueOperation<T>(operation: () => Promise<T>): Promise<T> {
+  private enqueueMutation<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.operationTail.then(operation);
     this.operationTail = result.then(
       () => undefined,
@@ -888,62 +1109,18 @@ export class Workspace implements IndexedWorkspace {
     return result;
   }
 
-  private enqueueMutation<T>(operation: () => Promise<T>): Promise<T> {
-    this.pendingMutations++;
-    return this.enqueueOperation(async () => {
-      try {
-        return await operation();
-      } finally {
-        this.pendingMutations--;
-      }
-    });
-  }
-
-  persist(): Promise<void> {
-    // Persistence is derived, best-effort work. It must never wait behind a
-    // blocked mutation or snapshot a failed/partially rebuilt index.
-    if (this.pendingMutations > 0 || !this.canServe()) return Promise.resolve();
-    return this.enqueueOperation(() => this.persistNow(true));
-  }
-
-  private async persistNow(requireServing = false): Promise<void> {
-    if (
-      this.disposed
-      || (requireServing && !this.canServe())
-      || !this.cache
-      || !this.fingerprint
-    ) return;
-    const cache = this.cache;
-    const fingerprint = this.fingerprint;
-
-    const snapshots = await mapWithConcurrency(
-      this.index.diskIndexEntries(),
-      CACHE_IO_CONCURRENCY,
-      async ([uri, index]) => this.disposed ? null : cache.snapshot(uri, index),
-    );
-    if (this.disposed || (requireServing && !this.canServe())) return;
-    const records: CachedFile[] = snapshots
-      .filter((snapshot): snapshot is CachedFile => snapshot !== null)
-      .sort((a, b) => a.uri.localeCompare(b.uri));
-
-    const manifest = cache.buildManifest(
-      this.folderUri,
-      this.unityRoot ?? null,
-      fingerprint,
-      records,
-    );
-    try {
-      // The activity check and save queue registration are synchronous with
-      // respect to the JavaScript event loop. A retired writer either queues
-      // before its replacement (which then wins) or does not queue at all.
-      await (this.disposed ? Promise.resolve() : cache.save(manifest));
-    } catch {
-      // Cache persistence is best-effort; indexing results remain usable without it.
-    }
-  }
-
   private throwIfDisposed(): void {
     if (this.disposed) throw new WorkspaceDisposedError(this.folderUri);
+  }
+}
+
+async function fileExists(uri: string): Promise<boolean> {
+  try {
+    await fs.stat(fileURLToPath(uri));
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    return code !== 'ENOENT' && code !== 'ENOTDIR';
   }
 }
 

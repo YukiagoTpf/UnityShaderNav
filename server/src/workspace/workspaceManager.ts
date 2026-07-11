@@ -1,6 +1,6 @@
 import { dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import type { Connection } from 'vscode-languageserver/node';
+import type { Connection, SymbolInformation } from 'vscode-languageserver/node';
 import {
   INDEX_STATUS_NOTIFICATION,
   type ExtensionSettings,
@@ -15,6 +15,9 @@ import type {
   IndexedWorkspaceService,
   OpenDocumentsProvider,
 } from './indexedWorkspace';
+import { compareWorkspaceSymbols } from './queries';
+
+const MAX_WORKSPACE_SYMBOLS = 1000;
 
 type SettingsResolver = (scopeUri: string) => ExtensionSettings | Promise<ExtensionSettings>;
 
@@ -37,7 +40,7 @@ export class WorkspaceManager implements IndexedWorkspaceService {
   private connection: Connection | undefined;
   private globalStorageDir: string | undefined;
   private settingsResolver: SettingsResolver | undefined;
-  private openDocuments: OpenDocumentsProvider = () => [];
+  private openDocuments: OpenDocumentsProvider | undefined;
   private readonly routingTransitions = new Map<Workspace, number>();
   private statusSequence = 0;
 
@@ -60,7 +63,7 @@ export class WorkspaceManager implements IndexedWorkspaceService {
   }
 
   openDocumentSnapshot(uri: string): IndexedDocumentSnapshot | undefined {
-    for (const document of this.openDocuments()) {
+    for (const document of this.openDocumentSnapshots()) {
       if (uriKey(document.uri) === uriKey(uri)) return document;
     }
     return undefined;
@@ -73,9 +76,22 @@ export class WorkspaceManager implements IndexedWorkspaceService {
 
   // Operational paths that query published state should use this.
   async readyList(): Promise<Workspace[]> {
+    return this.servingList();
+  }
+
+  private servingList(): Workspace[] {
     return this.list().filter(
       (workspace) => workspace.canServe() && !this.routingTransitions.has(workspace),
     );
+  }
+
+  workspaceSymbols(query: string): SymbolInformation[] {
+    const tuple = this.servingList();
+    const matches = tuple.flatMap((workspace) => workspace.workspaceSymbols(query));
+    matches.sort(compareWorkspaceSymbols);
+    return matches.length > MAX_WORKSPACE_SYMBOLS
+      ? matches.slice(0, MAX_WORKSPACE_SYMBOLS)
+      : matches;
   }
 
   // Rebuild/recovery must not wait for an unrelated root still in its initial
@@ -202,9 +218,11 @@ export class WorkspaceManager implements IndexedWorkspaceService {
           this.publishStatus();
         }
       },
-      openDocuments: () => [...this.openDocuments()].filter(
-        (document) => this.workspaceFor(document.uri) === workspace,
-      ),
+      openDocuments: this.openDocuments
+        ? () => [...this.openDocumentSnapshots()].filter(
+          (document) => this.workspaceFor(document.uri) === workspace,
+        )
+        : undefined,
     });
     let resolveRetired!: () => void;
     const retired = new Promise<void>((resolve) => {
@@ -356,14 +374,14 @@ export class WorkspaceManager implements IndexedWorkspaceService {
   }
 
   private ownsOpenDocument(workspace: Workspace): boolean {
-    return [...this.openDocuments()].some(
+    return [...this.openDocumentSnapshots()].some(
       (document) => this.workspaceFor(document.uri) === workspace,
     );
   }
 
   private openDocumentOwners(): Map<string, Workspace> {
     const owners = new Map<string, Workspace>();
-    for (const document of this.openDocuments()) {
+    for (const document of this.openDocumentSnapshots()) {
       const owner = this.workspaceFor(document.uri);
       if (owner) owners.set(uriKey(document.uri), owner);
     }
@@ -372,7 +390,7 @@ export class WorkspaceManager implements IndexedWorkspaceService {
 
   private displacedPreviousOwners(previousOwners: ReadonlyMap<string, Workspace>): Workspace[] {
     const displaced = new Set<Workspace>();
-    for (const document of this.openDocuments()) {
+    for (const document of this.openDocumentSnapshots()) {
       const previous = previousOwners.get(uriKey(document.uri));
       if (previous && this.workspaceFor(document.uri) !== previous) displaced.add(previous);
     }
@@ -381,7 +399,7 @@ export class WorkspaceManager implements IndexedWorkspaceService {
 
   private replacementOwners(previousOwners: ReadonlyMap<string, Workspace>): Workspace[] {
     const replacements = new Set<Workspace>();
-    for (const document of this.openDocuments()) {
+    for (const document of this.openDocumentSnapshots()) {
       const replacement = this.workspaceFor(document.uri);
       if (
         replacement
@@ -389,6 +407,10 @@ export class WorkspaceManager implements IndexedWorkspaceService {
       ) replacements.add(replacement);
     }
     return [...replacements];
+  }
+
+  private openDocumentSnapshots(): Iterable<IndexedDocumentSnapshot> {
+    return this.openDocuments?.() ?? [];
   }
 
 }

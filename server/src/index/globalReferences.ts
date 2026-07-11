@@ -1,7 +1,11 @@
 import type { FileIndex, ReferenceEntry } from '@unity-shader-nav/shared';
 import { uriKey } from '../uriKey';
 
-export class GlobalReferenceIndex {
+export interface GlobalReferenceReader {
+  lookup(name: string): ReferenceEntry[];
+}
+
+export class GlobalReferenceIndex implements GlobalReferenceReader {
   private readonly byName = new Map<string, ReferenceEntry[]>();
   private readonly byUri = new Map<string, ReferenceEntry[]>();
 

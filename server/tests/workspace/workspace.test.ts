@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -7,6 +7,7 @@ import { DEFAULT_SETTINGS } from '@unity-shader-nav/shared';
 import { CacheManager, chooseCacheDir } from '../../src/cache/cacheManager';
 import { Workspace } from '../../src/workspace/workspace';
 import { WorkspaceIndex } from '../../src/workspace/workspaceIndex';
+import type { IndexedDocumentSnapshot } from '../../src/workspace/indexedWorkspace';
 import {
   copyUnityProjectFixture,
   removeCopiedUnityProject,
@@ -39,6 +40,42 @@ function deferred<T = void>(): {
 
 async function flushPromises(times = 5): Promise<void> {
   for (let i = 0; i < times; i++) await Promise.resolve();
+}
+
+function snapshot(
+  uri: string,
+  text: string,
+  version = 1,
+  openId = 1,
+): IndexedDocumentSnapshot {
+  return { uri, text, version, openId, languageId: 'hlsl' };
+}
+
+function positionOf(text: string, needle: string): { line: number; character: number } {
+  const offset = text.indexOf(needle);
+  if (offset < 0) throw new Error(`Missing test token: ${needle}`);
+  const before = text.slice(0, offset);
+  const lines = before.split('\n');
+  return { line: lines.length - 1, character: lines.at(-1)!.length };
+}
+
+function hasWorkspaceSymbol(workspace: Workspace, name: string): boolean {
+  return workspace.workspaceSymbols(name).some((symbol) => symbol.name === name);
+}
+
+async function hasDocumentSymbol(
+  workspace: Workspace,
+  uri: string,
+  name: string,
+): Promise<boolean> {
+  const symbols = await workspace.documentSymbols({ uri });
+  const pending = [...(symbols ?? [])];
+  while (pending.length > 0) {
+    const symbol = pending.pop()!;
+    if (symbol.name === name) return true;
+    pending.push(...(symbol.children ?? []));
+  }
+  return false;
 }
 
 beforeEach(async () => {
@@ -141,7 +178,7 @@ describe('Workspace.bootstrap', () => {
     }
   });
 
-  it('serializes a later index mutation behind active public persistence', async () => {
+  it('lets a later candidate build proceed while an immutable revision is being persisted', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-cache-serialized-'));
     await mkdir(join(root, 'Assets'), { recursive: true });
     await mkdir(join(root, 'Packages'), { recursive: true });
@@ -163,11 +200,11 @@ describe('Workspace.bootstrap', () => {
       await saveStarted.promise;
       const rebuilding = workspace.rebuild(fakeConnection);
       await flushPromises();
-      expect(bootstrap).not.toHaveBeenCalled();
+      expect(bootstrap).toHaveBeenCalledTimes(1);
 
       releaseSave.resolve();
       await Promise.all([rebuilding, persisting]);
-      expect(save).toHaveBeenCalledTimes(1);
+      expect(save).toHaveBeenCalledTimes(2);
       expect(bootstrap).toHaveBeenCalledTimes(1);
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -415,7 +452,6 @@ describe('Workspace.bootstrap', () => {
       });
       await workspace.initialize(fakeConnection);
       vi.spyOn(workspace, 'bootstrap').mockRejectedValueOnce(new Error('rebuild infrastructure failed'));
-      const applyChanges = vi.spyOn(workspace.index, 'applyChanges');
 
       const rebuild = workspace.rebuild(fakeConnection);
       const incremental = workspace.applyChanges(
@@ -425,11 +461,12 @@ describe('Workspace.bootstrap', () => {
 
       await expect(rebuild).rejects.toThrow('rebuild infrastructure failed');
       await expect(incremental).resolves.toBeUndefined();
-      expect(applyChanges).not.toHaveBeenCalled();
       expect(workspace.indexStatus().lifecycle).toEqual({
         state: 'failed',
+        servingRevision: 1,
         failure: { category: 'indexing', message: 'rebuild infrastructure failed' },
       });
+      expect(workspace.canServe()).toBe(true);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -438,12 +475,15 @@ describe('Workspace.bootstrap', () => {
   it('indexes user files and Packages into the global index', async () => {
     const folder = pathToFileURL(projectA).href;
     const workspace = new Workspace(folder, DEFAULT_SETTINGS);
+    const packageUri = pathToFileURL(
+      join(projectA, 'Packages', 'com.example.urp', 'ShaderLibrary', 'Core.hlsl'),
+    ).href;
 
-    await workspace.bootstrap(fakeConnection);
+    await workspace.initialize(fakeConnection);
 
     expect(workspace.isStandalone()).toBe(false);
-    expect(workspace.index.global.lookup('Common').length).toBeGreaterThanOrEqual(1);
-    expect(workspace.index.global.lookup('Core').length).toBeGreaterThanOrEqual(1);
+    expect(hasWorkspaceSymbol(workspace, 'Common')).toBe(true);
+    expect(await hasDocumentSymbol(workspace, packageUri, 'Core')).toBe(true);
   });
 
   it('indexes user files and Packages into the global reference index', async () => {
@@ -451,10 +491,16 @@ describe('Workspace.bootstrap', () => {
     const folder = pathToFileURL(projectRoot).href;
     const workspace = new Workspace(folder, DEFAULT_SETTINGS);
 
-    await workspace.bootstrap(fakeConnection);
+    await workspace.initialize(fakeConnection);
 
-    const refs = workspace.index.globalRefs.lookup('Core');
-    expect(refs.some((ref) => ref.location.uri.endsWith('/Assets/Shaders/Main.shader'))).toBe(true);
+    const mainUri = pathToFileURL(join(projectRoot, 'Assets', 'Shaders', 'Main.shader')).href;
+    const text = await readFile(join(projectRoot, 'Assets', 'Shaders', 'Main.shader'), 'utf8');
+    const refs = await workspace.referencesAt({
+      document: snapshot(mainUri, text),
+      position: positionOf(text, 'Core();'),
+      includeDeclaration: false,
+    });
+    expect(refs?.some((ref) => ref.uri.endsWith('/Assets/Shaders/Main.shader'))).toBe(true);
   });
 
   it('writes cache on first bootstrap and restores it on the second bootstrap', async () => {
@@ -467,7 +513,7 @@ describe('Workspace.bootstrap', () => {
 
     try {
       const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
-      await ws1.bootstrap(fakeConnection);
+      await ws1.initialize(fakeConnection);
 
       const cachePath = join(root, 'Library', 'UnityShaderNavCache', 'index.json');
       const manifest = JSON.parse(await readFile(cachePath, 'utf8'));
@@ -476,11 +522,11 @@ describe('Workspace.bootstrap', () => {
       const fullScan = vi.spyOn(Workspace.prototype, 'fullScan');
       const restore = vi.spyOn(WorkspaceIndex.prototype, 'restoreFromCache');
       const ws2 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
-      await ws2.bootstrap(fakeConnection);
+      await ws2.initialize(fakeConnection);
 
       expect(fullScan).not.toHaveBeenCalled();
       expect(restore).toHaveBeenCalled();
-      expect(ws2.index.global.lookup('CachedSymbol').length).toBeGreaterThanOrEqual(1);
+      expect(hasWorkspaceSymbol(ws2, 'CachedSymbol')).toBe(true);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -499,7 +545,7 @@ describe('Workspace.bootstrap', () => {
     try {
       const folderUri = pathToFileURL(root).href;
       const first = new Workspace(folderUri, DEFAULT_SETTINGS);
-      await first.bootstrap(fakeConnection);
+      await first.initialize(fakeConnection);
 
       const cachePath = join(root, 'Library', 'UnityShaderNavCache', 'index.json');
       const manifest = JSON.parse(await readFile(cachePath, 'utf8'));
@@ -513,11 +559,11 @@ describe('Workspace.bootstrap', () => {
       const fullScan = vi.spyOn(Workspace.prototype, 'fullScan');
       const restore = vi.spyOn(WorkspaceIndex.prototype, 'restoreFromCache');
       const second = new Workspace(folderUri, DEFAULT_SETTINGS);
-      await second.bootstrap(fakeConnection);
+      await second.initialize(fakeConnection);
 
       expect(fullScan).toHaveBeenCalledTimes(1);
       expect(restore).not.toHaveBeenCalled();
-      expect(second.index.global.lookup('CurrentImplementation')).toHaveLength(1);
+      expect(hasWorkspaceSymbol(second, 'CurrentImplementation')).toBe(true);
       expect(await readFile(shaderPath, 'utf8')).toBe(source);
 
       const rewritten = JSON.parse(await readFile(cachePath, 'utf8'));
@@ -548,9 +594,9 @@ describe('Workspace.bootstrap', () => {
       const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
         indexImplementation: null,
       });
-      await workspace.bootstrap(connection);
+      await workspace.initialize(connection);
 
-      expect(workspace.index.global.lookup('SourceStillWorks')).toHaveLength(1);
+      expect(hasWorkspaceSymbol(workspace, 'SourceStillWorks')).toBe(true);
       expect(warning).toHaveBeenCalledWith(expect.stringContaining('cache disabled'));
       await expect(readFile(
         join(root, 'Library', 'UnityShaderNavCache', 'index.json'),
@@ -571,7 +617,7 @@ describe('Workspace.bootstrap', () => {
 
     try {
       const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
-      await ws1.bootstrap(fakeConnection);
+      await ws1.initialize(fakeConnection);
 
       const cachePath = join(root, 'Library', 'UnityShaderNavCache', 'index.json');
       const { files: _files, ...corruptedManifest } = JSON.parse(await readFile(cachePath, 'utf8'));
@@ -579,10 +625,10 @@ describe('Workspace.bootstrap', () => {
 
       const fullScan = vi.spyOn(Workspace.prototype, 'fullScan');
       const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
-      await workspace.bootstrap(fakeConnection);
+      await workspace.initialize(fakeConnection);
 
       expect(fullScan).toHaveBeenCalledTimes(1);
-      expect(workspace.index.global.lookup('RecoveredSymbol').length).toBeGreaterThanOrEqual(1);
+      expect(hasWorkspaceSymbol(workspace, 'RecoveredSymbol')).toBe(true);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -598,14 +644,14 @@ describe('Workspace.bootstrap', () => {
     try {
       const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
       await ws1.initialize(fakeConnection, globalStorageDir);
-      await ws1.index.reindex(shaderUri, await readFile(shaderPath, 'utf8'));
+      await ws1.updateDocument(snapshot(shaderUri, await readFile(shaderPath, 'utf8')));
       await ws1.persist();
 
       const ws2 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
-      await ws2.bootstrap(fakeConnection, globalStorageDir);
+      await ws2.initialize(fakeConnection, globalStorageDir);
 
       expect(ws2.isStandalone()).toBe(true);
-      expect(ws2.index.global.lookup('StandaloneCached').length).toBeGreaterThanOrEqual(1);
+      expect(hasWorkspaceSymbol(ws2, 'StandaloneCached')).toBe(true);
     } finally {
       await rm(root, { recursive: true, force: true });
       await rm(globalStorageDir, { recursive: true, force: true });
@@ -622,13 +668,14 @@ describe('Workspace.bootstrap', () => {
     try {
       const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
       await ws1.initialize(fakeConnection, globalStorageDir);
-      await ws1.index.reindex(shaderUri, 'float4 UnsavedOnly() { return 0; }');
+      await ws1.updateDocument(snapshot(shaderUri, 'float4 UnsavedOnly() { return 0; }'));
       await ws1.persist();
 
       const ws2 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
-      await ws2.bootstrap(fakeConnection, globalStorageDir);
+      await ws2.initialize(fakeConnection, globalStorageDir);
 
-      expect(ws2.index.global.lookup('UnsavedOnly')).toEqual([]);
+      expect(hasWorkspaceSymbol(ws2, 'UnsavedOnly')).toBe(false);
+      expect(hasWorkspaceSymbol(ws2, 'SavedOnly')).toBe(true);
     } finally {
       await rm(root, { recursive: true, force: true });
       await rm(globalStorageDir, { recursive: true, force: true });
@@ -649,8 +696,8 @@ describe('Workspace.bootstrap', () => {
     try {
       const workspace = new Workspace(folderUri, DEFAULT_SETTINGS);
       await workspace.initialize(fakeConnection, globalStorageDir);
-      await workspace.index.reindex(bUri, await readFile(bPath, 'utf8'));
-      await workspace.index.reindex(aUri, await readFile(aPath, 'utf8'));
+      await workspace.updateDocument(snapshot(bUri, await readFile(bPath, 'utf8')));
+      await workspace.updateDocument(snapshot(aUri, await readFile(aPath, 'utf8')));
       await workspace.persist();
 
       const cacheDir = chooseCacheDir({
@@ -674,6 +721,8 @@ describe('Workspace.bootstrap', () => {
     await mkdir(join(root, 'ProjectSettings'), { recursive: true });
     const oldPackageRoot = join(root, 'Library', 'PackageCache', 'com.example.render@oldhash');
     const newPackageRoot = join(root, 'Library', 'PackageCache', 'com.example.render@newhash');
+    const oldPackageUri = pathToFileURL(join(oldPackageRoot, 'Old.hlsl')).href;
+    const newPackageUri = pathToFileURL(join(newPackageRoot, 'New.hlsl')).href;
     await mkdir(oldPackageRoot, { recursive: true });
     await mkdir(newPackageRoot, { recursive: true });
     await writeFile(join(oldPackageRoot, 'Old.hlsl'), 'float4 OldPackageSymbol() { return 0; }');
@@ -695,15 +744,15 @@ describe('Workspace.bootstrap', () => {
     try {
       await writeLockfile('oldhash');
       const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
-      await ws1.bootstrap(fakeConnection);
-      expect(ws1.index.global.lookup('OldPackageSymbol').length).toBeGreaterThanOrEqual(1);
+      await ws1.initialize(fakeConnection);
+      expect(await hasDocumentSymbol(ws1, oldPackageUri, 'OldPackageSymbol')).toBe(true);
 
       await writeLockfile('newhash');
       const ws2 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
-      await ws2.bootstrap(fakeConnection);
+      await ws2.initialize(fakeConnection);
 
-      expect(ws2.index.global.lookup('OldPackageSymbol')).toEqual([]);
-      expect(ws2.index.global.lookup('NewPackageSymbol').length).toBeGreaterThanOrEqual(1);
+      expect(await hasDocumentSymbol(ws2, oldPackageUri, 'OldPackageSymbol')).toBe(false);
+      expect(await hasDocumentSymbol(ws2, newPackageUri, 'NewPackageSymbol')).toBe(true);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -715,20 +764,20 @@ describe('Workspace.bootstrap', () => {
     const commonUri = pathToFileURL(join(projectRoot, 'Assets', 'Shaders', 'Common.hlsl')).href;
     const workspace = new Workspace(folder, DEFAULT_SETTINGS);
 
-    await workspace.bootstrap(fakeConnection);
-    expect(workspace.index.global.lookup('Common').length).toBeGreaterThanOrEqual(1);
+    await workspace.initialize(fakeConnection);
+    expect(hasWorkspaceSymbol(workspace, 'Common')).toBe(true);
 
-    await workspace.index.reindex(commonUri, 'float4 LiveOnly() { return 0; }');
-    expect(workspace.index.global.lookup('Common')).toEqual([]);
-    expect(workspace.index.global.lookup('LiveOnly').length).toBeGreaterThanOrEqual(1);
+    await workspace.updateDocument(snapshot(commonUri, 'float4 LiveOnly() { return 0; }'));
+    expect(hasWorkspaceSymbol(workspace, 'Common')).toBe(false);
+    expect(hasWorkspaceSymbol(workspace, 'LiveOnly')).toBe(true);
 
-    workspace.index.closeDocument(commonUri);
+    await workspace.closeDocument({ uri: commonUri, openId: 1 });
 
-    expect(workspace.index.global.lookup('Common').length).toBeGreaterThanOrEqual(1);
-    expect(workspace.index.global.lookup('LiveOnly')).toEqual([]);
+    expect(hasWorkspaceSymbol(workspace, 'Common')).toBe(true);
+    expect(hasWorkspaceSymbol(workspace, 'LiveOnly')).toBe(false);
   });
 
-  it('keeps global references in sync with live reindex and drop', async () => {
+  it('keeps reference queries in sync with live updates and close', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-live-refs-'));
     const shaderPath = join(root, 'Loose.hlsl');
     const shaderUri = pathToFileURL(shaderPath).href;
@@ -736,17 +785,28 @@ describe('Workspace.bootstrap', () => {
 
     try {
       const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
-      await workspace.bootstrap(fakeConnection);
+      await workspace.initialize(fakeConnection);
 
-      await workspace.index.reindex(shaderUri, 'float4 Caller() { return Target(); }');
-      expect(workspace.index.globalRefs.lookup('Target')).toHaveLength(1);
+      const withReference = 'float4 Target() { return 0; }\nfloat4 Caller() { return Target(); }';
+      const withoutReference = 'float4 Target() { return 0; }\nfloat4 Caller() { return 0; }';
+      const first = snapshot(shaderUri, withReference, 1);
+      const second = snapshot(shaderUri, withoutReference, 2);
+      await workspace.updateDocument(first);
+      expect(await workspace.referencesAt({
+        document: first,
+        position: positionOf(withReference, 'Target()'),
+        includeDeclaration: false,
+      })).toHaveLength(1);
 
-      await workspace.index.reindex(shaderUri, 'float4 Caller() { return 0; }');
-      expect(workspace.index.globalRefs.lookup('Target')).toEqual([]);
+      await workspace.updateDocument(second);
+      expect(await workspace.referencesAt({
+        document: second,
+        position: positionOf(withoutReference, 'Target()'),
+        includeDeclaration: false,
+      })).toEqual([]);
 
-      await workspace.index.reindex(shaderUri, 'float4 Caller() { return Target(); }');
-      workspace.index.drop(shaderUri);
-      expect(workspace.index.globalRefs.lookup('Target')).toEqual([]);
+      await workspace.closeDocument({ uri: shaderUri, openId: 1 });
+      expect(hasWorkspaceSymbol(workspace, 'SavedOnly')).toBe(true);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -755,7 +815,7 @@ describe('Workspace.bootstrap', () => {
   it('detects references under package roots', async () => {
     const projectRoot = projectA;
     const workspace = new Workspace(pathToFileURL(projectRoot).href, DEFAULT_SETTINGS);
-    await workspace.bootstrap(fakeConnection);
+    await workspace.initialize(fakeConnection);
 
     const packageUri = pathToFileURL(
       join(projectRoot, 'Packages', 'com.example.urp', 'ShaderLibrary', 'Core.hlsl'),
@@ -774,12 +834,18 @@ describe('Workspace.bootstrap', () => {
       projectRoot,
     });
 
-    await workspace.bootstrap(fakeConnection);
+    await workspace.initialize(fakeConnection);
 
     expect(workspace.isStandalone()).toBe(false);
     expect(workspace.unityRoot).toBe(projectRoot);
-    expect(workspace.index.global.lookup('Common').length).toBeGreaterThanOrEqual(1);
-    expect(workspace.index.global.lookup('Core').length).toBeGreaterThanOrEqual(1);
+    expect(hasWorkspaceSymbol(workspace, 'Common')).toBe(true);
+    expect(await hasDocumentSymbol(
+      workspace,
+      pathToFileURL(
+        join(projectRoot, 'Packages', 'com.example.urp', 'ShaderLibrary', 'Core.hlsl'),
+      ).href,
+      'Core',
+    )).toBe(true);
   });
 
   it('applies a changed event by re-reading the file from disk', async () => {
@@ -794,13 +860,13 @@ describe('Workspace.bootstrap', () => {
 
     const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
     await workspace.initialize(fakeConnection);
-    expect(workspace.index.global.lookup('BeforeChange').length).toBeGreaterThanOrEqual(1);
+    expect(hasWorkspaceSymbol(workspace, 'BeforeChange')).toBe(true);
 
     await writeFile(shaderPath, 'float4 AfterChange() { return 1; }');
     await workspace.applyChanges([{ uri: shaderUri, type: 'changed' }], fakeConnection);
 
-    expect(workspace.index.global.lookup('BeforeChange')).toEqual([]);
-    expect(workspace.index.global.lookup('AfterChange').length).toBeGreaterThanOrEqual(1);
+    expect(hasWorkspaceSymbol(workspace, 'BeforeChange')).toBe(false);
+    expect(hasWorkspaceSymbol(workspace, 'AfterChange')).toBe(true);
   });
 
   it('drops deleted files from the live and global indexes', async () => {
@@ -815,12 +881,13 @@ describe('Workspace.bootstrap', () => {
 
     const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
     await workspace.initialize(fakeConnection);
-    expect(workspace.index.global.lookup('DeletedSymbol').length).toBeGreaterThanOrEqual(1);
+    expect(hasWorkspaceSymbol(workspace, 'DeletedSymbol')).toBe(true);
 
+    await unlink(shaderPath);
     await workspace.applyChanges([{ uri: shaderUri, type: 'deleted' }], fakeConnection);
 
-    expect(workspace.index.store.get(shaderUri)).toBeUndefined();
-    expect(workspace.index.global.lookup('DeletedSymbol')).toEqual([]);
+    expect(await workspace.documentSymbols({ uri: shaderUri })).toBeNull();
+    expect(hasWorkspaceSymbol(workspace, 'DeletedSymbol')).toBe(false);
   });
 
   it('rebuild clears stale indexes and reloads Packages', async () => {
@@ -834,13 +901,13 @@ describe('Workspace.bootstrap', () => {
 
     const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
     await workspace.initialize(fakeConnection);
-    expect(workspace.index.global.lookup('BeforeRebuild').length).toBeGreaterThanOrEqual(1);
+    expect(hasWorkspaceSymbol(workspace, 'BeforeRebuild')).toBe(true);
 
     await writeFile(shaderPath, 'float4 AfterRebuild() { return 1; }');
     await workspace.rebuild(fakeConnection);
 
-    expect(workspace.index.global.lookup('BeforeRebuild')).toEqual([]);
-    expect(workspace.index.global.lookup('AfterRebuild').length).toBeGreaterThanOrEqual(1);
+    expect(hasWorkspaceSymbol(workspace, 'BeforeRebuild')).toBe(false);
+    expect(hasWorkspaceSymbol(workspace, 'AfterRebuild')).toBe(true);
     expect(workspace.packages.hasResolver()).toBe(true);
   });
 });
@@ -848,14 +915,16 @@ describe('Workspace.bootstrap', () => {
 describe('Workspace.reconfigure', () => {
   it('rebuilds the macro table and updates settings together when declarationMacros change', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-reconfigure-macros-'));
+    const shaderUri = pathToFileURL(join(root, 'Configured.hlsl')).href;
+    const text = 'MY_TEX(_Configured)';
     try {
       const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
         ensureParserReady: async () => {},
         indexImplementation: null,
       });
       await workspace.initialize(fakeConnection);
-      const before = workspace.index.table;
-      expect(before.findDecl('MY_TEX')).toHaveLength(0);
+      await workspace.updateDocument(snapshot(shaderUri, text));
+      expect(hasWorkspaceSymbol(workspace, '_Configured')).toBe(false);
 
       await workspace.reconfigure(fakeConnection, {
         ...DEFAULT_SETTINGS,
@@ -863,9 +932,8 @@ describe('Workspace.reconfigure', () => {
       });
 
       expect(workspace.settings.declarationMacros).toHaveLength(1);
-      expect(workspace.index.table).not.toBe(before);
-      expect(workspace.index.table.findDecl('MY_TEX')).toHaveLength(1);
-      expect(workspace.indexStatus().lifecycle).toMatchObject({ state: 'ready', revision: 2 });
+      expect(hasWorkspaceSymbol(workspace, '_Configured')).toBe(true);
+      expect(workspace.indexStatus().lifecycle).toMatchObject({ state: 'ready', revision: 3 });
     } finally {
       await rm(root, { recursive: true, force: true });
     }

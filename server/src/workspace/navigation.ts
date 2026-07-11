@@ -19,10 +19,10 @@ import type {
   DefinitionAtInput,
   ReferencesAtInput,
 } from './indexedWorkspace';
-import type { WorkspaceIndex } from './workspaceIndex';
+import type { WorkspaceIndexReadView } from './workspaceIndex';
 
 export interface WorkspaceNavigationState {
-  readonly index: WorkspaceIndex;
+  readonly index: WorkspaceIndexReadView;
   readonly includeCtx: IncludeContext;
   readonly isInPackages: (uri: string) => boolean;
   readonly includePackages: boolean;

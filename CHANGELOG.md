@@ -33,6 +33,14 @@ and uses semantic versioning for extension releases.
   publication, reject stale async work, and restore disk state on close without
   exposing mutable index stores to migrated handlers. Equivalent file URIs and
   nested workspace add/remove transitions now preserve exactly one live owner.
+- Published every effective index-changing transaction as an immutable
+  Workspace revision. Full
+  scans build isolated candidates; incremental work uses copy-on-write forks;
+  and one pointer swap exposes settings, Package context, document attempts,
+  warnings, and index data together. Rebuild and recovery continue serving the
+  last-known-good revision and retain it after failure. All index-backed LSP
+  queries now use Workspace behavior, while mutable index stores remain private
+  to candidate construction.
 
 ### Fixed
 
@@ -42,8 +50,17 @@ and uses semantic versioning for extension releases.
   extension, and invalid nested values no longer replace valid sibling
   defaults.
 - Removed direct request-time reindex fallbacks that could publish stale text
-  after a newer edit or close. A live store miss can now join only the current
-  registry attempt through Workspace behavior; otherwise it remains neutral.
+  after a newer edit or close. An unpublished live-document request can now join
+  only the current registry attempt through Workspace behavior; otherwise it
+  remains neutral.
+- Revalidated queued file events against the revision active at execution, so
+  a rebuild cannot let an old exclusion or Package scope republish a removed
+  file. Close tombstones now reject late snapshots from the same editor session,
+  former owners reject snapshots after routing transfers, and excluded or
+  unlisted live-only files no longer become disk baselines.
+- Bound cached file metadata to the same stable source read that produced its
+  index. Retaining a last-known-good record now retains its original identity,
+  preventing a newer disk timestamp from validating older symbols on restart.
 
 ## 0.0.7 - 2026-05-28
 

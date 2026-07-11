@@ -1,5 +1,5 @@
 import type { FileIndex, Position, Range, SymbolEntry } from '@unity-shader-nav/shared';
-import type { GlobalSymbolIndex } from './globalIndex';
+import type { GlobalSymbolReader } from './globalIndex';
 import { inRange, isBeforeOrAt } from './positionGeometry';
 import { uriKey } from '../uriKey';
 
@@ -43,7 +43,7 @@ export function resolveDefinitionSymbols(
   idx: FileIndex,
   name: string,
   refPos: Position,
-  global?: GlobalSymbolIndex | null,
+  global?: GlobalSymbolReader | null,
   options?: ResolutionOptions,
 ): SymbolEntry[] {
   const candidates = idx.symbols.filter((symbol) => symbol.name === name);
@@ -99,7 +99,7 @@ export function resolveDefinition(
   idx: FileIndex,
   name: string,
   refPos: Position,
-  global?: GlobalSymbolIndex | null,
+  global?: GlobalSymbolReader | null,
   options?: ResolutionOptions,
 ): LocationLink[] {
   return resolveDefinitionSymbols(idx, name, refPos, global, options).map(asLink);

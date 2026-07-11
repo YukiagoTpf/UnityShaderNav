@@ -1,7 +1,12 @@
 import { promises as fs } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { Connection } from 'vscode-languageserver/node';
-import type { FileIndex, UserDeclarationMacro } from '@unity-shader-nav/shared';
+import type {
+  FileIndex,
+  ReferenceEntry,
+  SymbolEntry,
+  UserDeclarationMacro,
+} from '@unity-shader-nav/shared';
 import { GlobalReferenceIndex, GlobalSymbolIndex, IndexStore } from '../index';
 import { uriKey } from '../uriKey';
 import { MacroPatternTable } from '../macros';
@@ -18,81 +23,142 @@ export type DocumentIndexer = (
   table: MacroPatternTable,
 ) => Promise<FileIndex>;
 
+export interface DiskSourceIdentity {
+  readonly mtimeMs: number;
+  readonly size: number;
+}
+
+export interface DiskIndexRecord {
+  readonly index: FileIndex;
+  readonly source: DiskSourceIdentity;
+}
+
 export interface PreparedDocumentIndex {
   readonly uri: string;
   readonly liveIndex: FileIndex;
-  /** undefined: keep Unity scan state; null: standalone file has no disk form. */
-  readonly diskIndex: FileIndex | null | undefined;
+  /** undefined: keep scan state; null: standalone file has no disk form. */
+  readonly diskIndex: DiskIndexRecord | null | undefined;
+}
+
+export interface WorkspaceIndexReadView {
+  readonly store: {
+    get(uri: string): FileIndex | undefined;
+    uris(): IterableIterator<string>;
+  };
+  readonly global: {
+    lookup(name: string): SymbolEntry[];
+    entries(): IterableIterator<SymbolEntry>;
+  };
+  readonly globalRefs: {
+    lookup(name: string): ReferenceEntry[];
+  };
+}
+
+export interface AppliedFileEvent {
+  readonly uri: string;
+  readonly type: FileEvent['type'];
+  readonly indexed: boolean;
+  readonly changed: boolean;
 }
 
 /**
- * Owns the live + on-disk index state composed by Workspace:
- * store / global / globalRefs / diskIndexes / declaration-macro table, plus all
- * index-mutation operations. Callers reach it via workspace.index; the
- * lifecycle + cache concern stays in Workspace, which keeps only applyChanges
- * (it orchestrates index.applyChanges + persist).
+ * Private mutable index implementation used only while constructing a revision.
+ * Published revisions retain an instance that is never mutated again; a later
+ * transaction starts from {@link fork}, which rebuilds independent maps and
+ * global-index arrays while sharing immutable FileIndex values.
  */
 export class WorkspaceIndex {
-  readonly store = new IndexStore();
-  readonly global = new GlobalSymbolIndex();
-  readonly globalRefs = new GlobalReferenceIndex();
-  private readonly diskIndexes = new Map<string, FileIndex>();
-  private _table: MacroPatternTable;
-  private readonly isStandalone: () => boolean;
+  private readonly store = new IndexStore();
+  private readonly global = new GlobalSymbolIndex();
+  private readonly globalRefs = new GlobalReferenceIndex();
+  private readonly diskIndexes = new Map<string, DiskIndexRecord>();
+  private readonly table: MacroPatternTable;
+  private readonly standalone: boolean;
   private readonly indexDocument: DocumentIndexer;
+  readonly read: WorkspaceIndexReadView;
 
   constructor(
-    table: MacroPatternTable,
-    isStandalone: () => boolean,
+    declarationMacros: readonly UserDeclarationMacro[] | MacroPatternTable,
+    standalone: boolean | (() => boolean),
     indexDocument: DocumentIndexer = indexFile,
   ) {
-    this._table = table;
-    this.isStandalone = isStandalone;
+    this.table = declarationMacros instanceof MacroPatternTable
+      ? declarationMacros
+      : new MacroPatternTable([...declarationMacros]);
+    this.standalone = typeof standalone === 'function' ? standalone() : standalone;
     this.indexDocument = indexDocument;
+    this.read = Object.freeze({
+      store: Object.freeze({
+        get: (uri: string) => this.store.get(uri),
+        uris: () => this.store.uris(),
+      }),
+      global: Object.freeze({
+        lookup: (name: string) => this.global.lookup(name),
+        entries: () => this.global.entries(),
+      }),
+      globalRefs: Object.freeze({
+        lookup: (name: string) => this.globalRefs.lookup(name),
+      }),
+    });
   }
 
-  get table(): MacroPatternTable {
-    return this._table;
+  /** Copy-on-write base for an incremental candidate. */
+  fork(): WorkspaceIndex {
+    const next = new WorkspaceIndex(this.table, this.standalone, this.indexDocument);
+
+    for (const [key, diskIndex] of this.diskIndexes) {
+      next.diskIndexes.set(key, diskIndex);
+    }
+    for (const uri of this.store.uris()) {
+      const file = this.store.get(uri);
+      if (file) next.setEffective(file);
+    }
+    return next;
   }
 
-  /**
-   * Recompile the declaration-macro table from settings' declarationMacros.
-   * The settings -> table invariant is owned by Workspace.applySettings, which
-   * is this method's only caller.
-   */
-  rebuildTable(declarationMacros: UserDeclarationMacro[]): void {
-    this._table = new MacroPatternTable(declarationMacros);
+  /** Restore a disk record while building from cache. */
+  restoreFromCache(
+    uri: string,
+    index: FileIndex,
+    source: DiskSourceIdentity = { mtimeMs: 0, size: 0 },
+  ): void {
+    const immutable = freezeFileIndex(index);
+    this.diskIndexes.set(uriKey(uri), Object.freeze({
+      index: immutable,
+      source: Object.freeze({ ...source }),
+    }));
+    this.setEffective(immutable);
   }
 
-  /**
-   * Invariant 1 (cache restore order): diskIndexes -> store -> global -> globalRefs.
-   * Used by Workspace.bootstrapFromCache; mirrors indexAndStore's ordering.
-   */
-  restoreFromCache(uri: string, index: FileIndex): void {
-    this.diskIndexes.set(uriKey(uri), index);
-    this.store.set(uri, index);
-    this.global.upsert(index);
-    this.globalRefs.upsert(index);
-  }
-
-  /** Invariant 4: persist() snapshots diskIndexes, never store. Open documents are excluded. */
   diskIndexEntries(): Array<[string, FileIndex]> {
     return Array.from(
       this.diskIndexes.values(),
-      (index): [string, FileIndex] => [index.uri, index],
+      ({ index }): [string, FileIndex] => [index.uri, index],
     );
+  }
+
+  diskCacheEntries(): Array<{ uri: string; index: FileIndex; source: DiskSourceIdentity }> {
+    return Array.from(this.diskIndexes.values(), ({ index, source }) => ({
+      uri: index.uri,
+      index,
+      source,
+    }));
   }
 
   hasDiskIndex(uri: string): boolean {
     return this.diskIndexes.has(uriKey(uri));
   }
 
-  /** Invariant 3: rebuild() clears all three indexes + diskIndexes before re-bootstrapping. */
-  clear(): void {
-    this.store.clear();
-    this.global.clear();
-    this.globalRefs.clear();
-    this.diskIndexes.clear();
+  diskFile(uri: string): FileIndex | undefined {
+    return this.diskIndexes.get(uriKey(uri))?.index;
+  }
+
+  diskRecord(uri: string): DiskIndexRecord | undefined {
+    return this.diskIndexes.get(uriKey(uri));
+  }
+
+  file(uri: string): FileIndex | undefined {
+    return this.store.get(uri);
   }
 
   async indexAndStore(
@@ -101,45 +167,62 @@ export class WorkspaceIndex {
     shouldStore: () => boolean = () => true,
   ): Promise<boolean> {
     const uri = pathToFileURL(absPath).href;
-    let text: string;
-    try {
-      text = await fs.readFile(absPath, 'utf8');
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
-      if (typeof connection?.console.warn === 'function') {
-        connection.console.warn(`[index] skipped unreadable source ${uri}: ${detail}`);
-      }
-      return false;
-    }
-
-    // Parser/index exceptions are infrastructure failures. They must abort the
-    // current operation instead of being mistaken for a valid empty project.
-    const idx = await this.indexDocument(uri, text, this.table);
-    if (!shouldStore()) return false;
-    // Invariant 1 order: diskIndexes -> store -> global -> globalRefs.
-    this.diskIndexes.set(uriKey(uri), idx);
-    this.store.set(uri, idx);
-    this.global.upsert(idx);
-    this.globalRefs.upsert(idx);
-    connection?.console.log(`[index] ${uri} -> ${idx.symbols.length} symbols, ${idx.references.length} refs`);
+    const record = await this.indexDiskFile(uri, connection);
+    if (!record || !shouldStore()) return false;
+    this.diskIndexes.set(uriKey(uri), record);
+    this.setEffective(record.index);
     return true;
   }
 
   /**
-   * Prepare a live document without mutating serving state. The final validity
-   * check and the commit are adjacent and synchronous, so a close/newer edit
-   * cannot publish stale text after standalone disk I/O completes.
+   * Apply one canonicalized watcher batch without replacing an open overlay.
+   * The caller supplies the live-attempt keys owned by the candidate revision.
    */
+  async applyChanges(
+    events: readonly FileEvent[],
+    connection: Connection,
+    liveUriKeys: ReadonlySet<string>,
+    shouldStore: () => boolean = () => true,
+  ): Promise<AppliedFileEvent[]> {
+    const results: AppliedFileEvent[] = [];
+    for (const event of collapseFileEvents(events)) {
+      if (!shouldStore()) return results;
+      const key = uriKey(event.uri);
+      if (event.type === 'deleted') {
+        const changedDisk = this.diskIndexes.delete(key);
+        const changedEffective = !liveUriKeys.has(key) && this.store.get(event.uri) !== undefined;
+        if (changedEffective) this.dropEffective(event.uri);
+        results.push({
+          ...event,
+          indexed: true,
+          changed: changedDisk || changedEffective,
+        });
+        continue;
+      }
+
+      const record = await this.indexDiskFile(event.uri, connection);
+      if (!record || !shouldStore()) {
+        results.push({ ...event, indexed: false, changed: false });
+        continue;
+      }
+      this.diskIndexes.set(key, record);
+      if (!liveUriKeys.has(key)) this.setEffective(record.index);
+      results.push({ ...event, indexed: true, changed: true });
+    }
+    return results;
+  }
+
+  /** Prepare a live document without mutating candidate state. */
   async prepareDocument(
     uri: string,
     text: string,
     shouldContinue: () => boolean = () => true,
   ): Promise<PreparedDocumentIndex | undefined> {
-    const liveIndex = await this.indexDocument(uri, text, this.table);
+    const liveIndex = await this.createFileIndex(uri, text);
     if (!shouldContinue()) return undefined;
 
-    let diskIndex: FileIndex | null | undefined;
-    if (this.isStandalone()) {
+    let diskIndex: DiskIndexRecord | null | undefined;
+    if (this.standalone) {
       diskIndex = await this.readStandaloneDiskIndex(uri, text, liveIndex);
       if (!shouldContinue()) return undefined;
     }
@@ -156,109 +239,118 @@ export class WorkspaceIndex {
     } else if (candidate.diskIndex !== undefined) {
       this.diskIndexes.set(uriKey(candidate.uri), candidate.diskIndex);
     }
-    this.store.set(candidate.uri, candidate.liveIndex);
-    this.global.upsert(candidate.liveIndex);
-    this.globalRefs.upsert(candidate.liveIndex);
+    this.setEffective(candidate.liveIndex);
     return true;
   }
 
-  async reindex(
+  /** Restore a disk baseline or remove a live-only effective record. */
+  async restoreClosedDocument(
     uri: string,
-    text: string,
     shouldStore: () => boolean = () => true,
+    allowDiskRead = true,
   ): Promise<boolean> {
-    const candidate = await this.prepareDocument(uri, text, shouldStore);
-    return candidate ? this.commitDocument(candidate, shouldStore) : false;
+    const diskIndex = this.diskIndexes.get(uriKey(uri));
+    if (diskIndex) {
+      if (!shouldStore()) return false;
+      this.setEffective(diskIndex.index);
+      return true;
+    }
+
+    const restored = allowDiskRead ? await this.indexDiskFile(uri) : undefined;
+    if (!shouldStore()) return false;
+    if (!restored) {
+      this.dropEffective(uri);
+      return true;
+    }
+    this.diskIndexes.set(uriKey(uri), restored);
+    this.setEffective(restored.index);
+    return true;
+  }
+
+  private async indexDiskFile(
+    uri: string,
+    connection?: Connection,
+  ): Promise<DiskIndexRecord | undefined> {
+    const source = await readStableDiskSource(uri, connection);
+    if (!source) return undefined;
+    const index = await this.createFileIndex(uri, source.text);
+    connection?.console.log(
+      `[index] ${uri} -> ${index.symbols.length} symbols, ${index.references.length} refs`,
+    );
+    return Object.freeze({ index, source: source.identity });
   }
 
   private async readStandaloneDiskIndex(
     uri: string,
     liveText: string,
     liveIndex: FileIndex,
-  ): Promise<FileIndex | null> {
-    let diskText: string;
-    try {
-      diskText = await fs.readFile(fileURLToPath(uri), 'utf8');
-    } catch {
-      return null;
-    }
-    return diskText === liveText
+  ): Promise<DiskIndexRecord | null | undefined> {
+    const source = await readStableDiskSource(uri);
+    if (!source) return this.diskIndexes.has(uriKey(uri)) ? undefined : null;
+    const index = source.text === liveText
       ? liveIndex
-      : this.indexDocument(uri, diskText, this.table);
+      : await this.createFileIndex(uri, source.text);
+    return Object.freeze({ index, source: source.identity });
   }
 
-  /**
-   * Apply file-watcher events to the indexes. Index-mutation only — the kept
-   * Workspace.applyChanges calls persist() afterward.
-   */
-  async applyChanges(
-    events: FileEvent[],
-    connection: Connection,
-    shouldStore: () => boolean = () => true,
-  ): Promise<void> {
-    for (const event of events) {
-      if (!shouldStore()) return;
-      if (event.type === 'deleted') {
-        this.drop(event.uri);
-        continue;
-      }
-
-      const filePath = fileURLToPath(event.uri);
-      await this.indexAndStore(filePath, connection, shouldStore);
-    }
+  private async createFileIndex(uri: string, text: string): Promise<FileIndex> {
+    return freezeFileIndex(await this.indexDocument(uri, text, this.table));
   }
 
-  /**
-   * Restore the last valid disk index. If a document opened before any scan,
-   * read its disk form now; an absent file removes the live-only entry.
-   */
-  async restoreClosedDocument(
-    uri: string,
-    shouldStore: () => boolean = () => true,
-  ): Promise<boolean> {
-    const diskIndex = this.diskIndexes.get(uriKey(uri));
-    if (diskIndex) {
-      if (!shouldStore()) return false;
-      this.store.set(uri, diskIndex);
-      this.global.upsert(diskIndex);
-      this.globalRefs.upsert(diskIndex);
-      return true;
-    }
-
-    let diskText: string;
-    try {
-      diskText = await fs.readFile(fileURLToPath(uri), 'utf8');
-    } catch {
-      if (!shouldStore()) return false;
-      this.drop(uri);
-      return true;
-    }
-    if (!shouldStore()) return false;
-    const restored = await this.indexDocument(uri, diskText, this.table);
-    if (!shouldStore()) return false;
-    this.diskIndexes.set(uriKey(uri), restored);
-    this.store.set(uri, restored);
-    this.global.upsert(restored);
-    this.globalRefs.upsert(restored);
-    return true;
+  private setEffective(index: FileIndex): void {
+    this.store.set(index.uri, index);
+    this.global.upsert(index);
+    this.globalRefs.upsert(index);
   }
 
-  /** Backward-compatible low-level helper; production document flow uses Workspace. */
-  closeDocument(uri: string): void {
-    const diskIndex = this.diskIndexes.get(uriKey(uri));
-    if (diskIndex) {
-      this.store.set(uri, diskIndex);
-      this.global.upsert(diskIndex);
-      this.globalRefs.upsert(diskIndex);
-    } else {
-      this.drop(uri);
-    }
-  }
-
-  drop(uri: string): void {
-    this.diskIndexes.delete(uriKey(uri));
+  private dropEffective(uri: string): void {
     this.store.delete(uri);
     this.global.delete(uri);
     this.globalRefs.delete(uri);
   }
+}
+
+function collapseFileEvents(events: readonly FileEvent[]): FileEvent[] {
+  const byUri = new Map<string, FileEvent>();
+  for (const event of events) byUri.set(uriKey(event.uri), event);
+  return [...byUri.values()];
+}
+
+/** FileIndex graphs are shared by candidate forks and must never mutate after ingestion. */
+function freezeFileIndex(index: FileIndex): FileIndex {
+  return deepFreeze(index);
+}
+
+function deepFreeze<T>(value: T): T {
+  if (value === null || typeof value !== 'object' || Object.isFrozen(value)) return value;
+  for (const nested of Object.values(value)) deepFreeze(nested);
+  return Object.freeze(value);
+}
+
+async function readStableDiskSource(
+  uri: string,
+  connection?: Connection,
+): Promise<{ text: string; identity: DiskSourceIdentity } | undefined> {
+  const filePath = fileURLToPath(uri);
+  let detail = 'source changed while it was being read';
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const before = await fs.stat(filePath);
+      const text = await fs.readFile(filePath, 'utf8');
+      const after = await fs.stat(filePath);
+      if (before.mtimeMs === after.mtimeMs && before.size === after.size) {
+        return {
+          text,
+          identity: Object.freeze({ mtimeMs: after.mtimeMs, size: after.size }),
+        };
+      }
+    } catch (error) {
+      detail = error instanceof Error ? error.message : String(error);
+      break;
+    }
+  }
+  if (typeof connection?.console.warn === 'function') {
+    connection.console.warn(`[index] skipped unreadable source ${uri}: ${detail}`);
+  }
+  return undefined;
 }

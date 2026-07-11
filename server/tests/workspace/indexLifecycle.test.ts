@@ -17,8 +17,12 @@ describe('IndexLifecycle', () => {
     expect(lifecycle.canServe()).toBe(true);
 
     lifecycle.begin('rebuild');
-    expect(lifecycle.snapshot()).toEqual({ state: 'indexing', operation: 'rebuild' });
-    expect(lifecycle.canServe()).toBe(false);
+    expect(lifecycle.snapshot()).toEqual({
+      state: 'indexing',
+      operation: 'rebuild',
+      servingRevision: 1,
+    });
+    expect(lifecycle.canServe()).toBe(true);
 
     lifecycle.complete(2);
     expect(lifecycle.snapshot()).toEqual({ state: 'ready', revision: 2, warningCount: 2 });
@@ -36,16 +40,21 @@ describe('IndexLifecycle', () => {
 
     expect(lifecycle.snapshot()).toEqual({
       state: 'failed',
+      servingRevision: 1,
       failure: {
         category: 'package-resolution',
         message: 'Invalid Packages/packages-lock.json',
       },
     });
     expect(lifecycle.nextRebuildOperation()).toBe('recovery');
-    expect(lifecycle.canServe()).toBe(false);
+    expect(lifecycle.canServe()).toBe(true);
 
     lifecycle.begin(lifecycle.nextRebuildOperation());
-    expect(lifecycle.snapshot()).toEqual({ state: 'indexing', operation: 'recovery' });
+    expect(lifecycle.snapshot()).toEqual({
+      state: 'indexing',
+      operation: 'recovery',
+      servingRevision: 1,
+    });
     lifecycle.complete();
     expect(lifecycle.snapshot()).toEqual({ state: 'ready', revision: 2, warningCount: 0 });
   });
@@ -57,6 +66,25 @@ describe('IndexLifecycle', () => {
     expect(lifecycle.snapshot()).toEqual({
       state: 'failed',
       failure: { category: 'indexing', message: 'candidate invariant failed' },
+    });
+  });
+
+  it('publishes compatible incremental revisions and preserves a prior failure', () => {
+    const lifecycle = new IndexLifecycle();
+    lifecycle.complete(2);
+    expect(lifecycle.publish(1)).toBe(2);
+    expect(lifecycle.snapshot()).toEqual({
+      state: 'ready',
+      revision: 2,
+      warningCount: 1,
+    });
+
+    lifecycle.fail(new Error('recovery required'));
+    expect(lifecycle.publish(0)).toBe(3);
+    expect(lifecycle.snapshot()).toEqual({
+      state: 'failed',
+      servingRevision: 3,
+      failure: { category: 'indexing', message: 'recovery required' },
     });
   });
 

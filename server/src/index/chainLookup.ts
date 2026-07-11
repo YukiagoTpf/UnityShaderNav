@@ -1,5 +1,5 @@
 import type { FileIndex, FunctionSymbolEntry, Position, SymbolEntry } from '@unity-shader-nav/shared';
-import type { GlobalSymbolIndex } from './globalIndex';
+import type { GlobalSymbolReader } from './globalIndex';
 import type { LocationLink, ResolutionOptions } from './symbolResolver';
 import { inRange, isBeforeOrAt } from './positionGeometry';
 import { uriKey } from '../uriKey';
@@ -10,7 +10,7 @@ function laterThan(a: Position, b: Position): boolean {
 
 function inferReceiverType(
   index: FileIndex,
-  global: GlobalSymbolIndex | null | undefined,
+  global: GlobalSymbolReader | null | undefined,
   receiverTypeName: string,
   refPos: Position,
   options?: ResolutionOptions,
@@ -98,7 +98,7 @@ function inferReceiverType(
 
 function inferReceiverTypeFromCallAssignment(
   index: FileIndex,
-  global: GlobalSymbolIndex | null | undefined,
+  global: GlobalSymbolReader | null | undefined,
   receiver: string,
   refPos: Position,
   options?: ResolutionOptions,
@@ -233,7 +233,7 @@ function toLink(symbol: SymbolEntry): LocationLink {
 
 function structMembersFor(
   index: FileIndex,
-  global: GlobalSymbolIndex | null | undefined,
+  global: GlobalSymbolReader | null | undefined,
   parentType: string,
   member: string,
   options?: ResolutionOptions,
@@ -257,7 +257,7 @@ function structMembersFor(
 
 function inferReceiverExpressionType(
   index: FileIndex,
-  global: GlobalSymbolIndex | null | undefined,
+  global: GlobalSymbolReader | null | undefined,
   receiver: string,
   refPos: Position,
   options?: ResolutionOptions,
@@ -288,7 +288,7 @@ function inferReceiverExpressionType(
 
 export function inferReceiverTypeForCompletion(
   index: FileIndex,
-  global: GlobalSymbolIndex | null | undefined,
+  global: GlobalSymbolReader | null | undefined,
   receiver: string,
   refPos: Position,
   options?: ResolutionOptions,
@@ -309,7 +309,7 @@ function describeSymbol(symbol: SymbolEntry): Record<string, unknown> {
 
 export function resolveMemberSymbols(
   index: FileIndex,
-  global: GlobalSymbolIndex | null | undefined,
+  global: GlobalSymbolReader | null | undefined,
   receiver: string,
   member: string,
   refPos: Position,
@@ -343,7 +343,7 @@ export function resolveMemberSymbols(
 
 export function resolveMember(
   index: FileIndex,
-  global: GlobalSymbolIndex | null | undefined,
+  global: GlobalSymbolReader | null | undefined,
   receiver: string,
   member: string,
   refPos: Position,

@@ -2,10 +2,10 @@ import type { ExtensionSettings } from '@unity-shader-nav/shared';
 
 export interface IncludeContext {
   /** Absolute path; undefined means standalone mode. */
-  unityProjectRoot: string | undefined;
-  includeDirectories: string[];
+  readonly unityProjectRoot: string | undefined;
+  readonly includeDirectories: readonly string[];
   /** Optional physical package map resolved from Packages/packages-lock.json. */
-  packagePhysicalPaths?: Map<string, string>;
+  readonly packagePhysicalPaths?: ReadonlyMap<string, string>;
 }
 
 export interface ResolvedInclude {

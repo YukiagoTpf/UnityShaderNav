@@ -4,6 +4,10 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DEFAULT_SETTINGS } from '@unity-shader-nav/shared';
+import {
+  SymbolKind as LspSymbolKind,
+  type DocumentSymbol,
+} from 'vscode-languageserver/node';
 import { CacheManager } from '../../src/cache/cacheManager';
 import { WorkspaceManager } from '../../src/workspace/workspaceManager';
 import { Workspace } from '../../src/workspace/workspace';
@@ -52,6 +56,26 @@ async function waitFor(predicate: () => boolean): Promise<void> {
   throw new Error('condition was not met');
 }
 
+function symbolsNamed(workspace: Workspace | undefined, name: string) {
+  return workspace?.workspaceSymbols(name).filter((symbol) => symbol.name === name) ?? [];
+}
+
+async function documentSymbolsNamed(
+  workspace: Workspace,
+  uri: string,
+  name: string,
+): Promise<DocumentSymbol[]> {
+  const symbols = await workspace.documentSymbols({ uri });
+  const pending = [...(symbols ?? [])];
+  const matches: DocumentSymbol[] = [];
+  while (pending.length > 0) {
+    const symbol = pending.shift()!;
+    if (symbol.name === name) matches.push(symbol);
+    if (symbol.children) pending.push(...symbol.children);
+  }
+  return matches;
+}
+
 beforeEach(async () => {
   projectA = await copyUnityProjectFixture(projectASource);
 });
@@ -97,8 +121,8 @@ describe('WorkspaceManager: multi-root', () => {
 
     expect(workspaceA?.folderUri).toBe(projectAUri);
     expect(workspaceB?.folderUri).toBe(projectBUri);
-    expect(workspaceA?.index.global.lookup('OnlyInB')).toEqual([]);
-    expect(workspaceB?.index.global.lookup('Common')).toEqual([]);
+    expect(symbolsNamed(workspaceA, 'OnlyInB')).toEqual([]);
+    expect(symbolsNamed(workspaceB, 'Common')).toEqual([]);
   });
 
   it('reports a ready Unity workspace in the lifecycle snapshot', async () => {
@@ -205,7 +229,7 @@ describe('WorkspaceManager: multi-root', () => {
 
     const workspace = manager.list()[0];
     expect(workspace.unityRoot).toBe(projectA);
-    expect(workspace.index.global.lookup('Common').length).toBeGreaterThanOrEqual(1);
+    expect(symbolsNamed(workspace, 'Common')).toHaveLength(1);
   });
 
   it('passes configured globalStorageDir to newly added workspaces', async () => {
@@ -515,8 +539,8 @@ describe('WorkspaceManager: multi-root', () => {
     });
 
     expect(workspace?.unityRoot).toBe(projectA);
-    expect(workspace?.index.store.get(pathToFileURL(looseFile).href)?.symbols).toMatchObject([
-      { name: '_LazyTex', kind: 'variable' },
+    expect(symbolsNamed(workspace, '_LazyTex')).toMatchObject([
+      { name: '_LazyTex', kind: LspSymbolKind.Variable },
     ]);
   });
 
@@ -600,7 +624,7 @@ describe('WorkspaceManager: multi-root', () => {
     try {
       await manager.addFolder(rootUri, DEFAULT_SETTINGS, fakeConnection);
       const parent = manager.workspaceFor(fileUri)!;
-      expect(parent.index.global.lookup('ParentOwned')).toHaveLength(1);
+      expect(symbolsNamed(parent, 'ParentOwned')).toHaveLength(1);
 
       const ownershipStarted = deferred();
       const releaseOwnership = deferred();
@@ -620,8 +644,8 @@ describe('WorkspaceManager: multi-root', () => {
 
       const child = manager.workspaceFor(fileUri)!;
       expect(child).not.toBe(parent);
-      expect(child.index.global.lookup('ParentOwned')).toHaveLength(1);
-      expect(parent.index.global.lookup('ParentOwned')).toEqual([]);
+      expect(symbolsNamed(child, 'ParentOwned')).toHaveLength(1);
+      expect(symbolsNamed(parent, 'ParentOwned')).toEqual([]);
 
       openDocuments = [{
         ...openDocuments[0],
@@ -644,21 +668,23 @@ describe('WorkspaceManager: multi-root', () => {
 
       expect(manager.workspaceFor(fileUri)).toBe(parent);
       expect(manager.servingWorkspaceFor(fileUri)).toBe(parent);
-      expect(parent.index.global.lookup('ParentOwned')).toEqual([]);
-      expect(parent.index.global.lookup('ChildOwnedV2')).toHaveLength(1);
+      expect(symbolsNamed(parent, 'ParentOwned')).toEqual([]);
+      expect(symbolsNamed(parent, 'ChildOwnedV2')).toHaveLength(1);
 
       await manager.addFolder(nestedUri, DEFAULT_SETTINGS, fakeConnection);
       const replacement = manager.workspaceFor(fileUri)!;
       expect(replacement).not.toBe(parent);
-      expect(replacement.index.global.lookup('ChildOwnedV2')).toHaveLength(1);
-      expect(parent.index.global.lookup('ChildOwnedV2')).toEqual([]);
+      expect(symbolsNamed(replacement, 'ChildOwnedV2')).toHaveLength(1);
+      expect(symbolsNamed(parent, 'ChildOwnedV2')).toEqual([]);
+      await expect(parent.updateDocument(openDocuments[0])).resolves.toBe(false);
+      expect(symbolsNamed(parent, 'ChildOwnedV2')).toEqual([]);
 
       openDocuments = [];
       await replacement.closeDocument({ uri: fileUri, openId: 1 });
       await manager.removeFolder(nestedUri);
 
       expect(manager.workspaceFor(fileUri)).toBe(parent);
-      expect(parent.index.global.lookup('ChildOwnedV2')).toEqual([]);
+      expect(symbolsNamed(parent, 'ChildOwnedV2')).toEqual([]);
     } finally {
       await manager.removeFolder(nestedUri);
       await manager.removeFolder(rootUri);
@@ -713,7 +739,7 @@ describe('WorkspaceManager: multi-root', () => {
       );
       expect(rerouted?.folderUri).toBe(rootUri);
       expect(rerouted).not.toBe(transientParent);
-      expect(rerouted?.index.global.lookup('UnsavedInEditor')).toHaveLength(1);
+      expect(symbolsNamed(rerouted, 'UnsavedInEditor')).toHaveLength(1);
     } finally {
       openDocuments = [];
       await manager.removeFolder(nestedUri);
@@ -766,13 +792,13 @@ describe('WorkspaceManager: multi-root', () => {
 
       await manager.removeFolder(nestedUri);
       expect(manager.workspaceFor(fileUri)).toBe(parent);
-      expect(parent.index.global.lookup('LiveOverlay')).toHaveLength(1);
+      expect(symbolsNamed(parent, 'LiveOverlay')).toHaveLength(1);
 
       openDocuments = [];
       await parent.closeDocument({ uri: fileUri, openId: 1 });
-      expect(parent.index.global.lookup('DiskV1')).toEqual([]);
-      expect(parent.index.global.lookup('DiskV2')).toHaveLength(1);
-      expect(parent.index.global.lookup('LiveOverlay')).toEqual([]);
+      expect(symbolsNamed(parent, 'DiskV1')).toEqual([]);
+      expect(symbolsNamed(parent, 'DiskV2')).toHaveLength(1);
+      expect(symbolsNamed(parent, 'LiveOverlay')).toEqual([]);
     } finally {
       await manager.removeFolder(nestedUri);
       await manager.removeFolder(rootUri);
@@ -860,13 +886,13 @@ describe('WorkspaceManager: multi-root', () => {
         [{ uri: externalUri, type: 'changed' }],
         fakeConnection,
       );
-      expect(workspace.index.global.lookup('ExternalLive')).toHaveLength(1);
+      expect(await documentSymbolsNamed(workspace, externalUri, 'ExternalLive')).toHaveLength(1);
 
       openDocuments = [];
       await workspace.closeDocument({ uri: externalUri, openId: 1 });
-      expect(workspace.index.global.lookup('ExternalDiskV1')).toEqual([]);
-      expect(workspace.index.global.lookup('ExternalDiskV2')).toHaveLength(1);
-      expect(workspace.index.global.lookup('ExternalLive')).toEqual([]);
+      expect(await documentSymbolsNamed(workspace, externalUri, 'ExternalDiskV1')).toEqual([]);
+      expect(await documentSymbolsNamed(workspace, externalUri, 'ExternalDiskV2')).toHaveLength(1);
+      expect(await documentSymbolsNamed(workspace, externalUri, 'ExternalLive')).toEqual([]);
     } finally {
       openDocuments = [];
       await manager.removeFolder(externalRootUri);
@@ -915,24 +941,42 @@ describe('WorkspaceManager: multi-root', () => {
     await rm(slowRoot, { recursive: true, force: true });
   });
 
-  it('does not persist a root behind a rebuild that fails', async () => {
+  it('persists the retained published revision after a rebuild fails', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-persist-failed-rebuild-'));
     await mkdir(join(root, 'Assets'), { recursive: true });
     await mkdir(join(root, 'Packages'), { recursive: true });
     await mkdir(join(root, 'ProjectSettings'), { recursive: true });
     await writeFile(join(root, 'Packages', 'packages-lock.json'), '{"dependencies":{}}');
+    await writeFile(
+      join(root, 'Assets', 'Stable.hlsl'),
+      'float4 StableBeforeFailure() { return 0; }',
+    );
     const manager = new WorkspaceManager();
     await manager.addFolder(pathToFileURL(root).href, DEFAULT_SETTINGS, fakeConnection);
     const workspace = manager.list()[0];
+    expect(symbolsNamed(workspace, 'StableBeforeFailure')).toHaveLength(1);
     vi.spyOn(workspace, 'bootstrap').mockRejectedValueOnce(new Error('rebuild failed'));
     const save = vi.spyOn(CacheManager.prototype, 'save').mockResolvedValue(undefined);
 
-    const rebuilding = workspace.rebuild(fakeConnection);
-    await manager.persistAll();
-    await expect(rebuilding).rejects.toThrow('rebuild failed');
+    await expect(workspace.rebuild(fakeConnection)).rejects.toThrow('rebuild failed');
 
-    expect(workspace.indexStatus().lifecycle).toMatchObject({ state: 'failed' });
-    expect(save).not.toHaveBeenCalled();
+    expect(workspace.indexStatus().lifecycle).toMatchObject({
+      state: 'failed',
+      servingRevision: 1,
+    });
+    expect(symbolsNamed(workspace, 'StableBeforeFailure')).toHaveLength(1);
+
+    await manager.persistAll();
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({
+      files: expect.arrayContaining([expect.objectContaining({
+        index: expect.objectContaining({
+          symbols: expect.arrayContaining([
+            expect.objectContaining({ name: 'StableBeforeFailure' }),
+          ]),
+        }),
+      })]),
+    }));
     await rm(root, { recursive: true, force: true });
   });
 

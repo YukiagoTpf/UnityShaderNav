@@ -75,23 +75,32 @@ npm run grammar:rebuild
 - `npm run test:package` is the authoritative package check. One invocation
   removes generated output, rebuilds current source, creates the versioned VSIX,
   verifies its manifest and runtime files, then runs package-layout tests.
-- Thin LSP adapter behavior belongs in server handler tests. Definition,
-  References, and document-lifecycle tests fake only Indexed Workspace behavior;
-  they must not reconstruct `store/global/globalRefs` Workspace shapes.
-- Definition/References semantic tests call the same Indexed Workspace methods
-  and production navigation implementation used by the server. Live overlay,
-  disk fallback, stale-attempt, rebuild replay, and cross-document ordering
-  tests use a real `Workspace`.
+- Thin LSP adapter behavior belongs in server handler tests. Every index-backed
+  query adapter and the document lifecycle fake only Indexed Workspace behavior;
+  tests must not reconstruct `store/global/globalRefs` Workspace shapes or
+  assert through a concrete `WorkspaceIndex`.
+- Query semantics belong in revision/Workspace tests that call the same
+  Indexed Workspace methods and production query implementation used by the
+  server. Live overlay, disk fallback, stale-attempt, rebuild replay,
+  cross-document ordering, include visibility, and Package filtering tests use
+  a real published revision or `Workspace`.
+- Publication tests must distinguish candidate state from published state.
+  Cover copy-on-write isolation, the one-shot builder, one revision increment
+  per successful pointer swap, and last-known-good query/persistence behavior
+  during and after a failed rebuild. Do not inspect private stores to prove
+  externally observable behavior.
 - Async lifecycle races use explicit deferred barriers and observable eventual
   conditions. Do not add fixed settle sleeps to make a parse/close/edit race
   appear deterministic.
 - Workspace routing tests must cover nested-root ownership in both directions:
   add transfers the overlay away from the parent, remove republishes the latest
   open snapshot, and close leaves no stale former owner.
-- A request-time store miss may join the registry's current attempt through
-  Workspace behavior; if no attempt can publish, it returns the feature's
-  neutral result. Tests must establish index state through lifecycle/Workspace
-  behavior rather than adding a handler-local reindex mock.
+- An open-document request whose exact attempt is not published may join the
+  registry's current `openId + version` through Workspace behavior; if no
+  attempt can publish, it returns the feature's neutral result. Tests must
+  establish index state through lifecycle/Workspace behavior rather than adding
+  a handler-local reindex mock. Queries already backed by a retained revision
+  must remain observable while a rebuild candidate is blocked or fails.
 - VS Code activation belongs in `tests/client`; command-level feature tests and
   their fixtures belong in `tests/integration/client`.
 - Integration synchronization must use the production index-status path or an

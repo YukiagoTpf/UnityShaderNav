@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted — 2026-07-10
+Accepted — 2026-07-10; implemented by
+[#61](https://github.com/YukiagoTpf/UnityShaderNav/issues/61)
 
 ## Context
 
@@ -33,11 +34,26 @@ edit, or close operation prepares all changes before swapping the current
 revision. The operation either publishes the complete candidate or publishes
 nothing.
 
+The implementation names that boundary directly:
+
+- `PublishedIndexedRevision` is the immutable, request-capturable behavior
+  object. Its `WorkspaceIndex`, committed-document map, and source-warning set
+  are private.
+- `IndexedRevisionBuilder` is a one-shot mutable candidate. Full indexing starts
+  with an empty builder; incremental work forks the published revision.
+- `WorkspaceIndex.fork()` copies mutable maps and global-index arrays while
+  sharing immutable per-file `FileIndex` values. Candidate mutation therefore
+  cannot affect the published base.
+- `Workspace` publishes by assigning the completed revision to its single
+  current pointer. No asynchronous work occurs between that swap and the
+  matching lifecycle transition.
+
 Each `Workspace` has one monotonically increasing `revision` counter:
 
 - `0` means that no index has ever been published by that workspace instance.
 - Each successful, externally observable publication increments the counter
-  exactly once. A no-op does not need to publish.
+  exactly once. An empty event batch or watcher transaction with no effective
+  change does not publish; neither does a stale or superseded attempt.
 - A failed operation never increments it.
 - The counter orders revisions only within one server session and workspace;
   it is not a wall-clock timestamp or a cross-process identifier.
@@ -47,35 +63,6 @@ It increments whenever a workspace lifecycle record changes or a root is added
 or removed. It orders status snapshots; it does not identify index data. The
 sequence is scoped to one LSP session. A reconnect resets the client's
 last-seen sequence before it accepts the new server's initial snapshot.
-
-### Current implementation stage
-
-The decision in this ADR is the required end state. The current implementation
-has established a narrower safe boundary without claiming the immutable
-publication step is complete:
-
-- Successful initialization and rebuild publish and increment `revision`;
-  live-document and watcher transactions do not yet increment it.
-- The open-document registry supplies immutable `openId + version` attempts.
-  `Workspace` serializes/coalesces them, validates after parsing and disk I/O,
-  and commits the affected mutable indexes synchronously.
-- Initial indexing and rebuild replay current open documents before `ready` is
-  published. Close restores a disk baseline or removes a live-only file.
-- Workspace-topology changes reconcile the open-document provider across the
-  previous and next longest-match owner; replacements remain request-neutral
-  during transfer, orphan snapshots can restart lazy discovery from a current
-  behavior request, watcher changes refresh every eligible serving
-  disk-baseline owner, and equivalent file URIs share one key.
-- Definition and Find References use Workspace-owned behavior and execute in
-  its operation queue. Other request handlers cannot mutate a missing index
-  through an index implementation; they may join the registry's current
-  attempt only through Workspace behavior.
-- Full rebuild still becomes non-serving and uses bounded request suspension;
-  no retained immutable revision is advertised during that work.
-
-Therefore references below to candidate swaps, retained serving revisions, and
-revision increments for every transaction remain architectural requirements,
-not claims about the current mutable implementation.
 
 ### Mode and lifecycle state are separate
 
@@ -96,7 +83,7 @@ queryable. The allowed transitions are:
 absent -> indexing(initial) -> ready(r1) | failed(no revision)
 ready(rN) -> indexing(rebuild) -> ready(rN+1) | failed(serving rN)
 failed(rN?) -> indexing(recovery) -> ready(rNext) | failed(serving rN?)
-failed(serving rN) -> failed(serving rN+1) for a compatible live transaction
+failed(serving rN) -> failed(serving rN+1) for a compatible live or settings-only transaction
 any state -> absent
 ```
 
@@ -118,7 +105,7 @@ Failures fall into three classes:
 | --- | --- | --- |
 | Source-file failure | One discovered file cannot be read; a source-level failure is explicitly classified as local to that file | Keep a compatible last-valid record for an existing file; skip a new file; finish the transaction with a warning. If the old record is incompatible with the candidate, abort the candidate instead of mixing identities |
 | Infrastructure failure | Root traversal is incomplete; `packages-lock.json` is missing, unreadable, or malformed for a Unity root; grammar/WASM initialization fails; the parser engine throws; an index invariant fails | Abort the entire candidate, retain the last published revision, and enter `failed` |
-| Cache failure | Cache entry is invalid, cache load misses, or cache save fails | Rebuild from source or keep serving the in-memory revision; report a warning, not an indexing failure |
+| Cache failure | Cache entry is invalid, cache load misses, or cache save fails | Rebuild from source or keep serving the in-memory revision; do not change index lifecycle |
 
 Tree-sitter syntax error nodes are normal input and do not by themselves make a
 file unindexable. Conversely, an unexpected exception from parser
@@ -129,11 +116,15 @@ The retain-or-drop policy is deliberate:
 
 - An explicit delete event, or removal from the package set described by a
   valid new lockfile, drops the previous record when that transaction publishes.
-- A transient failure reading or locally indexing an existing file retains its
-  last valid record and increments the operation's warning count, but only when
-  that record was produced by an indexing identity compatible with the
-  candidate (including parser semantics, declaration-macro rules, and package
-  version/path membership).
+- A transient failure obtaining one stable source read for an existing file
+  retains its last valid record and increments the operation's warning count,
+  but only when that record was produced by an indexing identity compatible
+  with the candidate (including parser semantics, declaration-macro rules, and
+  package version/path membership). An exception from the indexer itself is an
+  infrastructure failure and aborts the candidate.
+- A disk record binds its `FileIndex` to metadata captured by the same stable
+  read. Retention and cache persistence carry that pair together; they never
+  attach current disk metadata to an older retained index.
 - The same failure for a file with no previous record skips that file and adds
   a warning.
 - If changed indexing semantics make the previous record incompatible, the
@@ -150,21 +141,26 @@ publish a candidate with an empty package set, preserving
 
 ### Request behavior
 
-Every request captures one published revision for its entire execution,
-including asynchronous include-visibility work. It cannot combine stores,
-settings, package context, or macro rules from different revisions.
+Every request that reads indexed state captures one published revision for its
+entire execution, including asynchronous include-visibility work. It cannot
+combine stores, settings, package context, or macro rules from different
+revisions. Pure lexical early exits and neutral results without a serving
+revision read no revision.
 
 | Lifecycle state | Request behavior |
 | --- | --- |
-| Initial indexing, no revision | Wait up to the request's bounded startup deadline. On timeout or terminal failure, return the request's neutral LSP result (`null` or an empty collection), never partial data. |
+| Initial indexing, no revision | After the initial discovery gate is released, return the request's neutral LSP result (`null` or an empty collection), never partial data. Only that short server-startup gate may wait up to its bounded deadline. |
 | Ready | Query the captured current revision. |
-| Rebuild or recovery with `servingRevision` | Query the previous revision immediately while the candidate is built. |
+| Rebuild or recovery with `servingRevision` | A request satisfied by the retained revision queries it immediately. A new unpublished document attempt waits for its queued candidate/reconcile transaction. |
 | Failed with `servingRevision` | Continue querying that revision while exposing the failure through status. |
 | Failed without a revision | Return the neutral LSP result until recovery publishes a revision. |
 
-The status request itself is never suspended behind indexing; clients must be
-able to diagnose a slow or failed bootstrap. A recovery uses the same staging
-and publication rules as a rebuild. Full-rebuild triggers (relevant settings,
+The status request is never suspended behind indexing; clients must be able to
+diagnose a slow or failed bootstrap. A short bounded gate protects only server
+startup while global settings and the initial workspace-folder snapshot are
+read. Rebuild and recovery do not suspend requests: a retained revision serves
+immediately while its candidate builds. A recovery uses the same staging and
+publication rules as a rebuild. Full-rebuild triggers (relevant settings,
 package-lock or repository changes, and an explicit retry) may start recovery.
 Parser initialization must discard a rejected initialization promise so an
 explicit recovery can retry in the same server process.
@@ -172,18 +168,18 @@ explicit recovery can retry in the same server process.
 While a failure remains unresolved, an open, edit, or close live-document
 transaction may publish a new serving revision only when it explicitly uses
 the retained revision's settings, package context, macro table, and parser
-identity. The workspace stays `failed` and keeps reporting the original
-failure. Other mutations are coalesced into a recovery rather than being
-applied to an uncertain base. If the parser infrastructure is still
-unavailable, the live transaction publishes nothing.
+identity. A settings-only change with the same index semantics may publish by
+the same rule. The workspace stays `failed` and keeps reporting the original
+failure. Watcher batches are not applied to a failed base; a rebuild-triggering
+change or explicit retry starts recovery instead. If the parser infrastructure
+is still unavailable, the live transaction publishes nothing.
 
 Cross-root requests such as workspace-symbol search capture a tuple containing
-one serving revision per participating root. When at least one root can serve,
-the request proceeds immediately with those roots and temporarily omits roots
-that have no published revision; their lifecycle remains visible in status. If
-no root can serve, the request uses the same bounded startup wait as a
-single-root request. A slow or failed root never blocks results from another
-root that can serve.
+one serving revision per participating root. The request proceeds immediately
+with that tuple and temporarily omits roots that have no published revision;
+their lifecycle remains visible in status. An empty tuple returns the query's
+neutral result after root registration. A slow or failed root never blocks
+results from another root that can serve.
 
 ### Multi-root and observable status
 
@@ -215,8 +211,7 @@ expose a stable category and a concise message, not a stack trace.
 `warningCount` describes source warnings in the most recently published
 revision, rather than an ever-growing session total. A later publication with
 no source warnings resets it to zero. Cache and other best-effort runtime
-warnings go to the output log; they do not change `revision`, `warningCount`, or
-`statusSequence`.
+diagnostics do not change `revision`, `warningCount`, or `statusSequence`.
 
 The client projects the multi-root snapshot to one status-bar state with this
 severity order:
@@ -247,8 +242,8 @@ workspaces, projects to `standalone`; it never leaves the client stuck on
 | File-batch infrastructure failure | Candidate discarded; `ready(rN) -> failed(serving rN)` | `rN` | Failed notification |
 | Valid package-lock change | Rebuild package context and files as one candidate | Previous revision | Rebuild start and terminal notification |
 | Invalid package-lock change | Candidate discarded | Previous revision, if any | Failed notification |
-| Cache load/restore failure | Continue with source indexing | Previous revision, if rebuilding | Output-log warning only; lifecycle follows source build |
-| Cache save failure | No index transition | Current revision | Output-log warning only; no false failure |
+| Cache load/restore failure | Continue with source indexing | Previous revision, if rebuilding | No cache-driven lifecycle or status transition |
+| Cache save failure | No index transition | Current revision | No lifecycle or status transition |
 | Recovery trigger | `failed(rN?) -> indexing(recovery, rN?)` | `rN` when present | Start notification |
 | Compatible live open/edit/close while failed | Atomic overlay publish to `failed(serving rN+1)`; original failure remains | `rN` until swap | Failed snapshot with the newer serving revision |
 | Remove root | Any state to `absent` | No longer selectable | Full snapshot without the root |

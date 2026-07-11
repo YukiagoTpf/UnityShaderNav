@@ -7,7 +7,7 @@ import {
   type InitializeResult,
 } from 'vscode-languageserver/node';
 import { SERVER_NAME } from '@unity-shader-nav/shared';
-import { SEMANTIC_TOKEN_TYPES } from './handlers/semanticTokens';
+import { SEMANTIC_TOKEN_TYPES } from './workspace/semanticTokenLegend';
 
 let _connection: Connection | undefined;
 

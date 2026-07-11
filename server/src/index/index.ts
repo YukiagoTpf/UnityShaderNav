@@ -1,6 +1,6 @@
-export { IndexStore } from './indexStore';
-export { GlobalSymbolIndex } from './globalIndex';
-export { GlobalReferenceIndex } from './globalReferences';
+export { IndexStore, type IndexStoreReader } from './indexStore';
+export { GlobalSymbolIndex, type GlobalSymbolReader } from './globalIndex';
+export { GlobalReferenceIndex, type GlobalReferenceReader } from './globalReferences';
 export { inferReceiverTypeForCompletion, resolveMemberSymbols } from './chainLookup';
 export { resolveDefinitionSymbols } from './symbolResolver';
 export { resolveDefinition, findReferences, findHighlights } from './resolution';

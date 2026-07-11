@@ -50,6 +50,42 @@ function deferred() {
 }
 
 describe('Indexed Workspace live-document behavior', () => {
+  it('preserves lexical completion and signature early exits without indexing', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-indexed-workspace-lexical-exit-'));
+    const uri = pathToFileURL(join(root, 'Lexical.hlsl')).href;
+    let parseCalls = 0;
+    try {
+      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
+        ensureParserReady: async () => {},
+        async indexDocument() {
+          parseCalls++;
+          throw new Error('lexical early exit must not index');
+        },
+      });
+      await workspace.initialize(fakeConnection);
+      const text = '// comment completion';
+      const document = snapshot(uri, text, 1, 1);
+
+      await expect(workspace.completionAt({
+        document,
+        position: { line: 0, character: text.length },
+      })).resolves.toEqual([]);
+      await expect(workspace.signatureHelpAt({
+        document,
+        position: { line: 0, character: text.length },
+      })).resolves.toBeNull();
+
+      expect(parseCalls).toBe(0);
+      expect(workspace.indexStatus().lifecycle).toEqual({
+        state: 'ready',
+        revision: 1,
+        warningCount: 0,
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('updates Definition and Find References from the same unsaved snapshot', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-indexed-workspace-live-'));
     const uri = pathToFileURL(join(root, 'Live.hlsl')).href;
@@ -127,10 +163,10 @@ describe('Indexed Workspace live-document behavior', () => {
         document: caller,
         position: positionOf(callerText, 'LiveTarget'),
       })).toHaveLength(1);
-      expect(workspace.index.global.lookup('SavedTarget')).toEqual([]);
+      expect(workspace.workspaceSymbols('SavedTarget')).toEqual([]);
 
       await workspace.closeDocument({ uri: targetUri, openId: 1 });
-      expect(workspace.index.global.lookup('LiveTarget')).toEqual([]);
+      expect(workspace.workspaceSymbols('LiveTarget')).toEqual([]);
       expect(await workspace.definitionAt({
         document: caller,
         position: positionOf(callerText, 'SavedTarget'),
@@ -150,11 +186,11 @@ describe('Indexed Workspace live-document behavior', () => {
       });
       await workspace.initialize(fakeConnection);
       await workspace.updateDocument(snapshot(targetUri, liveText, 1, 1));
-      expect(workspace.index.global.lookup('EphemeralTarget')).toHaveLength(1);
+      expect(workspace.workspaceSymbols('EphemeralTarget')).toHaveLength(1);
 
       await workspace.closeDocument({ uri: targetUri, openId: 1 });
-      expect(workspace.index.global.lookup('EphemeralTarget')).toEqual([]);
-      expect(workspace.index.store.get(targetUri)).toBeUndefined();
+      expect(workspace.workspaceSymbols('EphemeralTarget')).toEqual([]);
+      await expect(workspace.documentSymbols({ uri: targetUri })).resolves.toBeNull();
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -187,8 +223,8 @@ describe('Indexed Workspace live-document behavior', () => {
 
       await expect(stale).resolves.toBe(false);
       await expect(fresh).resolves.toBe(true);
-      expect(workspace.index.global.lookup('StaleVersion')).toEqual([]);
-      expect(workspace.index.global.lookup('FreshVersion')).toHaveLength(1);
+      expect(workspace.workspaceSymbols('StaleVersion')).toEqual([]);
+      expect(workspace.workspaceSymbols('FreshVersion')).toHaveLength(1);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -237,8 +273,8 @@ describe('Indexed Workspace live-document behavior', () => {
       await expect(workspace.updateDocument(first)).resolves.toBe(false);
       expect(dependentQuery).toBeDefined();
       await expect(dependentQuery!).resolves.toHaveLength(1);
-      expect(workspace.index.global.lookup('FirstVersion')).toEqual([]);
-      expect(workspace.index.global.lookup('SecondVersion')).toHaveLength(1);
+      expect(workspace.workspaceSymbols('FirstVersion')).toEqual([]);
+      expect(workspace.workspaceSymbols('SecondVersion')).toHaveLength(1);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -280,7 +316,7 @@ describe('Indexed Workspace live-document behavior', () => {
         document: fresh,
         position: positionOf(freshText, 'Fresh'),
       })).toHaveLength(1);
-      expect(workspace.index.global.lookup('Stale')).toEqual([]);
+      expect(workspace.workspaceSymbols('Stale')).toEqual([]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -319,8 +355,8 @@ describe('Indexed Workspace live-document behavior', () => {
 
       await expect(updating).resolves.toBe(false);
       await expect(closing).resolves.toBeUndefined();
-      expect(workspace.index.global.lookup('LiveBeforeClose')).toEqual([]);
-      expect(workspace.index.global.lookup('SavedAfterClose')).toHaveLength(1);
+      expect(workspace.workspaceSymbols('LiveBeforeClose')).toEqual([]);
+      expect(workspace.workspaceSymbols('SavedAfterClose')).toHaveLength(1);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -343,6 +379,7 @@ describe('Indexed Workspace live-document behavior', () => {
       )).rejects.toThrow('document parser failed');
       expect(workspace.indexStatus().lifecycle).toEqual({
         state: 'failed',
+        servingRevision: 1,
         failure: { category: 'indexing', message: 'document parser failed' },
       });
     } finally {
@@ -432,12 +469,12 @@ describe('Indexed Workspace live-document behavior', () => {
         fakeConnection,
       );
 
-      expect(workspace.index.global.lookup('LiveAcrossWatcher')).toHaveLength(1);
-      expect(workspace.index.store.get(watcherUri)?.uri).toBe(openUri);
+      expect(workspace.workspaceSymbols('LiveAcrossWatcher')).toHaveLength(1);
+      await expect(workspace.documentSymbols({ uri: watcherUri })).resolves.not.toBeNull();
 
       await workspace.closeDocument({ uri: openUri, openId: 1 });
-      expect(workspace.index.global.lookup('LiveAcrossWatcher')).toEqual([]);
-      expect(workspace.index.store.get(watcherUri)).toBeUndefined();
+      expect(workspace.workspaceSymbols('LiveAcrossWatcher')).toEqual([]);
+      await expect(workspace.documentSymbols({ uri: watcherUri })).resolves.toBeNull();
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -480,7 +517,7 @@ describe('Indexed Workspace live-document behavior', () => {
         position: { line: 0, character: 12 },
       });
       await expect(failingUpdate).rejects.toThrow('request document should not be parsed');
-      await expect(queuedInclude).resolves.toBeNull();
+      await expect(queuedInclude).resolves.toHaveLength(1);
       expect(parseCalls).toBe(1);
     } finally {
       await rm(root, { recursive: true, force: true });

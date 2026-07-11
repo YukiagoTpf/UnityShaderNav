@@ -1,5 +1,5 @@
 import type { FileIndex, Position, SymbolEntry } from '@unity-shader-nav/shared';
-import type { GlobalSymbolIndex, IndexStore } from '../index';
+import type { GlobalSymbolReader, IndexStoreReader } from '../index';
 import { inferReceiverTypeForCompletion } from '../index/chainLookup';
 import { uriKey } from '../uriKey';
 import { symbolToSuggestion } from './projectSymbols';
@@ -11,8 +11,8 @@ function memberKey(symbol: SymbolEntry): string {
 
 export function collectMemberSuggestions(
   index: FileIndex,
-  store: Pick<IndexStore, 'get' | 'uris'>,
-  global: GlobalSymbolIndex | null | undefined,
+  store: IndexStoreReader,
+  global: GlobalSymbolReader | null | undefined,
   visibleUriKeys: ReadonlySet<string>,
   receiver: string,
   memberPrefix: string,

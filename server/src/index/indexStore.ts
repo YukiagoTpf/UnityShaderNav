@@ -1,7 +1,12 @@
 import type { FileIndex } from '@unity-shader-nav/shared';
 import { uriKey } from '../uriKey';
 
-export class IndexStore {
+export interface IndexStoreReader {
+  get(uri: string): FileIndex | undefined;
+  uris(): IterableIterator<string>;
+}
+
+export class IndexStore implements IndexStoreReader {
   private readonly byUri = new Map<string, FileIndex>();
 
   set(uri: string, idx: FileIndex): void {

@@ -69,7 +69,12 @@ export class CacheManager {
     }
   }
 
-  async snapshot(uri: string, index: FileIndex): Promise<CachedFile | null> {
+  async snapshot(
+    uri: string,
+    index: FileIndex,
+    source?: Pick<CachedFile, 'mtimeMs' | 'size'>,
+  ): Promise<CachedFile | null> {
+    if (source) return { uri, index, ...source };
     try {
       const filePath = fileURLToPath(uri);
       const st = await fs.stat(filePath);

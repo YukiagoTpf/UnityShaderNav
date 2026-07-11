@@ -31,6 +31,7 @@ export class IndexLifecycle {
 
   canServe(): boolean {
     return this.lifecycle.state === 'ready'
+      || (this.lifecycle.state === 'indexing' && this.lifecycle.servingRevision !== undefined)
       || (this.lifecycle.state === 'failed' && this.lifecycle.servingRevision !== undefined);
   }
 
@@ -50,17 +51,43 @@ export class IndexLifecycle {
     if (operation !== expected) {
       throw new Error(`Cannot begin ${operation} from ${this.lifecycle.state}; expected ${expected}`);
     }
-    // Until atomic candidate publication lands, rebuild clears the mutable
-    // index. Do not claim that an older revision remains queryable.
-    this.transition({ state: 'indexing', operation });
+    this.transition({
+      state: 'indexing',
+      operation,
+      ...(this.revision > 0 ? { servingRevision: this.revision } : {}),
+    });
   }
 
-  complete(warningCount = 0): void {
+  nextRevision(): number {
+    return this.revision + 1;
+  }
+
+  complete(warningCount = 0): number {
     if (this.lifecycle.state !== 'indexing') {
       throw new Error(`Cannot complete indexing from ${this.lifecycle.state}`);
     }
     this.revision++;
     this.transition({ state: 'ready', revision: this.revision, warningCount });
+    return this.revision;
+  }
+
+  /** Publish a compatible live or watcher candidate without clearing failure. */
+  publish(warningCount = 0): number {
+    if (this.lifecycle.state === 'ready') {
+      this.revision++;
+      this.transition({ state: 'ready', revision: this.revision, warningCount });
+      return this.revision;
+    }
+    if (this.lifecycle.state === 'failed' && this.lifecycle.servingRevision !== undefined) {
+      this.revision++;
+      this.transition({
+        state: 'failed',
+        servingRevision: this.revision,
+        failure: this.lifecycle.failure,
+      });
+      return this.revision;
+    }
+    throw new Error(`Cannot publish an incremental revision from ${this.lifecycle.state}`);
   }
 
   fail(error: unknown): void {
@@ -69,6 +96,7 @@ export class IndexLifecycle {
     }
     this.transition({
       state: 'failed',
+      ...(this.revision > 0 ? { servingRevision: this.revision } : {}),
       failure: failureFrom(error),
     });
   }

@@ -1,4 +1,5 @@
 import {
+  existsSync,
   readFileSync,
   readdirSync,
 } from 'node:fs';
@@ -17,10 +18,39 @@ type DependencyGraph = ReadonlyMap<string, readonly string[]>;
 const SOURCE_ROOT = resolve(__dirname, '../../src');
 const PARSER_PREFIX = 'parser/';
 const SUGGESTIONS_PREFIX = 'suggestions/';
-const INDEXED_ADAPTERS = [
+const QUERY_ADAPTERS = [
+  'handlers/completion.ts',
   'handlers/definition.ts',
-  'handlers/documents.ts',
+  'handlers/documentHighlight.ts',
+  'handlers/documentSymbol.ts',
+  'handlers/hover.ts',
   'handlers/references.ts',
+  'handlers/semanticTokens.ts',
+  'handlers/signatureHelp.ts',
+  'handlers/workspaceSymbol.ts',
+] as const;
+const QUERY_ADAPTER_DEPENDENCIES = new Set([
+  'lifecycle/requestSuspender.ts',
+  'workspace/indexedWorkspace.ts',
+]);
+const QUERY_ADAPTER_NEUTRAL_DEPENDENCIES: Readonly<Partial<
+  Record<(typeof QUERY_ADAPTERS)[number], readonly string[]>
+>> = {
+  'handlers/semanticTokens.ts': ['workspace/semanticTokenLegend.ts'],
+};
+const CONCRETE_QUERY_MODULES = new Set([
+  'handlers/requestContext.ts',
+  'workspace/indexedRevision.ts',
+  'workspace/navigation.ts',
+  'workspace/queries.ts',
+  'workspace/workspace.ts',
+  'workspace/workspaceIndex.ts',
+  'workspace/workspaceManager.ts',
+]);
+const MUTABLE_INDEX_TYPES = [
+  'IndexStore',
+  'GlobalSymbolIndex',
+  'GlobalReferenceIndex',
 ] as const;
 
 describe('server dependency direction', () => {
@@ -124,32 +154,103 @@ describe('server dependency direction', () => {
     }
   });
 
-  it('keeps migrated navigation adapters behind the Indexed Workspace behavior', () => {
+  it('keeps every production query adapter behind the Indexed Workspace behavior', () => {
     const graph = buildSourceGraph(SOURCE_ROOT);
-    for (const adapter of INDEXED_ADAPTERS) {
+    for (const adapter of QUERY_ADAPTERS) {
+      const neutralDependencies = new Set(
+        QUERY_ADAPTER_NEUTRAL_DEPENDENCIES[adapter] ?? [],
+      );
+      const unexpectedDependency = (graph.get(adapter) ?? [])
+        .find((dependency) => (
+          !QUERY_ADAPTER_DEPENDENCIES.has(dependency)
+          && !neutralDependencies.has(dependency)
+        ));
+      if (unexpectedDependency) {
+        throw new Error(
+          `${adapter} must depend only on the Indexed Workspace behavior, but imports ${unexpectedDependency}`,
+        );
+      }
+
       const violation = findDependencyPath(
         graph,
         [adapter],
         (moduleId) => moduleId.startsWith('index/')
-          || moduleId === 'handlers/requestContext.ts'
-          || moduleId === 'workspace/navigation.ts'
-          || moduleId === 'workspace/workspace.ts'
-          || moduleId === 'workspace/workspaceIndex.ts'
-          || moduleId === 'workspace/workspaceManager.ts',
+          || moduleId.startsWith(PARSER_PREFIX)
+          || moduleId.startsWith(SUGGESTIONS_PREFIX)
+          || CONCRETE_QUERY_MODULES.has(moduleId),
       );
       if (violation) {
         throw new Error(
-          `Indexed Workspace adapter reached a concrete implementation: ${violation.join(' -> ')}`,
+          `query adapter reached a concrete implementation: ${violation.join(' -> ')}`,
         );
       }
 
       const source = readFileSync(resolve(SOURCE_ROOT, adapter), 'utf8');
+      expect(source, adapter).toMatch(/\bIndexedWorkspace\w*\b/);
+      expect(source, adapter).not.toMatch(
+        /\b(?:Workspace|WorkspaceIndex|IndexStore|GlobalSymbolIndex|GlobalReferenceIndex|TextDocuments|TextDocument)\b/,
+      );
       expect(source).not.toMatch(/\.(?:index|store|global|globalRefs)\b/);
     }
 
-    for (const adapter of ['handlers/definition.ts', 'handlers/references.ts']) {
+    for (const adapter of QUERY_ADAPTERS.filter((candidate) => (
+      candidate !== 'handlers/workspaceSymbol.ts'
+    ))) {
       const source = readFileSync(resolve(SOURCE_ROOT, adapter), 'utf8');
       expect(source, adapter).toContain('workspaceForDocumentRequest');
+    }
+  });
+
+  it('keeps mutable index storage private to the revision owner', () => {
+    const sourceFiles = collectTypeScriptFiles(SOURCE_ROOT);
+    const workspaceIndexId = 'workspace/workspaceIndex.ts';
+    const indexedRevisionId = 'workspace/indexedRevision.ts';
+    const readViewConsumers = new Set([
+      workspaceIndexId,
+      indexedRevisionId,
+      'workspace/navigation.ts',
+      'workspace/queries.ts',
+    ]);
+
+    const workspaceIndex = readFileSync(resolve(SOURCE_ROOT, workspaceIndexId), 'utf8');
+    for (const field of ['store', 'global', 'globalRefs']) {
+      expect(workspaceIndex, field).toMatch(
+        new RegExp(`private\\s+readonly\\s+${field}\\b`),
+      );
+    }
+
+    const indexedRevision = readFileSync(resolve(SOURCE_ROOT, indexedRevisionId), 'utf8');
+    expect(indexedRevision.match(/private\s+readonly\s+index:\s*WorkspaceIndex\b/g))
+      .toHaveLength(2);
+
+    for (const sourceFile of sourceFiles) {
+      const moduleId = relativeModuleId(SOURCE_ROOT, sourceFile);
+      const source = readFileSync(sourceFile, 'utf8');
+
+      if (moduleId !== workspaceIndexId && !moduleId.startsWith('index/')) {
+        for (const mutableType of MUTABLE_INDEX_TYPES) {
+          expect(source, moduleId).not.toMatch(new RegExp(`\\b${mutableType}\\b`));
+        }
+      }
+
+      if (moduleId !== workspaceIndexId && moduleId !== indexedRevisionId) {
+        expect(source, moduleId).not.toMatch(/\bWorkspaceIndex\b/);
+        expect(source, moduleId).not.toMatch(/new\s+WorkspaceIndex\s*\(/);
+        expect(source, moduleId).not.toMatch(/\.index\.read\b/);
+      }
+
+      if (!readViewConsumers.has(moduleId)) {
+        expect(source, moduleId).not.toMatch(/\bWorkspaceIndexReadView\b/);
+      }
+    }
+  });
+
+  it('removes the legacy request-context escape hatch', () => {
+    expect(existsSync(resolve(SOURCE_ROOT, 'handlers/requestContext.ts'))).toBe(false);
+    for (const sourceFile of collectTypeScriptFiles(SOURCE_ROOT)) {
+      const source = readFileSync(sourceFile, 'utf8');
+      expect(source, relativeModuleId(SOURCE_ROOT, sourceFile))
+        .not.toMatch(/handlers\/requestContext|from ['"]\.\/requestContext['"]/);
     }
   });
 
@@ -167,11 +268,18 @@ describe('server dependency direction', () => {
   it('keeps migrated handler tests free of reconstructed Workspace internals', () => {
     const testRoot = resolve(SOURCE_ROOT, '../tests/handlers');
     for (const file of [
+      'completion.test.ts',
       'definition.test.ts',
       'definition-include.test.ts',
       'definition-properties.test.ts',
       'documents.test.ts',
+      'documentHighlight.test.ts',
+      'documentSymbol.test.ts',
+      'hover.test.ts',
       'references.test.ts',
+      'semanticTokens.test.ts',
+      'signatureHelp.test.ts',
+      'workspaceSymbol.test.ts',
     ]) {
       const source = readFileSync(resolve(testRoot, file), 'utf8');
       expect(source, file).not.toMatch(/workspace\.index\b/);

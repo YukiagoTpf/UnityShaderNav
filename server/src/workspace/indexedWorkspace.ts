@@ -1,7 +1,14 @@
 import type {
+  CompletionItem,
+  DocumentHighlight,
+  DocumentSymbol,
+  Hover,
   Location,
   LocationLink,
   Position,
+  SemanticTokens,
+  SignatureHelp,
+  SymbolInformation,
 } from 'vscode-languageserver/node';
 
 export interface IndexedDocumentSnapshot {
@@ -36,12 +43,29 @@ export interface ReferencesAtInput {
   readonly includeDeclaration: boolean;
 }
 
+export interface DocumentPositionInput {
+  readonly document: IndexedDocumentSnapshot;
+  readonly position: Position;
+}
+
+export interface IndexedDocumentQueryInput {
+  readonly uri: string;
+  readonly document?: IndexedDocumentSnapshot;
+}
+
 /** Handler-facing behavior. Mutable index implementations stay behind it. */
 export interface IndexedWorkspace {
   updateDocument(document: IndexedDocumentSnapshot): Promise<boolean>;
   closeDocument(input: { readonly uri: string; readonly openId: number }): Promise<void>;
   definitionAt(input: DefinitionAtInput): Promise<LocationLink[] | Location[] | null>;
   referencesAt(input: ReferencesAtInput): Promise<Location[] | null>;
+  hoverAt(input: DocumentPositionInput): Promise<Hover | null>;
+  completionAt(input: DocumentPositionInput): Promise<CompletionItem[] | null>;
+  signatureHelpAt(input: DocumentPositionInput): Promise<SignatureHelp | null>;
+  highlightsAt(input: DocumentPositionInput): Promise<DocumentHighlight[] | null>;
+  documentSymbols(input: IndexedDocumentQueryInput): Promise<DocumentSymbol[] | null>;
+  semanticTokens(input: IndexedDocumentQueryInput): Promise<SemanticTokens>;
+  workspaceSymbols(query: string): SymbolInformation[];
 }
 
 export type OpenDocumentsProvider = () => Iterable<IndexedDocumentSnapshot>;
@@ -56,6 +80,7 @@ export interface IndexedWorkspaceService {
   ): Promise<IndexedWorkspace | undefined>;
   releaseDocument(uri: string): Promise<void>;
   configureOpenDocumentsProvider(provider: OpenDocumentsProvider): void;
+  workspaceSymbols(query: string): SymbolInformation[];
 }
 
 export type IndexedWorkspaceRequestRouter =

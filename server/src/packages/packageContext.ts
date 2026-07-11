@@ -5,15 +5,35 @@ import { containsPath } from '../workspace/pathUtils';
 import { PackageResolver } from './packageResolver';
 
 /**
- * Encapsulates the package concern composed by Workspace: owns the
- * PackageResolver, derives the IncludeContext, and answers isInPackages(uri).
- * Workspace composes one and reaches it via `workspace.packages`.
+ * Immutable package-resolution context published with one indexed revision:
+ * owns the PackageResolver, derives IncludeContext, and answers package
+ * membership without exposing resolution state to request handlers.
  */
 export class PackageContext {
+  private readonly context: IncludeContext;
+
   private constructor(
-    readonly includeCtx: IncludeContext,
+    context: IncludeContext,
     private readonly resolver: PackageResolver | undefined,
-  ) {}
+  ) {
+    this.context = Object.freeze({
+      unityProjectRoot: context.unityProjectRoot,
+      includeDirectories: Object.freeze([...context.includeDirectories]),
+      ...(context.packagePhysicalPaths
+        ? { packagePhysicalPaths: new Map(context.packagePhysicalPaths) }
+        : {}),
+    });
+  }
+
+  get includeCtx(): IncludeContext {
+    return Object.freeze({
+      unityProjectRoot: this.context.unityProjectRoot,
+      includeDirectories: Object.freeze([...this.context.includeDirectories]),
+      ...(this.context.packagePhysicalPaths
+        ? { packagePhysicalPaths: new Map(this.context.packagePhysicalPaths) }
+        : {}),
+    });
+  }
 
   /** Standalone mode: no Unity root -> no resolver; includeCtx falls back to settings only. */
   static standalone(settings: ExtensionSettings): PackageContext {

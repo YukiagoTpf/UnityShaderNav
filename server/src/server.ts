@@ -82,13 +82,13 @@ onSettingsChanged(connection, async (settings) => {
 });
 
 registerDefinitionHandler(connection, documentRegistry, manager, suspender);
-registerHoverHandler(connection, documents, manager, suspender);
-registerCompletionHandler(connection, documents, manager, suspender);
-registerSignatureHelpHandler(connection, documents, manager, suspender);
-registerDocumentHighlightHandler(connection, documents, manager, suspender);
-registerDocumentSymbolHandler(connection, documents, manager, suspender);
+registerHoverHandler(connection, documentRegistry, manager, suspender);
+registerCompletionHandler(connection, documentRegistry, manager, suspender);
+registerSignatureHelpHandler(connection, documentRegistry, manager, suspender);
+registerDocumentHighlightHandler(connection, documentRegistry, manager, suspender);
+registerDocumentSymbolHandler(connection, documentRegistry, manager, suspender);
 registerWorkspaceSymbolHandler(connection, manager, suspender);
-registerSemanticTokensHandler(connection, documents, manager, suspender);
+registerSemanticTokensHandler(connection, documentRegistry, manager, suspender);
 registerReferencesHandler(
   connection,
   documentRegistry,

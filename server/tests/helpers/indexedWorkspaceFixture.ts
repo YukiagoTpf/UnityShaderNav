@@ -39,7 +39,7 @@ export function createIndexedWorkspaceFixture(
   for (const fileIndex of indexes) index.restoreFromCache(fileIndex.uri, fileIndex);
 
   const state = () => ({
-    index,
+    index: index.read,
     includeCtx: options.includeCtx ?? {
       unityProjectRoot: undefined,
       includeDirectories: [],
@@ -51,13 +51,14 @@ export function createIndexedWorkspaceFixture(
 
   return {
     async updateDocument(document) {
-      if (!index.store.get(document.uri)) {
-        await index.reindex(document.uri, document.text);
+      if (!index.file(document.uri)) {
+        const candidate = await index.prepareDocument(document.uri, document.text);
+        if (candidate) index.commitDocument(candidate);
       }
       return true;
     },
     async closeDocument({ uri }) {
-      index.closeDocument(uri);
+      await index.restoreClosedDocument(uri);
     },
     async definitionAt(input) {
       await this.updateDocument(input.document);
@@ -67,6 +68,13 @@ export function createIndexedWorkspaceFixture(
       await this.updateDocument(input.document);
       return navigateReferences(state(), input);
     },
+    async hoverAt() { return null; },
+    async completionAt() { return null; },
+    async signatureHelpAt() { return null; },
+    async highlightsAt() { return null; },
+    async documentSymbols() { return null; },
+    async semanticTokens() { return { data: [] }; },
+    workspaceSymbols() { return []; },
   };
 }
 

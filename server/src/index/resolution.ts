@@ -1,8 +1,8 @@
 import type { Location } from 'vscode-languageserver/node';
 import type { FileIndex, Position, SymbolEntry } from '@unity-shader-nav/shared';
-import type { GlobalSymbolIndex } from './globalIndex';
-import type { GlobalReferenceIndex } from './globalReferences';
-import type { IndexStore } from './indexStore';
+import type { GlobalSymbolReader } from './globalIndex';
+import type { GlobalReferenceReader } from './globalReferences';
+import type { IndexStoreReader } from './indexStore';
 import type { IncludeContext } from '../include';
 import type { CursorTarget } from './cursorTarget';
 import { resolveDefinitionSymbols, type ResolutionOptions } from './symbolResolver';
@@ -27,7 +27,7 @@ import { collectVisibleUriKeys } from './visibility';
 
 export interface ResolverContext {
   index: FileIndex;
-  global: GlobalSymbolIndex | null;
+  global: GlobalSymbolReader | null;
   position: Position;
   options?: ResolutionOptions;
 }
@@ -53,9 +53,9 @@ export function resolveDefinition(target: CursorTarget, ctx: ResolverContext): S
 export interface ReferenceCollectionContext {
   index: FileIndex | undefined;
   position: Position;
-  global: GlobalSymbolIndex;
-  globalRefs: GlobalReferenceIndex;
-  store: IndexStore;
+  global: GlobalSymbolReader;
+  globalRefs: GlobalReferenceReader;
+  store: IndexStoreReader;
   includeCtx: IncludeContext;
   isInPackages: (uri: string) => boolean;
   includePackages: boolean;
@@ -169,7 +169,7 @@ export async function findReferences(
 export interface HighlightCollectionContext {
   index: FileIndex;
   position: Position;
-  global: GlobalSymbolIndex;
+  global: GlobalSymbolReader;
   options?: ResolutionOptions;
 }
 
@@ -185,7 +185,7 @@ function receiverTargets(
   index: FileIndex,
   receiver: string,
   position: Position,
-  global: GlobalSymbolIndex | null,
+  global: GlobalSymbolReader | null,
   options: ResolutionOptions | undefined,
 ): ReferenceTarget[] {
   if (!isSimpleIdentifier(receiver)) return [];
@@ -202,7 +202,7 @@ function sameReceiverMemberLocations(
   memberName: string,
   receiverName: string,
   receiverPosition: Position,
-  global: GlobalSymbolIndex | null,
+  global: GlobalSymbolReader | null,
   options: ResolutionOptions | undefined,
 ): Location[] {
   const activeReceiverTargets = receiverTargets(index, receiverName, receiverPosition, global, options);

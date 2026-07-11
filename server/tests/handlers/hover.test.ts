@@ -1,500 +1,125 @@
-import { describe, expect, it } from 'vitest';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { describe, expect, it, vi } from 'vitest';
 import type { Connection, Hover, HoverParams } from 'vscode-languageserver/node';
-import { TextDocument } from 'vscode-languageserver-textdocument';
-import type { FileIndex, FunctionSymbolEntry } from '@unity-shader-nav/shared';
-import { GlobalSymbolIndex, IndexStore } from '../../src/index';
 import { registerHoverHandler } from '../../src/handlers/hover';
-import { indexFile } from '../../src/parser/hlsl/fileIndexer';
-import { BUILTIN_ENTRIES } from '../../src/vocabulary';
+import { RequestSuspender } from '../../src/lifecycle/requestSuspender';
+import type {
+  IndexedDocumentRegistry,
+  IndexedDocumentSnapshot,
+  IndexedWorkspace,
+  IndexedWorkspaceRequestRouter,
+} from '../../src/workspace/indexedWorkspace';
 
 type HoverHandler = (params: HoverParams) => Promise<Hover | null>;
 
-interface HoverFixture {
-  handler: HoverHandler;
-  store: IndexStore;
-  global: GlobalSymbolIndex;
+const uri = 'file:///project/Assets/Main.hlsl';
+const position = { line: 3, character: 7 };
+
+function documentSnapshot(): IndexedDocumentSnapshot {
+  return {
+    uri,
+    languageId: 'hlsl',
+    text: 'float4 Main() { return Helper(); }',
+    openId: 11,
+    version: 4,
+  };
 }
 
-function makeFixture(uri: string, languageId: string, text: string, idx: FileIndex, folderUri?: string): HoverFixture {
+function captureHandler(
+  documents: Pick<IndexedDocumentRegistry, 'snapshot'>,
+  manager: IndexedWorkspaceRequestRouter,
+  suspender?: Pick<RequestSuspender, 'run'>,
+): HoverHandler {
   let handler: HoverHandler | undefined;
   const connection = {
-    onHover(fn: HoverHandler) {
-      handler = fn;
+    onHover(candidate: HoverHandler) {
+      handler = candidate;
       return { dispose() {} };
     },
-    console: {
-      warn() {},
-    },
   } as unknown as Connection;
-  const doc = TextDocument.create(uri, languageId, 1, text);
-  const documents = {
-    get(requestedUri: string) {
-      return requestedUri === uri ? doc : undefined;
-    },
-  } as never;
-  const store = new IndexStore();
-  const global = new GlobalSymbolIndex();
-  store.set(uri, idx);
-  global.upsert(idx);
-  const workspace = {
-    folderUri,
-    packages: { includeCtx: { unityProjectRoot: undefined, includeDirectories: [] } },
-    index: { store, global },
-  };
-  const manager = {
-    servingWorkspaceFor(requestedUri: string) {
-      return requestedUri === uri ? workspace : undefined;
-    },
-  } as never;
-  registerHoverHandler(connection, documents, manager);
+  registerHoverHandler(connection, documents, manager, suspender);
   if (!handler) throw new Error('hover handler was not registered');
-  return { handler, store, global };
+  return handler;
 }
 
-function tokenPosition(text: string, line: number, token: string, occurrence = 0): { line: number; character: number } {
-  const lines = text.split(/\r?\n/);
-  let character = -1;
-  let from = 0;
-  for (let i = 0; i <= occurrence; i++) {
-    character = lines[line].indexOf(token, from);
-    if (character < 0) throw new Error(`missing token ${token} on line ${line}`);
-    from = character + token.length;
-  }
-  return { line, character: character + 1 };
-}
-
-describe('registerHoverHandler — project symbols', () => {
-  it('hovers a function declared in the same file', async () => {
-    const uri = 'file:///t/x.hlsl';
-    const text = [
-      'float4 Helper(float4 v) { return v; }',
-      'float4 main() { return Helper(float4(1,1,1,1)); }',
-    ].join('\n');
-    const idx = await indexFile(uri, text);
-    const { handler } = makeFixture(uri, 'hlsl', text, idx);
-
-    const result = await handler({
-      textDocument: { uri },
-      position: tokenPosition(text, 1, 'Helper'),
-    });
-
-    expect(result).not.toBeNull();
-    expect(result?.contents).toMatchObject({ kind: 'markdown' });
-    const value = (result?.contents as { value: string }).value;
-    expect(value).toContain('```hlsl');
-    expect(value).toContain('float4 Helper(float4 v)');
-    expect(value).toContain('_in_');
-    expect(result?.range).toEqual({
-      start: { line: 1, character: 23 },
-      end: { line: 1, character: 29 },
-    });
-  });
-
-  it('hovers a function across a #include chain and respects include visibility', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'usn-hover-project-'));
-    try {
-      const assets = join(root, 'Assets');
-      await mkdir(assets, { recursive: true });
-      const mainPath = join(assets, 'Main.hlsl');
-      const sharedPath = join(assets, 'Shared.hlsl');
-      const otherPath = join(assets, 'Other.hlsl');
-      const mainText = [
-        '#include "Shared.hlsl"',
-        'float4 Main() { return Helper(); }',
-      ].join('\n');
-      const sharedText = 'float4 Helper() { return 1; }';
-      const otherText = 'float4 Helper() { return 2; }';
-      await writeFile(mainPath, mainText, 'utf8');
-      await writeFile(sharedPath, sharedText, 'utf8');
-      await writeFile(otherPath, otherText, 'utf8');
-
-      const mainUri = pathToFileURL(mainPath).href;
-      const sharedUri = pathToFileURL(sharedPath).href;
-      const otherUri = pathToFileURL(otherPath).href;
-      const folderUri = pathToFileURL(root).href;
-      const indexes = await Promise.all([
-        indexFile(mainUri, mainText),
-        indexFile(sharedUri, sharedText),
-        indexFile(otherUri, otherText),
-      ]);
-      const store = new IndexStore();
-      const global = new GlobalSymbolIndex();
-      for (const idx of indexes) {
-        store.set(idx.uri, idx);
-        global.upsert(idx);
-      }
-
-      let handler: HoverHandler | undefined;
-      const connection = {
-        onHover(fn: HoverHandler) {
-          handler = fn;
-          return { dispose() {} };
-        },
-        console: { warn() {} },
-      } as unknown as Connection;
-      const doc = TextDocument.create(mainUri, 'hlsl', 1, mainText);
-      const documents = {
-        get(requestedUri: string) {
-          return requestedUri === mainUri ? doc : undefined;
-        },
-      } as never;
-      const workspace = {
-        folderUri,
-        packages: { includeCtx: { unityProjectRoot: root, includeDirectories: [] } },
-        index: { store, global },
-      };
-      const manager = {
-        servingWorkspaceFor() {
-          return workspace;
-        },
-      } as never;
-      registerHoverHandler(connection, documents, manager);
-
-      const result = await handler?.({
-        textDocument: { uri: mainUri },
-        position: { line: 1, character: mainText.split('\n')[1].indexOf('Helper') + 1 },
-      });
-
-      expect(result).not.toBeNull();
-      const value = (result?.contents as { value: string }).value;
-      // Single candidate — no `**N candidates**` header.
-      expect(value).not.toMatch(/\*\*\d+ candidates\*\*/);
-      expect(value).toContain('float4 Helper()');
-      // Footer must point at Shared.hlsl, not Other.hlsl.
-      expect(value).toContain('Shared.hlsl');
-      expect(value).not.toContain('Other.hlsl');
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
-
-  it('hovers a struct member through a known receiver type', async () => {
-    const uri = 'file:///t/member.hlsl';
-    const text = [
-      'struct Surface {',
-      '  float3 positionWS;',
-      '};',
-      'float3 main(Surface surface) { return surface.positionWS; }',
-    ].join('\n');
-    const idx = await indexFile(uri, text);
-    const { handler } = makeFixture(uri, 'hlsl', text, idx);
-
-    const result = await handler({
-      textDocument: { uri },
-      position: tokenPosition(text, 3, 'positionWS'),
-    });
-
-    expect(result).not.toBeNull();
-    const value = (result?.contents as { value: string }).value;
-    expect(value).toContain('float3 positionWS;');
-    expect(value).toContain('_member of_ `Surface`');
-  });
-
-  it('hovers a scope-narrowed local variable', async () => {
-    const uri = 'file:///t/locals.hlsl';
-    const text = [
-      'float4 main() {',
-      '  float4 myLocal = float4(1, 1, 1, 1);',
-      '  return myLocal;',
-      '}',
-    ].join('\n');
-    const idx = await indexFile(uri, text);
-    const { handler } = makeFixture(uri, 'hlsl', text, idx);
-
-    const result = await handler({
-      textDocument: { uri },
-      position: tokenPosition(text, 2, 'myLocal'),
-    });
-
-    expect(result).not.toBeNull();
-    const value = (result?.contents as { value: string }).value;
-    expect(value).toContain('myLocal');
-    expect(value).toContain('```hlsl');
-  });
-
-  it('hovers a macro definition', async () => {
-    const uri = 'file:///t/macro.hlsl';
-    const text = [
-      '#define MY_THING 1',
-      'int useMacro() { return MY_THING; }',
-    ].join('\n');
-    const idx: FileIndex = {
-      uri,
-      references: [],
-      symbols: [
-        {
-          name: 'MY_THING',
-          kind: 'macro',
-          location: { uri, range: { start: { line: 0, character: 8 }, end: { line: 0, character: 16 } } },
-        },
-        {
-          name: 'useMacro',
-          kind: 'function',
-          returnType: 'int',
-          parameters: [],
-          location: { uri, range: { start: { line: 1, character: 4 }, end: { line: 1, character: 12 } } },
-        } as FunctionSymbolEntry,
-      ],
+describe('registerHoverHandler', () => {
+  it('forwards the captured document snapshot and position to the serving workspace', async () => {
+    const document = documentSnapshot();
+    const expected: Hover = { contents: 'project hover' };
+    const hoverAt = vi.fn(async () => expected);
+    const workspace = { hoverAt } as unknown as IndexedWorkspace;
+    const documents = { snapshot: vi.fn(() => document) };
+    const manager = {
+      servingWorkspaceFor: vi.fn(() => workspace),
     };
-    const { handler } = makeFixture(uri, 'hlsl', text, idx);
+    const handler = captureHandler(documents, manager);
 
-    const result = await handler({
-      textDocument: { uri },
-      position: tokenPosition(text, 1, 'MY_THING'),
-    });
-
-    expect(result).not.toBeNull();
-    const value = (result?.contents as { value: string }).value;
-    expect(value).toContain('#define MY_THING');
+    await expect(handler({ textDocument: { uri }, position })).resolves.toBe(expected);
+    expect(documents.snapshot).toHaveBeenCalledOnce();
+    expect(documents.snapshot).toHaveBeenCalledWith(uri);
+    expect(manager.servingWorkspaceFor).toHaveBeenCalledWith(uri);
+    expect(hoverAt).toHaveBeenCalledOnce();
+    expect(hoverAt).toHaveBeenCalledWith({ document, position });
   });
 
-  it('renders multiple ambiguous candidates with a header and separator', async () => {
-    const uri = 'file:///t/ambiguous.hlsl';
-    const text = [
-      'float4 ambig() { return 1; }',
-      'float4 ambig(float a) { return a; }',
-      'float4 caller() { return ambig(2); }',
-    ].join('\n');
-    const idx = await indexFile(uri, text);
-    const { handler } = makeFixture(uri, 'hlsl', text, idx);
+  it('returns null without routing when the document is not open', async () => {
+    const manager = { servingWorkspaceFor: vi.fn() };
+    const handler = captureHandler({ snapshot: () => undefined }, manager);
 
-    const result = await handler({
-      textDocument: { uri },
-      position: tokenPosition(text, 2, 'ambig'),
-    });
-
-    expect(result).not.toBeNull();
-    const value = (result?.contents as { value: string }).value;
-    expect(value).toMatch(/^\*\*2 candidates\*\*/);
-    expect(value).toContain('\n\n---\n\n');
+    await expect(handler({ textDocument: { uri }, position })).resolves.toBeNull();
+    expect(manager.servingWorkspaceFor).not.toHaveBeenCalled();
   });
 
-  it('pins behavior when the cursor sits on the declaration identifier itself', async () => {
-    const uri = 'file:///t/self.hlsl';
-    const text = 'float4 Helper() { return 0; }';
-    const idx = await indexFile(uri, text);
-    const { handler } = makeFixture(uri, 'hlsl', text, idx);
+  it('returns null when the current route is not serving', async () => {
+    const handler = captureHandler(
+      { snapshot: () => documentSnapshot() },
+      { servingWorkspaceFor: () => undefined },
+    );
 
-    const result = await handler({
-      textDocument: { uri },
-      position: tokenPosition(text, 0, 'Helper'),
-    });
-
-    // Self-hover is intentional: declarations use the same card as use-sites.
-    expect(result).not.toBeNull();
-    const value = (result?.contents as { value: string }).value;
-    expect(value).toContain('float4 Helper()');
+    await expect(handler({ textDocument: { uri }, position })).resolves.toBeNull();
   });
 
-  it('narrows a local variable hover to the in-scope declaration vs outer global', async () => {
-    // Same name `value` declared twice: a file-global, and a local inside main().
-    // Inside main()'s scope, hover should hit the local; outside, it should hit the global.
-    const uri = 'file:///t/scope.hlsl';
-    const text = [
-      'float value = 1.0;',           // line 0: global
-      'float main() {',               // line 1
-      '  float value = 2.0;',         // line 2: local
-      '  return value;',              // line 3: use — picks local
-      '}',                            // line 4
-      'float other() { return value; }', // line 5: use — picks global
-    ].join('\n');
-    const idx: FileIndex = {
-      uri,
-      references: [],
-      symbols: [
-        {
-          name: 'value',
-          kind: 'variable',
-          declaredType: 'float',
-          location: { uri, range: { start: { line: 0, character: 6 }, end: { line: 0, character: 11 } } },
-        },
-        {
-          name: 'value',
-          kind: 'localVariable',
-          declaredType: 'float',
-          scopeRange: { start: { line: 1, character: 0 }, end: { line: 4, character: 1 } },
-          location: { uri, range: { start: { line: 2, character: 8 }, end: { line: 2, character: 13 } } },
-        },
-      ],
-    };
-    const { handler } = makeFixture(uri, 'hlsl', text, idx);
-
-    const insideScope = await handler({
-      textDocument: { uri },
-      position: tokenPosition(text, 3, 'value'),
+  it('lazily recreates a missing route for the same open session', async () => {
+    const document = documentSnapshot();
+    const expected: Hover = { contents: 'lazy hover' };
+    const hoverAt = vi.fn(async () => expected);
+    const workspace = { hoverAt } as unknown as IndexedWorkspace;
+    const documents = { snapshot: vi.fn(() => document) };
+    const workspaceForOrCreateFile = vi.fn(async (
+      requestedUri: string,
+      shouldCreate?: () => boolean,
+    ) => {
+      expect(requestedUri).toBe(uri);
+      expect(shouldCreate?.()).toBe(true);
+      return workspace;
     });
-    expect(insideScope).not.toBeNull();
-    // Local at line 2 → footer shows :3 (1-based line number).
-    expect((insideScope?.contents as { value: string }).value).toContain('`scope.hlsl`:3');
-
-    const outsideScope = await handler({
-      textDocument: { uri },
-      position: tokenPosition(text, 5, 'value'),
+    const handler = captureHandler(documents, {
+      servingWorkspaceFor: () => undefined,
+      workspaceFor: () => undefined,
+      workspaceForOrCreateFile,
     });
-    expect(outsideScope).not.toBeNull();
-    // Global at line 0 → footer shows :1.
-    expect((outsideScope?.contents as { value: string }).value).toContain('`scope.hlsl`:1');
+
+    await expect(handler({ textDocument: { uri }, position })).resolves.toBe(expected);
+    expect(workspaceForOrCreateFile).toHaveBeenCalledOnce();
+    expect(hoverAt).toHaveBeenCalledWith({ document, position });
   });
 
-  it('falls through to plain word resolution when member resolution returns empty', async () => {
-    // `unknown.x` — receiver type cannot be inferred, so resolveMemberSymbols
-    // returns []. Hover must NOT return null; it must fall through to wordAt
-    // on `x` (parity with definition.ts:130-150).
-    const uri = 'file:///t/member-fallthrough.hlsl';
-    const text = [
-      'float x = 1;',
-      'float main() { return unknown.x; }',
-    ].join('\n');
-    const idx: FileIndex = {
-      uri,
-      references: [],
-      symbols: [
-        {
-          name: 'x',
-          kind: 'variable',
-          declaredType: 'float',
-          location: { uri, range: { start: { line: 0, character: 6 }, end: { line: 0, character: 7 } } },
-        },
-      ],
-    };
-    const { handler } = makeFixture(uri, 'hlsl', text, idx);
+  it('waits for RequestSuspender before resolving the workspace query', async () => {
+    const hoverAt = vi.fn(async () => null);
+    const workspace = { hoverAt } as unknown as IndexedWorkspace;
+    const suspender = new RequestSuspender({ timeoutMs: 1000 });
+    suspender.suspend();
+    const handler = captureHandler(
+      { snapshot: () => documentSnapshot() },
+      { servingWorkspaceFor: () => workspace },
+      suspender,
+    );
 
-    const dotIndex = text.split('\n')[1].indexOf('unknown.x') + 'unknown.'.length;
-    const result = await handler({
-      textDocument: { uri },
-      position: { line: 1, character: dotIndex + 1 },
-    });
+    const result = handler({ textDocument: { uri }, position });
+    await Promise.resolve();
+    expect(hoverAt).not.toHaveBeenCalled();
 
-    // Bare `x` resolves to the global float x variable.
-    expect(result).not.toBeNull();
-    const value = (result?.contents as { value: string }).value;
-    expect(value).toContain('float x;');
-  });
-});
-
-describe('registerHoverHandler — built-in fallback', () => {
-  it('hovers a built-in catalog entry when no project symbol matches', async () => {
-    const builtin = BUILTIN_ENTRIES.find((entry) => entry.kind === 'function' && entry.category === 'hlsl');
-    if (!builtin) throw new Error('expected at least one HLSL built-in function entry in catalog');
-
-    const uri = 'file:///t/builtin.hlsl';
-    const text = `float4 use() { return ${builtin.name}(0); }`;
-    const idx: FileIndex = { uri, references: [], symbols: [] };
-    const { handler } = makeFixture(uri, 'hlsl', text, idx);
-
-    const result = await handler({
-      textDocument: { uri },
-      position: tokenPosition(text, 0, builtin.name),
-    });
-
-    expect(result).not.toBeNull();
-    const value = (result?.contents as { value: string }).value;
-    expect(value).toContain(builtin.name);
-    expect(value).toMatch(/_(HLSL|Unity|URP|ShaderLab) built-in_|_HLSL semantic_/);
-  });
-});
-
-describe('registerHoverHandler — guards and empty cases', () => {
-  it('returns null inside a line comment', async () => {
-    const uri = 'file:///t/comment.hlsl';
-    const text = [
-      'float4 Helper() { return 0; }',
-      '// Helper should not hover from a comment',
-    ].join('\n');
-    const idx = await indexFile(uri, text);
-    const { handler } = makeFixture(uri, 'hlsl', text, idx);
-
-    const result = await handler({
-      textDocument: { uri },
-      position: tokenPosition(text, 1, 'Helper'),
-    });
-
-    expect(result).toBeNull();
-  });
-
-  it('returns null inside a ShaderLab declarative section (outside any HLSL block)', async () => {
-    const uri = 'file:///t/decl.shader';
-    const text = [
-      'Shader "T/Test" {',
-      '  Properties {',
-      '    helper ("helper", Float) = 0',
-      '  }',
-      '  SubShader {',
-      '    Pass {',
-      '      HLSLPROGRAM',
-      '      float4 helper() { return 0; }',
-      '      ENDHLSL',
-      '    }',
-      '  }',
-      '}',
-    ].join('\n');
-    const idx: FileIndex = {
-      uri,
-      references: [],
-      symbols: [
-        {
-          name: 'helper',
-          kind: 'function',
-          returnType: 'float4',
-          parameters: [],
-          location: { uri, range: { start: { line: 7, character: 13 }, end: { line: 7, character: 19 } } },
-        } as FunctionSymbolEntry,
-      ],
-    };
-    const { handler } = makeFixture(uri, 'shaderlab', text, idx);
-
-    const result = await handler({
-      textDocument: { uri },
-      position: tokenPosition(text, 2, 'helper'),
-    });
-
-    expect(result).toBeNull();
-  });
-
-  it('returns null for an unknown identifier with no project or built-in match', async () => {
-    const uri = 'file:///t/unknown.hlsl';
-    const text = 'float4 main() { return zzzNotAThing(0); }';
-    const idx: FileIndex = { uri, references: [], symbols: [] };
-    const { handler } = makeFixture(uri, 'hlsl', text, idx);
-
-    const result = await handler({
-      textDocument: { uri },
-      position: tokenPosition(text, 0, 'zzzNotAThing'),
-    });
-
-    expect(result).toBeNull();
-  });
-
-  it('passes folderUri through to the formatter so paths become workspace-relative', async () => {
-    const folder = await mkdtemp(join(tmpdir(), 'usn-hover-folder-uri-'));
-    try {
-      const filePath = join(folder, 'sub', 'A.hlsl');
-      await mkdir(join(folder, 'sub'), { recursive: true });
-      const text = [
-        'float4 Helper() { return 0; }',
-        'float4 main() { return Helper(); }',
-      ].join('\n');
-      await writeFile(filePath, text, 'utf8');
-      const uri = pathToFileURL(filePath).href;
-      const folderUri = pathToFileURL(folder).href;
-      const idx = await indexFile(uri, text);
-      const { handler } = makeFixture(uri, 'hlsl', text, idx, folderUri);
-
-      const result = await handler({
-        textDocument: { uri },
-        position: tokenPosition(text, 1, 'Helper'),
-      });
-
-      expect(result).not.toBeNull();
-      const value = (result?.contents as { value: string }).value;
-      // Footer should be relative (sub/A.hlsl), NOT the absolute path.
-      expect(value).toContain('`sub/A.hlsl`');
-    } finally {
-      await rm(folder, { recursive: true, force: true });
-    }
+    suspender.release();
+    await expect(result).resolves.toBeNull();
+    expect(hoverAt).toHaveBeenCalledOnce();
   });
 });

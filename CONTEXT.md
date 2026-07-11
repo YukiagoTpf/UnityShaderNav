@@ -42,10 +42,10 @@ _Avoid_: symbol record, symbol info
 ### 索引生命周期
 
 **Cold start**:
-扩展激活后到初始索引可服务请求之间的时间窗口。该阶段的请求等待与失败语义由索引生命周期统一管理。
+扩展激活后到各 Workspace 首次发布索引之间的时间窗口。Server 只在读取全局设置与初始 folder snapshot、启动 per-root initialization 之前使用一个短暂、有上限的请求门；释放后，没有 published revision 的索引请求直接返回 neutral result，不等待该根完成扫描。
 
 **Rebuild mode**:
-外部状态变化使增量更新不再可靠时，索引进入的清空、重扫和重新发布状态。区别于单文件的增量更新路径。
+外部状态变化使增量更新不再可靠时，Workspace 从零构建 candidate revision 并重新发布的状态。已有 published revision 在构建期间继续服务；成功时单次替换，失败时继续保留 last-known-good revision。区别于从当前 revision fork 的单文件增量路径。
 
 **PackageResolver**:
 启动时读 `Packages/packages-lock.json`，构建 `package_name → physical_path` 映射的服务。是 ADR-0002 manifest-driven 策略的实现承担者。
@@ -54,18 +54,26 @@ _Avoid_: symbol record, symbol info
 `Workspace` 中 package 相关能力的边界：组合 **PackageResolver**、include 解析上下文和 package 成员关系。与 **PackageResolver** 成对理解；另见 Flagged ambiguities 的 "Package"。
 
 **WorkspaceIndex**:
-`Workspace` 内部的索引实现。它维护磁盘索引、打开文档覆盖、全局符号和全局引用之间的一致性；请求 handler 不接收它，也不直接调用其变更方法。
+revision candidate 内部的可变索引实现。它维护磁盘索引、打开文档覆盖、全局符号和全局引用之间的一致性；增量 candidate 通过 copy-on-write fork 获得独立 maps / global arrays，并复用不可变 `FileIndex` 值。发布后该实例不再变更；请求 handler 和公开 Workspace behavior 都不暴露它的 stores。
 
 **Indexed Workspace interface**:
-请求与文档生命周期使用的行为接口。当前包含打开文档更新、关闭文档、Definition 和 Find References；`Workspace` 在接口后组合索引、include 可见性、Package 过滤与生命周期顺序。
+请求与文档生命周期使用的行为接口。它包含打开文档更新、关闭文档，以及 Definition、References、Hover、Completion、Signature Help、Document Highlight、Document Symbols、Semantic Tokens 和 Workspace Symbols 等 index-backed 查询；`Workspace` 在接口后组合 revision publication、include 可见性、Package 过滤与符号解析。handler 只做 LSP 参数和 neutral-result 适配。
 _Avoid_: index bundle, store context, workspace index facade
+
+**Published indexed revision**:
+单个 Workspace 已发布、可被一次请求捕获的不可变查询视图。它把 settings、Unity root、Package context、cache fingerprint、live-document attempt identity 和索引数据绑定为同一代；异步查询始终使用捕获的同一个 revision，不会混读 candidate 或另一代 stores。
+_Avoid_: current store, live index object, mutable workspace index
+
+**Indexed revision candidate**:
+尚未发布的一次性可变 builder。完整扫描从空 candidate 开始；live document、close 和 watcher transaction 从 published revision fork。所有 parse / I/O / attempt 校验完成后才允许构造新 published revision，并通过一次 Workspace pointer swap 生效；失败 candidate 直接丢弃。
+_Avoid_: staging store exposed to handlers, partial revision
 
 **Open document snapshot**:
 一次编辑器文档状态的不可变值：`uri + languageId + text + openId + version`。`openId` 标识一次 `didOpen → didClose` 会话；`version` 只在同一 `openId` 内排序。两者共同构成 document attempt identity。
 _Avoid_: document generation, text document reference
 
 **Live document overlay**:
-打开或未保存文档覆盖在磁盘索引之上的索引记录。edit 只允许最新 document attempt 提交；close 恢复最后有效的磁盘记录，没有磁盘版本时删除该 URI 的索引记录。等价 file URI 共用一个 identity；一个 snapshot 只属于最长路径匹配的 Workspace，根拓扑变化时在旧、新 owner 之间迁移；没有新 owner 时，当前 Definition/References 请求可以重新进入 lazy routing。
+打开或未保存文档覆盖在磁盘索引之上的索引记录。edit 只允许最新 document attempt 发布；close 在 candidate 中恢复最后有效的磁盘记录，没有磁盘版本时删除该 URI，随后原子发布。等价 file URI 共用一个 identity；一个 snapshot 只属于最长路径匹配的 Workspace，根拓扑变化时在旧、新 owner 之间迁移；没有新 owner 时，下一次需要该打开文档的 index-backed 请求可以重新进入 lazy routing。
 _Avoid_: temporary index, unsaved cache
 
 **Index implementation identity**:
@@ -73,11 +81,11 @@ _Avoid_: temporary index, unsaved cache
 _Avoid_: cache version, release version, Git revision
 
 **Index revision**:
-单个 `Workspace` 在一次 language-server session 内成功发布的初始/重建索引代次。`0` 表示尚无可服务索引；成功初始化或重建单调递增，失败不递增。当前 live-document 与增量文件变更不会增加 revision；完整 immutable publication boundary 仍以 ADR-0006 为准。它不是时间戳，也不等于 status sequence。
+单个 `Workspace` 在一次 language-server session 内成功发布的索引代次。`0` 表示从未发布；初始化、rebuild、有效 watcher batch、live edit、close 或兼容的 settings-only 变更每次成功发布都单调递增一次；空事件批次、没有有效变化的 watcher transaction，以及过期、已被取代或失败的 attempt 不发布、不递增。读取索引状态的 request 捕获一个 immutable revision；纯词法 early exit 和没有 serving revision 的 neutral result 不读取 revision。它不是时间戳，也不等于 status sequence。
 _Avoid_: index version, cache generation, status sequence
 
 **Serving workspace**:
-请求路径按 URI 找到、且当前拥有可服务 index revision 的 `Workspace`。该查询不等待初始化、不创建 Workspace；不处于全局 full-rebuild suspension 时，没有 serving workspace 的 handler 立即返回对应的 neutral LSP result。后台文档与文件生命周期使用单独的 ensure/create 路径。
+请求路径按 URI 找到、且当前拥有可服务 published revision 的 `Workspace`。它可以处于 `ready`，也可以在 rebuild/recovery 或 failed 状态下服务 last-known-good revision。该查询不等待初始化、不创建 Workspace；没有 serving workspace 的 handler 立即返回对应的 neutral LSP result。当前打开文档需要恢复已消失的 owner 时，request router 使用独立、受 `openId` 约束的 lazy-create 路径。
 _Avoid_: ready promise, lazy request workspace
 
 **Index status snapshot**:

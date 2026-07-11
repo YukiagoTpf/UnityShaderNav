@@ -12,30 +12,25 @@ type RebuildSettingsProvider = (
 export async function rebuildWorkspaces(
   connection: Connection,
   manager: WorkspaceManager,
-  suspender?: RebuildSuspender,
+  _suspender?: RebuildSuspender,
   settingsForRebuild?: RebuildSettingsProvider,
 ): Promise<void> {
-  suspender?.suspend();
-  try {
-    const workspaces = await manager.rebuildableList();
-    await Promise.all(workspaces.map(async (workspace) => {
-      try {
-        const settings = await settingsForRebuild?.(workspace);
-        if (settings) {
-          await workspace.rebuild(connection, settings);
-        } else {
-          await workspace.rebuild(connection);
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        connection.console.error(
-          `[UnityShaderNav] rebuild failed for ${workspace.folderUri}: ${message}`,
-        );
+  const workspaces = await manager.rebuildableList();
+  await Promise.all(workspaces.map(async (workspace) => {
+    try {
+      const settings = await settingsForRebuild?.(workspace);
+      if (settings) {
+        await workspace.rebuild(connection, settings);
+      } else {
+        await workspace.rebuild(connection);
       }
-    }));
-  } finally {
-    suspender?.release();
-  }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      connection.console.error(
+        `[UnityShaderNav] rebuild failed for ${workspace.folderUri}: ${message}`,
+      );
+    }
+  }));
 }
 
 export async function applySettingsAndRebuild(
@@ -57,7 +52,7 @@ export async function applyScopedSettingsAndRebuild(
   connection: Connection,
   manager: WorkspaceManager,
   settingsForWorkspace: (folderUri: string) => ExtensionSettings | Promise<ExtensionSettings>,
-  suspender?: RebuildSuspender,
+  _suspender?: RebuildSuspender,
 ): Promise<void> {
   const updates = await Promise.all(manager.list().map(async (workspace) => {
     const settings = await settingsForWorkspace(workspace.folderUri);
@@ -95,14 +90,7 @@ export async function applyScopedSettingsAndRebuild(
   const blocking = updates.filter((update) => !update.initiallyIndexing);
   if (blocking.length === 0) return;
 
-  // The decision is intentionally made inside each Workspace queue, so the
-  // caller cannot know whether a rebuild is required before execution. A
-  // short suspension for every serving-root settings update is the smallest
-  // honest boundary; no-op index updates do not restore document overlays.
-  suspender?.suspend();
-  try {
-    await Promise.all(blocking.map(reconfigure));
-  } finally {
-    suspender?.release();
-  }
+  // Serving roots retain an immutable revision while their candidate builds;
+  // suspending requests here would defeat that contract.
+  await Promise.all(blocking.map(reconfigure));
 }

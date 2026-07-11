@@ -6,7 +6,7 @@ import type {
   SymbolEntry,
   SymbolKind,
 } from '@unity-shader-nav/shared';
-import type { GlobalSymbolIndex } from './globalIndex';
+import type { GlobalSymbolReader } from './globalIndex';
 import type { CursorTarget } from './cursorTarget';
 import { resolveMemberSymbols } from './chainLookup';
 import { containsPosition } from './positionGeometry';
@@ -44,7 +44,7 @@ export function resolveReferenceTargetsForName(
   index: FileIndex,
   name: string,
   position: Position,
-  global?: GlobalSymbolIndex | null,
+  global?: GlobalSymbolReader | null,
   options?: ResolutionOptions,
 ): ReferenceTarget[] {
   const exactDeclarations = index.symbols.filter(
@@ -62,7 +62,7 @@ export function resolveReferenceTargets(
   index: FileIndex,
   text: string,
   position: Position,
-  global?: GlobalSymbolIndex | null,
+  global?: GlobalSymbolReader | null,
   options?: ResolutionOptions,
 ): ReferenceTarget[] {
   const memberAccess = memberAccessAt(text, position);
@@ -93,7 +93,7 @@ export function resolveReferenceTargetsForCursor(
   index: FileIndex,
   target: CursorTarget,
   position: Position,
-  global?: GlobalSymbolIndex | null,
+  global?: GlobalSymbolReader | null,
   options?: ResolutionOptions,
 ): ReferenceTarget[] {
   if (target.kind === 'member') {
@@ -117,7 +117,7 @@ export function resolveReferenceTargetsForCursor(
 export function resolveReferenceTargetsForMemberReference(
   index: FileIndex,
   reference: ReferenceEntry,
-  global?: GlobalSymbolIndex | null,
+  global?: GlobalSymbolReader | null,
   options?: ResolutionOptions,
 ): ReferenceTarget[] {
   if (reference.context !== 'member' || !reference.receiver) return [];

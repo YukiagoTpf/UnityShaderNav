@@ -45,13 +45,15 @@ handling. Important modules:
   project symbols, formats LSP completion/signature items, and adapts filtered
   vocabulary entries to suggestion results.
 - `handlers`: adapts LSP messages to domain behavior. The document adapter owns
-  the open-document registry; Definition and References are thin adapters over
-  the Indexed Workspace interface. Other query adapters remain independently
-  implemented.
+  the open-document registry; every index-backed query adapter calls only the
+  Indexed Workspace behavior interface and never receives raw index stores.
 - `workspace`: detects Unity roots, owns each root's index lifecycle, scans
-  files, applies changes, owns live-document attempts and navigation behavior,
-  and manages persistent cache. `WorkspaceManager` owns root routing, the
-  current-open-document provider, and the separate status-snapshot sequence.
+  files, applies changes, owns live-document attempts and query behavior, and
+  manages persistent cache. `PublishedIndexedRevision` is the immutable query
+  view; `IndexedRevisionBuilder` is its one-shot mutable candidate; and
+  `WorkspaceIndex` is private to those revision types. `WorkspaceManager` owns
+  root routing, cross-root query aggregation, the current-open-document
+  provider, and the separate status-snapshot sequence.
 
 ## Indexing Model
 
@@ -75,7 +77,7 @@ The index is intentionally pragmatic:
   changes index results. See
   [ADR-0005](adr/0005-conservative-preprocessor-branch-dimming.md).
 
-## Live Documents and Navigation Boundary
+## Live Documents and Indexed Query Boundary
 
 The document adapter is the only source of editor document identity. Each open
 session receives an `openId`; each immutable snapshot also carries the LSP
@@ -86,24 +88,26 @@ and always routes the current snapshot rather than a captured stale value.
 didOpen / didChange / didClose
   -> open-document snapshot registry
   -> Workspace.updateDocument / closeDocument
-  -> prepare parse + optional disk baseline
+  -> create an initial/rebuild candidate or fork the published revision
+  -> prepare parse + optional disk baseline in the candidate
   -> validate openId + version
-  -> synchronous WorkspaceIndex commit
+  -> publish once by swapping the Workspace revision pointer
 ```
 
-`Workspace` coalesces each URI behind its operation queue. A parse that finishes
-after a newer edit, close, or close/reopen pair cannot commit. Closing restores
-the last valid disk index; a live-only file is removed. File-watcher changes
-update the disk baseline in every serving Workspace whose index scope contains
-the URI, then republish any still-open overlay before the operation completes.
+`Workspace` serializes candidate construction and coalesces document attempts
+per canonical URI. A parse that finishes after a newer edit, close, or
+close/reopen pair cannot publish. Closing restores the last valid disk index in
+the candidate; a live-only file is removed. File-watcher changes fork each
+eligible owner that can accept incremental work, update its disk baseline
+without replacing an open overlay, and publish the complete candidate once.
 Eligibility means an existing disk baseline or the same exact user/package
 candidate rules used by scanning; excluded paths and packages absent from the
 lockfile cannot enter through a watcher. One Workspace failure does not prevent
 the other baseline owners from applying the event. Initial indexing and rebuild
-both replay the registry's latest
-snapshots before publishing `ready`, including after a workspace remove/re-add
-with the editor document still open. Disk baselines and live attempts share the
-same canonical file-URI key, so equivalent Windows drive-letter casing cannot
+build a separate candidate and replay the registry's latest snapshots before
+the single publication, including after a workspace remove/re-add with the
+editor document still open. Disk baselines and live attempts share the same
+canonical file-URI key, so equivalent Windows drive-letter casing cannot
 preserve or resurrect a deleted baseline.
 
 The longest matching Workspace is the sole owner of an open document. When a
@@ -114,74 +118,98 @@ Only owners whose route changed participate, non-serving owners rely on their
 pre-publication replay, and a replacement is not request-visible until its sync
 settles. A transient lazy Workspace is retired after losing its final open
 document. If removing the last owner leaves that document open, the registry
-keeps its immutable snapshot; the next Definition or References request can
-re-enter lazy discovery without waiting for another edit. Closing during the
-transition removes the overlay from every former owner.
+keeps its immutable snapshot; the next index-backed document request can
+re-enter lazy discovery while that `openId` remains current. Closing during the
+transition publishes removal of the overlay from every former owner. A
+provider-backed Workspace accepts an external snapshot only while that exact
+attempt is still assigned to it, so a request captured before transfer cannot
+recreate an overlay in the former owner afterward.
 
-Definition and Find References ask the serving Workspace for behavior; they do
-not receive `IndexStore`, global symbol, global reference, or include-context
-implementations. Their query is ordered behind previously accepted document,
-watcher, and rebuild work. Include visibility, scope resolution, proximity
-tie-breaks, property bridging, Package filtering, and multi-candidate results
-remain inside workspace-owned navigation. Other handlers never call an index
-implementation to repair a miss. During their migration they may join the
-registry's current attempt through `Workspace.updateDocument`; if no current
-snapshot can be published, the miss remains a neutral lifecycle result.
-Include Definition is the intentional exception to request-document parsing:
-it resolves from immutable request text and include context alone.
+Definition, References, Hover, Completion, Signature Help, Document Highlight,
+Document Symbols, Semantic Tokens, and Workspace Symbols all ask a serving
+Workspace for behavior. Their handlers do not receive `IndexStore`, global
+symbol/reference indexes, settings, Package context, or include context. Each
+Workspace behavior that reads indexed state captures one
+`PublishedIndexedRevision`, and async query work continues against that same
+object even if another publication occurs.
+Include visibility, scope resolution, proximity tie-breaks, property bridging,
+Package filtering, semantic-token construction, symbol formatting, and
+multi-candidate results remain revision-owned behavior.
+
+An index-dependent open-document query whose exact `openId + version` is not
+published first joins that document attempt through Workspace behavior. It then
+captures the resulting revision, or returns the feature's neutral result if the
+attempt was superseded or failed. Pure lexical Completion/Signature Help exits
+still require a serving Workspace route, but they neither publish the request
+document attempt nor read indexed state. Queries already satisfied by a
+published revision do not wait merely because a rebuild candidate is in
+progress. Include Definition is the other intentional exception to
+request-document parsing: it resolves from the immutable request text and the
+captured revision's include context.
 
 ## Index Lifecycle and Publication
 
-Each workspace reports monotonically ordered successful index revisions.
+Each Workspace owns exactly one pointer to its latest immutable published
+revision. Initialization and full rebuild create a new candidate; live edits,
+close, watcher batches, and settings-only changes fork the current revision.
+`WorkspaceIndex.fork()` copies mutable maps and global-index arrays while
+sharing immutable per-file indexes. Settings, Package context, cache identity,
+committed document attempts, source warnings, and effective index data cross
+the publication boundary together. A one-shot builder cannot be mutated again
+after it creates a published revision.
+
+Publication is one synchronous pointer swap after all parsing, I/O, replay, and
+attempt validation completes. Every successful externally observable
+publication increments that Workspace's session-local `revision` exactly once.
+An empty event batch or watcher transaction with no effective change does not
+publish; neither does a stale, superseded, or failed attempt. A request that
+reads indexed state captures the published object, so it observes either the
+entire old revision or the entire new revision, never a partially updated mix.
+
 Workspace mode (`unity` or `standalone`) is separate from lifecycle state
-(`indexing`, `ready`, or `failed`), and multi-root workspaces report each root
-independently. The current rebuild path makes its mutable index non-serving
-before clearing and rebuilding it, so status deliberately omits
-`servingRevision` during rebuild or failure. A request for that root returns its
-neutral LSP result instead of waiting indefinitely or observing partial data.
-The immutable candidate/publication boundary required by
-[ADR-0006](adr/0006-index-lifecycle-and-failure-semantics.md) is a stricter
-stage beyond this readiness contract.
+(`indexing`, `ready`, or `failed`). During rebuild or recovery, status includes
+the last published `servingRevision` and queries continue against it while the
+candidate builds. Infrastructure failure discards the candidate, reports
+`failed(servingRevision)`, and keeps that last-known-good revision queryable.
+An initial failure has no revision and therefore returns neutral results until
+recovery succeeds. A compatible live-document transaction may still publish a
+new serving revision while preserving the failed status and original failure.
 
-At the current stage, revisions advance for successful initialization and
-rebuild only. Live-document and watcher mutations are serialized and commit all
-affected mutable index structures synchronously, but do not claim a new status
-revision. Definition and References are protected by the Workspace operation
-queue; the immutable retained-revision swap described by ADR-0006 remains the
-next publication boundary.
-
-An unreadable source is retained on the incremental path when a previous record
-exists, or skipped with a warning during a full scan. Failures that invalidate
-the whole operation—such as incomplete root discovery, invalid package state,
-or grammar/parser initialization failure—enter the observable failed state.
-Without an immutable retained revision, that root remains non-serving until a
-recovery succeeds. Cache failures are best-effort. See
+An unreadable source is retained when a compatible previous disk record exists,
+or skipped with a warning when no record exists. Failures that invalidate the
+whole operation—such as incomplete root discovery, invalid package state, or
+grammar/parser initialization failure—discard the entire candidate. Cache
+records bind each `FileIndex` to the size and modification time observed by the
+same stable source read; retaining an old index also retains that old identity,
+so persistence cannot pair old semantics with newer disk metadata. Cache
+failures remain best-effort and cannot invalidate an in-memory publication. See
 [ADR-0006](adr/0006-index-lifecycle-and-failure-semantics.md).
 
 Lifecycle state is observable through the same LSP connection used by editor
 features. The server exposes both an index-status pull request and a changed
-notification carrying the complete, folder-URI-sorted snapshot. Root add,
-terminal initialization, rebuild start, rebuild completion or failure, and
-root removal advance `statusSequence`; successful initialization and rebuild
-advance that root's `revision`. Failed roots remain managed and removable so a
-malformed package lock or parser startup failure cannot masquerade as an empty
-project. Per-root lifecycle operations are serialized, while independent roots
-can initialize and rebuild concurrently; one root's initial bootstrap does not
-delay another root's status registration. Workspace-folder events are
+notification carrying the complete, folder-URI-sorted snapshot. Root add or
+removal, lifecycle transitions, and every revision publication advance
+`statusSequence`; only successful revision publication advances that root's
+`revision`. Failed roots remain managed and removable so a malformed package
+lock or parser startup failure cannot masquerade as an empty project. Per-root
+mutation operations are serialized, while independent roots can initialize and
+rebuild concurrently; one root's initial bootstrap does not delay another
+root's status registration. Workspace-folder events are
 reconciled against a desired-membership token, so a slow scoped-settings read
 cannot resurrect a removed root. Removal synchronously retires routing and
 prevents the detached workspace from enqueueing new cache publication; a save
 already queued before retirement is ordered before any replacement write.
 
-The status pull is deliberately outside ordinary request suspension, making a
-slow or failed bootstrap diagnosable. Indexed request handlers use only a
-currently serving workspace and otherwise return their neutral result; they do
-not enter the background lazy-bootstrap path. Outside a full-rebuild
-suspension, cross-root queries immediately use the roots that can serve. The
-current mutable rebuild path still uses one bounded global suspension until all
-roots finish; timed-out waiters detach and return neutral results without being
-retained. A reconnect starts a new sequence domain; the client resets its
-last-seen sequence before accepting snapshots from the new server session.
+The status pull is outside request suspension, making a slow or failed bootstrap
+diagnosable. A short bounded gate covers only the initial global-settings and
+workspace-folder snapshot read. Once per-root initialization has been
+scheduled, indexed handlers select a serving revision immediately or return
+their neutral result; rebuilds do not suspend requests. Cross-root queries
+capture the currently serving root tuple and never wait for an unrelated root.
+Document requests may use the `openId`-guarded lazy route only when a current
+open snapshot has lost its owner. A reconnect starts a new sequence domain; the
+client resets its last-seen sequence before accepting snapshots from the new
+server session.
 
 ## Package Resolution
 

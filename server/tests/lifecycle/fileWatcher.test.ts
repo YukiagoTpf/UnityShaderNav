@@ -141,9 +141,7 @@ describe('registerFileWatchers', () => {
           calls.push('readyWorkspacesFor');
           return [];
         }),
-        workspaceForOrCreateFile: vi.fn(async () => ({
-          index: { reindex: vi.fn(async () => {}) },
-        })),
+        workspaceForOrCreateFile: vi.fn(),
         list: vi.fn(() => [workspace]),
       };
       const connection = {
@@ -234,14 +232,24 @@ describe('registerFileWatchers', () => {
     }
   });
 
-  it('suspends requests while rebuilding and releases afterward', async () => {
+  it('keeps the serving revision visible while a watcher-triggered rebuild is pending', async () => {
     vi.useFakeTimers();
     try {
       let handler: ((event: FileEvent) => void) | undefined;
+      const rebuildStarted = deferred();
+      const releaseRebuild = deferred();
+      let publishedSymbol = 'BeforeRebuild';
       const workspace = {
         folderUri: 'file:///projectA',
         applyChanges: vi.fn(async () => {}),
-        rebuild: vi.fn(async () => {}),
+        rebuild: vi.fn(async () => {
+          rebuildStarted.resolve();
+          await releaseRebuild.promise;
+          publishedSymbol = 'AfterRebuild';
+        }),
+        workspaceSymbols: vi.fn((query: string) => (
+          query === publishedSymbol ? [{ name: publishedSymbol }] : []
+        )),
       };
       const manager = {
         workspaceFor: vi.fn(() => workspace),
@@ -262,23 +270,25 @@ describe('registerFileWatchers', () => {
 
       registerFileWatchers(connection as never, manager as never, suspender);
       handler?.({ uri: 'file:///projectA/.git/HEAD', type: 'changed' });
-      await vi.advanceTimersByTimeAsync(501);
+      vi.advanceTimersByTime(501);
+      await rebuildStarted.promise;
 
-      expect(suspender.suspend).toHaveBeenCalledTimes(1);
       expect(workspace.rebuild).toHaveBeenCalledTimes(1);
-      expect(suspender.release).toHaveBeenCalledTimes(1);
-      expect(suspender.suspend.mock.invocationCallOrder[0]).toBeLessThan(
-        workspace.rebuild.mock.invocationCallOrder[0],
-      );
-      expect(suspender.release.mock.invocationCallOrder[0]).toBeGreaterThan(
-        workspace.rebuild.mock.invocationCallOrder[0],
-      );
+      expect(workspace.workspaceSymbols('BeforeRebuild')).toHaveLength(1);
+      expect(workspace.workspaceSymbols('AfterRebuild')).toEqual([]);
+      expect(suspender.suspend).not.toHaveBeenCalled();
+      expect(suspender.release).not.toHaveBeenCalled();
+
+      releaseRebuild.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(workspace.workspaceSymbols('BeforeRebuild')).toEqual([]);
+      expect(workspace.workspaceSymbols('AfterRebuild')).toHaveLength(1);
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it('restores open documents before releasing a rebuild suspension', async () => {
+  it('delegates open-document replay to Workspace without external routing', async () => {
     vi.useFakeTimers();
     try {
       let handler: ((event: FileEvent) => void) | undefined;
@@ -298,13 +308,7 @@ describe('registerFileWatchers', () => {
         workspaceFor: vi.fn(() => workspace),
         readyWorkspacesFor: vi.fn(() => [workspace]),
         rebuildableList: vi.fn(async () => [workspace]),
-        workspaceForOrCreateFile: vi.fn(async () => ({
-          index: {
-            reindex: vi.fn(async () => {
-              calls.push('reindex-open-doc');
-            }),
-          },
-        })),
+        workspaceForOrCreateFile: vi.fn(),
         list: vi.fn(() => [workspace]),
       };
       const connection = {
@@ -326,7 +330,11 @@ describe('registerFileWatchers', () => {
       handler?.({ uri: 'file:///projectA/.git/HEAD', type: 'changed' });
       await vi.advanceTimersByTimeAsync(501);
 
-      expect(calls).toEqual(['suspend', 'rebuild', 'release']);
+      expect(calls).toEqual(['rebuild']);
+      expect(workspace.updateDocument).not.toHaveBeenCalled();
+      expect(manager.workspaceForOrCreateFile).not.toHaveBeenCalled();
+      expect(suspender.suspend).not.toHaveBeenCalled();
+      expect(suspender.release).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }
@@ -347,13 +355,7 @@ describe('registerFileWatchers', () => {
       const manager = {
         workspaceFor: vi.fn(() => workspace),
         readyWorkspacesFor: vi.fn(() => [workspace]),
-        workspaceForOrCreateFile: vi.fn(async () => ({
-          index: {
-            reindex: vi.fn(async () => {
-              calls.push('reindex-open-doc');
-            }),
-          },
-        })),
+        workspaceForOrCreateFile: vi.fn(),
         list: vi.fn(() => [workspace]),
       };
       const connection = {
