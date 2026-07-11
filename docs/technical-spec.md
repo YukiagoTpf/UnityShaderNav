@@ -54,7 +54,7 @@ Language server
   - derives exact-source ShaderLab document analysis and parses HLSL syntax
   - builds symbol/reference indexes
   - answers LSP definition, references, symbols, highlight, and semantic-token requests
-  - persists cache under Library/UnityShaderNavCache
+  - persists per-Workspace cache manifests under Library/UnityShaderNavCache
 ```
 
 See [Architecture](architecture.md) for module-level details.
@@ -155,9 +155,9 @@ newer attempt removes it from the next publication; a request that already
 captured the prior revision keeps a self-consistent immutable result. Disk and
 other index-only paths use a temporary analysis only while creating the
 `FileIndex`; analysis and its source text are not fields of `FileIndex`,
-`DiskIndexRecord`, cache
-manifests, persisted cache records, or a process-wide cache. Cache restoration
-therefore restores indexes without reconstructing source analysis.
+`DiskIndexRecord`, cache manifests, persisted cache records, or a process-wide
+cache. Cache restoration therefore restores indexes without reconstructing
+source analysis.
 
 Workspace routing changes also form an ownership boundary. Adding a nested root
 removes its open-document overlays from the former parent before the nested
@@ -348,15 +348,38 @@ dependency state.
 The cache is persisted under:
 
 ```text
-<UnityProject>/Library/UnityShaderNavCache/
+<UnityProject>/Library/UnityShaderNavCache/workspaces/<identity-hash>/index.json
 ```
+
+`identity-hash` is derived from the canonical Workspace folder URI through the
+same normalization used by document ownership. Parent and nested Workspace
+folders that resolve to the same Unity project therefore do not overwrite each
+other; equivalent Windows drive-letter URIs select and validate the same bucket.
+Unity-root validation and final-path coordination use canonical filesystem path
+identity, including Windows path casing. Standalone mode keeps its existing
+per-workspace bucket in VS Code global storage. Each identity uses one
+monolithic JSON manifest.
 
 Cache records have a schema version and a fingerprint. The fingerprint includes
 the actual index implementation, the complete external parser runtime package,
 grammar, index-affecting settings, and macro table. The package entry must also
 resolve successfully. A missing, malformed, or different implementation
 identity is a cache miss and triggers source indexing; it never changes source
-files. Standalone mode falls back to VS Code global storage.
+files. Restored Package files must still belong to the dependency graph resolved
+from the current `Packages/packages-lock.json`. A cached file outside the Unity
+root is eligible only while it belongs to a currently resolved external package.
+
+Persistence contains only an immutable published revision's disk indexes and
+the source identities captured with them. It excludes live overlays, document
+analysis, lifecycle state, warning state, and document attempts. `CacheManager`
+coordinates all instances targeting the same final path inside one server
+process. The coordinator retains at most one active and one latest pending
+request; a newer pending payload replaces the older one and inherits its
+waiters. Active failure does not prevent the latest pending request from
+running, and atomic same-directory replacement preserves the prior manifest if
+the replacement fails. These latest-request-wins semantics do not establish a
+total order across separate processes; cross-process protection is limited to
+producing a valid complete manifest.
 
 ## Public Settings
 

@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ExtensionSettings } from '@unity-shader-nav/shared';
 import type { IncludeContext } from '../include';
@@ -79,5 +80,29 @@ export class PackageContext {
     }
 
     return this.packageRoots().some((root) => containsPath(root, filePath));
+  }
+
+  /**
+   * Admit cached files only when they still belong to the current index boundary.
+   * Files outside the Unity root can only re-enter through a currently resolved
+   * external package; stale package records must not become user files.
+   */
+  canRestoreCachedFile(uri: string): boolean {
+    if (!this.resolver) return true;
+
+    let filePath: string;
+    try {
+      filePath = fileURLToPath(uri);
+    } catch {
+      return false;
+    }
+
+    if (this.packageRoots().some((root) => containsPath(root, filePath))) return true;
+    const unityRoot = this.context.unityProjectRoot;
+    if (!unityRoot || !containsPath(unityRoot, filePath)) return false;
+    return ![
+      join(unityRoot, 'Packages'),
+      join(unityRoot, 'Library', 'PackageCache'),
+    ].some((root) => containsPath(root, filePath));
   }
 }

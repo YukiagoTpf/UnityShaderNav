@@ -1,11 +1,16 @@
 import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, win32 } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CACHE_VERSION, type CacheFingerprint } from '@unity-shader-nav/shared';
 import { describe, expect, it } from 'vitest';
-import { CacheManager, chooseCacheDir } from '../../src/cache/cacheManager';
+import {
+  CacheManager,
+  cacheWorkspaceMatches,
+  chooseCacheDir,
+} from '../../src/cache/cacheManager';
 import { CacheStore } from '../../src/cache/cacheStore';
+import { pathIdentity, samePath } from '../../src/pathIdentity';
 
 describe('CacheManager.isValid', () => {
   it('returns true when mtime and size are unchanged', async () => {
@@ -94,12 +99,65 @@ describe('CacheManager.buildManifest', () => {
 });
 
 describe('chooseCacheDir', () => {
-  it('uses Library/UnityShaderNavCache under unity root', () => {
-    expect(chooseCacheDir({
+  it('partitions parent and nested workspaces under one Unity root with stable identities', () => {
+    const parent = chooseCacheDir({
       unityProjectRoot: '/proj',
       workspaceFolderUri: 'file:///proj',
       globalStorageDir: '/gs',
-    })).toBe(join('/proj', 'Library', 'UnityShaderNavCache'));
+    });
+    const nestedInput = {
+      unityProjectRoot: '/proj',
+      workspaceFolderUri: 'file:///proj/Assets/Feature',
+      globalStorageDir: '/gs',
+    };
+    const nested = chooseCacheDir(nestedInput);
+
+    expect(parent?.replaceAll('\\', '/')).toMatch(
+      /^\/proj\/Library\/UnityShaderNavCache\/workspaces\/[a-f0-9]{16}$/,
+    );
+    expect(nested?.replaceAll('\\', '/')).toMatch(
+      /^\/proj\/Library\/UnityShaderNavCache\/workspaces\/[a-f0-9]{16}$/,
+    );
+    expect(parent).not.toBe(nested);
+    expect(chooseCacheDir(nestedInput)).toBe(nested);
+  });
+
+  it('treats Windows drive-letter case as the same workspace identity', () => {
+    const upperDrive = chooseCacheDir({
+      unityProjectRoot: '/proj',
+      workspaceFolderUri: 'file:///C:/Unity/Project/Assets',
+      globalStorageDir: undefined,
+    });
+    const lowerDrive = chooseCacheDir({
+      unityProjectRoot: '/proj',
+      workspaceFolderUri: 'file:///c:/Unity/Project/Assets',
+      globalStorageDir: undefined,
+    });
+
+    expect(upperDrive).toBe(lowerDrive);
+  });
+
+  it('canonicalizes equivalent Windows manifest paths used as coordinator keys', () => {
+    const upperPath = String.raw`C:\Unity\Project\Library\UnityShaderNavCache\index.json`;
+    const lowerPath = String.raw`c:\unity\project\library\unityshadernavcache\index.json`;
+    const windows = { path: win32, platform: 'win32' as const };
+
+    expect(pathIdentity(upperPath, windows)).toBe(pathIdentity(lowerPath, windows));
+    expect(samePath(upperPath, lowerPath, windows)).toBe(true);
+  });
+
+  it('matches equivalent Windows URI and Unity-root casing for cache restore', () => {
+    expect(cacheWorkspaceMatches(
+      {
+        workspaceFolderUri: 'file:///C:/Unity/Project',
+        unityProjectRoot: String.raw`C:\Unity\Project`,
+      },
+      {
+        workspaceFolderUri: 'file:///c:/Unity/Project',
+        unityProjectRoot: String.raw`c:\unity\project`,
+      },
+      { path: win32, platform: 'win32' },
+    )).toBe(true);
   });
 
   it('falls back to globalStorageDir bucket in standalone mode', () => {

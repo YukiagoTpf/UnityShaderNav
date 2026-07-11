@@ -1,1 +1,1 @@
-export { CacheManager } from './cacheManager';
+export { CacheManager, cacheWorkspaceMatches } from './cacheManager';

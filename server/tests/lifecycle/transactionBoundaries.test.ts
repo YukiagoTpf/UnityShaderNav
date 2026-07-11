@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DEFAULT_SETTINGS } from '@unity-shader-nav/shared';
 import { describe, expect, it, vi } from 'vitest';
+import { chooseCacheDir } from '../../src/cache/cacheManager';
 import { registerFileWatchers } from '../../src/lifecycle/fileWatcher';
 import { indexFile } from '../../src/parser/hlsl';
 import type { IndexedDocumentSnapshot } from '../../src/workspace/indexedWorkspace';
@@ -353,7 +354,14 @@ describe('indexed revision transaction boundaries', () => {
     const root = await createUnityProject('usn-retained-cache-identity-');
     const sourcePath = join(root, 'Assets', 'Shaders', 'Cached.hlsl');
     const sourceUri = pathToFileURL(sourcePath).href;
-    const cachePath = join(root, 'Library', 'UnityShaderNavCache', 'index.json');
+    const folderUri = pathToFileURL(root).href;
+    const cacheDir = chooseCacheDir({
+      unityProjectRoot: root,
+      workspaceFolderUri: folderUri,
+      globalStorageDir: undefined,
+    });
+    if (!cacheDir) throw new Error('Expected a Unity workspace cache directory');
+    const cachePath = join(cacheDir, 'index.json');
     await writeFile(sourcePath, 'float4 CachedOld() { return 0; }');
 
     type CacheRecord = { uri: string; mtimeMs: number; size: number };
@@ -367,7 +375,7 @@ describe('indexed revision transaction boundaries', () => {
     };
 
     try {
-      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      const workspace = new Workspace(folderUri, DEFAULT_SETTINGS);
       await workspace.initialize(connection);
       const originalIdentity = await cacheRecord();
       expect(hasSymbol(workspace, 'CachedOld')).toBe(true);
@@ -398,7 +406,7 @@ describe('indexed revision transaction boundaries', () => {
       expect(retainedIdentity.size).not.toBe(changedIdentity.size);
 
       workspace.dispose();
-      const restored = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      const restored = new Workspace(folderUri, DEFAULT_SETTINGS);
       await restored.initialize(connection);
       expect(hasSymbol(restored, 'CachedOld')).toBe(false);
       expect(hasSymbol(restored, 'CachedReplacementWithLongName')).toBe(true);

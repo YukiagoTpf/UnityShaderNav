@@ -367,6 +367,37 @@ suite('verification command contract', () => {
     assert.strictEqual(scripts['bench:issue3'], undefined);
   });
 
+  test('index-cache benchmark proves a real three-file cold/warm restore', function () {
+    this.timeout(60000);
+    const root = monorepoRoot();
+    const result = spawnSync(
+      process.execPath,
+      [path.resolve(root, 'scripts/benchmark-index-cache.mjs'), '--files', '3'],
+      { cwd: root, encoding: 'utf8', timeout: 60000 },
+    );
+
+    assert.strictEqual(
+      result.status,
+      0,
+      result.error?.message || result.stderr || result.stdout,
+    );
+    const report = JSON.parse(result.stdout) as {
+      files?: number;
+      cachePath?: string;
+      cacheBytes?: number;
+      warmRestored?: boolean;
+      symbolAvailable?: boolean;
+    };
+    assert.strictEqual(report.files, 3);
+    assert.match(
+      report.cachePath ?? '',
+      /[\\/]Library[\\/]UnityShaderNavCache[\\/]workspaces[\\/][0-9a-f]+[\\/]index\.json$/,
+    );
+    assert.ok((report.cacheBytes ?? 0) > 0);
+    assert.strictEqual(report.warmRestored, true);
+    assert.strictEqual(report.symbolAvailable, true);
+  });
+
   test('package verification builds and inspects one current-run VSIX', () => {
     const rootPackage = JSON.parse(
       fs.readFileSync(path.resolve(monorepoRoot(), 'package.json'), 'utf8'),

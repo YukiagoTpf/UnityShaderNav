@@ -11,6 +11,7 @@ import {
   type SymbolKind,
   type TypeInferenceEntry,
 } from '@unity-shader-nav/shared';
+import { pathIdentity } from '../pathIdentity';
 import { fingerprintsEqual } from './fingerprint';
 
 const symbolKinds = new Set<SymbolKind>([
@@ -198,6 +199,11 @@ export class CacheStore {
     return join(this.dir, 'index.json');
   }
 
+  /** Canonical key shared by stores targeting the same manifest on this platform. */
+  get coordinationKey(): string {
+    return pathIdentity(this.path);
+  }
+
   async load(expectedFingerprint?: CacheFingerprint): Promise<CacheManifest | null> {
     let content: string;
     try {
@@ -223,17 +229,17 @@ export class CacheStore {
   }
 
   async save(manifest: CacheManifest): Promise<void> {
-    const previous = CacheStore.saveQueues.get(this.path) ?? Promise.resolve();
+    const previous = CacheStore.saveQueues.get(this.coordinationKey) ?? Promise.resolve();
     const current = previous.then(
       () => this.writeManifest(manifest),
       () => this.writeManifest(manifest),
     );
-    CacheStore.saveQueues.set(this.path, current);
+    CacheStore.saveQueues.set(this.coordinationKey, current);
     try {
       await current;
     } finally {
-      if (CacheStore.saveQueues.get(this.path) === current) {
-        CacheStore.saveQueues.delete(this.path);
+      if (CacheStore.saveQueues.get(this.coordinationKey) === current) {
+        CacheStore.saveQueues.delete(this.coordinationKey);
       }
     }
   }

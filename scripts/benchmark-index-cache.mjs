@@ -89,55 +89,115 @@ async function fileSizeOrZero(path) {
   }
 }
 
+function createProgressRecorder() {
+  const events = [];
+  const record = (kind, message) => {
+    if (typeof message === 'string') events.push({ kind, message });
+  };
+  return {
+    events,
+    connection: {
+      console: { log() {}, warn() {}, error() {} },
+      window: {
+        createWorkDoneProgress: async () => ({
+          begin(_title, _percentage, message) {
+            record('begin', message);
+          },
+          report(message) {
+            record('report', message);
+          },
+          done() {
+            events.push({ kind: 'done', message: '' });
+          },
+        }),
+      },
+    },
+  };
+}
+
+function findVisibleSymbol(workspace) {
+  for (const query of 'abcdefghijklmnopqrstuvwxyz0123456789_') {
+    const match = workspace.workspaceSymbols(query)[0];
+    if (match) return match.name;
+  }
+  return undefined;
+}
+
+function assertBenchmark(condition, message) {
+  if (!condition) throw new Error(`Index-cache benchmark failed: ${message}`);
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const projectRoot = args.project ? resolve(args.project) : await createSyntheticProject(args.files);
   const synthetic = args.project === undefined;
 
-  const [{ Workspace }, { DEFAULT_SETTINGS }] = await Promise.all([
+  const [{ Workspace }, { chooseCacheDir }, { DEFAULT_SETTINGS }] = await Promise.all([
     import('../server/out/workspace/workspace.js'),
+    import('../server/out/cache/cacheManager.js'),
     import('../shared/out/protocol.js'),
   ]);
 
-  const fakeConnection = {
-    console: { log() {} },
-    window: {
-      createWorkDoneProgress: async () => ({
-        begin() {},
-        report() {},
-        done() {},
-      }),
-    },
-  };
+  let coldWorkspace;
+  let warmWorkspace;
 
   try {
     const folderUri = pathToFileURL(projectRoot).href;
-    const coldWorkspace = new Workspace(folderUri, DEFAULT_SETTINGS);
-    const coldStart = performance.now();
-    await coldWorkspace.bootstrap(fakeConnection);
-    const coldMs = performance.now() - coldStart;
+    const cacheDir = chooseCacheDir({
+      unityProjectRoot: projectRoot,
+      workspaceFolderUri: folderUri,
+      globalStorageDir: undefined,
+    });
+    assertBenchmark(cacheDir !== null, 'production cache location is unavailable');
+    const cachePath = join(cacheDir, 'index.json');
 
-    const warmWorkspace = new Workspace(folderUri, DEFAULT_SETTINGS);
+    const coldProgress = createProgressRecorder();
+    coldWorkspace = new Workspace(folderUri, DEFAULT_SETTINGS);
+    const coldStart = performance.now();
+    await coldWorkspace.initialize(coldProgress.connection);
+    const coldMs = performance.now() - coldStart;
+    const symbolName = synthetic ? 'BenchFunction0' : findVisibleSymbol(coldWorkspace);
+    assertBenchmark(symbolName !== undefined, 'cold index exposes no visible workspace symbol');
+    coldWorkspace.dispose();
+    coldWorkspace = undefined;
+
+    const warmProgress = createProgressRecorder();
+    warmWorkspace = new Workspace(folderUri, DEFAULT_SETTINGS);
     const warmStart = performance.now();
-    await warmWorkspace.bootstrap(fakeConnection);
+    await warmWorkspace.initialize(warmProgress.connection);
     const warmMs = performance.now() - warmStart;
+    const warmRestored = warmProgress.events.some((event) => (
+      event.kind === 'begin' && event.message === 'restoring cache...'
+    ));
+    const symbolAvailable = warmWorkspace.workspaceSymbols(symbolName)
+      .some((symbol) => symbol.name === symbolName);
 
     const persistStart = performance.now();
     await warmWorkspace.persist();
     const persistMs = performance.now() - persistStart;
 
-    const cachePath = join(projectRoot, 'Library', 'UnityShaderNavCache', 'index.json');
+    const cacheBytes = await fileSizeOrZero(cachePath);
+    assertBenchmark(cacheBytes > 0, `expected a non-empty manifest at ${cachePath}`);
+    assertBenchmark(warmRestored, 'warm initialization did not enter cache restoration');
+    assertBenchmark(symbolAvailable, `warm index does not expose ${symbolName}`);
+
     const result = {
       projectRoot,
       synthetic,
       files: await countShaderFiles(projectRoot),
+      cachePath,
+      cacheBytes,
       coldMs,
       warmMs,
       persistMs,
-      cacheBytes: await fileSizeOrZero(cachePath),
+      warmRestored,
+      symbolName,
+      symbolAvailable,
     };
     console.log(JSON.stringify(result, null, 2));
   } finally {
+    coldWorkspace?.dispose();
+    warmWorkspace?.dispose();
     if (synthetic && !args.keep) {
       await rm(projectRoot, { recursive: true, force: true });
     }

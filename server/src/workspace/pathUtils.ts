@@ -1,19 +1,15 @@
 import * as nodePath from 'node:path';
+import {
+  pathIdentity,
+  type PathIdentityOptions,
+} from '../pathIdentity';
+
+export { normalizePathForComparison } from '../pathIdentity';
 
 type PathApi = Pick<typeof nodePath, 'isAbsolute' | 'relative' | 'resolve'>;
 
-interface PathComparisonOptions {
+interface PathComparisonOptions extends PathIdentityOptions {
   path?: PathApi;
-  platform?: NodeJS.Platform;
-}
-
-export function normalizePathForComparison(
-  absPath: string,
-  options: Pick<PathComparisonOptions, 'platform'> = {},
-): string {
-  return (options.platform ?? process.platform) === 'win32'
-    ? absPath.toLowerCase()
-    : absPath;
 }
 
 export function containsPath(
@@ -22,8 +18,8 @@ export function containsPath(
   options: PathComparisonOptions = {},
 ): boolean {
   const pathApi = options.path ?? nodePath;
-  const normalizedRoot = normalizePathForComparison(pathApi.resolve(root), options);
-  const normalizedCandidate = normalizePathForComparison(pathApi.resolve(candidate), options);
+  const normalizedRoot = pathIdentity(root, { ...options, path: pathApi });
+  const normalizedCandidate = pathIdentity(candidate, { ...options, path: pathApi });
   const rel = pathApi.relative(normalizedRoot, normalizedCandidate);
 
   return rel === ''

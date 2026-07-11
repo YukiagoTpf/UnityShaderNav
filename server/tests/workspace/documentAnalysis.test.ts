@@ -15,6 +15,7 @@ import {
   analyzeDocument,
   type DocumentAnalysisDemand,
 } from '../../src/analysis';
+import { chooseCacheDir } from '../../src/cache/cacheManager';
 import { indexFile } from '../../src/parser/hlsl';
 import type { IndexedDocumentSnapshot } from '../../src/workspace/indexedWorkspace';
 import { SEMANTIC_TOKEN_TYPES } from '../../src/workspace/semanticTokenLegend';
@@ -311,7 +312,13 @@ describe('Workspace-owned Document analysis', () => {
 
       await workspace.persist();
 
-      const cachePath = join(root, 'Library', 'UnityShaderNavCache', 'index.json');
+      const cacheDir = chooseCacheDir({
+        unityProjectRoot: root,
+        workspaceFolderUri: pathToFileURL(root).href,
+        globalStorageDir: undefined,
+      });
+      if (!cacheDir) throw new Error('Expected a Unity workspace cache directory');
+      const cachePath = join(cacheDir, 'index.json');
       const manifestText = await readFile(cachePath, 'utf8');
       const manifest = JSON.parse(manifestText) as {
         files: Array<{ index: { symbols: Array<{ name: string }> } }>;

@@ -17,6 +17,17 @@ and uses semantic versioning for extension releases.
 - Cache fingerprints now content-address the running index implementation and
   complete parser runtime package, so semantic code changes automatically
   reject stale indexes.
+- Partitioned Unity cache manifests by canonical Workspace identity under
+  `Library/UnityShaderNavCache/workspaces/<identity-hash>/index.json`. Each
+  identity keeps one monolithic manifest, while Package restore eligibility
+  remains driven by `Packages/packages-lock.json`; stale external local-package
+  records cannot re-enter the index as ordinary project files.
+- Moved cache persistence scheduling into `CacheManager`: every final manifest
+  path has at most one active and one latest pending request per server process.
+  Replaced pending requests share the newest result; active failure still drains
+  pending work, and a failed replacement preserves the previous manifest.
+  Cache matching and path coordination now use canonical Windows identities
+  instead of raw drive-letter or path casing.
 - Moved shared shader vocabulary behind a neutral domain interface and added a
   transitive dependency check that keeps parser modules independent of
   suggestion-specific code.
@@ -67,6 +78,9 @@ and uses semantic versioning for extension releases.
 - Bound cached file metadata to the same stable source read that produced its
   index. Retaining a last-known-good record now retains its original identity,
   preventing a newer disk timestamp from validating older symbols on restart.
+- Repaired the index-cache benchmark to publish through `Workspace.initialize`,
+  derive the production cache path, and fail unless warm restore yields a
+  non-empty manifest and a queryable symbol.
 
 ## 0.0.7 - 2026-05-28
 

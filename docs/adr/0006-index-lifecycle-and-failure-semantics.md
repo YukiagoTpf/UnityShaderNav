@@ -3,7 +3,9 @@
 ## Status
 
 Accepted — 2026-07-10; implemented by
-[#61](https://github.com/YukiagoTpf/UnityShaderNav/issues/61)
+[#61](https://github.com/YukiagoTpf/UnityShaderNav/issues/61), with cache
+persistence ordering refined by
+[#62](https://github.com/YukiagoTpf/UnityShaderNav/issues/62).
 
 ## Context
 
@@ -139,6 +141,38 @@ may add or remove packages atomically. A missing or invalid lockfile does not
 publish a candidate with an empty package set, preserving
 [ADR-0002](0002-manifest-driven-package-indexing.md).
 
+### Cache persistence ordering
+
+Cache persistence begins downstream of publication. When persistence is
+requested, Workspace immediately submits the published revision's immutable
+disk projection to `CacheManager`; manager-side coordination by final manifest
+path starts before asynchronous snapshot or manifest preparation. The
+projection carries only disk indexes and the source identities captured with
+them. Live overlays, document analysis, document attempts, lifecycle state, and
+source warnings never cross the cache boundary. Package records remain eligible
+only while admitted by the current `Packages/packages-lock.json`.
+
+All `CacheManager` instances in one language-server process share a coordinator
+for each final manifest path. A path retains at most one active request and one
+latest pending request. When a newer request replaces the pending payload, it
+inherits the replaced request's waiters; those coalesced callers settle with the
+newest retained request. When the active request settles, the coordinator drains
+that pending request rather than serializing every intermediate manifest.
+
+An active failure rejects the active request but does not block pending drain.
+`CacheStore` prepares a temporary file in the target directory and atomically
+renames it, so a failed replacement preserves the previous valid manifest. A
+cache failure remains best effort: the published in-memory revision stays
+queryable and its lifecycle does not change.
+
+This latest-request-wins guarantee is scoped to enqueue order within one
+process. Workspace revision counters reset across instances and server
+processes, so they are not durable cache generations. Atomic rename preserves
+file validity when separate processes write, but there is no cross-process
+total-order guarantee without a separate epoch, lock, or compare-and-swap
+protocol. Cache location and Workspace identity partitioning are defined by
+[ADR-0004](0004-persist-index-cache-under-library.md).
+
 ### Request behavior
 
 Every request that reads indexed state captures one published revision for its
@@ -243,7 +277,7 @@ workspaces, projects to `standalone`; it never leaves the client stuck on
 | Valid package-lock change | Rebuild package context and files as one candidate | Previous revision | Rebuild start and terminal notification |
 | Invalid package-lock change | Candidate discarded | Previous revision, if any | Failed notification |
 | Cache load/restore failure | Continue with source indexing | Previous revision, if rebuilding | No cache-driven lifecycle or status transition |
-| Cache save failure | No index transition | Current revision | No lifecycle or status transition |
+| Cache save failure | Preserve the previous manifest; drain the latest pending request | Current revision | No lifecycle or status transition |
 | Recovery trigger | `failed(rN?) -> indexing(recovery, rN?)` | `rN` when present | Start notification |
 | Compatible live open/edit/close while failed | Atomic overlay publish to `failed(serving rN+1)`; original failure remains | `rN` until swap | Failed snapshot with the newer serving revision |
 | Remove root | Any state to `absent` | No longer selectable | Full snapshot without the root |
@@ -279,3 +313,5 @@ This lifecycle does not change earlier semantic decisions:
   truth in the client.
 - Cache persistence is downstream of publication. A cache failure cannot roll
   back or invalidate an in-memory revision.
+- Cache save ordering is process-local and keyed by final manifest path. It
+  cannot infer a durable order from session-local Workspace revisions.

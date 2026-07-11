@@ -956,7 +956,8 @@ describe('WorkspaceManager: multi-root', () => {
     const workspace = manager.list()[0];
     expect(symbolsNamed(workspace, 'StableBeforeFailure')).toHaveLength(1);
     vi.spyOn(workspace, 'bootstrap').mockRejectedValueOnce(new Error('rebuild failed'));
-    const save = vi.spyOn(CacheManager.prototype, 'save').mockResolvedValue(undefined);
+    const save = vi.spyOn(CacheManager.prototype, 'persistPublication')
+      .mockResolvedValue(undefined);
 
     await expect(workspace.rebuild(fakeConnection)).rejects.toThrow('rebuild failed');
 
@@ -968,15 +969,18 @@ describe('WorkspaceManager: multi-root', () => {
 
     await manager.persistAll();
     expect(save).toHaveBeenCalledTimes(1);
-    expect(save).toHaveBeenCalledWith(expect.objectContaining({
-      files: expect.arrayContaining([expect.objectContaining({
-        index: expect.objectContaining({
-          symbols: expect.arrayContaining([
-            expect.objectContaining({ name: 'StableBeforeFailure' }),
-          ]),
-        }),
-      })]),
-    }));
+    expect(save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        files: expect.arrayContaining([expect.objectContaining({
+          index: expect.objectContaining({
+            symbols: expect.arrayContaining([
+              expect.objectContaining({ name: 'StableBeforeFailure' }),
+            ]),
+          }),
+        })]),
+      }),
+      expect.any(Function),
+    );
     await rm(root, { recursive: true, force: true });
   });
 

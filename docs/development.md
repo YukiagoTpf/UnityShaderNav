@@ -93,6 +93,18 @@ npm run grammar:rebuild
   per successful pointer swap, and last-known-good query/persistence behavior
   during and after a failed rebuild. Do not inspect private stores to prove
   externally observable behavior.
+- Cache-persistence tests use deferred barriers rather than timing assumptions.
+  Cover one active plus latest pending request, replacement waiter inheritance,
+  coordination across separate `CacheManager` instances for one path, failure
+  followed by pending drain, and preservation of the previous manifest after a
+  failed replacement. Session revisions must not be treated as a cross-process
+  ordering token.
+- Cache-identity tests cover a real cold/warm restart across equivalent Windows
+  drive-letter Workspace URIs and use `node:path.win32` for filesystem path
+  comparisons; changing only `process.platform` on a POSIX path implementation
+  is not a valid Windows-path test. Package restore tests include a `source: local`
+  package outside the Unity root and prove that removing it from the
+  lockfile removes both cached symbols and references.
 - Async lifecycle races use explicit deferred barriers and observable eventual
   conditions. Do not add fixed settle sleeps to make a parse/close/edit race
   appear deterministic.
@@ -125,8 +137,40 @@ npm run grammar:rebuild
   sandbox.
 - Tests that bootstrap a Unity project must copy repository fixtures to a
   disposable directory before allowing `Library/UnityShaderNavCache/` writes.
+- Package-layout verification directly spawns the index-cache benchmark with
+  three generated files. This is a correctness smoke for real initialization,
+  persistence, warm restore, and symbol visibility, not a timing threshold.
 - Add fixtures that describe the shader shape being fixed. Small, explicit
   fixtures are easier to maintain than copied production shaders.
+
+## Index Cache Benchmark
+
+Build production output first, then run the synthetic 800-file benchmark:
+
+```powershell
+npm run build
+npm run bench:index-cache -- --files 800
+```
+
+The benchmark performs cold and warm `Workspace.initialize` cycles, resolves
+the manifest through the production `chooseCacheDir`, and records a separate
+explicit persist. It fails unless the manifest is non-empty, warm initialization
+reports cache restoration, and the restored index exposes a workspace symbol.
+Its JSON output includes project and cache paths, file and cache-byte counts,
+cold/warm/persist milliseconds, `warmRestored`, `symbolName`, and
+`symbolAvailable`. Timing fields are diagnostic and have no CI threshold.
+
+To measure a disposable copy of a real Unity project, point the command at that
+copy:
+
+```powershell
+npm run bench:index-cache -- --project <path>
+```
+
+The benchmark writes the production cache beneath that copy's `Library/`. For a
+real project, it selects one visible project symbol during the cold run and
+requires the warm run to restore it. Add `--keep` only for a generated synthetic
+project whose cache and files should remain available for inspection.
 
 ## Document Analysis Benchmark
 

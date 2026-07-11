@@ -205,7 +205,9 @@ grammar/parser initialization failure—discard the entire candidate. Cache
 records bind each `FileIndex` to the size and modification time observed by the
 same stable source read; retaining an old index also retains that old identity,
 so persistence cannot pair old semantics with newer disk metadata. Cache
-failures remain best-effort and cannot invalidate an in-memory publication. See
+submission hands `CacheManager` an immutable disk projection from the published
+revision before asynchronous manifest preparation. Cache failures remain
+best-effort and cannot invalidate an in-memory publication. See
 [ADR-0006](adr/0006-index-lifecycle-and-failure-semantics.md).
 
 Lifecycle state is observable through the same LSP connection used by editor
@@ -264,11 +266,43 @@ partial package set.
 
 ## Cache
 
-The workspace index is persisted under `Library/UnityShaderNavCache/` with a
-schema version and source fingerprint. The fingerprint content-addresses the
-actual server bundle and the external parser runtime package (including its
-resolved entry), grammar bytes, index-affecting settings, and macro table; a
-different or unavailable implementation identity forces a source rebuild
-without a manual version bump. In standalone mode,
-cache storage falls back to VS Code global storage. See
+Each Unity Workspace identity owns one monolithic manifest at:
+
+```text
+<UnityRoot>/Library/UnityShaderNavCache/workspaces/<identity-hash>/index.json
+```
+
+The hash comes from the canonical Workspace folder URI, using the same file-URI
+normalization as document ownership. Parent and nested Workspace folders that
+resolve to one Unity root therefore keep independent manifests, while equivalent
+Windows drive-letter URIs select and validate the same bucket. Unity-root
+validation and persistence coordination use canonical filesystem path identity,
+so Windows path casing cannot split one physical manifest into separate queues.
+Standalone mode retains its per-workspace bucket under VS Code global storage.
+
+The manifest has a schema version and source fingerprint. The fingerprint
+content-addresses the actual server bundle and the external parser runtime
+package (including its resolved entry), grammar bytes, index-affecting settings,
+and macro table; a different or unavailable implementation identity forces a
+source rebuild without a manual version bump. Cache contents are limited to the
+published revision's disk projection and source identities. Live overlays,
+document analysis, lifecycle state, source warnings, and document attempts are
+not persisted. Package entries are restored only while the current
+`Packages/packages-lock.json` still admits them. In particular, a cached file
+outside the Unity root must still belong to a currently resolved external
+package; removing a local package cannot turn its old record into a user file.
+
+`CacheManager` coordinates saves by final manifest path across all manager
+instances in one language-server process. A path has at most one active request
+and one latest pending request. A newer request replaces the pending payload and
+inherits its waiters, so intermediate states may be coalesced without losing the
+newest process-local request. Active failure rejects that request but still
+drains the retained pending request. `CacheStore` writes a same-directory
+temporary file and atomically renames it, so a failed replacement preserves the
+previous valid manifest.
+
+This ordering guarantee is deliberately process-local. Separate server
+processes have neither comparable session revisions nor a shared total order;
+atomic rename protects manifest validity but does not define which process is
+globally latest. See
 [ADR-0004](adr/0004-persist-index-cache-under-library.md).

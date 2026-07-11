@@ -84,6 +84,14 @@ _Avoid_: temporary index, unsaved cache
 实际生成 `FileIndex` 的 server 与 parser runtime 的内容身份。它是 cache fingerprint 的一部分；identity 不同或无法确定时只能从源码重建，不能恢复可能由另一套索引语义产生的记录。
 _Avoid_: cache version, release version, Git revision
 
+**Cache workspace identity**:
+用于选择和验证持久化缓存分桶的 canonical Workspace folder URI。它复用 Workspace ownership 的 file-URI 规范化规则：等价 Windows drive-letter URI 命中同一 identity，父子 Workspace 即使指向同一个 Unity project root 也保持不同 identity。Manifest 的 Unity root 比较和同进程保存协调使用平台 filesystem path identity，不能由 Windows 路径大小写分叉。Unity 模式的最终 manifest 位于 `Library/UnityShaderNavCache/workspaces/<identity-hash>/index.json`；每个 identity 仍只有一个 monolithic manifest。
+_Avoid_: Unity project cache identity, session id, index revision
+
+**Latest-pending cache persistence**:
+`CacheManager` 以最终 manifest path 为键、在一个 language-server process 内协调保存。每个 path 最多有一个 active request 和一个 latest pending request；新请求替换旧 pending payload 并继承其 waiters，因此可合并中间状态而不丢失进程内最新请求。Active failure 不阻塞 pending drain；replacement failure 通过原子 rename 语义保留此前有效 manifest。不同进程之间只有文件有效性的原子保证，没有 latest-request 全序承诺。
+_Avoid_: cache revision queue, cross-process latest revision, global cache generation
+
 **Index revision**:
 单个 `Workspace` 在一次 language-server session 内成功发布的索引代次。`0` 表示从未发布；初始化、rebuild、有效 watcher batch、live edit、close 或兼容的 settings-only 变更每次成功发布都单调递增一次；空事件批次、没有有效变化的 watcher transaction，以及过期、已被取代或失败的 attempt 不发布、不递增。读取索引状态的 request 捕获一个 immutable revision；纯词法 early exit 和没有 serving revision 的 neutral result 不读取 revision。它不是时间戳，也不等于 status sequence。
 _Avoid_: index version, cache generation, status sequence

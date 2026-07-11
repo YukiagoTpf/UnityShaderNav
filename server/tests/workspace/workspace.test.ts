@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DEFAULT_SETTINGS } from '@unity-shader-nav/shared';
 import { CacheManager, chooseCacheDir } from '../../src/cache/cacheManager';
+import { CacheStore } from '../../src/cache/cacheStore';
 import { Workspace } from '../../src/workspace/workspace';
 import { WorkspaceIndex } from '../../src/workspace/workspaceIndex';
 import type { IndexedDocumentSnapshot } from '../../src/workspace/indexedWorkspace';
@@ -61,6 +62,16 @@ function positionOf(text: string, needle: string): { line: number; character: nu
 
 function hasWorkspaceSymbol(workspace: Workspace, name: string): boolean {
   return workspace.workspaceSymbols(name).some((symbol) => symbol.name === name);
+}
+
+function unityCachePath(root: string, folderUri = pathToFileURL(root).href): string {
+  const dir = chooseCacheDir({
+    unityProjectRoot: root,
+    workspaceFolderUri: folderUri,
+    globalStorageDir: undefined,
+  });
+  if (!dir) throw new Error('Expected a Unity workspace cache directory');
+  return join(dir, 'index.json');
 }
 
 async function hasDocumentSymbol(
@@ -164,7 +175,7 @@ describe('Workspace.bootstrap', () => {
         await releaseSnapshot.promise;
         return null;
       });
-      const save = vi.spyOn(CacheManager.prototype, 'save');
+      const save = vi.spyOn(CacheStore.prototype, 'save');
 
       const persisting = workspace.persist();
       await snapshotStarted.promise;
@@ -190,7 +201,7 @@ describe('Workspace.bootstrap', () => {
       await workspace.initialize(fakeConnection);
       const saveStarted = deferred();
       const releaseSave = deferred();
-      const save = vi.spyOn(CacheManager.prototype, 'save').mockImplementation(async () => {
+      const save = vi.spyOn(CacheStore.prototype, 'save').mockImplementation(async () => {
         saveStarted.resolve();
         await releaseSave.promise;
       });
@@ -515,7 +526,7 @@ describe('Workspace.bootstrap', () => {
       const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
       await ws1.initialize(fakeConnection);
 
-      const cachePath = join(root, 'Library', 'UnityShaderNavCache', 'index.json');
+      const cachePath = unityCachePath(root);
       const manifest = JSON.parse(await readFile(cachePath, 'utf8'));
       expect(manifest.files.length).toBeGreaterThanOrEqual(1);
 
@@ -547,7 +558,7 @@ describe('Workspace.bootstrap', () => {
       const first = new Workspace(folderUri, DEFAULT_SETTINGS);
       await first.initialize(fakeConnection);
 
-      const cachePath = join(root, 'Library', 'UnityShaderNavCache', 'index.json');
+      const cachePath = unityCachePath(root, folderUri);
       const manifest = JSON.parse(await readFile(cachePath, 'utf8'));
       const persistedIdentity = manifest.fingerprint.indexImplementation as string;
       const staleIdentity = persistedIdentity === 'a'.repeat(64)
@@ -599,7 +610,7 @@ describe('Workspace.bootstrap', () => {
       expect(hasWorkspaceSymbol(workspace, 'SourceStillWorks')).toBe(true);
       expect(warning).toHaveBeenCalledWith(expect.stringContaining('cache disabled'));
       await expect(readFile(
-        join(root, 'Library', 'UnityShaderNavCache', 'index.json'),
+        unityCachePath(root),
         'utf8',
       )).rejects.toMatchObject({ code: 'ENOENT' });
     } finally {
@@ -619,7 +630,7 @@ describe('Workspace.bootstrap', () => {
       const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
       await ws1.initialize(fakeConnection);
 
-      const cachePath = join(root, 'Library', 'UnityShaderNavCache', 'index.json');
+      const cachePath = unityCachePath(root);
       const { files: _files, ...corruptedManifest } = JSON.parse(await readFile(cachePath, 'utf8'));
       await writeFile(cachePath, JSON.stringify(corruptedManifest), 'utf8');
 

@@ -16,13 +16,12 @@ import type {
 import {
   normalizeSettings,
   settingsRequireReindex,
-  type CachedFile,
   type CacheFingerprint,
   type CacheManifest,
   type ExtensionSettings,
   type WorkspaceIndexStatus,
 } from '@unity-shader-nav/shared';
-import { CacheManager } from '../cache';
+import { CacheManager, cacheWorkspaceMatches } from '../cache';
 import { buildFingerprint } from '../cache/fingerprint';
 import { INDEX_IMPLEMENTATION_IDENTITY } from '../cache/implementationIdentity';
 import { PackageContext } from '../packages';
@@ -752,7 +751,10 @@ export class Workspace implements IndexedWorkspace {
 
     const manifest = await cacheConfiguration.cache?.load(cacheConfiguration.fingerprint);
     this.throwIfDisposed();
-    if (manifest && this.matchesWorkspace(manifest, unityRoot)) {
+    if (manifest && cacheWorkspaceMatches(manifest, {
+      workspaceFolderUri: this.folderUri,
+      unityProjectRoot: unityRoot ?? null,
+    })) {
       await this.bootstrapFromCache(
         connection,
         builder,
@@ -832,11 +834,6 @@ export class Workspace implements IndexedWorkspace {
     return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0];
   }
 
-  private matchesWorkspace(manifest: CacheManifest, unityRoot: string | undefined): boolean {
-    return manifest.workspaceFolderUri === this.folderUri
-      && manifest.unityProjectRoot === (unityRoot ?? null);
-  }
-
   private async bootstrapFromCache(
     connection: Connection,
     builder: IndexedRevisionBuilder,
@@ -856,7 +853,7 @@ export class Workspace implements IndexedWorkspace {
         CACHE_IO_CONCURRENCY,
         async (cachedFile) => {
           this.throwIfDisposed();
-          const valid = this.shouldRestoreCachedFile(cachedFile.uri, unityRoot, packages)
+          const valid = this.shouldRestoreCachedFile(cachedFile.uri, packages)
             && await cache.isValid(cachedFile);
           this.throwIfDisposed();
           return { cachedFile, valid };
@@ -865,7 +862,7 @@ export class Workspace implements IndexedWorkspace {
 
       for (const { cachedFile, valid } of restoreResults) {
         this.throwIfDisposed();
-        if (!this.shouldRestoreCachedFile(cachedFile.uri, unityRoot, packages)) continue;
+        if (!this.shouldRestoreCachedFile(cachedFile.uri, packages)) continue;
         if (valid) {
           builder.restoreFromCache(cachedFile.uri, cachedFile.index, {
             mtimeMs: cachedFile.mtimeMs,
@@ -910,23 +907,9 @@ export class Workspace implements IndexedWorkspace {
 
   private shouldRestoreCachedFile(
     uri: string,
-    unityRoot: string | undefined,
     packages: PackageContext,
   ): boolean {
-    if (!unityRoot) return true;
-    let filePath: string;
-    try {
-      filePath = fileURLToPath(uri);
-    } catch {
-      return false;
-    }
-
-    if (packages.packageRoots().some((root) => containsPath(root, filePath))) return true;
-    const packageAreas = [
-      join(unityRoot, 'Packages'),
-      join(unityRoot, 'Library', 'PackageCache'),
-    ];
-    return !packageAreas.some((root) => containsPath(root, filePath));
+    return packages.canRestoreCachedFile(uri);
   }
 
   private async indexMissingDiskFiles(
@@ -1083,25 +1066,13 @@ export class Workspace implements IndexedWorkspace {
 
   private async persistRevision(revision: PublishedIndexedRevision): Promise<void> {
     if (this.disposed || !revision.cache || !revision.fingerprint) return;
-    const snapshots = await mapWithConcurrency(
-      revision.diskCacheEntries(),
-      CACHE_IO_CONCURRENCY,
-      async ({ uri, index, source }) => (
-        this.disposed ? null : revision.cache!.snapshot(uri, index, source)
-      ),
-    );
-    if (this.disposed || this.published !== revision) return;
-    const records: CachedFile[] = snapshots
-      .filter((snapshot): snapshot is CachedFile => snapshot !== null)
-      .sort((a, b) => a.uri.localeCompare(b.uri));
-    const manifest = revision.cache.buildManifest(
-      revision.folderUri,
-      revision.unityRoot ?? null,
-      revision.fingerprint,
-      records,
-    );
     try {
-      if (!this.disposed && this.published === revision) await revision.cache.save(manifest);
+      await revision.cache.persistPublication({
+        workspaceFolderUri: revision.folderUri,
+        unityProjectRoot: revision.unityRoot ?? null,
+        fingerprint: revision.fingerprint,
+        files: revision.diskCacheEntries(),
+      }, () => !this.disposed && this.published === revision);
     } catch {
       // Cache persistence is derived, best-effort work.
     }
