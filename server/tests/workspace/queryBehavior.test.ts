@@ -282,6 +282,91 @@ describe('published query behavior', () => {
     }
   });
 
+  it('selects member candidates and the first arity-compatible overload through a published revision', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-query-candidates-'));
+    const mainPath = join(root, 'Main.hlsl');
+    const sharedPath = join(root, 'Shared.hlsl');
+    const hiddenPath = join(root, 'Hidden.hlsl');
+    const mainText = [
+      '#include "Shared.hlsl"',
+      'float4 Mixed(float value) { return value; }',
+      'float4 Use(Surface surface) {',
+      '  float4 result = Mixed(1, 2);',
+      '  return float4(surface.po, 1);',
+      '}',
+    ].join('\n');
+    const sharedText = [
+      'struct Surface { float3 positionWS; float2 uv; };',
+      'float4 Mixed(float first, float second) { return first + second; }',
+    ].join('\n');
+    const hiddenText = 'struct Surface { float3 hiddenOnly; };';
+    await Promise.all([
+      writeFile(mainPath, mainText),
+      writeFile(sharedPath, sharedText),
+      writeFile(hiddenPath, hiddenText),
+    ]);
+
+    try {
+      const mainUri = pathToFileURL(mainPath).href;
+      const revision = await publishTextFiles(pathToFileURL(root).href, [
+        { uri: mainUri, text: mainText },
+        { uri: pathToFileURL(sharedPath).href, text: sharedText },
+        { uri: pathToFileURL(hiddenPath).href, text: hiddenText },
+      ]);
+      const document = snapshot(mainUri, mainText);
+
+      const members = await revision.completionAt({
+        document,
+        position: positionOf(mainText, 'surface.po', 0, 'surface.po'.length),
+      });
+      expect(members?.map((item) => item.label)).toEqual(['positionWS']);
+
+      const signatureHelp = await revision.signatureHelpAt({
+        document,
+        position: positionOf(mainText, '2);'),
+      });
+      expect(signatureHelp?.signatures.map((signature) => signature.label)).toEqual([
+        'float4 Mixed(float value)',
+        'float4 Mixed(float first, float second)',
+      ]);
+      expect(signatureHelp?.activeSignature).toBe(1);
+      expect(signatureHelp?.activeParameter).toBe(1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps each published revision bound to its own suggestion selector', async () => {
+    const uri = 'file:///project/Assets/Revision.hlsl';
+    const first = publishIndexes('file:///project', [{
+      uri,
+      references: [],
+      symbols: [symbol('FirstRevision', 'variable', uri, 0)],
+    }]);
+    const candidate = first.fork();
+    candidate.restoreFromCache(uri, {
+      uri,
+      references: [],
+      symbols: [symbol('SecondRevision', 'variable', uri, 0)],
+    });
+    const second = candidate.publish(2);
+    const document = snapshot(uri, '');
+
+    const firstNames = (await first.completionAt({
+      document,
+      position: { line: 0, character: 0 },
+    }))?.map((item) => item.label);
+    const secondNames = (await second.completionAt({
+      document,
+      position: { line: 0, character: 0 },
+    }))?.map((item) => item.label);
+
+    expect(firstNames).toContain('FirstRevision');
+    expect(firstNames).not.toContain('SecondRevision');
+    expect(secondNames).toContain('SecondRevision');
+    expect(secondNames).not.toContain('FirstRevision');
+  });
+
   it('preserves HLSL semantic tokens, including macros resolved from another index', async () => {
     const uri = 'file:///project/Assets/Semantic.hlsl';
     const includeUri = 'file:///project/Assets/Includes/Macros.hlsl';

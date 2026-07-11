@@ -24,6 +24,10 @@ import type {
 import type { CacheManager } from '../cache';
 import { uriKey } from '../uriKey';
 import type { PackageContext } from '../packages';
+import {
+  createSuggestionCandidateSelector,
+  type SuggestionCandidateSelector,
+} from '../suggestions';
 import { containsPath } from './pathUtils';
 import { isIndexableFilePath } from './walkFiles';
 import type {
@@ -88,6 +92,7 @@ export class PublishedIndexedRevision {
   readonly fingerprint: CacheFingerprint | undefined;
   readonly sourceWarningCount: number;
   private readonly index: WorkspaceIndex;
+  private readonly suggestionCandidates: SuggestionCandidateSelector;
   private readonly committedDocuments: ReadonlyMap<string, CommittedDocumentAttempt>;
   private readonly sourceWarnings: ReadonlySet<string>;
 
@@ -106,6 +111,10 @@ export class PublishedIndexedRevision {
     this.cache = configuration.cache;
     this.fingerprint = configuration.fingerprint;
     this.index = index;
+    this.suggestionCandidates = createSuggestionCandidateSelector(
+      index.read,
+      configuration.packages.includeCtx,
+    );
     this.committedDocuments = new Map(committedDocuments);
     this.sourceWarnings = new Set(sourceWarnings);
     this.sourceWarningCount = this.sourceWarnings.size;
@@ -227,6 +236,7 @@ export class PublishedIndexedRevision {
       index: this.index.read,
       packages: this.packages,
       includePackages: this.settings.findReferences.includePackages,
+      suggestionCandidates: this.suggestionCandidates,
     };
   }
 

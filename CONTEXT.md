@@ -131,7 +131,7 @@ _Avoid_: lexical state, parser context
 _Avoid_: completion mode, parser state
 
 **Project-index suggestion**:
-从当前文件索引、include-visible 文件索引、作用域信息和 chain lookup 推导出的补全项。它复用导航的可见性规则，优先级高于内置词汇。
+从当前文件索引、include-visible 文件索引、作用域信息和 chain lookup 推导出的补全或签名候选。每个 **Published indexed revision** 固定持有一个只读 candidate selector；Completion、member completion 和 Signature Help 只提交查询意图，由 selector 统一负责可见性、最近声明、当前文件/include 排名、成员类型推导、去重、保守 overload 候选与 project-over-built-in 优先级。
 _Avoid_: autocomplete symbol, completion cache
 
 **Built-in vocabulary**:
@@ -139,7 +139,7 @@ _Avoid_: autocomplete symbol, completion cache
 _Avoid_: standard library, compiler symbols
 
 **Signature help**:
-LSP 的函数调用参数提示。UnityShaderNav 只在能保守识别单行 free-function call 和候选函数元数据时返回，遇到 overload-like 或预处理歧义时可以返回多个候选。
+LSP 的函数调用参数提示。UnityShaderNav 只在能保守识别单行 free-function call 和候选函数元数据时返回，遇到 overload-like 或预处理歧义时可以返回多个候选；当前参数指向第一个参数数量足够的候选，但不会因此删除其他保守候选。
 _Avoid_: hover, function docs
 
 ## Flagged ambiguities

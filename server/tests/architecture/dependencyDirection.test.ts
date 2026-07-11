@@ -241,6 +241,53 @@ describe('server dependency direction', () => {
     }
   });
 
+  it('concentrates suggestion candidate policy behind one revision-bound selector', () => {
+    expect(existsSync(resolve(SOURCE_ROOT, 'suggestions/projectSymbols.ts'))).toBe(false);
+    expect(existsSync(resolve(SOURCE_ROOT, 'suggestions/memberContext.ts'))).toBe(false);
+
+    const selector = readFileSync(
+      resolve(SOURCE_ROOT, 'suggestions/projectCandidates.ts'),
+      'utf8',
+    );
+    expect(selector).toMatch(/interface SuggestionCandidateSelector/);
+    expect(selector).toMatch(/collectVisibleUriKeys/);
+    expect(selector).toMatch(/inferReceiverTypeForCompletion/);
+    expect(selector).toMatch(/compatibleSignatureIndex/);
+    expect(selector).toMatch(/mergeProjectAndBuiltinSuggestions/);
+
+    const barrel = readFileSync(resolve(SOURCE_ROOT, 'suggestions/index.ts'), 'utf8');
+    expect(barrel).toMatch(/export \* from ['"]\.\/projectCandidates['"]/);
+    expect(barrel).not.toMatch(/projectSymbols|memberContext/);
+
+    const queries = readFileSync(resolve(SOURCE_ROOT, 'workspace/queries.ts'), 'utf8');
+    const completion = sourceSection(
+      queries,
+      'export async function queryCompletion',
+      'export async function querySignatureHelp',
+    );
+    const signature = sourceSection(
+      queries,
+      'export async function querySignatureHelp',
+      'export async function queryHighlights',
+    );
+    for (const [name, source] of [['completion', completion], ['signature', signature]]) {
+      expect(source, name).toMatch(/state\.suggestionCandidates\.select/);
+      expect(source, name).not.toMatch(
+        /state\.index|visibleUriKeys|collectVisibleUriKeys|collectVisibleProject|collectMemberSuggestions|inferReceiverTypeForCompletion/,
+      );
+    }
+
+    const revision = readFileSync(
+      resolve(SOURCE_ROOT, 'workspace/indexedRevision.ts'),
+      'utf8',
+    );
+    expect(revision).toMatch(
+      /private readonly suggestionCandidates: SuggestionCandidateSelector/,
+    );
+    expect(revision).toMatch(/createSuggestionCandidateSelector\([\s\S]*?index\.read/);
+    expect(revision).toMatch(/suggestionCandidates: this\.suggestionCandidates/);
+  });
+
   it('keeps every production query adapter behind the Indexed Workspace behavior', () => {
     const graph = buildSourceGraph(SOURCE_ROOT);
     for (const adapter of QUERY_ADAPTERS) {
@@ -398,6 +445,15 @@ function buildSourceGraph(sourceRoot: string): DependencyGraph {
   }
 
   return graph;
+}
+
+function sourceSection(source: string, start: string, end: string): string {
+  const startIndex = source.indexOf(start);
+  const endIndex = source.indexOf(end, startIndex + start.length);
+  if (startIndex < 0 || endIndex < 0) {
+    throw new Error(`missing source section: ${start} -> ${end}`);
+  }
+  return source.slice(startIndex, endIndex);
 }
 
 function readCompilerOptions(sourceRoot: string): ts.CompilerOptions {

@@ -245,18 +245,32 @@ The resolver prefers local and include-visible targets when possible. When more
 than one target remains valid, the server returns all candidates and lets VS Code
 show Peek Definition.
 
-Completion uses the same project index and include visibility rules. It suggests
-project functions, variables, parameters, structs, macros, and receiver-aware
-struct members in HLSL/CG code. It also merges a curated built-in vocabulary for
-common HLSL intrinsics, Unity/URP helper names and macros, semantics, and
-ShaderLab states and values. Project symbols are preferred when names collide
-with built-ins.
+Completion, member completion, and signature help submit intent to one
+candidate selector captured by the published revision. The selector expands
+the transitive include chain once for each project-backed query, excludes
+unrelated files, and orders visible project candidates as in-scope
+local/parameter, current-file global, then include-visible global. Same-name
+scoped declarations resolve to the nearest preceding declaration. Locals must
+be declared at or before the cursor and inside their inclusive scope range.
+Non-function display groups retain name/kind/parent-type dedupe, while concrete
+function candidates remain distinct and stable. Receiver member queries use the
+same visible set for type and chain inference.
+
+Completion suggests project functions, variables, parameters, structs, macros,
+and receiver-aware struct members in HLSL/CG code. It also merges a curated
+built-in vocabulary for common HLSL intrinsics, Unity/URP helper names and
+macros, semantics, and ShaderLab states and values. Project symbols are
+preferred when names collide with built-ins.
 
 Signature help is also project-index-backed and conservative. It shows indexed
 project function signatures for visible free-function calls and may return
 multiple candidates when preprocessor or overload-like ambiguity exists.
 Built-in functions participate in signature help only when the catalog includes
-parameter metadata.
+parameter metadata. Candidate order is not changed by arity: the first candidate
+with enough parameters for the current argument becomes the active signature,
+and the active parameter is clamped against that selected signature. If none is
+compatible, selection falls back to the first candidate without dropping any
+conservative result.
 
 Semantic coloring combines index-derived HLSL tokens with lexical ShaderLab
 tokens. For a committed open ShaderLab document, both come from the captured

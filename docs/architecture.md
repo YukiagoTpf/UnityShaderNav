@@ -54,9 +54,11 @@ handling. Important modules:
 - `index`: stores symbols, references, visibility, and chain lookup data. Its
   position geometry module owns shared inclusive range containment and
   before-or-at ordering used by index and suggestion visibility rules.
-- `suggestions`: classifies completion/signature contexts, enumerates visible
-  project symbols, formats LSP completion/signature items, and adapts filtered
-  vocabulary entries to suggestion results.
+- `suggestions`: classifies completion/signature contexts and exposes one
+  candidate-selector interface for completion, member completion, and
+  signature intent. The selector owns include visibility, scope/proximity,
+  current/include ranking, member inference, overload focus, dedupe, and
+  project-over-built-in precedence; separate formatters produce LSP values.
 - `handlers`: adapts LSP messages to domain behavior. The document adapter owns
   the open-document registry; every index-backed query adapter calls only the
   Indexed Workspace behavior interface and never receives raw index stores.
@@ -77,8 +79,10 @@ The index is intentionally pragmatic:
 - Cross-file search is constrained by include-chain visibility where possible.
 - Struct member navigation infers receiver type from declarations and narrow
   assignment facts rather than a full type system.
-- Completion and signature help reuse the same index and include-visibility
-  rules as navigation, then merge curated built-ins only after project symbols.
+- Completion, member completion, and signature help reuse the same index and
+  include-visibility rules as navigation through one candidate selector.
+  Curated built-ins are merged only after project candidates, and a project
+  name suppresses its built-in counterpart.
 - Parser modules may consume the neutral vocabulary but cannot depend on the
   suggestion projection. A transitive dependency-direction test enforces this
   boundary for statically analyzable TypeScript imports, re-exports, `require`
@@ -150,9 +154,12 @@ symbol/reference indexes, settings, Package context, or include context. Each
 Workspace behavior that reads indexed state captures one
 `PublishedIndexedRevision`, and async query work continues against that same
 object even if another publication occurs.
-Include visibility, scope resolution, proximity tie-breaks, property bridging,
-Package filtering, semantic-token construction, symbol formatting, and
-multi-candidate results remain revision-owned behavior.
+Each revision also constructs exactly one suggestion candidate selector over
+its immutable index view and Include context. A fork publishes a new selector;
+an already captured revision continues selecting from its old facts. Include
+visibility, scope resolution, proximity tie-breaks, property bridging, Package
+filtering, semantic-token construction, symbol formatting, and multi-candidate
+results remain revision-owned behavior.
 
 For a ShaderLab open-document attempt, the candidate builds a full
 `DocumentAnalysis` from that attempt's exact source. It becomes query-visible

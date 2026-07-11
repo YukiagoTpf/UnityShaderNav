@@ -43,4 +43,35 @@ suite('Signature Help', () => {
       assert.strictEqual(help.activeParameter, 1);
     });
   });
+
+  test('focuses the first arity-compatible overload without dropping conservative candidates', async () => {
+    await withWorkspaceFolder(fixturePath(), async () => {
+      const uri = vscode.Uri.file(fixturePath('suggestions', 'Main.hlsl'));
+      const doc = await vscode.workspace.openTextDocument(uri);
+      await vscode.window.showTextDocument(doc);
+      const line = doc.getText().split(/\r?\n/)
+        .findIndex((value) => value.includes('Mixed(1, 2)'));
+      assert.ok(line >= 0, 'expected mixed-arity signature fixture');
+      const character = doc.lineAt(line).text.indexOf('2)');
+
+      const help = await waitForSignatureHelp(
+        uri,
+        new vscode.Position(line, character),
+        (result) => result?.signatures.length === 2
+          && result.activeSignature === 1
+          && result.activeParameter === 1,
+      );
+
+      assert.ok(help, 'expected mixed-arity signature help');
+      assert.deepStrictEqual(
+        help.signatures.map((signature) => signature.label),
+        [
+          'float4 Mixed(float value)',
+          'float4 Mixed(float first, float second)',
+        ],
+      );
+      assert.strictEqual(help.activeSignature, 1);
+      assert.strictEqual(help.activeParameter, 1);
+    });
+  });
 });

@@ -62,7 +62,10 @@ semantics, and common ShaderLab states and values.
 The behavior is intentionally conservative: ambiguous overload-like or
 preprocessor-dependent functions may appear as multiple signature candidates,
 the built-in vocabulary is not exhaustive, and project symbols are preferred
-when names collide with built-ins.
+when names collide with built-ins. On a later argument, Signature Help focuses
+the first candidate with enough parameters while keeping every conservative
+candidate available. Member completion follows the current file's transitive
+include chain and excludes unrelated indexed files.
 
 ### Document Symbols
 

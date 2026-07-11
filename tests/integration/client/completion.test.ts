@@ -43,4 +43,25 @@ suite('Completion', () => {
       assert.ok(items.some((item) => item.label === 'helper'), 'expected helper completion');
     });
   });
+
+  test('suggests only include-visible members through the published candidate selector', async () => {
+    await withWorkspaceFolder(fixturePath(), async () => {
+      const uri = vscode.Uri.file(fixturePath('suggestions', 'Main.hlsl'));
+      const doc = await vscode.workspace.openTextDocument(uri);
+      await vscode.window.showTextDocument(doc);
+      const line = doc.getText().split(/\r?\n/)
+        .findIndex((value) => value.includes('surface.po'));
+      assert.ok(line >= 0, 'expected member completion fixture');
+      const character = doc.lineAt(line).text.indexOf('surface.po') + 'surface.po'.length;
+
+      const items = await waitForCompletion(
+        uri,
+        new vscode.Position(line, character),
+        (result) => result.some((item) => item.label === 'positionWS'),
+      );
+
+      assert.ok(items.some((item) => item.label === 'positionWS'));
+      assert.ok(!items.some((item) => item.label === 'hiddenOnly'));
+    });
+  });
 });

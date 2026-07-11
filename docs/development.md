@@ -99,6 +99,14 @@ npm run grammar:rebuild
   server. Live overlay, disk fallback, stale-attempt, rebuild replay,
   cross-document ordering, include visibility, and Package filtering tests use
   a real published revision or `Workspace`.
+- Project suggestion policy belongs in candidate-selector interface tests.
+  Cover prefix, inclusive scope and declaration order, nearest shadowing,
+  current/include rank, transitive include exclusion, function versus display
+  dedupe, root/array/nested member inference, mixed-arity signature focus, and
+  missing-index versus empty-selection results. Revision tests must prove a
+  forked publication cannot change the old selector. Extension Host coverage
+  must exercise ordinary completion, receiver member completion, and a later
+  argument whose first compatible overload is not candidate zero.
 - Publication tests must distinguish candidate state from published state.
   Cover copy-on-write isolation, the one-shot builder, one revision increment
   per successful pointer swap, and last-known-good query/persistence behavior

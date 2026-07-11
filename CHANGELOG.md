@@ -63,6 +63,11 @@ and uses semantic versioning for extension releases.
   publication, while a reader that already captured the prior revision retains
   its self-consistent facts until it finishes. Source analysis is never
   persisted or globally cached.
+- Concentrated completion, member completion, and signature candidate policy
+  behind one selector captured by each published Workspace revision. Include
+  visibility, scope/proximity, current/include ranking, member inference,
+  overload focus, dedupe, and project-over-built-in precedence now have one
+  production boundary and direct interface plus Extension Host coverage.
 - Separated include candidate and casing rules from Node filesystem access
   behind a narrow `FileProbe`. Deterministic in-memory tests now pin candidate
   priority, Package mapping, and case-insensitive fallback while production
@@ -70,6 +75,9 @@ and uses semantic versioning for extension releases.
 
 ### Fixed
 
+- Signature Help now selects the first arity-compatible overload before
+  clamping the active parameter, so a second argument focuses a compatible
+  two-parameter candidate while retaining one-parameter and ambiguous results.
 - Multiline comments containing syntactically valid fake ShaderLab `Pass`
   blocks no longer create Outline nodes or corrupt the following real Pass
   name and range.

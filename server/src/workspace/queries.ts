@@ -31,15 +31,10 @@ import { HIDDEN_SYMBOL_KINDS, SYMBOL_KIND_MAP } from '../index/symbolKindMap';
 import { isGenericDefinitionContext } from '../parser/lexical/context';
 import {
   callContextAt,
-  collectBuiltinFunctionSuggestions,
-  collectBuiltinSuggestions,
-  collectMemberSuggestions,
-  collectVisibleProjectFunctionSuggestions,
-  collectVisibleProjectSuggestions,
   suggestionContextAt,
   toCompletionItem,
   toSignatureInformation,
-  type ShaderSuggestion,
+  type SuggestionCandidateSelector,
 } from '../suggestions';
 import { BUILTIN_ENTRIES } from '../vocabulary';
 import type { PackageContext } from '../packages';
@@ -57,7 +52,13 @@ export interface WorkspaceQueryState {
   readonly index: WorkspaceIndexReadView;
   readonly packages: PackageContext;
   readonly includePackages: boolean;
+  readonly suggestionCandidates: SuggestionCandidateSelector;
 }
+
+type SuggestionWorkspaceQueryState = Pick<
+  WorkspaceQueryState,
+  'suggestionCandidates'
+>;
 
 /** Preserve completion's lexical early exit without publishing a document index. */
 export function completionWithoutIndex(
@@ -157,7 +158,7 @@ export async function queryHover(
 }
 
 export async function queryCompletion(
-  state: WorkspaceQueryState,
+  state: SuggestionWorkspaceQueryState,
   input: DocumentPositionInput,
 ): Promise<CompletionItem[] | null> {
   const { document, position } = input;
@@ -168,40 +169,24 @@ export async function queryCompletion(
     document.uri,
   );
   if (context.kind === 'comment' || context.kind === 'string') return [];
-  const index = state.index.store.get(document.uri);
-  if (!index) return null;
-  const visibleUriKeys = await collectVisibleUriKeys(
-    state.index.store,
-    state.packages.includeCtx,
-    document.uri,
-  );
-
-  const suggestions = context.member
-    ? collectMemberSuggestions(
-      index,
-      state.index.store,
-      state.index.global,
-      visibleUriKeys,
-      context.member.receiver,
-      context.member.memberPrefix.text,
-      position,
-    )
-    : mergeProjectAndBuiltinSuggestions(
-      context.kind === 'hlslCode'
-        ? collectVisibleProjectSuggestions({
-          index,
-          store: state.index.store,
-          visibleUriKeys,
-          position,
-        }).filter((suggestion) => suggestion.name.startsWith(context.prefix.text))
-        : [],
-      collectBuiltinSuggestions(context),
-    );
-  return suggestions.map(toCompletionItem);
+  const selection = await state.suggestionCandidates.select({
+    uri: document.uri,
+    position,
+    query: context.member
+      ? {
+        kind: 'member',
+        receiver: context.member.receiver,
+        prefix: context.member.memberPrefix.text,
+      }
+      : { kind: 'completion', context },
+  });
+  return selection
+    ? selection.suggestions.map(toCompletionItem)
+    : null;
 }
 
 export async function querySignatureHelp(
-  state: WorkspaceQueryState,
+  state: SuggestionWorkspaceQueryState,
   input: DocumentPositionInput,
 ): Promise<SignatureHelp | null> {
   const { document, position } = input;
@@ -216,33 +201,32 @@ export async function querySignatureHelp(
   }
   const call = callContextAt(document.text, position);
   if (!call) return null;
-  const index = state.index.store.get(document.uri);
-  if (!index) return null;
-  const visibleUriKeys = await collectVisibleUriKeys(
-    state.index.store,
-    state.packages.includeCtx,
-    document.uri,
-  );
-  const projectSuggestions = collectVisibleProjectFunctionSuggestions({
-    index,
-    store: state.index.store,
-    visibleUriKeys,
+  const selection = await state.suggestionCandidates.select({
+    uri: document.uri,
     position,
-    name: call.calleeName,
+    query: {
+      kind: 'signature',
+      context,
+      name: call.calleeName,
+      activeParameter: call.activeParameter,
+    },
   });
-  const builtinSuggestions = projectSuggestions.some((suggestion) => (
-    suggestion.name === call.calleeName
-  ))
-    ? []
-    : collectBuiltinFunctionSuggestions(call.calleeName, context);
-  const signatures = [...projectSuggestions, ...builtinSuggestions]
+  if (!selection) return null;
+  const signatures = selection.suggestions
     .map(toSignatureInformation)
     .filter((signature): signature is NonNullable<typeof signature> => signature !== null);
   if (signatures.length === 0) return null;
-  const maxParameterIndex = Math.max(0, (signatures[0]?.parameters?.length ?? 0) - 1);
+  const activeSignature = Math.min(
+    selection.activeSuggestion ?? 0,
+    signatures.length - 1,
+  );
+  const maxParameterIndex = Math.max(
+    0,
+    (signatures[activeSignature]?.parameters?.length ?? 0) - 1,
+  );
   return {
     signatures,
-    activeSignature: 0,
+    activeSignature,
     activeParameter: Math.min(call.activeParameter, maxParameterIndex),
   };
 }
@@ -319,21 +303,6 @@ export function compareWorkspaceSymbols(
     || left.location.uri.localeCompare(right.location.uri)
     || left.location.range.start.line - right.location.range.start.line
     || left.location.range.start.character - right.location.range.start.character;
-}
-
-function mergeProjectAndBuiltinSuggestions(
-  projectSuggestions: ShaderSuggestion[],
-  builtinSuggestions: ShaderSuggestion[],
-): ShaderSuggestion[] {
-  const projectNames = new Set(projectSuggestions.map((suggestion) => suggestion.name));
-  const seenBuiltinNames = new Set<string>();
-  const visibleBuiltins: ShaderSuggestion[] = [];
-  for (const suggestion of builtinSuggestions) {
-    if (projectNames.has(suggestion.name) || seenBuiltinNames.has(suggestion.name)) continue;
-    seenBuiltinNames.add(suggestion.name);
-    visibleBuiltins.push(suggestion);
-  }
-  return [...projectSuggestions, ...visibleBuiltins];
 }
 
 function basenameFromUri(uri: string): string | undefined {
