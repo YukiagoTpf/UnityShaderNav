@@ -13,7 +13,6 @@ import { scanPragmaLines } from '../../macros/matcher';
 import { scanIncludes } from '../include/lineScanner';
 import { scanDefines } from '../preproc/scanDefines';
 import { scanProperties } from '../shaderlab/propertiesScanner';
-import { scanStructure } from '../shaderlab/structureScanner';
 
 const HLSL_EXTS = new Set(['.hlsl', '.cginc', '.hlslinc', '.compute']);
 
@@ -122,7 +121,7 @@ export async function indexFile(
 
   if (ext === '.shader') {
     if (!analysis) throw new Error(`missing ShaderLab analysis for ${uri}`);
-    const { blocks } = analysis;
+    const { blocks, structure } = analysis;
     const lines = text.split(/\r?\n/);
 
     const merged: FileIndex = { uri, symbols: [], references: [] };
@@ -140,7 +139,7 @@ export async function indexFile(
         merged.references.push(...scanPragmas(blockText, block.contentStartLine, table, uri));
       }
     }
-    merged.structure = scanStructure(text);
+    merged.structure = structure;
     const properties = scanProperties(text, blocks);
     if (properties.length > 0) merged.properties = properties;
     return merged;

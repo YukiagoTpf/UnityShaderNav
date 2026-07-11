@@ -7,7 +7,7 @@ VS Code extension client
   -> vscode-languageclient
   -> language server process
      -> exact-source document analysis
-        -> ShaderLab block/token scanners
+        -> ShaderLab block/structure/token scanners
      -> parser runtime assets
         -> tree-sitter HLSL parser
         -> cache implementation identity
@@ -34,9 +34,9 @@ handling. Important modules:
 
 - `parser/shaderlab`: scans ShaderLab and extracts HLSL/CG blocks.
 - `analysis`: composes one immutable, exact-source `DocumentAnalysis` from
-  ordered ShaderLab HLSL/CG blocks and, on full demand, ShaderLab lexical
-  tokens. Indexing and Semantic Tokens consume this result instead of
-  independently rescanning the same live source.
+  ordered ShaderLab HLSL/CG blocks, multiline-aware structure, and, on full
+  demand, ShaderLab lexical tokens. Indexing, Outline, and Semantic Tokens
+  consume this result instead of independently rescanning the same live source.
 - `parser/hlsl`: wraps tree-sitter and collects symbols/references.
 - `parser/runtimeAssets`: maps only the supported source, tsc-out,
   copied-server, and bundled-server layouts to the vendored HLSL grammar. A
@@ -83,9 +83,10 @@ The index is intentionally pragmatic:
   suggestion projection. A transitive dependency-direction test enforces this
   boundary for statically analyzable TypeScript imports, re-exports, `require`
   calls, and dynamic imports.
-- A `.shader` indexing cycle derives ordered embedded-code blocks once and
-  passes them to both file indexing and Properties scanning. A full live
-  `DocumentAnalysis` adds the lexical tokens used by Semantic Tokens.
+- A `.shader` indexing cycle derives ordered embedded-code blocks and structure
+  from one exact source analysis, then passes the blocks to Properties scanning
+  and publishes the structure through `FileIndex` for Outline. A full live
+  analysis additionally carries the lexical tokens used by Semantic Tokens.
 - Preprocessor conditions are not evaluated for navigation, references, or
   completion. A separate presentation-only layer does apply conservative
   preprocessor branch dimming (inactive and variant-gated `#if`/`#ifdef`/
@@ -155,17 +156,19 @@ multi-candidate results remain revision-owned behavior.
 
 For a ShaderLab open-document attempt, the candidate builds a full
 `DocumentAnalysis` from that attempt's exact source. It becomes query-visible
-only when the same candidate publishes, and Semantic Tokens consumes its
-committed lexical tokens through the captured revision. The analysis stays
-beside the live overlay rather than inside `FileIndex`; close or a newer attempt
-removes it from the next publication, while an already captured old revision
-keeps its immutable facts until that reader finishes. Disk scans
+only when the same candidate publishes. File indexing projects its structure
+into `FileIndex` for Outline, while Semantic Tokens consumes its committed
+lexical tokens through the captured revision. The analysis container and source
+stay beside the live overlay rather than inside `FileIndex`; close or a newer
+attempt removes them from the next publication, while an already captured old
+revision keeps its immutable facts until that reader finishes. Disk scans
 and other index-only source paths may construct an analysis while producing a
 `FileIndex`, but discard it immediately afterward; cache restoration does not
-reconstruct one. `DiskIndexRecord`, cache manifests, persisted cache entries,
-and process-wide caches never retain source analysis. This revision-owned
-lifetime prevents token requests from observing facts derived from a different
-source snapshot.
+reconstruct one. The durable `FileIndex.structure` projection may be cached;
+`DiskIndexRecord`, cache manifests, persisted cache entries, and process-wide
+caches never retain the analysis container, source text, or lexical tokens.
+This revision-owned lifetime prevents Outline or token requests from observing
+facts derived from a different source snapshot.
 
 An index-dependent open-document query whose exact `openId + version` is not
 published first joins that document attempt through Workspace behavior. It then

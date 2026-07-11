@@ -55,11 +55,14 @@ and uses semantic versioning for extension releases.
   queries now use Workspace behavior, while mutable index stores remain private
   to candidate construction.
 - Shared one immutable, exact-source ShaderLab `DocumentAnalysis` between file
-  indexing and Semantic Tokens. Index-only analysis is temporary; only a
-  committed open-document attempt retains full lexical facts with its published
-  revision. Close or replacement drops them from the next publication, while a
-  reader that already captured the prior revision retains its self-consistent
-  facts until it finishes. Source analysis is never persisted or globally cached.
+  indexing, Outline, and Semantic Tokens. Ordered blocks, multiline-aware
+  structure, and lexical facts come from one source snapshot; `FileIndex`
+  retains only the durable structure projection. Index-only analysis is
+  temporary; only a committed open-document attempt retains full lexical facts
+  with its published revision. Close or replacement drops them from the next
+  publication, while a reader that already captured the prior revision retains
+  its self-consistent facts until it finishes. Source analysis is never
+  persisted or globally cached.
 - Separated include candidate and casing rules from Node filesystem access
   behind a narrow `FileProbe`. Deterministic in-memory tests now pin candidate
   priority, Package mapping, and case-insensitive fallback while production
@@ -67,6 +70,9 @@ and uses semantic versioning for extension releases.
 
 ### Fixed
 
+- Multiline comments containing syntactically valid fake ShaderLab `Pass`
+  blocks no longer create Outline nodes or corrupt the following real Pass
+  name and range.
 - Configuration keys, defaults, validation, live change forwarding, and index
   rebuild behavior now share one checked contract. In particular, changing
   `unityShaderNav.debug.definitionTrace` applies without restarting the

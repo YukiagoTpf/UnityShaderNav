@@ -185,6 +185,7 @@ describe('server dependency direction', () => {
       'utf8',
     );
     expect(analysis).toMatch(/from ['"]\.\.\/parser\/shaderlab\/blockScanner['"]/);
+    expect(analysis).toMatch(/from ['"]\.\.\/parser\/shaderlab\/structureScanner['"]/);
     expect(analysis).toMatch(/from ['"]\.\.\/parser\/shaderlab\/tokenScanner['"]/);
     expect(analysis).not.toMatch(/analyzeInactiveRegions/);
 
@@ -193,14 +194,22 @@ describe('server dependency direction', () => {
       'utf8',
     );
     expect(fileIndexer).toMatch(/from ['"]\.\.\/\.\.\/analysis['"]/);
-    expect(fileIndexer).not.toMatch(/shaderlab\/(?:blockScanner|tokenScanner)/);
+    expect(fileIndexer).not.toMatch(/shaderlab\/(?:blockScanner|structureScanner|tokenScanner)/);
     expect(fileIndexer).toMatch(/scanProperties\(text, blocks\)/);
+    expect(fileIndexer).not.toMatch(/\bscanStructure\s*\(/);
 
     const tokenScanner = readFileSync(
       resolve(SOURCE_ROOT, 'parser/shaderlab/tokenScanner.ts'),
       'utf8',
     );
     expect(tokenScanner).not.toMatch(/blockScanner|\bscanBlocks\b/);
+
+    const structureScanner = readFileSync(
+      resolve(SOURCE_ROOT, 'parser/shaderlab/structureScanner.ts'),
+      'utf8',
+    );
+    expect(structureScanner).toMatch(/from ['"]\.\.\/masking['"]/);
+    expect(structureScanner).not.toMatch(/sanitize/);
 
     const queries = readFileSync(resolve(SOURCE_ROOT, 'workspace/queries.ts'), 'utf8');
     expect(queries).not.toMatch(/shaderlab\/tokenScanner|\bscanShaderLabTokens\b/);
@@ -225,9 +234,10 @@ describe('server dependency direction', () => {
       if (
         moduleId === 'analysis/documentAnalysis.ts'
         || moduleId === 'parser/shaderlab/tokenScanner.ts'
+        || moduleId === 'parser/shaderlab/structureScanner.ts'
       ) continue;
       expect(readFileSync(sourceFile, 'utf8'), moduleId)
-        .not.toMatch(/\bscanShaderLabTokens\s*\(/);
+        .not.toMatch(/\b(?:scanShaderLabTokens|scanStructure)\s*\(/);
     }
   });
 

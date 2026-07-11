@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DEFAULT_SETTINGS } from '@unity-shader-nav/shared';
-import type { SemanticTokens } from 'vscode-languageserver/node';
+import type { DocumentSymbol, SemanticTokens } from 'vscode-languageserver/node';
 import { describe, expect, it } from 'vitest';
 import {
   analyzeDocument,
@@ -80,7 +80,11 @@ function semanticTokenTexts(text: string, tokens: SemanticTokens): Array<{
   return result;
 }
 
-function shaderSource(property: string, functionName: string): string {
+function shaderSource(
+  property: string,
+  functionName: string,
+  passName = functionName.replace(/Function$/, 'Pass'),
+): string {
   return [
     'Shader "Tests/LiveAnalysis" {',
     '  Properties {',
@@ -88,6 +92,7 @@ function shaderSource(property: string, functionName: string): string {
     '  }',
     '  SubShader {',
     '    Pass {',
+    `      Name "${passName}"`,
     '      HLSLPROGRAM',
     `      float4 ${functionName}() : SV_Target { return 0; }`,
     '      ENDHLSL',
@@ -95,6 +100,14 @@ function shaderSource(property: string, functionName: string): string {
     '  }',
     '}',
   ].join('\n');
+}
+
+function documentSymbolNames(symbols: readonly DocumentSymbol[] | null): string[] {
+  if (!symbols) return [];
+  return symbols.flatMap((symbol) => [
+    symbol.name,
+    ...documentSymbolNames(symbol.children ?? []),
+  ]);
 }
 
 describe('Workspace-owned Document analysis', () => {
@@ -121,6 +134,8 @@ describe('Workspace-owned Document analysis', () => {
       await expect(workspace.updateDocument(first)).resolves.toBe(true);
       expect(calls).toEqual([{ uri, text: firstText, demand: 'full' }]);
       expect(workspace.workspaceSymbols('OldFunction')).toHaveLength(1);
+      expect(documentSymbolNames(await workspace.documentSymbols({ uri, document: first })))
+        .toContain('Pass "OldPass"');
 
       const firstTokens = await workspace.semanticTokens({ uri, document: first });
       const repeatedTokens = await workspace.semanticTokens({ uri, document: first });
@@ -171,6 +186,11 @@ describe('Workspace-owned Document analysis', () => {
       expect(calls[3]).toEqual({ uri, text: replacementText, demand: 'full' });
       expect(workspace.workspaceSymbols('OldFunction')).toEqual([]);
       expect(workspace.workspaceSymbols('ReplacementFunction')).toHaveLength(1);
+      const replacementOutline = documentSymbolNames(
+        await workspace.documentSymbols({ uri, document: replacement }),
+      );
+      expect(replacementOutline).toContain('Pass "ReplacementPass"');
+      expect(replacementOutline).not.toContain('Pass "OldPass"');
 
       const replacementTokens = await workspace.semanticTokens({ uri, document: replacement });
       const renderedReplacement = semanticTokenTexts(replacementText, replacementTokens);
@@ -184,6 +204,10 @@ describe('Workspace-owned Document analysis', () => {
       });
       expect(calls).toHaveLength(4);
 
+      const forgedSameAttempt = snapshot(uri, firstText, 3);
+      await expect(workspace.documentSymbols({ uri, document: forgedSameAttempt }))
+        .resolves.toBeNull();
+
       await expect(workspace.updateDocument(versionOnly)).resolves.toBe(false);
       await expect(workspace.semanticTokens({ uri, document: versionOnly }))
         .resolves.toEqual({ data: [] });
@@ -195,6 +219,16 @@ describe('Workspace-owned Document analysis', () => {
       await expect(workspace.semanticTokens({ uri, document: replacement }))
         .resolves.toEqual({ data: [] });
       expect(calls).toHaveLength(4);
+
+      const reopenedText = shaderSource('_ReopenedTint', 'ReopenedFunction');
+      const reopened = snapshot(uri, reopenedText, 1, 2);
+      await expect(workspace.updateDocument(reopened)).resolves.toBe(true);
+      const reopenedOutline = documentSymbolNames(
+        await workspace.documentSymbols({ uri, document: reopened }),
+      );
+      expect(reopenedOutline).toContain('Pass "ReopenedPass"');
+      expect(reopenedOutline).not.toContain('Pass "ReplacementPass"');
+      expect(calls).toHaveLength(5);
     } finally {
       workspace.dispose();
       await rm(root, { recursive: true, force: true });
@@ -243,6 +277,11 @@ describe('Workspace-owned Document analysis', () => {
       ]);
       expect(workspace.workspaceSymbols('StaleFunction')).toEqual([]);
       expect(workspace.workspaceSymbols('FreshFunction')).toHaveLength(1);
+      const freshOutline = documentSymbolNames(
+        await workspace.documentSymbols({ uri, document: fresh }),
+      );
+      expect(freshOutline).toContain('Pass "FreshPass"');
+      expect(freshOutline).not.toContain('Pass "StalePass"');
       await expect(workspace.semanticTokens({ uri, document: stale }))
         .resolves.toEqual({ data: [] });
 
@@ -270,8 +309,9 @@ describe('Workspace-owned Document analysis', () => {
     await writeFile(join(root, 'Packages', 'packages-lock.json'), '{"dependencies":{}}');
     const sourcePath = join(root, 'Assets', 'Shaders', 'Cached.shader');
     const uri = pathToFileURL(sourcePath).href;
-    const text = shaderSource('_CachedTint', 'CachedFunction');
-    await writeFile(sourcePath, text);
+    const diskText = shaderSource('_DiskTint', 'DiskFunction', 'DiskPass');
+    const liveText = shaderSource('_LiveTint', 'LiveFunction', 'LivePass');
+    await writeFile(sourcePath, diskText);
 
     const folderUri = pathToFileURL(root).href;
     const calls: AnalysisCall[] = [];
@@ -286,28 +326,34 @@ describe('Workspace-owned Document analysis', () => {
 
     try {
       await workspace.initialize(connection, globalStorage);
-      expect(calls).toEqual([{ uri, text, demand: 'index' }]);
-      await workspace.updateDocument(snapshot(uri, text, 1));
+      expect(calls).toEqual([{ uri, text: diskText, demand: 'index' }]);
+      await workspace.updateDocument(snapshot(uri, liveText, 1));
       expect(calls).toEqual([
-        { uri, text, demand: 'index' },
-        { uri, text, demand: 'full' },
+        { uri, text: diskText, demand: 'index' },
+        { uri, text: liveText, demand: 'full' },
       ]);
 
-      const openDocument = snapshot(uri, text, 1);
+      const openDocument = snapshot(uri, liveText, 1);
       const openTokens = semanticTokenTexts(
-        text,
+        liveText,
         await workspace.semanticTokens({ uri, document: openDocument }),
       );
       expect(openTokens).toContainEqual({ text: 'Shader', type: 'keyword' });
+      expect(documentSymbolNames(
+        await workspace.documentSymbols({ uri, document: openDocument }),
+      )).toContain('Pass "LivePass"');
 
       await workspace.closeDocument({ uri, openId: openDocument.openId });
       const diskTokens = semanticTokenTexts(
-        text,
+        diskText,
         await workspace.semanticTokens({ uri }),
       );
-      expect(diskTokens).toContainEqual({ text: 'CachedFunction', type: 'function' });
+      expect(diskTokens).toContainEqual({ text: 'DiskFunction', type: 'function' });
       expect(diskTokens).not.toContainEqual({ text: 'Shader', type: 'keyword' });
-      expect(diskTokens).not.toContainEqual({ text: '_CachedTint', type: 'property' });
+      expect(diskTokens).not.toContainEqual({ text: '_DiskTint', type: 'property' });
+      const closedOutline = documentSymbolNames(await workspace.documentSymbols({ uri }));
+      expect(closedOutline).toContain('Pass "DiskPass"');
+      expect(closedOutline).not.toContain('Pass "LivePass"');
       expect(calls).toHaveLength(2);
 
       await workspace.persist();
@@ -321,16 +367,47 @@ describe('Workspace-owned Document analysis', () => {
       const cachePath = join(cacheDir, 'index.json');
       const manifestText = await readFile(cachePath, 'utf8');
       const manifest = JSON.parse(manifestText) as {
-        files: Array<{ index: { symbols: Array<{ name: string }> } }>;
+        files: Array<{
+          index: {
+            symbols: Array<{ name: string }>;
+            structure?: {
+              shaders: Array<{
+                children: Array<{ children: Array<{ name?: string }> }>;
+              }>;
+            };
+          };
+        }>;
       };
 
       expect(manifest.files).toHaveLength(1);
       expect(manifest.files[0].index.symbols).toEqual(expect.arrayContaining([
-        expect.objectContaining({ name: 'CachedFunction' }),
+        expect.objectContaining({ name: 'DiskFunction' }),
       ]));
+      expect(manifest.files[0].index.structure?.shaders[0].children[0].children[0].name)
+        .toBe('DiskPass');
+      expect(manifestText).not.toContain('LivePass');
       expect(manifestText).not.toContain('"analysis"');
       expect(manifestText).not.toContain('"sourceText"');
       expect(manifestText).not.toContain('"lexicalTokens"');
+
+      workspace.dispose();
+      const warmCalls: AnalysisCall[] = [];
+      const warmWorkspace = new Workspace(folderUri, DEFAULT_SETTINGS, {
+        indexImplementation: 'a'.repeat(64),
+        indexDocument: indexFile,
+        analyzeDocument(analysisUri, sourceText, demand) {
+          warmCalls.push({ uri: analysisUri, text: sourceText, demand });
+          return analyzeDocument(analysisUri, sourceText, demand);
+        },
+      });
+      try {
+        await warmWorkspace.initialize(connection, globalStorage);
+        expect(warmCalls).toEqual([]);
+        expect(documentSymbolNames(await warmWorkspace.documentSymbols({ uri })))
+          .toContain('Pass "DiskPass"');
+      } finally {
+        warmWorkspace.dispose();
+      }
     } finally {
       workspace.dispose();
       await rm(temp, { recursive: true, force: true });

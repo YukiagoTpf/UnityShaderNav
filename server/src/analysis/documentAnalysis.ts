@@ -1,7 +1,8 @@
 import { extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { ShaderLabBlock } from '@unity-shader-nav/shared';
+import type { ShaderLabBlock, StructureResult } from '@unity-shader-nav/shared';
 import { scanBlocks } from '../parser/shaderlab/blockScanner';
+import { scanStructure } from '../parser/shaderlab/structureScanner';
 import {
   scanShaderLabTokens,
   type ShaderLabLexicalToken,
@@ -19,6 +20,7 @@ export type DocumentLexicalToken = ShaderLabLexicalToken;
 export interface DocumentAnalysis {
   readonly sourceText: string;
   readonly blocks: readonly ShaderLabBlock[];
+  readonly structure: StructureResult;
   /** Present only for a live/full analysis cycle. */
   readonly lexicalTokens: readonly DocumentLexicalToken[] | undefined;
 }
@@ -34,10 +36,11 @@ export function analyzeDocument(
   if (extensionOf(uri) !== '.shader') return undefined;
 
   const blocks = scanBlocks(text).blocks;
+  const structure = scanStructure(text);
   const lexicalTokens = demand === 'full'
     ? scanShaderLabTokens(text, blocks)
     : undefined;
-  return deepFreeze({ sourceText: text, blocks, lexicalTokens });
+  return deepFreeze({ sourceText: text, blocks, structure, lexicalTokens });
 }
 
 /** Guard request-time reuse against a source snapshot that did not produce the facts. */

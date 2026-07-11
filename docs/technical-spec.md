@@ -146,18 +146,21 @@ fire-and-forget document routing instead of becoming unhandled promise
 rejections.
 
 For an exact ShaderLab open-document attempt, preparation produces one
-immutable `DocumentAnalysis`: ordered HLSL/CG block ranges plus ShaderLab
-lexical tokens. The same block ranges feed file indexing and Properties
-scanning. A successful publication keeps the full analysis beside that live
-overlay in the `PublishedIndexedRevision`, so Semantic Tokens reads facts from
-the same committed source and attempt as the index. Close or replacement by a
+immutable `DocumentAnalysis`: ordered HLSL/CG block ranges, multiline-aware
+ShaderLab structure, and ShaderLab lexical tokens. The same block ranges feed
+file indexing and Properties scanning; `FileIndex.structure` is the durable
+projection consumed by Document Symbols. A successful publication keeps the
+full analysis beside that live overlay in the `PublishedIndexedRevision`, so
+Outline and Semantic Tokens read facts from the same committed source and
+attempt as the index. Close or replacement by a
 newer attempt removes it from the next publication; a request that already
 captured the prior revision keeps a self-consistent immutable result. Disk and
 other index-only paths use a temporary analysis only while creating the
-`FileIndex`; analysis and its source text are not fields of `FileIndex`,
-`DiskIndexRecord`, cache manifests, persisted cache records, or a process-wide
-cache. Cache restoration therefore restores indexes without reconstructing
-source analysis.
+`FileIndex`; only the structure projection persists. The analysis container,
+source text, and lexical tokens are not fields of `FileIndex`, `DiskIndexRecord`,
+cache manifests, persisted cache records, or a process-wide cache. Cache
+restoration therefore restores Outline structure without reconstructing source
+analysis.
 
 Workspace routing changes also form an ownership boundary. Adding a nested root
 removes its open-document overlays from the former parent before the nested

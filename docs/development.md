@@ -82,8 +82,9 @@ npm run grammar:rebuild
   Electron include tests exercise the default Node filesystem adapter and its
   production wiring.
 - Document-analysis tests should prove exact-source matching, immutable shared
-  blocks/tokens, index-only versus full demand, and revision-owned live
-  lifetimes. Disk/cache records must remain analysis-free.
+  blocks/structure/tokens, index-only versus full demand, and revision-owned
+  live lifetimes. `FileIndex.structure` is a durable projection; disk/cache
+  records must remain free of the analysis container, source, and lexical facts.
 - `npm run test:package` is the authoritative package check. One invocation
   removes generated output, rebuilds current source, creates the versioned VSIX,
   verifies its manifest and runtime files, then runs package-layout tests. The
@@ -193,9 +194,10 @@ npm run bench:document-analysis
 
 The command generates one representative multi-pass ShaderLab source and
 alternates two paths in the same Node.js process. The legacy path independently
-composes indexing block discovery, Properties scanning, and lexical-token block
-discovery; the shared path runs one full `analyzeDocument` and passes its blocks
-to `scanProperties`. Output includes artifact counts, sample count, median,
+composes indexing block discovery, structure scanning, Properties scanning, and
+lexical-token block discovery; the shared path runs one full `analyzeDocument`,
+uses its structure, and passes its blocks to `scanProperties`. Output includes
+block, structure-node, property, and token counts plus sample count, median,
 p95, and the shared-to-legacy ratio. Count equality is a correctness check.
 Timing is diagnostic only: there is deliberately no timing threshold in CI,
 and performance comparisons should use the same machine, build, and arguments.

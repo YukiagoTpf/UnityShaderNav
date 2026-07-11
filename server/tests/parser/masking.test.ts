@@ -72,6 +72,15 @@ describe('maskCommentsLine — property vs token quote handling', () => {
   it("'blank-body' blanks an escaped quote and its body, keeping the outer quotes", () => {
     expect(maskCommentsLine('"a\\"b"', false, { strings: 'blank-body' }).code).toBe('"    "');
   });
+
+  it("'blank-braces' preserves names but masks only braces inside strings", () => {
+    const line = 'Pass { Name "left{right}end" }';
+    const result = maskCommentsLine(line, false, { strings: 'blank-braces' });
+
+    expect(result.code).toBe('Pass { Name "left right end" }');
+    expect(result.code).toHaveLength(line.length);
+    expect(result.inBlockComment).toBe(false);
+  });
 });
 
 describe('scanCommentRoles — per-column roles and EOL state', () => {

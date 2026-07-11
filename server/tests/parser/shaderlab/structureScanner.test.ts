@@ -113,4 +113,29 @@ describe('scanStructure: explicit ranges', () => {
     expect(pass.kind).toBe('pass');
     expect(pass.headerLine).toBe(3);
   });
+
+  it('ignores a complete fake Pass inside a multiline block comment', () => {
+    const text = [
+      'Shader "X" {',
+      '  SubShader {',
+      '    /*',
+      '    Pass { Name "FakeCommentedPass" }',
+      '    */',
+      '    Pass {',
+      '      Name "RealPass"',
+      '    }',
+      '  }',
+      '}',
+    ].join('\n');
+
+    const result = scanStructure(text);
+    const passes = result.shaders[0].children[0].children;
+    expect(passes).toHaveLength(1);
+    expect(passes[0]).toMatchObject({
+      kind: 'pass',
+      name: 'RealPass',
+      headerLine: 5,
+      closeLine: 7,
+    });
+  });
 });

@@ -99,13 +99,21 @@ function ratio(numerator, denominator) {
 }
 
 function assertSameCounts(legacy, shared) {
-  for (const key of ['blocks', 'properties', 'lexicalTokens']) {
+  for (const key of ['blocks', 'properties', 'structureNodes', 'lexicalTokens']) {
     if (legacy[key] !== shared[key]) {
       throw new Error(
         `Benchmark paths disagree on ${key}: legacy=${legacy[key]}, shared=${shared[key]}`,
       );
     }
   }
+}
+
+function countStructureNodes(structure) {
+  const count = (nodes) => nodes.reduce(
+    (total, node) => total + 1 + count(node.children),
+    0,
+  );
+  return count(structure.shaders);
 }
 
 async function main() {
@@ -115,11 +123,13 @@ async function main() {
   const [
     { scanBlocks },
     { scanProperties },
+    { scanStructure },
     { scanShaderLabTokens },
     { analyzeDocument },
   ] = await Promise.all([
     import('../server/out/parser/shaderlab/blockScanner.js'),
     import('../server/out/parser/shaderlab/propertiesScanner.js'),
+    import('../server/out/parser/shaderlab/structureScanner.js'),
     import('../server/out/parser/shaderlab/tokenScanner.js'),
     import('../server/out/analysis/documentAnalysis.js'),
   ]);
@@ -127,11 +137,13 @@ async function main() {
   function runLegacyCycle() {
     const indexBlocks = scanBlocks(source).blocks;
     const properties = scanProperties(source);
+    const structure = scanStructure(source);
     const tokenBlocks = scanBlocks(source).blocks;
     const lexicalTokens = scanShaderLabTokens(source, tokenBlocks);
     return {
       blocks: indexBlocks.length,
       properties: properties.length,
+      structureNodes: countStructureNodes(structure),
       lexicalTokens: lexicalTokens.length,
     };
   }
@@ -145,6 +157,7 @@ async function main() {
     return {
       blocks: analysis.blocks.length,
       properties: properties.length,
+      structureNodes: countStructureNodes(analysis.structure),
       lexicalTokens: analysis.lexicalTokens.length,
     };
   }
@@ -171,7 +184,10 @@ async function main() {
     const start = performance.now();
     const counts = run();
     samples.push(performance.now() - start);
-    checksum += counts.blocks + counts.properties + counts.lexicalTokens;
+    checksum += counts.blocks
+      + counts.properties
+      + counts.structureNodes
+      + counts.lexicalTokens;
   }
 
   for (let index = 0; index < args.iterations; index++) {

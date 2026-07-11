@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { indexFile } from '../../../src/parser/hlsl/fileIndexer';
 import { scanProperties } from '../../../src/parser/shaderlab/propertiesScanner';
 import { MacroPatternTable } from '../../../src/macros';
+import { analyzeDocument } from '../../../src/analysis';
 
 describe('fileIndexer: pure .hlsl', () => {
   it('treats whole file as one HLSL block', async () => {
@@ -66,10 +67,31 @@ describe('fileIndexer: .shader multi-pass', () => {
       join(__dirname, '../shaderlab/fixtures/multi-pass.shader'),
       'utf8',
     );
-    const idx = await indexFile('file:///t/x.shader', text);
+    const analysis = analyzeDocument('file:///t/x.shader', text, 'index')!;
+    const idx = await indexFile('file:///t/x.shader', text, undefined, analysis);
 
     expect(idx.structure?.shaders).toBeDefined();
     expect(idx.structure?.shaders[0]?.children[0]?.children.length).toBeGreaterThan(0);
+    expect(idx.structure).toBe(analysis.structure);
+  });
+
+  it('publishes only real structure from the exact analyzed source', async () => {
+    const text = [
+      'Shader "T/Comments" {',
+      '  SubShader {',
+      '    /*',
+      '    Pass { Name "FakeCommentedPass" }',
+      '    */',
+      '    Pass { Name "RealPass" }',
+      '  }',
+      '}',
+    ].join('\n');
+    const analysis = analyzeDocument('file:///t/comments.shader', text, 'full')!;
+    const idx = await indexFile('file:///t/comments.shader', text, undefined, analysis);
+
+    expect(idx.structure).toBe(analysis.structure);
+    expect(idx.structure?.shaders[0].children[0].children)
+      .toEqual([expect.objectContaining({ name: 'RealPass', headerLine: 5 })]);
   });
 
   it('records #define directives inside shader HLSL blocks with original line offsets', async () => {

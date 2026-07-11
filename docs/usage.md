@@ -67,7 +67,9 @@ when names collide with built-ins.
 ### Document Symbols
 
 Use Ctrl+Shift+O to view ShaderLab blocks, passes, pragmas, functions, structs,
-and cbuffer entries in the current file.
+and cbuffer entries in the current file. ShaderLab structure is derived from the
+same exact source snapshot as indexing; Pass-like text and braces inside
+multiline comments or string literals do not create or reshape Outline nodes.
 
 ### Semantic Coloring
 

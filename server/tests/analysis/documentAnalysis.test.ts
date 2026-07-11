@@ -12,9 +12,10 @@ const source = [
   '  Properties {',
   '    _FirstProperty ("First", Float) = 0',
   '  }',
-  '  SubShader {',
-  '    Pass {',
-  '      HLSLPROGRAM',
+    '  SubShader {',
+    '    Pass {',
+    '      Name "FirstPass"',
+    '      HLSLPROGRAM',
   '      float4 FirstFunction() : SV_Target { return 0; }',
   '      ENDHLSL',
   '    }',
@@ -44,12 +45,15 @@ describe('Document analysis', () => {
     expect(indexAnalysis).toBeDefined();
     expect(fullAnalysis).toBeDefined();
     expect(indexAnalysis!.blocks).toEqual(fullAnalysis!.blocks);
+    expect(indexAnalysis!.structure).toEqual(fullAnalysis!.structure);
     expect(indexAnalysis!.blocks).toMatchObject([{
       kind: 'HLSLPROGRAM',
-      contentStartLine: 7,
-      contentEndLine: 7,
+      contentStartLine: 8,
+      contentEndLine: 8,
       unterminated: false,
     }]);
+    expect(indexAnalysis!.structure.shaders[0].children[0].children[0])
+      .toMatchObject({ name: 'FirstPass', headerLine: 5, closeLine: 10 });
     expect(indexAnalysis!.lexicalTokens).toBeUndefined();
     expect(tokenTexts(source, fullAnalysis!)).toEqual(expect.arrayContaining([
       { text: 'Shader', type: 'keyword' },
@@ -67,13 +71,15 @@ describe('Document analysis', () => {
     expect(index.properties).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: '_FirstProperty', type: 'Float' }),
     ]));
+    expect(index.structure).toBe(indexAnalysis!.structure);
   });
 
   it('matches only the exact source text and regenerates stale prepared facts', async () => {
     const first = analyzeDocument(uri, source, 'full')!;
     const replacementSource = source
       .replaceAll('FirstProperty', 'ReplacementProperty')
-      .replaceAll('FirstFunction', 'ReplacementFunction');
+      .replaceAll('FirstFunction', 'ReplacementFunction')
+      .replaceAll('FirstPass', 'ReplacementPass');
     const replacement = analyzeDocument(uri, replacementSource, 'full')!;
 
     expect(analysisMatchesSource(first, source)).toBe(true);
@@ -94,16 +100,25 @@ describe('Document analysis', () => {
       symbol.name === 'ReplacementFunction'
     ))).toBe(true);
     expect(replacementIndex.symbols.some((symbol) => symbol.name === 'FirstFunction')).toBe(false);
+    expect(replacementIndex.structure?.shaders[0].children[0].children[0].name)
+      .toBe('ReplacementPass');
   });
 
   it('deep-freezes every shared block and lexical-token value', () => {
     const analysis = analyzeDocument(uri, source, 'full')!;
     const block = analysis.blocks[0];
     const token = analysis.lexicalTokens![0];
+    const shader = analysis.structure.shaders[0];
+    const pass = shader.children[0].children[0];
 
     expect(Object.isFrozen(analysis)).toBe(true);
     expect(Object.isFrozen(analysis.blocks)).toBe(true);
     expect(Object.isFrozen(block)).toBe(true);
+    expect(Object.isFrozen(analysis.structure)).toBe(true);
+    expect(Object.isFrozen(analysis.structure.shaders)).toBe(true);
+    expect(Object.isFrozen(shader)).toBe(true);
+    expect(Object.isFrozen(shader.children)).toBe(true);
+    expect(Object.isFrozen(pass)).toBe(true);
     expect(Object.isFrozen(analysis.lexicalTokens)).toBe(true);
     expect(Object.isFrozen(token)).toBe(true);
     expect(Object.isFrozen(token.range)).toBe(true);

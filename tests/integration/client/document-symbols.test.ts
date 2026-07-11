@@ -74,4 +74,36 @@ suite('Document Symbols', () => {
       assert.ok(childNamed(forward.children, 'vert'), 'expected vert under ForwardLit');
     });
   });
+
+  test('.shader outline ignores a valid Pass inside a multiline comment', async () => {
+    await withWorkspaceFolder(fixturePath(), async () => {
+      const uri = vscode.Uri.file(fixturePath('multiline-comment-outline.shader'));
+      const doc = await vscode.workspace.openTextDocument(uri);
+      await vscode.window.showTextDocument(doc);
+
+      const symbols = await waitForDocumentSymbols(uri, (result) => {
+        const shader = childNamed(result, 'Shader "Tests/MultilineCommentOutline"');
+        const subshader = childNamed(shader?.children, 'SubShader');
+        const realPass = childNamed(subshader?.children, 'Pass "RealPass"');
+        return !!childNamed(realPass?.children, 'RealEntry');
+      });
+
+      const shader = childNamed(symbols, 'Shader "Tests/MultilineCommentOutline"');
+      assert.ok(shader, 'expected Shader root symbol');
+      const subshader = childNamed(shader.children, 'SubShader');
+      assert.ok(subshader, 'expected SubShader child');
+      assert.strictEqual(
+        childNamed(subshader.children, 'Pass "FakeCommentedPass"'),
+        undefined,
+      );
+      const passes = subshader.children.filter((symbol) => symbol.name.startsWith('Pass "'));
+      assert.strictEqual(passes.length, 1);
+      const realPass = childNamed(subshader.children, 'Pass "RealPass"');
+      assert.ok(realPass, 'expected real Pass child');
+      assert.deepStrictEqual(realPass.range.start, new vscode.Position(7, 0));
+      assert.deepStrictEqual(realPass.range.end, new vscode.Position(12, 0));
+      assert.deepStrictEqual(realPass.selectionRange.start, new vscode.Position(7, 0));
+      assert.ok(childNamed(realPass.children, 'RealEntry'), 'expected entry under real Pass');
+    });
+  });
 });

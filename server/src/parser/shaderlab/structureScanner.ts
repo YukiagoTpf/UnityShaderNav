@@ -1,5 +1,5 @@
 import type { StructureResult, ShaderLabStructureNode, ShaderLabNodeKind } from '@unity-shader-nav/shared';
-import { sanitizeLine } from './sanitize';
+import { maskCommentsLine } from '../masking';
 
 const SHADER_RE   = /^\s*Shader\s+"([^"]*)"/;
 const SUBSHADER_RE = /^\s*SubShader\b/;
@@ -16,6 +16,7 @@ export function scanStructure(text: string): StructureResult {
   const lines = text.split(/\r?\n/);
   const shaders: ShaderLabStructureNode[] = [];
   const stack: Frame[] = [];
+  let inBlockComment = false;
 
   function open(kind: ShaderLabNodeKind, line: number, name: string | undefined): void {
     const node: ShaderLabStructureNode = {
@@ -30,7 +31,11 @@ export function scanStructure(text: string): StructureResult {
   }
 
   for (let i = 0; i < lines.length; i++) {
-    const raw = sanitizeLine(lines[i]);
+    const masked = maskCommentsLine(lines[i], inBlockComment, {
+      strings: 'blank-braces',
+    });
+    const raw = masked.code;
+    inBlockComment = masked.inBlockComment;
 
     const shaderMatch = SHADER_RE.exec(raw);
     if (shaderMatch && stack.length === 0) {

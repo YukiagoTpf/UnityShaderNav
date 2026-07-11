@@ -107,8 +107,10 @@ export function scanCommentRoles(line: string, inBlockComment: boolean): Comment
  * - `'blank-body'`: blank the body to spaces but keep both quotes, so a literal
  *   can never contribute keywords/braces to downstream scanning while regexes
  *   anchored on `"..."` still see the delimiters.
+ * - `'blank-braces'`: preserve readable string content but blank `{` and `}` so
+ *   structure scanners can capture names without counting braces in literals.
  */
-export type StringHandling = 'preserve' | 'blank-body';
+export type StringHandling = 'preserve' | 'blank-body' | 'blank-braces';
 
 export interface MaskLineResult {
   code: string;
@@ -116,8 +118,8 @@ export interface MaskLineResult {
 }
 
 /**
- * Replace comment runs (and, in `'blank-body'` mode, string bodies) with spaces
- * while preserving every other byte and the original column widths. Threads the
+ * Replace comment runs and the selected string content with spaces while
+ * preserving every other byte and the original column widths. Threads the
  * block-comment state through the returned `inBlockComment`.
  */
 export function maskCommentsLine(
@@ -132,7 +134,13 @@ export function maskCommentsLine(
     const role = scan.roles[i];
     if (role === 'comment') {
       chars[i] = ' ';
-    } else if (role === 'stringBody' && strings === 'blank-body') {
+    } else if (
+      role === 'stringBody'
+      && (
+        strings === 'blank-body'
+        || (strings === 'blank-braces' && (chars[i] === '{' || chars[i] === '}'))
+      )
+    ) {
       chars[i] = ' ';
     }
   }
