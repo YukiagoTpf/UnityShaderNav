@@ -3,6 +3,49 @@ import type { Range } from './symbols';
 export const EXTENSION_ID = 'unity-shader-nav';
 export const SERVER_NAME = 'UnityShaderNav Language Server';
 
+/** Pull + full-snapshot notification for the observable indexing lifecycle. */
+export const INDEX_STATUS_REQUEST = 'unityShaderNav/indexStatus';
+export const INDEX_STATUS_NOTIFICATION = 'unityShaderNav/indexStatusChanged';
+
+export type IndexingOperation = 'initial' | 'rebuild' | 'recovery';
+export type IndexFailureCategory =
+  | 'package-resolution'
+  | 'parser-initialization'
+  | 'indexing';
+
+export interface IndexFailure {
+  readonly category: IndexFailureCategory;
+  readonly message: string;
+}
+
+export type WorkspaceIndexLifecycle =
+  | {
+      readonly state: 'indexing';
+      readonly operation: IndexingOperation;
+      readonly servingRevision?: number;
+    }
+  | {
+      readonly state: 'ready';
+      readonly revision: number;
+      readonly warningCount: number;
+    }
+  | {
+      readonly state: 'failed';
+      readonly servingRevision?: number;
+      readonly failure: IndexFailure;
+    };
+
+export interface WorkspaceIndexStatus {
+  readonly folderUri: string;
+  readonly mode: 'unity' | 'standalone';
+  readonly lifecycle: WorkspaceIndexLifecycle;
+}
+
+export interface IndexStatusSnapshot {
+  readonly statusSequence: number;
+  readonly workspaces: readonly WorkspaceIndexStatus[];
+}
+
 export * from './cache';
 export * from './settings';
 export * from './structure';

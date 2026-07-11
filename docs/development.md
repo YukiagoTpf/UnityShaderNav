@@ -78,6 +78,12 @@ npm run grammar:rebuild
 - LSP handler behavior belongs in server handler tests.
 - VS Code activation belongs in `tests/client`; command-level feature tests and
   their fixtures belong in `tests/integration/client`.
+- Integration synchronization must use the production index-status path or an
+  explicit eventual feature condition. Use the shared `getIndexStatus`,
+  `waitForIndexStatus`, and `waitForEventually` helpers instead of fixed settle
+  sleeps. Eventual-condition timeouts use a hard deadline and report the last
+  status, status error, query result, and query error so CI failures preserve
+  the state needed for diagnosis.
 - Electron tests use the exact VS Code release in `tests/vscode-version.txt`.
   `npm run test:electron:activation` proves language-triggered activation from
   an initially inactive extension; `npm run test:electron` runs activation and

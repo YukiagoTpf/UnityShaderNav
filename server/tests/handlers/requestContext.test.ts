@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { FileIndex } from '@unity-shader-nav/shared';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import type { TextDocuments } from 'vscode-languageserver/node';
@@ -28,7 +28,7 @@ interface FakeWorkspaceOptions {
 
 function fakeManager(uri: string, workspace: unknown): WorkspaceManager {
   return {
-    async workspaceForOrCreateFile(requestedUri: string) {
+    servingWorkspaceFor(requestedUri: string) {
       return requestedUri === uri ? workspace : undefined;
     },
   } as unknown as WorkspaceManager;
@@ -67,6 +67,25 @@ describe('resolveRequestContext', () => {
       fakeManager('file:///other', fullWorkspace()),
     );
     expect(ctx).toBeNull();
+  });
+
+  it('never enters the background bootstrap path for an indexing root', async () => {
+    const legacyBootstrap = vi.fn(() => new Promise<never>(() => {}));
+    const manager = {
+      servingWorkspaceFor: () => undefined,
+      workspaceForOrCreateFile: legacyBootstrap,
+    } as unknown as WorkspaceManager;
+
+    const ctx = await resolveRequestContext(
+      URI,
+      fakeDocuments({
+        [URI]: TextDocument.create(URI, 'shaderlab', 1, ''),
+      }),
+      manager,
+    );
+
+    expect(ctx).toBeNull();
+    expect(legacyBootstrap).not.toHaveBeenCalled();
   });
 
   it('resolves a context even without a document when requireDocument is false', async () => {

@@ -22,6 +22,11 @@ and uses semantic versioning for extension releases.
   suggestion-specific code.
 - Narrowed cursor analysis to three runtime entry points and centralized the
   inclusive position geometry shared by navigation and suggestion visibility.
+- Added end-to-end index lifecycle status for every workspace root, including
+  pull plus full-snapshot notifications, initialization/rebuild revisions,
+  actionable infrastructure failures, non-blocking startup request routing
+  while a root has no serving index, cancellation-safe folder removal, and
+  status-driven Electron test waits.
 
 ### Fixed
 

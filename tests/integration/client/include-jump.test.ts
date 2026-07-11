@@ -1,7 +1,7 @@
 import * as assert from 'node:assert';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { withWorkspaceFolder } from './helpers/workspace';
+import { waitForEventually, withWorkspaceFolder } from './helpers/workspace';
 
 function fixtureRoot(): string {
   return path.resolve(__dirname, '../../../../server/tests/include/fixtures/projectA');
@@ -15,18 +15,16 @@ async function waitForDefinitions(
   uri: vscode.Uri,
   position: vscode.Position,
 ): Promise<Array<vscode.LocationLink | vscode.Location> | undefined> {
-  const deadline = Date.now() + 5000;
-  let latest: Array<vscode.LocationLink | vscode.Location> | undefined;
-  while (Date.now() < deadline) {
-    latest = await vscode.commands.executeCommand<Array<vscode.LocationLink | vscode.Location>>(
+  return waitForEventually(
+    'include definition',
+    async () => vscode.commands.executeCommand<Array<vscode.LocationLink | vscode.Location>>(
       'vscode.executeDefinitionProvider',
       uri,
       position,
-    );
-    if ((latest?.length ?? 0) > 0) return latest;
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  return latest;
+    ),
+    (links) => (links?.length ?? 0) > 0,
+    { timeoutMs: 5000, retryMs: 100 },
+  );
 }
 
 suite('F12 on #include', () => {

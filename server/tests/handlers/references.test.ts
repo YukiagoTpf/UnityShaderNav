@@ -160,7 +160,7 @@ describe('registerReferencesHandler', () => {
         index: { store, global, globalRefs },
       };
       const manager = {
-        async workspaceForOrCreateFile(requestedUri: string) {
+        servingWorkspaceFor(requestedUri: string) {
           return requestedUri === mainUri ? workspace : undefined;
         },
       } as never;
@@ -245,7 +245,7 @@ describe('registerReferencesHandler', () => {
         index: { store, global, globalRefs },
       };
       const manager = {
-        async workspaceForOrCreateFile(requestedUri: string) {
+        servingWorkspaceFor(requestedUri: string) {
           return requestedUri === mainUri ? workspace : undefined;
         },
       } as never;
@@ -320,7 +320,7 @@ describe('registerReferencesHandler', () => {
       },
     } as never;
     const manager = {
-      async workspaceForOrCreateFile(requestedUri: string) {
+      servingWorkspaceFor(requestedUri: string) {
         return requestedUri === uri ? workspace : undefined;
       },
     } as never;
@@ -379,7 +379,7 @@ describe('registerReferencesHandler', () => {
       },
     } as never;
     const manager = {
-      async workspaceForOrCreateFile() {
+      servingWorkspaceFor() {
         return workspace;
       },
     } as never;
@@ -447,7 +447,7 @@ describe('registerReferencesHandler', () => {
       },
     } as never;
     const manager = {
-      async workspaceForOrCreateFile() {
+      servingWorkspaceFor() {
         return workspace;
       },
     } as never;
@@ -498,7 +498,7 @@ describe('registerReferencesHandler', () => {
       },
     } as never;
     const manager = {
-      async workspaceForOrCreateFile() {
+      servingWorkspaceFor() {
         return workspace;
       },
     } as never;
@@ -555,7 +555,7 @@ describe('registerReferencesHandler', () => {
       },
     } as never;
     const manager = {
-      async workspaceForOrCreateFile() {
+      servingWorkspaceFor() {
         return workspace;
       },
     } as never;
@@ -607,7 +607,7 @@ describe('registerReferencesHandler', () => {
       },
     } as never;
     const manager = {
-      async workspaceForOrCreateFile() {
+      servingWorkspaceFor() {
         return workspace;
       },
     } as never;
@@ -660,7 +660,7 @@ describe('registerReferencesHandler', () => {
       },
     } as never;
     const manager = {
-      async workspaceForOrCreateFile() {
+      servingWorkspaceFor() {
         return workspace;
       },
     } as never;
@@ -712,7 +712,7 @@ describe('registerReferencesHandler', () => {
       },
     } as never;
     const manager = {
-      async workspaceForOrCreateFile() {
+      servingWorkspaceFor() {
         return workspace;
       },
     } as never;
@@ -763,7 +763,7 @@ describe('registerReferencesHandler', () => {
       },
     } as never;
     const manager = {
-      async workspaceForOrCreateFile() {
+      servingWorkspaceFor() {
         return workspace;
       },
     } as never;
@@ -817,7 +817,7 @@ describe('registerReferencesHandler', () => {
       },
     } as never;
     const manager = {
-      async workspaceForOrCreateFile() {
+      servingWorkspaceFor() {
         return workspace;
       },
     } as never;
@@ -885,7 +885,7 @@ describe('registerReferencesHandler', () => {
       },
     } as never;
     const manager = {
-      async workspaceForOrCreateFile() {
+      servingWorkspaceFor() {
         return workspace;
       },
     } as never;
@@ -953,7 +953,7 @@ describe('registerReferencesHandler', () => {
       },
     } as never;
     const manager = {
-      async workspaceForOrCreateFile() {
+      servingWorkspaceFor() {
         return workspace;
       },
     } as never;
@@ -1022,7 +1022,7 @@ describe('registerReferencesHandler', () => {
       },
     } as never;
     const manager = {
-      async workspaceForOrCreateFile() {
+      servingWorkspaceFor() {
         return workspace;
       },
     } as never;
@@ -1087,7 +1087,7 @@ describe('registerReferencesHandler', () => {
       },
     } as never;
     const manager = {
-      async workspaceForOrCreateFile() {
+      servingWorkspaceFor() {
         return workspace;
       },
     } as never;
@@ -1156,7 +1156,7 @@ describe('registerReferencesHandler', () => {
       },
     } as never;
     const manager = {
-      async workspaceForOrCreateFile() {
+      servingWorkspaceFor() {
         return workspace;
       },
     } as never;
@@ -1224,7 +1224,7 @@ describe('registerReferencesHandler', () => {
       },
     } as never;
     const manager = {
-      async workspaceForOrCreateFile() {
+      servingWorkspaceFor() {
         return workspace;
       },
     } as never;
@@ -1254,7 +1254,7 @@ describe('registerReferencesHandler', () => {
       },
     } as never;
     const manager = {
-      async workspaceForOrCreateFile() {
+      servingWorkspaceFor() {
         return {
           settings: DEFAULT_SETTINGS,
           index: {

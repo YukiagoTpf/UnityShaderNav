@@ -1,7 +1,7 @@
 import * as assert from 'node:assert';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { withWorkspaceFolder } from './helpers/workspace';
+import { waitForEventually, withWorkspaceFolder } from './helpers/workspace';
 
 function fixturePath(...segments: string[]): string {
   return path.resolve(__dirname, '../../../integration/client/fixtures', ...segments);
@@ -11,17 +11,15 @@ async function waitForDocumentSymbols(
   uri: vscode.Uri,
   predicate: (symbols: vscode.DocumentSymbol[] | undefined) => boolean,
 ): Promise<vscode.DocumentSymbol[] | undefined> {
-  const deadline = Date.now() + 5000;
-  let latest: vscode.DocumentSymbol[] | undefined;
-  while (Date.now() < deadline) {
-    latest = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
+  return waitForEventually(
+    'document symbols',
+    async () => vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
       'vscode.executeDocumentSymbolProvider',
       uri,
-    );
-    if (predicate(latest)) return latest;
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  return latest;
+    ),
+    predicate,
+    { timeoutMs: 5000, retryMs: 100 },
+  );
 }
 
 function childNamed(

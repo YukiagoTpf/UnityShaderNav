@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { withWorkspaceFolder } from './helpers/workspace';
+import { waitForEventually, withWorkspaceFolder } from './helpers/workspace';
 
 function projectA(): string {
   return path.resolve(__dirname, '../../../../server/tests/include/fixtures/projectA');
@@ -33,9 +33,11 @@ function isWithinPath(root: string, candidate: string): boolean {
 async function makeMacroWorkspace(prefix: string, macroName: string, symbolName: string): Promise<string> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), `usn-${prefix}-`));
   await fs.mkdir(path.join(root, 'Assets', 'Shaders'), { recursive: true });
+  await fs.mkdir(path.join(root, 'Packages'), { recursive: true });
   await fs.mkdir(path.join(root, 'ProjectSettings'), { recursive: true });
   await fs.mkdir(path.join(root, '.vscode'), { recursive: true });
   await fs.writeFile(path.join(root, 'ProjectSettings', 'ProjectVersion.txt'), 'm_EditorVersion: 2022.3.0f1\n');
+  await fs.writeFile(path.join(root, 'Packages', 'packages-lock.json'), '{"dependencies":{}}\n');
   await fs.writeFile(
     path.join(root, 'Assets', 'Shaders', 'ScopedMacro.hlsl'),
     [
@@ -51,18 +53,16 @@ async function waitForDefinitions(
   position: vscode.Position,
   predicate: (links: Array<vscode.LocationLink | vscode.Location> | undefined) => boolean,
 ): Promise<Array<vscode.LocationLink | vscode.Location> | undefined> {
-  const deadline = Date.now() + 6000;
-  let latest: Array<vscode.LocationLink | vscode.Location> | undefined;
-  while (Date.now() < deadline) {
-    latest = await vscode.commands.executeCommand<Array<vscode.LocationLink | vscode.Location>>(
+  return waitForEventually(
+    `definitions for ${uri.fsPath}`,
+    async () => vscode.commands.executeCommand<Array<vscode.LocationLink | vscode.Location>>(
       'vscode.executeDefinitionProvider',
       uri,
       position,
-    );
-    if (predicate(latest)) return latest;
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  return latest;
+    ),
+    predicate,
+    { timeoutMs: 6000, retryMs: 100 },
+  );
 }
 
 suite('Multi-root isolation', () => {
@@ -151,10 +151,12 @@ suite('Multi-root isolation', () => {
         const commonLine = lines.findIndex((text) => text.includes('Common()'));
         assert.ok(commonLine >= 0, 'expected Common() probe in projectB fixture');
         const commonCharacter = doc.lineAt(commonLine).text.indexOf('Common()') + 2;
-        const commonLinks = await waitForDefinitions(
+        const commonLinks = await vscode.commands.executeCommand<
+          Array<vscode.LocationLink | vscode.Location>
+        >(
+          'vscode.executeDefinitionProvider',
           uri,
           new vscode.Position(commonLine, commonCharacter),
-          (links) => (links?.length ?? 0) > 0,
         );
 
         assert.strictEqual(commonLinks?.length ?? 0, 0, 'projectA Common must not leak into projectB');

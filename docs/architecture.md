@@ -18,7 +18,11 @@ VS Code extension client
 
 The client contributes file types, settings, activation events, status output,
 and language-client startup. The server is copied into the extension output
-during build so the packaged extension can launch it.
+during build so the packaged extension can launch it. It subscribes before
+startup and then pulls the current full index-status snapshot after each
+language-server start. Within one LSP session it accepts only snapshots with a
+newer `statusSequence`, and projects multiple roots to one status-bar state in
+the order `failed > indexing > ready > standalone`.
 
 ## Server
 
@@ -43,8 +47,9 @@ handling. Important modules:
 - `handlers`: implements definition, references, document symbols, document
   highlights, hover, completion, signature help, semantic tokens,
   inactive-region dimming, and open-document behavior.
-- `workspace`: detects Unity roots, scans files, watches changes, and manages
-  persistent cache.
+- `workspace`: detects Unity roots, owns each root's index lifecycle, scans
+  files, applies changes, and manages persistent cache. `WorkspaceManager`
+  owns root routing and the separate status-snapshot sequence.
 
 ## Indexing Model
 
@@ -70,20 +75,49 @@ The index is intentionally pragmatic:
 
 ## Index Lifecycle and Publication
 
-Each workspace publishes immutable, monotonically ordered index revisions.
-Initialization and rebuilds construct a complete candidate before one atomic
-publication step; requests either capture the previous published revision or
-the new one, never a partial mix. Workspace mode (`unity` or `standalone`) is
-separate from lifecycle state (`indexing`, `ready`, or `failed`), and multi-root
-workspaces report each root independently.
+Each workspace reports monotonically ordered successful index revisions.
+Workspace mode (`unity` or `standalone`) is separate from lifecycle state
+(`indexing`, `ready`, or `failed`), and multi-root workspaces report each root
+independently. The current rebuild path makes its mutable index non-serving
+before clearing and rebuilding it, so status deliberately omits
+`servingRevision` during rebuild or failure. A request for that root returns its
+neutral LSP result instead of waiting indefinitely or observing partial data.
+The immutable candidate/publication boundary required by
+[ADR-0006](adr/0006-index-lifecycle-and-failure-semantics.md) is a stricter
+stage beyond this readiness contract.
 
-Source-file failures retain the last valid record for that file (or skip a new
-file) and surface a warning. Failures that invalidate the whole candidate—such
-as incomplete root discovery, invalid package state, or grammar/parser
-initialization failure—abort publication and remain observable while the last
-valid revision, if any, continues serving requests. Cache failures are
-best-effort warnings. See
+An unreadable source is retained on the incremental path when a previous record
+exists, or skipped with a warning during a full scan. Failures that invalidate
+the whole operation—such as incomplete root discovery, invalid package state,
+or grammar/parser initialization failure—enter the observable failed state.
+Without an immutable retained revision, that root remains non-serving until a
+recovery succeeds. Cache failures are best-effort. See
 [ADR-0006](adr/0006-index-lifecycle-and-failure-semantics.md).
+
+Lifecycle state is observable through the same LSP connection used by editor
+features. The server exposes both an index-status pull request and a changed
+notification carrying the complete, folder-URI-sorted snapshot. Root add,
+terminal initialization, rebuild start, rebuild completion or failure, and
+root removal advance `statusSequence`; successful initialization and rebuild
+advance that root's `revision`. Failed roots remain managed and removable so a
+malformed package lock or parser startup failure cannot masquerade as an empty
+project. Per-root lifecycle operations are serialized, while independent roots
+can initialize and rebuild concurrently; one root's initial bootstrap does not
+delay another root's status registration. Workspace-folder events are
+reconciled against a desired-membership token, so a slow scoped-settings read
+cannot resurrect a removed root. Removal synchronously retires routing and
+prevents the detached workspace from enqueueing new cache publication; a save
+already queued before retirement is ordered before any replacement write.
+
+The status pull is deliberately outside ordinary request suspension, making a
+slow or failed bootstrap diagnosable. Indexed request handlers use only a
+currently serving workspace and otherwise return their neutral result; they do
+not enter the background lazy-bootstrap path. Outside a full-rebuild
+suspension, cross-root queries immediately use the roots that can serve. The
+current mutable rebuild path still uses one bounded global suspension until all
+roots finish; timed-out waiters detach and return neutral results without being
+retained. A reconnect starts a new sequence domain; the client resets its
+last-seen sequence before accepting snapshots from the new server session.
 
 ## Package Resolution
 
@@ -106,8 +140,12 @@ first 10 characters when naming the cache directory, so the resolver does the
 same. `?path=` subpath git packages share this naming convention — Unity
 extracts only the requested subdirectory into the cache folder, so the resolved
 path still points at the package root. Verified against Unity 2022.3.53f1c1
-lockfiles. Unknown sources and `git` entries without a `hash` are skipped
-with a console warning rather than being guessed.
+lockfiles. Unknown non-empty source identifiers are skipped with a console
+warning rather than being guessed; blank or whitespace-padded identifiers are
+malformed. Entries using a recognized source are stricter: missing fields
+required to map that source (for example a git hash or a non-empty `file:`
+version) invalidate the package state and fail indexing instead of publishing a
+partial package set.
 
 ## Cache
 

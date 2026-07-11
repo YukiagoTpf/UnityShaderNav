@@ -46,7 +46,7 @@ function makeFixture(uri: string, languageId: string, text: string, idx: FileInd
     index: { store, global },
   };
   const manager = {
-    async workspaceForOrCreateFile(requestedUri: string) {
+    servingWorkspaceFor(requestedUri: string) {
       return requestedUri === uri ? workspace : undefined;
     },
   } as never;
@@ -148,7 +148,7 @@ describe('registerHoverHandler — project symbols', () => {
         index: { store, global },
       };
       const manager = {
-        async workspaceForOrCreateFile() {
+        servingWorkspaceFor() {
           return workspace;
         },
       } as never;

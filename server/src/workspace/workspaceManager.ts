@@ -1,7 +1,11 @@
 import { dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { Connection } from 'vscode-languageserver/node';
-import type { ExtensionSettings } from '@unity-shader-nav/shared';
+import {
+  INDEX_STATUS_NOTIFICATION,
+  type ExtensionSettings,
+  type IndexStatusSnapshot,
+} from '@unity-shader-nav/shared';
 import { detectUnityRoot } from './detectUnityRoot';
 import { containsPath } from './pathUtils';
 import { Workspace } from './workspace';
@@ -10,7 +14,10 @@ type SettingsResolver = (scopeUri: string) => ExtensionSettings | Promise<Extens
 
 interface WorkspaceRecord {
   workspace: Workspace;
-  ready: Promise<void>;
+  terminal: Promise<void>;
+  retired: Promise<void>;
+  isRetired: boolean;
+  retire(): void;
 }
 
 export class WorkspaceManager {
@@ -19,6 +26,7 @@ export class WorkspaceManager {
   private connection: Connection | undefined;
   private globalStorageDir: string | undefined;
   private settingsResolver: SettingsResolver | undefined;
+  private statusSequence = 0;
 
   configure(settings: ExtensionSettings, connection: Connection, globalStorageDir?: string): void {
     this.settings = settings;
@@ -35,30 +43,54 @@ export class WorkspaceManager {
     return [...this.byFolder.values()].map((record) => record.workspace);
   }
 
-  // Operational paths that read or mutate workspace state should use this.
+  // Operational paths that query published state should use this.
   async readyList(): Promise<Workspace[]> {
-    const records = [...this.byFolder.values()];
-    const settled = await Promise.allSettled(records.map((record) => record.ready));
-    return records
-      .filter((record, index) =>
-        settled[index].status === 'fulfilled'
-        && this.byFolder.get(record.workspace.folderUri) === record,
-      )
-      .map((record) => record.workspace);
+    return this.list().filter((workspace) => workspace.canServe());
+  }
+
+  // Rebuild/recovery must not wait for an unrelated root still in its initial
+  // bootstrap. Already-running rebuilds remain selectable so another trigger
+  // is queued rather than lost.
+  async rebuildableList(): Promise<Workspace[]> {
+    return this.list().filter((workspace) => {
+      const lifecycle = workspace.indexStatus().lifecycle;
+      return lifecycle.state !== 'indexing' || lifecycle.operation !== 'initial';
+    });
   }
 
   async persistAll(): Promise<void> {
+    // A permanently blocked initial root must not prevent ready roots from
+    // flushing during shutdown.
     const workspaces = await this.readyList();
     await Promise.all(workspaces.map((workspace) => workspace.persist()));
   }
 
-  mode(): 'standalone' | 'ready' {
-    return this.list().some((workspace) => !workspace.isStandalone()) ? 'ready' : 'standalone';
+  statusSnapshot(): IndexStatusSnapshot {
+    return {
+      statusSequence: this.statusSequence,
+      workspaces: this.list()
+        .map((workspace) => workspace.indexStatus())
+        .sort((a, b) => a.folderUri.localeCompare(b.folderUri)),
+    };
   }
 
-  private sendModeNotification(): void {
-    if (typeof this.connection?.sendNotification === 'function') {
-      this.connection.sendNotification('unityShaderNav/mode', { mode: this.mode() });
+  private publishStatus(): void {
+    this.statusSequence++;
+    const connection = this.connection;
+    if (typeof connection?.sendNotification !== 'function') return;
+
+    const reportFailure = (error: unknown): void => {
+      const message = error instanceof Error ? error.message : String(error);
+      if (typeof connection.console?.error === 'function') {
+        connection.console.error(`[UnityShaderNav] index status notification failed: ${message}`);
+      }
+    };
+    try {
+      void Promise.resolve(
+        connection.sendNotification(INDEX_STATUS_NOTIFICATION, this.statusSnapshot()),
+      ).catch(reportFailure);
+    } catch (error) {
+      reportFailure(error);
     }
   }
 
@@ -88,20 +120,21 @@ export class WorkspaceManager {
   }
 
   private async workspaceFromReadyRecord(record: WorkspaceRecord): Promise<Workspace | undefined> {
-    await record.ready;
+    await Promise.race([record.terminal, record.retired]);
     return this.byFolder.get(record.workspace.folderUri) === record
+      && record.workspace.canServe()
       ? record.workspace
       : undefined;
   }
 
+  /** Request-facing lookup: never waits for indexing and never creates state. */
+  servingWorkspaceFor(fileUri: string): Workspace | undefined {
+    const workspace = this.workspaceFor(fileUri);
+    return workspace?.canServe() ? workspace : undefined;
+  }
+
   async readyWorkspaceFor(fileUri: string): Promise<Workspace | undefined> {
-    const record = this.recordFor(fileUri);
-    if (!record) return undefined;
-    try {
-      return await this.workspaceFromReadyRecord(record);
-    } catch {
-      return undefined;
-    }
+    return this.servingWorkspaceFor(fileUri);
   }
 
   async addFolder(
@@ -112,26 +145,49 @@ export class WorkspaceManager {
   ): Promise<void> {
     const existing = this.byFolder.get(folderUri);
     if (existing) {
-      await existing.ready;
+      await Promise.race([existing.terminal, existing.retired]);
       return;
     }
 
     const currentConnection = this.connection ?? connection;
+    this.connection ??= currentConnection;
     const currentGlobalStorageDir = globalStorageDir ?? this.globalStorageDir;
-    const workspace = new Workspace(folderUri, settings);
-    const record: WorkspaceRecord = { workspace, ready: Promise.resolve() };
+    const workspace = new Workspace(folderUri, settings, {
+      onIndexStatusChanged: () => {
+        if (this.byFolder.get(folderUri)?.workspace === workspace) {
+          this.publishStatus();
+        }
+      },
+    });
+    let resolveRetired!: () => void;
+    const retired = new Promise<void>((resolve) => {
+      resolveRetired = resolve;
+    });
+    const record: WorkspaceRecord = {
+      workspace,
+      terminal: Promise.resolve(),
+      retired,
+      isRetired: false,
+      retire() {
+        if (record.isRetired) return;
+        record.isRetired = true;
+        resolveRetired();
+      },
+    };
     this.byFolder.set(folderUri, record);
-    record.ready = Promise.resolve()
-      .then(() => workspace.bootstrap(currentConnection, currentGlobalStorageDir))
-      .then(() => {
-        this.sendModeNotification();
-      })
+    this.publishStatus();
+    record.terminal = Promise.resolve()
+      .then(() => workspace.initialize(currentConnection, currentGlobalStorageDir))
       .catch((error: unknown) => {
-        const current = this.byFolder.get(folderUri);
-        if (current === record) this.byFolder.delete(folderUri);
-        throw error;
+        if (record.isRetired || this.byFolder.get(folderUri) !== record) return;
+        const message = error instanceof Error ? error.message : String(error);
+        if (typeof currentConnection.console?.error === 'function') {
+          currentConnection.console.error(
+            `[UnityShaderNav] indexing failed for ${folderUri}: ${message}`,
+          );
+        }
       });
-    await record.ready;
+    await Promise.race([record.terminal, record.retired]);
   }
 
   async workspaceForOrCreateFile(fileUri: string): Promise<Workspace | undefined> {
@@ -165,19 +221,14 @@ export class WorkspaceManager {
   async removeFolder(folderUri: string): Promise<void> {
     const record = this.byFolder.get(folderUri);
     if (!record) return;
+    if (this.byFolder.get(folderUri) !== record) return;
 
-    try {
-      await record.ready;
-      if (this.byFolder.get(folderUri) === record) {
-        await record.workspace.persist();
-      }
-    } catch {
-      // Failed or incomplete bootstrap has no reliable workspace state to persist.
-    } finally {
-      if (this.byFolder.get(folderUri) === record) {
-        this.byFolder.delete(folderUri);
-        this.sendModeNotification();
-      }
-    }
+    // Removal is a synchronous routing boundary. Cache data is derived and
+    // already persisted after disk mutations; a final flush here would make a
+    // remove/re-add pair non-linearizable and let the old instance win later.
+    this.byFolder.delete(folderUri);
+    record.retire();
+    record.workspace.dispose();
+    this.publishStatus();
   }
 }

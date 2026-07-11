@@ -76,7 +76,7 @@ function createPairFixture(
     index: { store, global },
   };
   const manager = {
-    async workspaceForOrCreateFile(requestedUri: string) {
+    servingWorkspaceFor(requestedUri: string) {
       return documentsMap.has(requestedUri) ? workspace : undefined;
     },
   } as never;
@@ -347,7 +347,7 @@ describe('registerDefinitionHandler — properties bridge', () => {
         index: { store, global },
       };
       const manager = {
-        async workspaceForOrCreateFile() {
+        servingWorkspaceFor() {
           return workspace;
         },
       } as never;
@@ -595,7 +595,7 @@ describe('registerDefinitionHandler — properties bridge', () => {
         index: { store, global },
       };
       const manager = {
-        async workspaceForOrCreateFile() {
+        servingWorkspaceFor() {
           return workspace;
         },
       } as never;
@@ -836,7 +836,7 @@ describe('registerDefinitionHandler — properties bridge', () => {
         index: { store, global },
       };
       const manager = {
-        async workspaceForOrCreateFile() {
+        servingWorkspaceFor() {
           return workspace;
         },
       } as never;

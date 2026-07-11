@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DEFAULT_SETTINGS } from '@unity-shader-nav/shared';
-import { chooseCacheDir } from '../../src/cache/cacheManager';
+import { CacheManager, chooseCacheDir } from '../../src/cache/cacheManager';
 import { Workspace } from '../../src/workspace/workspace';
 import { WorkspaceIndex } from '../../src/workspace/workspaceIndex';
 import {
@@ -26,6 +26,21 @@ const fakeConnection = {
   },
 } as never;
 
+function deferred<T = void>(): {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+} {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+async function flushPromises(times = 5): Promise<void> {
+  for (let i = 0; i < times; i++) await Promise.resolve();
+}
+
 beforeEach(async () => {
   projectA = await copyUnityProjectFixture(projectASource);
 });
@@ -36,6 +51,390 @@ afterEach(async () => {
 });
 
 describe('Workspace.bootstrap', () => {
+  it('publishes an observable revision for initialization and rebuild', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-lifecycle-ready-'));
+    const changed = vi.fn();
+    try {
+      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
+        ensureParserReady: async () => {},
+        onIndexStatusChanged: changed,
+      });
+
+      await workspace.initialize(fakeConnection);
+      expect(workspace.indexStatus()).toEqual({
+        folderUri: pathToFileURL(root).href,
+        mode: 'standalone',
+        lifecycle: { state: 'ready', revision: 1, warningCount: 0 },
+      });
+
+      await workspace.rebuild(fakeConnection);
+      expect(workspace.indexStatus().lifecycle).toEqual({
+        state: 'ready',
+        revision: 2,
+        warningCount: 0,
+      });
+      expect(changed).toHaveBeenCalledTimes(3);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('does not publish a terminal lifecycle after disposal', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-lifecycle-disposed-'));
+    const initial = deferred<number>();
+    const changed = vi.fn();
+    try {
+      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
+        ensureParserReady: async () => {},
+        indexImplementation: null,
+        onIndexStatusChanged: changed,
+      });
+      vi.spyOn(workspace, 'bootstrap').mockReturnValue(initial.promise);
+
+      const initializing = workspace.initialize(fakeConnection);
+      await flushPromises();
+      workspace.dispose();
+      initial.resolve(0);
+      await initializing;
+
+      expect(workspace.canServe()).toBe(false);
+      expect(workspace.indexStatus().lifecycle).toEqual({
+        state: 'indexing',
+        operation: 'initial',
+      });
+      expect(changed).not.toHaveBeenCalled();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('prevents a disposed workspace from saving after cache snapshots drain', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-cache-disposed-'));
+    await mkdir(join(root, 'Assets'), { recursive: true });
+    await mkdir(join(root, 'Packages'), { recursive: true });
+    await mkdir(join(root, 'ProjectSettings'), { recursive: true });
+    await writeFile(join(root, 'Packages', 'packages-lock.json'), '{"dependencies":{}}');
+    const shaderPath = join(root, 'Assets', 'Cached.hlsl');
+    await writeFile(shaderPath, 'float4 CachedSymbol() { return 0; }');
+
+    try {
+      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      await workspace.initialize(fakeConnection);
+      const snapshotStarted = deferred();
+      const releaseSnapshot = deferred();
+      vi.spyOn(CacheManager.prototype, 'snapshot').mockImplementation(async () => {
+        snapshotStarted.resolve();
+        await releaseSnapshot.promise;
+        return null;
+      });
+      const save = vi.spyOn(CacheManager.prototype, 'save');
+
+      const persisting = workspace.persist();
+      await snapshotStarted.promise;
+      workspace.dispose();
+      releaseSnapshot.resolve();
+      await persisting;
+
+      expect(save).not.toHaveBeenCalled();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('serializes a later index mutation behind active public persistence', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-cache-serialized-'));
+    await mkdir(join(root, 'Assets'), { recursive: true });
+    await mkdir(join(root, 'Packages'), { recursive: true });
+    await mkdir(join(root, 'ProjectSettings'), { recursive: true });
+    await writeFile(join(root, 'Packages', 'packages-lock.json'), '{"dependencies":{}}');
+
+    try {
+      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      await workspace.initialize(fakeConnection);
+      const saveStarted = deferred();
+      const releaseSave = deferred();
+      const save = vi.spyOn(CacheManager.prototype, 'save').mockImplementation(async () => {
+        saveStarted.resolve();
+        await releaseSave.promise;
+      });
+      const bootstrap = vi.spyOn(workspace, 'bootstrap').mockResolvedValueOnce(0);
+
+      const persisting = workspace.persist();
+      await saveStarted.promise;
+      const rebuilding = workspace.rebuild(fakeConnection);
+      await flushPromises();
+      expect(bootstrap).not.toHaveBeenCalled();
+
+      releaseSave.resolve();
+      await Promise.all([rebuilding, persisting]);
+      expect(save).toHaveBeenCalledTimes(1);
+      expect(bootstrap).toHaveBeenCalledTimes(1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('skips queued reconfiguration after disposal', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-disposed-queue-'));
+    try {
+      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
+        ensureParserReady: async () => {},
+        indexImplementation: null,
+      });
+      await workspace.initialize(fakeConnection);
+      const rebuildGate = deferred<number>();
+      vi.spyOn(workspace, 'bootstrap').mockReturnValueOnce(rebuildGate.promise);
+
+      const rebuilding = workspace.rebuild(fakeConnection);
+      const nextSettings = { ...DEFAULT_SETTINGS, debug: { definitionTrace: true } };
+      const reconfiguring = workspace.reconfigure(fakeConnection, nextSettings);
+      await flushPromises();
+      workspace.dispose();
+      rebuildGate.resolve(0);
+      await Promise.all([rebuilding, reconfiguring]);
+
+      expect(workspace.settings.debug.definitionTrace).toBe(false);
+      expect(workspace.canServe()).toBe(false);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('surfaces parser initialization failure and permits recovery in one process', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-lifecycle-parser-'));
+    let attempts = 0;
+    try {
+      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
+        ensureParserReady: async () => {
+          attempts++;
+          if (attempts === 1) throw new Error('grammar WASM unavailable');
+        },
+      });
+
+      await expect(workspace.initialize(fakeConnection)).rejects.toThrow(
+        'Unable to initialize the shader parser: grammar WASM unavailable',
+      );
+      expect(workspace.indexStatus()).toMatchObject({
+        mode: 'standalone',
+        lifecycle: {
+          state: 'failed',
+          failure: {
+            category: 'parser-initialization',
+            message: 'Unable to initialize the shader parser: grammar WASM unavailable',
+          },
+        },
+      });
+
+      await workspace.rebuild(fakeConnection);
+      expect(workspace.indexStatus().lifecycle).toEqual({
+        state: 'ready',
+        revision: 1,
+        warningCount: 0,
+      });
+      expect(attempts).toBe(2);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    ['malformed JSON', '{broken json'],
+    [
+      'an incomplete known source',
+      JSON.stringify({
+        dependencies: {
+          'com.example.git': {
+            source: 'git',
+            version: 'https://example.com/repo.git',
+          },
+        },
+      }),
+    ],
+  ])('surfaces %s Unity package state with actionable context', async (_case, lockfile) => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-lifecycle-package-'));
+    await mkdir(join(root, 'Assets'), { recursive: true });
+    await mkdir(join(root, 'Packages'), { recursive: true });
+    await mkdir(join(root, 'ProjectSettings'), { recursive: true });
+    await writeFile(join(root, 'Packages', 'packages-lock.json'), lockfile);
+
+    try {
+      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
+        ensureParserReady: async () => {},
+      });
+
+      await expect(workspace.initialize(fakeConnection)).rejects.toThrow(
+        /Invalid Packages\/packages-lock\.json/,
+      );
+      expect(workspace.indexStatus()).toMatchObject({
+        mode: 'unity',
+        lifecycle: {
+          state: 'failed',
+          failure: {
+            category: 'package-resolution',
+            message: expect.stringContaining('Invalid Packages/packages-lock.json'),
+          },
+        },
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('publishes source read skips as warnings instead of a false clean revision', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-lifecycle-warning-'));
+    await mkdir(join(root, 'Assets', 'Shaders'), { recursive: true });
+    await mkdir(join(root, 'Packages'), { recursive: true });
+    await mkdir(join(root, 'ProjectSettings'), { recursive: true });
+    await writeFile(join(root, 'Packages', 'packages-lock.json'), '{"dependencies":{}}');
+    await writeFile(join(root, 'Assets', 'Shaders', 'Unreadable.hlsl'), 'float4 Skipped();');
+    vi.spyOn(WorkspaceIndex.prototype, 'indexAndStore').mockResolvedValue(false);
+
+    try {
+      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
+        ensureParserReady: async () => {},
+        indexImplementation: null,
+      });
+      await workspace.initialize(fakeConnection);
+
+      expect(workspace.indexStatus().lifecycle).toEqual({
+        state: 'ready',
+        revision: 1,
+        warningCount: 1,
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('surfaces indexing-engine failures instead of publishing ready', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-lifecycle-index-failure-'));
+    await mkdir(join(root, 'Assets', 'Shaders'), { recursive: true });
+    await mkdir(join(root, 'Packages'), { recursive: true });
+    await mkdir(join(root, 'ProjectSettings'), { recursive: true });
+    await writeFile(join(root, 'Packages', 'packages-lock.json'), '{"dependencies":{}}');
+    await writeFile(join(root, 'Assets', 'Shaders', 'Broken.hlsl'), 'float4 Broken();');
+    vi.spyOn(WorkspaceIndex.prototype, 'indexAndStore')
+      .mockRejectedValue(new Error('parser engine panic'));
+
+    try {
+      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
+        ensureParserReady: async () => {},
+        indexImplementation: null,
+      });
+
+      await expect(workspace.initialize(fakeConnection)).rejects.toThrow('parser engine panic');
+      expect(workspace.indexStatus().lifecycle).toEqual({
+        state: 'failed',
+        failure: { category: 'indexing', message: 'parser engine panic' },
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('serializes overlapping rebuild requests before publishing each revision', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-lifecycle-serialized-'));
+    try {
+      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
+        ensureParserReady: async () => {},
+        indexImplementation: null,
+      });
+      await workspace.initialize(fakeConnection);
+      const first = deferred();
+      const second = deferred();
+      const bootstrap = vi.spyOn(workspace, 'bootstrap')
+        .mockReturnValueOnce(first.promise.then(() => 0))
+        .mockReturnValueOnce(second.promise.then(() => 0));
+
+      const firstRebuild = workspace.rebuild(fakeConnection);
+      await flushPromises();
+      const secondRebuild = workspace.rebuild(fakeConnection);
+      await flushPromises();
+
+      expect(bootstrap).toHaveBeenCalledTimes(1);
+      expect(workspace.indexStatus().lifecycle).toMatchObject({
+        state: 'indexing',
+        operation: 'rebuild',
+      });
+
+      first.resolve();
+      await flushPromises(10);
+      expect(bootstrap).toHaveBeenCalledTimes(2);
+      expect(workspace.indexStatus().lifecycle).toMatchObject({
+        state: 'indexing',
+        operation: 'rebuild',
+      });
+
+      second.resolve();
+      await Promise.all([firstRebuild, secondRebuild]);
+      expect(workspace.indexStatus().lifecycle).toEqual({
+        state: 'ready',
+        revision: 3,
+        warningCount: 0,
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('does not apply settings in the middle of an active rebuild', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-settings-serialized-'));
+    try {
+      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
+        ensureParserReady: async () => {},
+        indexImplementation: null,
+      });
+      await workspace.initialize(fakeConnection);
+      const rebuilding = deferred();
+      vi.spyOn(workspace, 'bootstrap').mockReturnValueOnce(rebuilding.promise.then(() => 0));
+
+      const rebuild = workspace.rebuild(fakeConnection);
+      await flushPromises();
+      const nextSettings = {
+        ...DEFAULT_SETTINGS,
+        debug: { definitionTrace: true },
+      };
+      const update = workspace.reconfigure(fakeConnection, nextSettings);
+      await flushPromises();
+
+      expect(workspace.settings.debug.definitionTrace).toBe(false);
+      rebuilding.resolve();
+      await Promise.all([rebuild, update]);
+      expect(workspace.settings.debug.definitionTrace).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('skips queued incremental changes when the preceding rebuild fails', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-failed-queue-'));
+    try {
+      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
+        ensureParserReady: async () => {},
+        indexImplementation: null,
+      });
+      await workspace.initialize(fakeConnection);
+      vi.spyOn(workspace, 'bootstrap').mockRejectedValueOnce(new Error('rebuild infrastructure failed'));
+      const applyChanges = vi.spyOn(workspace.index, 'applyChanges');
+
+      const rebuild = workspace.rebuild(fakeConnection);
+      const incremental = workspace.applyChanges(
+        [{ uri: pathToFileURL(join(root, 'Changed.hlsl')).href, type: 'changed' }],
+        fakeConnection,
+      );
+
+      await expect(rebuild).rejects.toThrow('rebuild infrastructure failed');
+      await expect(incremental).resolves.toBeUndefined();
+      expect(applyChanges).not.toHaveBeenCalled();
+      expect(workspace.indexStatus().lifecycle).toEqual({
+        state: 'failed',
+        failure: { category: 'indexing', message: 'rebuild infrastructure failed' },
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('indexes user files and Packages into the global index', async () => {
     const folder = pathToFileURL(projectA).href;
     const workspace = new Workspace(folder, DEFAULT_SETTINGS);
@@ -146,7 +545,9 @@ describe('Workspace.bootstrap', () => {
     } as never;
 
     try {
-      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, null);
+      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
+        indexImplementation: null,
+      });
       await workspace.bootstrap(connection);
 
       expect(workspace.index.global.lookup('SourceStillWorks')).toHaveLength(1);
@@ -196,7 +597,7 @@ describe('Workspace.bootstrap', () => {
 
     try {
       const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
-      await ws1.bootstrap(fakeConnection, globalStorageDir);
+      await ws1.initialize(fakeConnection, globalStorageDir);
       await ws1.index.reindex(shaderUri, await readFile(shaderPath, 'utf8'));
       await ws1.persist();
 
@@ -220,7 +621,7 @@ describe('Workspace.bootstrap', () => {
 
     try {
       const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
-      await ws1.bootstrap(fakeConnection, globalStorageDir);
+      await ws1.initialize(fakeConnection, globalStorageDir);
       await ws1.index.reindex(shaderUri, 'float4 UnsavedOnly() { return 0; }');
       await ws1.persist();
 
@@ -247,7 +648,7 @@ describe('Workspace.bootstrap', () => {
 
     try {
       const workspace = new Workspace(folderUri, DEFAULT_SETTINGS);
-      await workspace.bootstrap(fakeConnection, globalStorageDir);
+      await workspace.initialize(fakeConnection, globalStorageDir);
       await workspace.index.reindex(bUri, await readFile(bPath, 'utf8'));
       await workspace.index.reindex(aUri, await readFile(aPath, 'utf8'));
       await workspace.persist();
@@ -392,7 +793,7 @@ describe('Workspace.bootstrap', () => {
     await writeFile(shaderPath, 'float4 BeforeChange() { return 0; }');
 
     const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
-    await workspace.bootstrap(fakeConnection);
+    await workspace.initialize(fakeConnection);
     expect(workspace.index.global.lookup('BeforeChange').length).toBeGreaterThanOrEqual(1);
 
     await writeFile(shaderPath, 'float4 AfterChange() { return 1; }');
@@ -413,7 +814,7 @@ describe('Workspace.bootstrap', () => {
     await writeFile(shaderPath, 'float4 DeletedSymbol() { return 0; }');
 
     const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
-    await workspace.bootstrap(fakeConnection);
+    await workspace.initialize(fakeConnection);
     expect(workspace.index.global.lookup('DeletedSymbol').length).toBeGreaterThanOrEqual(1);
 
     await workspace.applyChanges([{ uri: shaderUri, type: 'deleted' }], fakeConnection);
@@ -432,7 +833,7 @@ describe('Workspace.bootstrap', () => {
     await writeFile(shaderPath, 'float4 BeforeRebuild() { return 0; }');
 
     const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
-    await workspace.bootstrap(fakeConnection);
+    await workspace.initialize(fakeConnection);
     expect(workspace.index.global.lookup('BeforeRebuild').length).toBeGreaterThanOrEqual(1);
 
     await writeFile(shaderPath, 'float4 AfterRebuild() { return 1; }');
@@ -444,19 +845,29 @@ describe('Workspace.bootstrap', () => {
   });
 });
 
-describe('Workspace.applySettings', () => {
-  it('rebuilds the macro table and updates settings together when declarationMacros change', () => {
-    const workspace = new Workspace('file:///proj', DEFAULT_SETTINGS);
-    const before = workspace.index.table;
-    expect(before.findDecl('MY_TEX')).toHaveLength(0);
+describe('Workspace.reconfigure', () => {
+  it('rebuilds the macro table and updates settings together when declarationMacros change', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-reconfigure-macros-'));
+    try {
+      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
+        ensureParserReady: async () => {},
+        indexImplementation: null,
+      });
+      await workspace.initialize(fakeConnection);
+      const before = workspace.index.table;
+      expect(before.findDecl('MY_TEX')).toHaveLength(0);
 
-    workspace.applySettings({
-      ...DEFAULT_SETTINGS,
-      declarationMacros: [{ pattern: 'MY_TEX($name)', kind: 'variable' }],
-    });
+      await workspace.reconfigure(fakeConnection, {
+        ...DEFAULT_SETTINGS,
+        declarationMacros: [{ pattern: 'MY_TEX($name)', kind: 'variable' }],
+      });
 
-    expect(workspace.settings.declarationMacros).toHaveLength(1);
-    expect(workspace.index.table).not.toBe(before);
-    expect(workspace.index.table.findDecl('MY_TEX')).toHaveLength(1);
+      expect(workspace.settings.declarationMacros).toHaveLength(1);
+      expect(workspace.index.table).not.toBe(before);
+      expect(workspace.index.table.findDecl('MY_TEX')).toHaveLength(1);
+      expect(workspace.indexStatus().lifecycle).toMatchObject({ state: 'ready', revision: 2 });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

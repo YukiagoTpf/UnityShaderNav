@@ -8,6 +8,7 @@ const fsMock = vi.hoisted(() => ({
   active: 0,
   maxActive: 0,
   delayMs: 0,
+  failPath: undefined as string | undefined,
 }));
 
 vi.mock('node:fs', async (importOriginal) => {
@@ -22,6 +23,9 @@ vi.mock('node:fs', async (importOriginal) => {
         try {
           if (fsMock.delayMs > 0) {
             await new Promise((resolve) => setTimeout(resolve, fsMock.delayMs));
+          }
+          if (fsMock.failPath === String(args[0])) {
+            throw Object.assign(new Error('permission denied'), { code: 'EACCES' });
           }
           return await actual.promises.readdir(...args);
         } finally {
@@ -40,6 +44,7 @@ afterEach(() => {
   fsMock.active = 0;
   fsMock.maxActive = 0;
   fsMock.delayMs = 0;
+  fsMock.failPath = undefined;
 });
 
 describe('walkFiles', () => {
@@ -92,6 +97,39 @@ describe('walkFiles', () => {
 
       expect(files).toHaveLength(40);
       expect(fsMock.maxActive).toBeLessThanOrEqual(16);
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects incomplete traversal instead of returning a partial file list', async () => {
+    const tempRoot = await mkdtemp(join(tmpdir(), 'usn-walk-failure-'));
+    const blocked = join(tempRoot, 'Blocked');
+    try {
+      await mkdir(blocked, { recursive: true });
+      await writeFile(join(blocked, 'Hidden.hlsl'), '');
+      fsMock.failPath = blocked;
+
+      await expect(walkFiles(tempRoot, [])).rejects.toThrow(
+        /Unable to traverse .*Blocked: permission denied/,
+      );
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('stops traversal when its workspace lifetime is aborted', async () => {
+    const tempRoot = await mkdtemp(join(tmpdir(), 'usn-walk-abort-'));
+    try {
+      await mkdir(join(tempRoot, 'Assets'), { recursive: true });
+      await writeFile(join(tempRoot, 'Assets', 'File.hlsl'), '');
+      fsMock.delayMs = 5;
+      const controller = new AbortController();
+
+      const walking = walkFiles(tempRoot, [], controller.signal);
+      controller.abort(new Error('workspace retired'));
+
+      await expect(walking).rejects.toThrow('workspace retired');
     } finally {
       await rm(tempRoot, { recursive: true, force: true });
     }

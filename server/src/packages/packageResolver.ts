@@ -14,11 +14,23 @@ export class PackageResolver {
 
     try {
       content = await fs.readFile(lockPath, 'utf8');
-    } catch {
-      return;
+    } catch (error) {
+      const code = typeof error === 'object' && error !== null && 'code' in error
+        ? String(error.code)
+        : undefined;
+      throw new Error(
+        `Unable to read Packages/packages-lock.json${code ? ` (${code})` : ''}.`,
+        { cause: error },
+      );
     }
 
-    const lockfile = parsePackagesLock(content);
+    let lockfile: ReturnType<typeof parsePackagesLock>;
+    try {
+      lockfile = parsePackagesLock(content);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(`Invalid Packages/packages-lock.json: ${detail}`, { cause: error });
+    }
     for (const [name, entry] of Object.entries(lockfile)) {
       const physicalPath = resolvePackagePhysicalPath(name, entry, this.projectRoot);
       if (physicalPath === null) {

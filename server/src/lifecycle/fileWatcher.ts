@@ -38,7 +38,12 @@ export function registerFileWatchers(
   const debouncer = new Debouncer<FileEvent>(
     { windowMs: 500, threshold: 20 },
     (batch, mode) => {
-      void dispatchBatch(batch, mode === 'rebuild');
+      void dispatchBatch(batch, mode === 'rebuild').catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        if (typeof connection.console?.error === 'function') {
+          connection.console.error(`[UnityShaderNav] file lifecycle update failed: ${message}`);
+        }
+      });
     },
   );
 
@@ -82,18 +87,16 @@ export async function applyWorkspaceFolderChanges(
 ): Promise<void> {
   suspender?.suspend();
   try {
-    for (const removed of event.removed) {
-      await manager.removeFolder(removed.uri);
-    }
+    await Promise.all(Array.from(event.removed, ({ uri }) => manager.removeFolder(uri)));
 
-    for (const added of event.added) {
+    await Promise.all(Array.from(event.added, async ({ uri }) => {
       await manager.addFolder(
-        added.uri,
-        await loadSettings(added.uri),
+        uri,
+        await loadSettings(uri),
         connection,
         globalStorageDir,
       );
-    }
+    }));
   } finally {
     suspender?.release();
   }

@@ -1,7 +1,7 @@
 import * as assert from 'node:assert';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { withWorkspaceFolder } from './helpers/workspace';
+import { waitForEventually, withWorkspaceFolder } from './helpers/workspace';
 
 function fixturePath(...segments: string[]): string {
   return path.resolve(__dirname, '../../../integration/client/fixtures', ...segments);
@@ -12,18 +12,16 @@ async function waitForDefinitions(
   position: vscode.Position,
   predicate: (links: Array<vscode.LocationLink | vscode.Location> | undefined) => boolean,
 ): Promise<Array<vscode.LocationLink | vscode.Location> | undefined> {
-  const deadline = Date.now() + 5000;
-  let latest: Array<vscode.LocationLink | vscode.Location> | undefined;
-  while (Date.now() < deadline) {
-    latest = await vscode.commands.executeCommand<Array<vscode.LocationLink | vscode.Location>>(
+  return waitForEventually(
+    'single-file definition',
+    async () => vscode.commands.executeCommand<Array<vscode.LocationLink | vscode.Location>>(
       'vscode.executeDefinitionProvider',
       uri,
       position,
-    );
-    if (predicate(latest)) return latest;
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  return latest;
+    ),
+    predicate,
+    { timeoutMs: 5000, retryMs: 100 },
+  );
 }
 
 function targetRange(link: vscode.LocationLink | vscode.Location): vscode.Range {

@@ -3,7 +3,14 @@ import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { closeEditorsForFolder, withWorkspaceFolder } from './helpers/workspace';
+import {
+  closeEditorsForFolder,
+  getIndexStatus,
+  indexStatusForFolder,
+  waitForEventually,
+  waitForIndexStatus,
+  withWorkspaceFolder,
+} from './helpers/workspace';
 
 function sourceFixtureRoot(): string {
   return path.resolve(__dirname, '../../../../server/tests/include/fixtures/projectA');
@@ -27,32 +34,28 @@ async function waitForDefinitions(
   uri: vscode.Uri,
   position: vscode.Position,
 ): Promise<Array<vscode.LocationLink | vscode.Location> | undefined> {
-  const deadline = Date.now() + 6000;
-  let latest: Array<vscode.LocationLink | vscode.Location> | undefined;
-  while (Date.now() < deadline) {
-    latest = await vscode.commands.executeCommand<Array<vscode.LocationLink | vscode.Location>>(
+  return waitForEventually(
+    `BranchOnly definition for ${uri.fsPath}`,
+    () => vscode.commands.executeCommand<Array<vscode.LocationLink | vscode.Location>>(
       'vscode.executeDefinitionProvider',
       uri,
       position,
-    );
-    if ((latest?.length ?? 0) > 0) return latest;
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  return latest;
+    ),
+    (latest) => (latest?.length ?? 0) > 0,
+  );
 }
 
 async function waitForNoDefinitions(uri: vscode.Uri, position: vscode.Position): Promise<boolean> {
-  const deadline = Date.now() + 6000;
-  while (Date.now() < deadline) {
-    const links = await vscode.commands.executeCommand<Array<vscode.LocationLink | vscode.Location>>(
+  await waitForEventually(
+    `Common definition removal for ${uri.fsPath}`,
+    () => vscode.commands.executeCommand<Array<vscode.LocationLink | vscode.Location>>(
       'vscode.executeDefinitionProvider',
       uri,
       position,
-    );
-    if ((links?.length ?? 0) === 0) return true;
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  return false;
+    ),
+    (links) => (links?.length ?? 0) === 0,
+  );
+  return true;
 }
 
 suite('Rebuild on branch switch', () => {
@@ -76,7 +79,6 @@ suite('Rebuild on branch switch', () => {
           const inserted = '    float4 _branch = BranchOnly();\n';
           edit.insert(mainUri, new vscode.Position(line, 0), inserted);
           assert.ok(await vscode.workspace.applyEdit(edit), 'expected Main.shader edit to apply');
-          await new Promise((resolve) => setTimeout(resolve, 800));
           const branchPosition = new vscode.Position(line, inserted.indexOf('BranchOnly') + 2);
           const commonPosition = new vscode.Position(line + 1, doc.lineAt(line + 1).text.indexOf('Common()') + 2);
           const beforeBranch = await vscode.commands.executeCommand<Array<vscode.LocationLink | vscode.Location>>(
@@ -86,12 +88,25 @@ suite('Rebuild on branch switch', () => {
           );
           assert.equal(beforeBranch?.length ?? 0, 0, 'BranchOnly should not resolve before rebuild reads new disk state');
 
+          const beforeSnapshot = await getIndexStatus();
+          const beforeStatus = indexStatusForFolder(beforeSnapshot, root);
+          assert.equal(beforeStatus?.lifecycle.state, 'ready', 'workspace should be ready before rebuild');
+          assert.ok(beforeStatus?.lifecycle.state === 'ready');
+          const beforeRevision = beforeStatus.lifecycle.revision;
+
           await fs.writeFile(
             path.join(root, 'Assets', 'Shaders', 'Common.hlsl'),
             'float4 BranchOnly() { return 1; }\n',
           );
           await fs.writeFile(headPath, 'ref: refs/heads/feature\n');
-          await new Promise((resolve) => setTimeout(resolve, 3000));
+          await waitForIndexStatus(
+            `workspace rebuild after ${headPath} changed`,
+            (snapshot) => {
+              const status = indexStatusForFolder(snapshot, root);
+              return status?.lifecycle.state === 'ready'
+                && status.lifecycle.revision > beforeRevision;
+            },
+          );
 
           const links = await waitForDefinitions(mainUri, branchPosition);
 

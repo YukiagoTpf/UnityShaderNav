@@ -129,7 +129,7 @@ describe('registerSemanticTokensHandler', () => {
       index: { store, global, globalRefs },
     };
     const manager = {
-      async workspaceForOrCreateFile(requestedUri: string) {
+      servingWorkspaceFor(requestedUri: string) {
         return requestedUri === uri ? workspace : undefined;
       },
     } as never;
@@ -208,7 +208,7 @@ describe('registerSemanticTokensHandler', () => {
       index: { store, global, globalRefs },
     };
     const manager = {
-      async workspaceForOrCreateFile(requestedUri: string) {
+      servingWorkspaceFor(requestedUri: string) {
         return requestedUri === uri ? workspace : undefined;
       },
     } as never;
@@ -287,7 +287,7 @@ describe('registerSemanticTokensHandler', () => {
       index: { store, global, globalRefs },
     };
     const manager = {
-      async workspaceForOrCreateFile(requestedUri: string) {
+      servingWorkspaceFor(requestedUri: string) {
         return requestedUri === uri ? workspace : undefined;
       },
     } as never;

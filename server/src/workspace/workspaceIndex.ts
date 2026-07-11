@@ -68,20 +68,34 @@ export class WorkspaceIndex {
     this.diskIndexes.clear();
   }
 
-  async indexAndStore(absPath: string, connection?: Connection): Promise<void> {
+  async indexAndStore(
+    absPath: string,
+    connection?: Connection,
+    shouldStore: () => boolean = () => true,
+  ): Promise<boolean> {
     const uri = pathToFileURL(absPath).href;
+    let text: string;
     try {
-      const text = await fs.readFile(absPath, 'utf8');
-      const idx = await indexFile(uri, text, this.table);
-      // Invariant 1 order: diskIndexes -> store -> global -> globalRefs.
-      this.diskIndexes.set(uri, idx);
-      this.store.set(uri, idx);
-      this.global.upsert(idx);
-      this.globalRefs.upsert(idx);
-      connection?.console.log(`[index] ${uri} -> ${idx.symbols.length} symbols, ${idx.references.length} refs`);
-    } catch {
-      // Ignore unreadable or unparsable files during background indexing.
+      text = await fs.readFile(absPath, 'utf8');
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      if (typeof connection?.console.warn === 'function') {
+        connection.console.warn(`[index] skipped unreadable source ${uri}: ${detail}`);
+      }
+      return false;
     }
+
+    // Parser/index exceptions are infrastructure failures. They must abort the
+    // current operation instead of being mistaken for a valid empty project.
+    const idx = await indexFile(uri, text, this.table);
+    if (!shouldStore()) return false;
+    // Invariant 1 order: diskIndexes -> store -> global -> globalRefs.
+    this.diskIndexes.set(uri, idx);
+    this.store.set(uri, idx);
+    this.global.upsert(idx);
+    this.globalRefs.upsert(idx);
+    connection?.console.log(`[index] ${uri} -> ${idx.symbols.length} symbols, ${idx.references.length} refs`);
+    return true;
   }
 
   async reindex(
@@ -119,19 +133,20 @@ export class WorkspaceIndex {
    * Apply file-watcher events to the indexes. Index-mutation only — the kept
    * Workspace.applyChanges calls persist() afterward.
    */
-  async applyChanges(events: FileEvent[], connection: Connection): Promise<void> {
+  async applyChanges(
+    events: FileEvent[],
+    connection: Connection,
+    shouldStore: () => boolean = () => true,
+  ): Promise<void> {
     for (const event of events) {
+      if (!shouldStore()) return;
       if (event.type === 'deleted') {
         this.drop(event.uri);
         continue;
       }
 
-      try {
-        const filePath = fileURLToPath(event.uri);
-        await this.indexAndStore(filePath, connection);
-      } catch {
-        this.drop(event.uri);
-      }
+      const filePath = fileURLToPath(event.uri);
+      await this.indexAndStore(filePath, connection, shouldStore);
     }
   }
 

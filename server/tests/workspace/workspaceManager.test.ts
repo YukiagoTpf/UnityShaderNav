@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DEFAULT_SETTINGS } from '@unity-shader-nav/shared';
+import { CacheManager } from '../../src/cache/cacheManager';
 import { WorkspaceManager } from '../../src/workspace/workspaceManager';
 import { Workspace } from '../../src/workspace/workspace';
 import {
@@ -100,13 +101,95 @@ describe('WorkspaceManager: multi-root', () => {
     expect(workspaceB?.index.global.lookup('Common')).toEqual([]);
   });
 
-  it('reports ready when any workspace is a Unity project', async () => {
+  it('reports a ready Unity workspace in the lifecycle snapshot', async () => {
     const manager = new WorkspaceManager();
 
-    expect(manager.mode()).toBe('standalone');
+    expect(manager.statusSnapshot()).toEqual({ statusSequence: 0, workspaces: [] });
     await manager.addFolder(pathToFileURL(projectA).href, DEFAULT_SETTINGS, fakeConnection);
 
-    expect(manager.mode()).toBe('ready');
+    expect(manager.statusSnapshot()).toEqual({
+      statusSequence: 2,
+      workspaces: [{
+        folderUri: pathToFileURL(projectA).href,
+        mode: 'unity',
+        lifecycle: { state: 'ready', revision: 1, warningCount: 0 },
+      }],
+    });
+  });
+
+  it('publishes full snapshots for add, initial completion, rebuild, and remove', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-status-sequence-'));
+    const folderUri = pathToFileURL(root).href;
+    const initial = deferred();
+    const notifications: Array<{ name: string; snapshot: unknown }> = [];
+    const connection = {
+      ...fakeConnection,
+      console: { log() {}, error() {} },
+      sendNotification(name: string, snapshot: unknown) {
+        notifications.push({ name, snapshot });
+      },
+    } as never;
+    vi.spyOn(Workspace.prototype, 'bootstrap')
+      .mockReturnValueOnce(initial.promise)
+      .mockResolvedValue(undefined);
+    const manager = new WorkspaceManager();
+    manager.configure(DEFAULT_SETTINGS, connection);
+
+    const add = manager.addFolder(folderUri, DEFAULT_SETTINGS, connection);
+    await flushPromises();
+    expect(notifications).toMatchObject([{
+      name: 'unityShaderNav/indexStatusChanged',
+      snapshot: {
+        statusSequence: 1,
+        workspaces: [{
+          folderUri,
+          lifecycle: { state: 'indexing', operation: 'initial' },
+        }],
+      },
+    }]);
+
+    initial.resolve();
+    await add;
+    const workspace = manager.list()[0];
+    await workspace.rebuild(connection);
+    await manager.removeFolder(folderUri);
+
+    expect(notifications.map(({ snapshot }) => (
+      (snapshot as { statusSequence: number }).statusSequence
+    ))).toEqual([1, 2, 3, 4, 5]);
+    expect(notifications.map(({ snapshot }) => {
+      const workspaces = (snapshot as { workspaces: Array<{ lifecycle: { state: string } }> }).workspaces;
+      return workspaces[0]?.lifecycle.state ?? 'absent';
+    })).toEqual(['indexing', 'ready', 'indexing', 'ready', 'absent']);
+    expect(manager.statusSnapshot()).toEqual({ statusSequence: 5, workspaces: [] });
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it('keeps lifecycle state authoritative when notification delivery rejects', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-status-send-failure-'));
+    const error = vi.fn();
+    const connection = {
+      ...fakeConnection,
+      console: { log() {}, error },
+      sendNotification: vi.fn(async () => {
+        throw new Error('transport closed');
+      }),
+    } as never;
+    vi.spyOn(Workspace.prototype, 'bootstrap').mockResolvedValue(0);
+    const manager = new WorkspaceManager();
+    manager.configure(DEFAULT_SETTINGS, connection);
+
+    await manager.addFolder(pathToFileURL(root).href, DEFAULT_SETTINGS, connection);
+    await flushPromises();
+
+    expect(manager.statusSnapshot()).toMatchObject({
+      statusSequence: 2,
+      workspaces: [{ lifecycle: { state: 'ready', revision: 1 } }],
+    });
+    expect(error).toHaveBeenCalledWith(
+      '[UnityShaderNav] index status notification failed: transport closed',
+    );
+    await rm(root, { recursive: true, force: true });
   });
 
   it('uses the settings passed for a newly added folder', async () => {
@@ -197,7 +280,58 @@ describe('WorkspaceManager: multi-root', () => {
     expect(workspaceA).toBe(workspaceB);
   });
 
-  it('filters failed bootstrap records from ready workspace lists', async () => {
+  it('does not let an indexing root block ready roots in cross-root queries', async () => {
+    const readyRoot = await mkdtemp(join(tmpdir(), 'usn-ready-root-'));
+    const slowRoot = await mkdtemp(join(tmpdir(), 'usn-indexing-root-'));
+    const readyUri = pathToFileURL(readyRoot).href;
+    const slowUri = pathToFileURL(slowRoot).href;
+    const slow = deferred();
+    const manager = new WorkspaceManager();
+    const bootstrap = vi.spyOn(Workspace.prototype, 'bootstrap')
+      .mockImplementation(function bootstrap(this: Workspace) {
+        return this.folderUri === slowUri ? slow.promise : Promise.resolve();
+      });
+    let addingSlow: Promise<void> | undefined;
+
+    try {
+      await manager.addFolder(readyUri, DEFAULT_SETTINGS, fakeConnection);
+      addingSlow = manager.addFolder(slowUri, DEFAULT_SETTINGS, fakeConnection);
+      await waitFor(() => manager.statusSnapshot().workspaces.some((workspace) => (
+        workspace.folderUri === slowUri && workspace.lifecycle.state === 'indexing'
+      )));
+
+      await expect(manager.readyList()).resolves.toMatchObject([{ folderUri: readyUri }]);
+      await expect(manager.rebuildableList()).resolves.toMatchObject([{ folderUri: readyUri }]);
+      expect(bootstrap).toHaveBeenCalledTimes(2);
+    } finally {
+      slow.resolve();
+      await addingSlow;
+      await rm(readyRoot, { recursive: true, force: true });
+      await rm(slowRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('returns request-facing workspace readiness immediately', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-serving-root-'));
+    const folderUri = pathToFileURL(root).href;
+    const fileUri = pathToFileURL(join(root, 'Slow.hlsl')).href;
+    const initial = deferred();
+    const manager = new WorkspaceManager();
+    vi.spyOn(Workspace.prototype, 'bootstrap').mockReturnValue(initial.promise);
+
+    const adding = manager.addFolder(folderUri, DEFAULT_SETTINGS, fakeConnection);
+    await flushPromises();
+
+    expect(manager.servingWorkspaceFor(fileUri)).toBeUndefined();
+    await expect(manager.readyWorkspaceFor(fileUri)).resolves.toBeUndefined();
+
+    initial.resolve();
+    await adding;
+    expect(manager.servingWorkspaceFor(fileUri)).toBe(manager.workspaceFor(fileUri));
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it('retains failed bootstrap records while excluding them from ready workspace lists', async () => {
     const failedFolder = await mkdtemp(join(tmpdir(), 'usn-ready-failed-'));
     const failed = deferred();
     const manager = new WorkspaceManager();
@@ -215,9 +349,78 @@ describe('WorkspaceManager: multi-root', () => {
 
     failed.reject(new Error('bootstrap failed'));
 
-    await expect(addFolder).rejects.toThrow('bootstrap failed');
+    await expect(addFolder).resolves.toBeUndefined();
     await expect(readyList).resolves.toEqual([]);
+    expect(manager.list()).toHaveLength(1);
+    await expect(manager.rebuildableList()).resolves.toMatchObject([{
+      folderUri: pathToFileURL(failedFolder).href,
+    }]);
+    expect(manager.statusSnapshot()).toMatchObject({
+      statusSequence: 2,
+      workspaces: [{
+        folderUri: pathToFileURL(failedFolder).href,
+        lifecycle: {
+          state: 'failed',
+          failure: { category: 'indexing', message: 'bootstrap failed' },
+        },
+      }],
+    });
     expect(bootstrap).toHaveBeenCalledTimes(1);
+
+    await manager.removeFolder(pathToFileURL(failedFolder).href);
+    expect(manager.statusSnapshot()).toEqual({ statusSequence: 3, workspaces: [] });
+  });
+
+  it('removes an indexing root without waiting for its bootstrap to settle', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-remove-indexing-'));
+    const folderUri = pathToFileURL(root).href;
+    const initial = deferred();
+    const manager = new WorkspaceManager();
+    vi.spyOn(Workspace.prototype, 'bootstrap').mockReturnValue(initial.promise);
+    const adding = manager.addFolder(folderUri, DEFAULT_SETTINGS, fakeConnection);
+    await flushPromises();
+
+    await expect(manager.removeFolder(folderUri)).resolves.toBeUndefined();
+    expect(manager.statusSnapshot()).toEqual({ statusSequence: 2, workspaces: [] });
+
+    initial.resolve();
+    await adding;
+    expect(manager.statusSnapshot()).toEqual({ statusSequence: 2, workspaces: [] });
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it('retires waiters and lets a remove/re-add pair publish only the new workspace', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-remove-readd-'));
+    const folderUri = pathToFileURL(root).href;
+    const fileUri = pathToFileURL(join(root, 'Loose.hlsl')).href;
+    const oldInitial = deferred();
+    const bootstrap = vi.spyOn(Workspace.prototype, 'bootstrap')
+      .mockReturnValueOnce(oldInitial.promise)
+      .mockResolvedValueOnce(0);
+    const manager = new WorkspaceManager();
+
+    const oldAdding = manager.addFolder(folderUri, DEFAULT_SETTINGS, fakeConnection);
+    await flushPromises();
+    const oldWorkspace = manager.list()[0];
+    const oldWaiter = manager.workspaceForOrCreateFile(fileUri);
+
+    await manager.removeFolder(folderUri);
+    await expect(oldWaiter).resolves.toBeUndefined();
+    await manager.addFolder(folderUri, DEFAULT_SETTINGS, fakeConnection);
+
+    const newWorkspace = manager.list()[0];
+    expect(newWorkspace).not.toBe(oldWorkspace);
+    expect(manager.servingWorkspaceFor(fileUri)).toBe(newWorkspace);
+
+    oldInitial.resolve();
+    await oldAdding;
+    expect(manager.list()).toEqual([newWorkspace]);
+    expect(manager.statusSnapshot()).toMatchObject({
+      statusSequence: 4,
+      workspaces: [{ lifecycle: { state: 'ready', revision: 1 } }],
+    });
+    expect(bootstrap).toHaveBeenCalledTimes(2);
+    await rm(root, { recursive: true, force: true });
   });
 
   it('uses scoped settings when lazily creating a workspace for a file', async () => {
@@ -256,22 +459,96 @@ describe('WorkspaceManager: multi-root', () => {
     expect(persist).toHaveBeenCalledTimes(1);
   });
 
-  it('persists a ready workspace before removing its folder routing', async () => {
+  it('persists ready roots without waiting for an unrelated initial root', async () => {
+    const readyRoot = await mkdtemp(join(tmpdir(), 'usn-persist-ready-'));
+    const slowRoot = await mkdtemp(join(tmpdir(), 'usn-persist-slow-'));
+    const readyUri = pathToFileURL(readyRoot).href;
+    const slowUri = pathToFileURL(slowRoot).href;
+    const slow = deferred();
+    const manager = new WorkspaceManager();
+    vi.spyOn(Workspace.prototype, 'bootstrap').mockImplementation(function bootstrap(this: Workspace) {
+      return this.folderUri === slowUri ? slow.promise : Promise.resolve(0);
+    });
+    const persist = vi.spyOn(Workspace.prototype, 'persist').mockResolvedValue(undefined);
+
+    await manager.addFolder(readyUri, DEFAULT_SETTINGS, fakeConnection);
+    const addingSlow = manager.addFolder(slowUri, DEFAULT_SETTINGS, fakeConnection);
+    await flushPromises();
+
+    await manager.persistAll();
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect(persist.mock.instances[0].folderUri).toBe(readyUri);
+
+    await manager.removeFolder(slowUri);
+    await addingSlow;
+    slow.resolve();
+    await flushPromises();
+    await rm(readyRoot, { recursive: true, force: true });
+    await rm(slowRoot, { recursive: true, force: true });
+  });
+
+  it('does not persist a root behind a rebuild that fails', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-persist-failed-rebuild-'));
+    await mkdir(join(root, 'Assets'), { recursive: true });
+    await mkdir(join(root, 'Packages'), { recursive: true });
+    await mkdir(join(root, 'ProjectSettings'), { recursive: true });
+    await writeFile(join(root, 'Packages', 'packages-lock.json'), '{"dependencies":{}}');
+    const manager = new WorkspaceManager();
+    await manager.addFolder(pathToFileURL(root).href, DEFAULT_SETTINGS, fakeConnection);
+    const workspace = manager.list()[0];
+    vi.spyOn(workspace, 'bootstrap').mockRejectedValueOnce(new Error('rebuild failed'));
+    const save = vi.spyOn(CacheManager.prototype, 'save').mockResolvedValue(undefined);
+
+    const rebuilding = workspace.rebuild(fakeConnection);
+    await manager.persistAll();
+    await expect(rebuilding).rejects.toThrow('rebuild failed');
+
+    expect(workspace.indexStatus().lifecycle).toMatchObject({ state: 'failed' });
+    expect(save).not.toHaveBeenCalled();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it('does not wait for a queued rebuild before skipping best-effort persistence', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-persist-pending-rebuild-'));
+    const manager = new WorkspaceManager();
+    vi.spyOn(Workspace.prototype, 'bootstrap').mockResolvedValueOnce(0);
+    await manager.addFolder(pathToFileURL(root).href, DEFAULT_SETTINGS, fakeConnection);
+    const workspace = manager.list()[0];
+    const rebuildGate = deferred<number>();
+    vi.spyOn(workspace, 'bootstrap').mockReturnValueOnce(rebuildGate.promise);
+
+    const rebuilding = workspace.rebuild(fakeConnection);
+    let persisted = false;
+    const persisting = manager.persistAll().then(() => {
+      persisted = true;
+    });
+    await flushPromises();
+
+    try {
+      expect(persisted).toBe(true);
+    } finally {
+      rebuildGate.resolve(0);
+      await Promise.all([rebuilding, persisting]);
+    }
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it('retires a ready workspace without a remove-time cache flush', async () => {
     const standaloneFolder = await mkdtemp(join(tmpdir(), 'usn-remove-persist-'));
     const folderUri = pathToFileURL(standaloneFolder).href;
     const fileUri = pathToFileURL(join(standaloneFolder, 'Loose.hlsl')).href;
-    const calls: string[] = [];
     const manager = new WorkspaceManager();
     vi.spyOn(Workspace.prototype, 'bootstrap').mockResolvedValue(undefined);
-    vi.spyOn(Workspace.prototype, 'persist').mockImplementation(async function persist(this: Workspace) {
-      calls.push(`persist:${this.folderUri}`);
-      expect(manager.workspaceFor(fileUri)).toBe(this);
-    });
+    const persist = vi.spyOn(Workspace.prototype, 'persist');
+    const dispose = vi.spyOn(Workspace.prototype, 'dispose');
 
     await manager.addFolder(folderUri, DEFAULT_SETTINGS, fakeConnection);
+    const workspace = manager.workspaceFor(fileUri);
     await manager.removeFolder(folderUri);
 
-    expect(calls).toEqual([`persist:${folderUri}`]);
+    expect(dispose).toHaveBeenCalledWith();
+    expect(dispose.mock.instances).toContain(workspace);
+    expect(persist).not.toHaveBeenCalled();
     expect(manager.workspaceFor(fileUri)).toBeUndefined();
   });
 });

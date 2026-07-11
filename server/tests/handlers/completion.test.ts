@@ -32,7 +32,7 @@ function captureCompletion(
     },
   } as never;
   const manager = {
-    async workspaceForOrCreateFile(requestedUri: string) {
+    servingWorkspaceFor(requestedUri: string) {
       return requestedUri === uri ? workspace : undefined;
     },
   } as never;
@@ -303,7 +303,7 @@ describe('registerCompletionHandler', () => {
     } as never;
     const workspace = completionWorkspace([{ uri, references: [], symbols: [] }]);
     const manager = {
-      async workspaceForOrCreateFile() {
+      servingWorkspaceFor() {
         return workspace;
       },
     } as never;

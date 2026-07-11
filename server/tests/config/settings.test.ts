@@ -118,4 +118,43 @@ describe('onSettingsChanged', () => {
     expect(got.debug.definitionTrace).toBe(true);
     expect(got.dimInactiveBranches).toEqual(DEFAULT_SETTINGS.dimInactiveBranches);
   });
+
+  it('serializes rapid settings changes so an older update cannot finish last', async () => {
+    let handler: ((params: unknown) => Promise<void>) | undefined;
+    const connection = {
+      onDidChangeConfiguration: (registered: (params: unknown) => Promise<void>) => {
+        handler = registered;
+      },
+    } as unknown as Connection;
+    let releaseFirst!: () => void;
+    const firstBlocked = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const applied: boolean[] = [];
+    let active = 0;
+    let maxActive = 0;
+    onSettingsChanged(connection, async (settings) => {
+      active++;
+      maxActive = Math.max(maxActive, active);
+      if (settings.findReferences.includePackages === false) await firstBlocked;
+      applied.push(settings.findReferences.includePackages);
+      active--;
+    });
+
+    const first = handler!({
+      settings: { unityShaderNav: { findReferences: { includePackages: false } } },
+    });
+    await Promise.resolve();
+    const second = handler!({
+      settings: { unityShaderNav: { findReferences: { includePackages: true } } },
+    });
+    await Promise.resolve();
+
+    expect(maxActive).toBe(1);
+    expect(applied).toEqual([]);
+    releaseFirst();
+    await Promise.all([first, second]);
+    expect(applied).toEqual([false, true]);
+    expect(maxActive).toBe(1);
+  });
 });

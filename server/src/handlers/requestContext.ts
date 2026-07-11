@@ -76,7 +76,10 @@ export async function resolveRequestContext(
 
   if (requireDocument && !getDoc()) return null;
 
-  const workspace = await manager.workspaceForOrCreateFile(uri);
+  // Request handlers never wait for bootstrap or create a workspace. A root
+  // without a currently published revision returns the handler's neutral LSP
+  // result; background document/file lifecycles own eventual indexing.
+  const workspace = manager.servingWorkspaceFor(uri);
   if (!workspace) return null;
 
   // Memoize the promise so the reindex runs at most once even under concurrent awaits.

@@ -59,13 +59,31 @@ describe('PackageResolver', () => {
     expect(resolver.getPath('com.unknown')).toBeUndefined();
   });
 
-  it('returns empty when packages-lock.json missing', async () => {
+  it('reports actionable context when packages-lock.json is missing', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-empty-'));
     const resolver = new PackageResolver(root);
 
-    await resolver.load();
+    await expect(resolver.load()).rejects.toThrow(
+      'Unable to read Packages/packages-lock.json (ENOENT).',
+    );
+  });
 
-    expect(resolver.allPaths()).toEqual([]);
+  it('rejects incomplete fields for a recognized package source', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-invalid-package-'));
+    await mkdir(join(root, 'Packages'), { recursive: true });
+    await writeFile(join(root, 'Packages', 'packages-lock.json'), JSON.stringify({
+      dependencies: {
+        'com.example.git': {
+          source: 'git',
+          version: 'https://example.com/repo.git',
+        },
+      },
+    }));
+    const resolver = new PackageResolver(root);
+
+    await expect(resolver.load()).rejects.toThrow(
+      /Invalid Packages\/packages-lock\.json: dependency com\.example\.git .*non-empty hash/,
+    );
   });
 
   it('resolveIncludePath maps Packages/<name>/... to absolute path', async () => {

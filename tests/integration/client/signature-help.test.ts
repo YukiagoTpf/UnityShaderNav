@@ -1,7 +1,7 @@
 import * as assert from 'node:assert';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { withWorkspaceFolder } from './helpers/workspace';
+import { waitForEventually, withWorkspaceFolder } from './helpers/workspace';
 
 function fixturePath(...segments: string[]): string {
   return path.resolve(__dirname, '../../../integration/client/fixtures', ...segments);
@@ -12,19 +12,17 @@ async function waitForSignatureHelp(
   position: vscode.Position,
   predicate: (help: vscode.SignatureHelp | undefined) => boolean,
 ): Promise<vscode.SignatureHelp | undefined> {
-  const deadline = Date.now() + 5000;
-  let latest: vscode.SignatureHelp | undefined;
-  while (Date.now() < deadline) {
-    latest = await vscode.commands.executeCommand<vscode.SignatureHelp>(
+  return waitForEventually(
+    `signature help for ${uri.fsPath}`,
+    async () => vscode.commands.executeCommand<vscode.SignatureHelp>(
       'vscode.executeSignatureHelpProvider',
       uri,
       position,
       '(',
-    );
-    if (predicate(latest)) return latest;
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  return latest;
+    ),
+    predicate,
+    { timeoutMs: 5000, retryMs: 100 },
+  );
 }
 
 suite('Signature Help', () => {

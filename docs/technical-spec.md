@@ -71,6 +71,47 @@ still works, but package and include-chain navigation are disabled.
 
 Users can override detection with `unityShaderNav.projectRoot`.
 
+## Index Readiness and Failure
+
+Workspace mode and index readiness are independent. A root reports one mode
+(`unity` or `standalone`) and one lifecycle state:
+
+| State | Meaning |
+|---|---|
+| `indexing` | Initial indexing, rebuild, or recovery is in progress |
+| `ready` | A complete index revision is available; the status includes its revision and source-warning count |
+| `failed` | The indexing operation failed; the status includes a stable category and concise actionable message |
+
+A successful initialization or rebuild increments that root's revision. A
+failed operation does not. Missing, unreadable, or malformed
+`Packages/packages-lock.json` for a Unity root and shader parser initialization
+or bootstrap/rebuild/watcher indexing-engine failures are infrastructure
+failures, not valid empty indexes. Root inspection and directory traversal
+failures are also surfaced instead of being interpreted as an empty project. A
+source file that disappears or cannot be read during initialization or rebuild
+is skipped and contributes to that revision's warning count. The failed root
+remains present in the manager until it is removed or a later recovery
+succeeds.
+
+Recognized package source kinds must contain the fields needed for deterministic
+physical-path resolution. For example, git entries require a non-empty hash and
+embedded/local entries require a non-empty `file:` version. Unknown future
+source kinds with a valid, non-empty identifier remain explicitly skipped with
+a warning; blank identifiers and malformed known sources fail the
+package-resolution lifecycle instead of silently dropping a package.
+
+The language server provides a pull request plus full-snapshot change
+notifications on the normal client connection. Snapshots carry a session-local
+`statusSequence` that changes independently of index revisions. The status
+request remains available while ordinary language requests are suspended for
+startup or rebuild work. Once a root is registered without a serving revision,
+indexed requests return their neutral LSP result immediately rather than wait
+on an unbounded bootstrap. Outside a full rebuild, cross-root requests use the
+roots already serving. The current mutable full-rebuild path retains a bounded
+global request suspension; a timeout detaches its waiter and returns the
+request's neutral result. Clients and test harnesses can therefore diagnose
+progress and failure without guessing a settle time.
+
 ## Indexing Scope
 
 The server indexes:

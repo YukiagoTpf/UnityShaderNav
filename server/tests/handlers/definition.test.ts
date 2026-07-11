@@ -42,7 +42,7 @@ function createDefinitionFixture(
   };
   workspace.index.store.set(uri, idx);
   const manager = {
-    async workspaceForOrCreateFile(requestedUri: string) {
+    servingWorkspaceFor(requestedUri: string) {
       return requestedUri === uri ? workspace : undefined;
     },
   } as never;
@@ -165,7 +165,7 @@ describe('registerDefinitionHandler', () => {
         index: { store, global },
       };
       const manager = {
-        async workspaceForOrCreateFile(requestedUri: string) {
+        servingWorkspaceFor(requestedUri: string) {
           return requestedUri === mainUri ? workspace : undefined;
         },
       } as never;
@@ -239,7 +239,7 @@ describe('registerDefinitionHandler', () => {
       workspaceFor(requestedUri: string) {
         return requestedUri === uri ? workspace : undefined;
       },
-      async workspaceForOrCreateFile(requestedUri: string) {
+      servingWorkspaceFor(requestedUri: string) {
         return this.workspaceFor(requestedUri);
       },
     } as never;
@@ -287,7 +287,7 @@ describe('registerDefinitionHandler', () => {
       },
     };
     const manager = {
-      async workspaceForOrCreateFile() {
+      servingWorkspaceFor() {
         return workspace;
       },
     } as never;
@@ -343,7 +343,7 @@ describe('registerDefinitionHandler', () => {
       },
     };
     const manager = {
-      async workspaceForOrCreateFile() {
+      servingWorkspaceFor() {
         return workspace;
       },
     } as never;
@@ -465,7 +465,7 @@ describe('registerDefinitionHandler', () => {
         index: { store, global },
       };
       const manager = {
-        async workspaceForOrCreateFile() {
+        servingWorkspaceFor() {
           return workspace;
         },
       } as never;
@@ -552,7 +552,7 @@ describe('registerDefinitionHandler', () => {
         index: { store, global },
       };
       const manager = {
-        async workspaceForOrCreateFile() {
+        servingWorkspaceFor() {
           return workspace;
         },
       } as never;
@@ -637,7 +637,7 @@ describe('registerDefinitionHandler', () => {
         index: { store, global },
       };
       const manager = {
-        async workspaceForOrCreateFile() {
+        servingWorkspaceFor() {
           return workspace;
         },
       } as never;

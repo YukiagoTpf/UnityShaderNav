@@ -51,7 +51,7 @@ describe('registerDefinitionHandler: include definitions', () => {
       workspaceFor(requestedUri: string) {
         return requestedUri === uri ? workspace : undefined;
       },
-      async workspaceForOrCreateFile(requestedUri: string) {
+      servingWorkspaceFor(requestedUri: string) {
         return this.workspaceFor(requestedUri);
       },
     } as never;
@@ -113,7 +113,7 @@ describe('registerDefinitionHandler: include definitions', () => {
       workspaceFor(requestedUri: string) {
         return requestedUri === uri ? workspace : undefined;
       },
-      async workspaceForOrCreateFile(requestedUri: string) {
+      servingWorkspaceFor(requestedUri: string) {
         return this.workspaceFor(requestedUri);
       },
     } as never;

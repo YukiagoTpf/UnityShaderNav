@@ -5,8 +5,13 @@ async function dirExists(path: string): Promise<boolean> {
   try {
     const stat = await fs.stat(path);
     return stat.isDirectory();
-  } catch {
-    return false;
+  } catch (error) {
+    const code = typeof error === 'object' && error !== null && 'code' in error
+      ? String(error.code)
+      : undefined;
+    if (code === 'ENOENT' || code === 'ENOTDIR') return false;
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`Unable to inspect ${path}: ${detail}`, { cause: error });
   }
 }
 

@@ -10,7 +10,7 @@ import {
   openDocumentGenerationKey,
   rebuildWorkspacesWithOpenDocuments,
 } from '../../src/lifecycle/rebuild';
-import { WorkspaceManager } from '../../src/workspace';
+import { Workspace, WorkspaceManager } from '../../src/workspace';
 import {
   copyUnityProjectFixture,
   removeCopiedUnityProject,
@@ -60,7 +60,7 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
     };
     const manager = {
       list: () => [workspace],
-      readyList: async () => [workspace],
+      rebuildableList: async () => [workspace],
       workspaceForOrCreateFile: vi.fn(async () => liveWorkspace),
     };
     const suspender = {
@@ -106,7 +106,7 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
     };
     const manager = {
       list: () => [workspace],
-      readyList: async () => [workspace],
+      rebuildableList: async () => [workspace],
       workspaceForOrCreateFile: vi.fn(async () => liveWorkspace),
     };
     const suspender = {
@@ -160,7 +160,7 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
     };
     const manager = {
       list: () => [workspace],
-      readyList: async () => [workspace],
+      rebuildableList: async () => [workspace],
       workspaceForOrCreateFile: vi.fn(async () => liveWorkspace),
     };
     const suspender = {
@@ -193,8 +193,8 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
     };
     const manager = {
       list: () => [workspace],
-      readyList: vi.fn(async () => {
-        calls.push('readyList');
+      rebuildableList: vi.fn(async () => {
+        calls.push('rebuildableList');
         await ready.promise;
         calls.push('ready');
         return [workspace];
@@ -216,14 +216,49 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
     );
     await flushPromises();
 
-    expect(calls).toEqual(['suspend', 'readyList']);
+    expect(calls).toEqual(['suspend', 'rebuildableList']);
     expect(workspace.rebuild).not.toHaveBeenCalled();
     expect(suspender.release).not.toHaveBeenCalled();
 
     ready.resolve();
     await rebuild;
 
-    expect(calls).toEqual(['suspend', 'readyList', 'ready', 'rebuild', 'release']);
+    expect(calls).toEqual(['suspend', 'rebuildableList', 'ready', 'rebuild', 'release']);
+  });
+
+  it('starts rebuildable roots independently', async () => {
+    const slow = deferred();
+    const calls: string[] = [];
+    const slowWorkspace = {
+      folderUri: 'file:///slow',
+      rebuild: vi.fn(async () => {
+        calls.push('slow:start');
+        await slow.promise;
+        calls.push('slow:done');
+      }),
+    };
+    const readyWorkspace = {
+      folderUri: 'file:///ready',
+      rebuild: vi.fn(async () => {
+        calls.push('ready:done');
+      }),
+    };
+    const manager = {
+      rebuildableList: async () => [slowWorkspace, readyWorkspace],
+      workspaceForOrCreateFile: vi.fn(),
+    };
+
+    const rebuilding = rebuildWorkspacesWithOpenDocuments(
+      fakeConnection,
+      manager as never,
+      () => [],
+    );
+    await flushPromises();
+
+    expect(calls).toEqual(['slow:start', 'ready:done']);
+    slow.resolve();
+    await rebuilding;
+    expect(calls).toEqual(['slow:start', 'ready:done', 'slow:done']);
   });
 
   it('settings rebuild clears symbols excluded by the new settings', async () => {
@@ -323,14 +358,20 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
       folderUri: 'file:///project-a',
       settings: DEFAULT_SETTINGS,
       index: { table: undefined as unknown },
+      indexStatus: () => ({
+        folderUri: 'file:///project-a',
+        mode: 'unity' as const,
+        lifecycle: { state: 'ready' as const, revision: 1, warningCount: 0 },
+      }),
       rebuild: vi.fn(async () => {}),
-      applySettings(next: ExtensionSettings) {
+      reconfigure(_connection: unknown, next: ExtensionSettings) {
         this.settings = next;
+        return Promise.resolve(false);
       },
     };
     const manager = {
       list: () => [workspace],
-      readyList: async () => [workspace],
+      rebuildableList: async () => [workspace],
       workspaceForOrCreateFile: vi.fn(async () => ({
         index: { reindex: vi.fn(async () => {}) },
       })),
@@ -346,5 +387,119 @@ describe('rebuildWorkspacesWithOpenDocuments', () => {
     assertApplied(workspace.settings);
     expect(workspace.rebuild).not.toHaveBeenCalled();
     expect(manager.workspaceForOrCreateFile).not.toHaveBeenCalled();
+  });
+
+  it('does not let an initially indexing root block settings on a ready root', async () => {
+    const slow = deferred();
+    const nextSettings = {
+      ...DEFAULT_SETTINGS,
+      debug: { definitionTrace: true },
+    };
+    const initialWorkspace = {
+      folderUri: 'file:///initial',
+      settings: DEFAULT_SETTINGS,
+      indexStatus: () => ({
+        folderUri: 'file:///initial',
+        mode: 'unity' as const,
+        lifecycle: { state: 'indexing' as const, operation: 'initial' as const },
+      }),
+      reconfigure: vi.fn(async () => {
+        await slow.promise;
+        return false;
+      }),
+    };
+    const readyWorkspace = {
+      folderUri: 'file:///ready',
+      settings: DEFAULT_SETTINGS,
+      indexStatus: () => ({
+        folderUri: 'file:///ready',
+        mode: 'unity' as const,
+        lifecycle: { state: 'ready' as const, revision: 1, warningCount: 0 },
+      }),
+      reconfigure: vi.fn(async () => false),
+    };
+    const manager = {
+      list: () => [initialWorkspace, readyWorkspace],
+    };
+
+    await applyScopedSettingsAndRebuild(
+      fakeConnection,
+      manager as never,
+      async () => nextSettings,
+      () => [],
+    );
+
+    expect(initialWorkspace.reconfigure).toHaveBeenCalledWith(fakeConnection, nextSettings);
+    expect(readyWorkspace.reconfigure).toHaveBeenCalledWith(fakeConnection, nextSettings);
+    slow.resolve();
+  });
+
+  it('decides queued S0 -> S1 -> S0 rebuilds from the settings active at execution time', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-settings-reversal-'));
+    try {
+      const workspace = new Workspace(
+        pathToFileURL(root).href,
+        DEFAULT_SETTINGS,
+        { ensureParserReady: async () => {}, indexImplementation: null },
+      );
+      const initial = deferred();
+      const settingsSeenByBootstrap: ExtensionSettings[] = [];
+      vi.spyOn(workspace, 'bootstrap').mockImplementation(async () => {
+        if (settingsSeenByBootstrap.length === 0) await initial.promise;
+        settingsSeenByBootstrap.push(workspace.settings);
+        return 0;
+      });
+      const overlaySettings: ExtensionSettings[] = [];
+      vi.spyOn(workspace.index, 'reindex').mockImplementation(async () => {
+        overlaySettings.push(workspace.settings);
+      });
+      const manager = {
+        list: () => [workspace],
+        workspaceFor: () => workspace,
+        workspaceForOrCreateFile: vi.fn(async () => workspace),
+      };
+      const settings1 = {
+        ...DEFAULT_SETTINGS,
+        excludePatterns: [...DEFAULT_SETTINGS.excludePatterns, 'Assets/Hidden/**'],
+      };
+
+      const initializing = workspace.initialize(fakeConnection);
+      await flushPromises();
+      await applyScopedSettingsAndRebuild(
+        fakeConnection,
+        manager as never,
+        async () => settings1,
+        () => [{ uri: 'file:///Open.hlsl', version: 1, getText: () => 'unsaved' }],
+      );
+      await applyScopedSettingsAndRebuild(
+        fakeConnection,
+        manager as never,
+        async () => DEFAULT_SETTINGS,
+        () => [{ uri: 'file:///Open.hlsl', version: 1, getText: () => 'unsaved' }],
+      );
+
+      initial.resolve();
+      await initializing;
+      for (let i = 0; i < 50; i++) {
+        const lifecycle = workspace.indexStatus().lifecycle;
+        if (
+          lifecycle.state === 'ready'
+          && lifecycle.revision === 3
+          && overlaySettings.length > 0
+        ) break;
+        await flushPromises();
+      }
+
+      expect(settingsSeenByBootstrap).toEqual([DEFAULT_SETTINGS, settings1, DEFAULT_SETTINGS]);
+      expect(overlaySettings.at(-1)).toBe(DEFAULT_SETTINGS);
+      expect(workspace.settings).toBe(DEFAULT_SETTINGS);
+      expect(workspace.indexStatus().lifecycle).toEqual({
+        state: 'ready',
+        revision: 3,
+        warningCount: 0,
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

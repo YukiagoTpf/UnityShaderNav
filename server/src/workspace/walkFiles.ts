@@ -22,12 +22,26 @@ function extensionOf(name: string): string {
   return dot >= 0 ? name.substring(dot).toLowerCase() : '';
 }
 
-export async function walkFiles(root: string, excludePatterns: string[]): Promise<string[]> {
+export async function walkFiles(
+  root: string,
+  excludePatterns: string[],
+  signal?: AbortSignal,
+): Promise<string[]> {
+  if (signal?.aborted) throw abortReason(signal);
   const out: string[] = [];
   const queue = [root];
   let active = 0;
   let done = false;
+  let failure: Error | undefined;
   const waitingWorkers: Array<() => void> = [];
+
+  const onAbort = (): void => {
+    failure ??= abortReason(signal!);
+    queue.length = 0;
+    done = true;
+    wake();
+  };
+  signal?.addEventListener('abort', onAbort, { once: true });
 
   function wake(): void {
     for (const resolve of waitingWorkers.splice(0)) {
@@ -56,13 +70,19 @@ export async function walkFiles(root: string, excludePatterns: string[]): Promis
       let entries;
       try {
         entries = await fs.readdir(dir, { withFileTypes: true });
-      } catch {
+      } catch (error) {
         active--;
-        if (active === 0 && queue.length === 0) {
-          done = true;
-          wake();
-        }
-        continue;
+        const detail = error instanceof Error ? error.message : String(error);
+        failure ??= new Error(`Unable to traverse ${dir}: ${detail}`, { cause: error });
+        queue.length = 0;
+        done = true;
+        wake();
+        return;
+      }
+
+      if (failure) {
+        active--;
+        return;
       }
 
       for (const entry of entries) {
@@ -86,6 +106,17 @@ export async function walkFiles(root: string, excludePatterns: string[]): Promis
     }
   }
 
-  await Promise.all(Array.from({ length: WALK_CONCURRENCY }, () => worker()));
+  try {
+    await Promise.all(Array.from({ length: WALK_CONCURRENCY }, () => worker()));
+  } finally {
+    signal?.removeEventListener('abort', onAbort);
+  }
+  if (failure) throw failure;
   return out.sort();
+}
+
+function abortReason(signal: AbortSignal): Error {
+  return signal.reason instanceof Error
+    ? signal.reason
+    : new Error('File traversal was cancelled');
 }

@@ -34,7 +34,7 @@ describe('registerDocumentSymbolHandler', () => {
     const workspace = { index: { store: new IndexStore() } };
     workspace.index.store.set(uri, idx);
     const manager = {
-      async workspaceForOrCreateFile(requestedUri: string) {
+      servingWorkspaceFor(requestedUri: string) {
         return requestedUri === uri ? workspace : undefined;
       },
     } as never;
@@ -73,7 +73,7 @@ describe('registerDocumentSymbolHandler', () => {
     const workspace = { index: { store: new IndexStore() } };
     workspace.index.store.set(uri, idx);
     const manager = {
-      async workspaceForOrCreateFile(requestedUri: string) {
+      servingWorkspaceFor(requestedUri: string) {
         return requestedUri === uri ? workspace : undefined;
       },
     } as never;
@@ -136,7 +136,7 @@ describe('registerDocumentSymbolHandler', () => {
       },
     } as never;
     const manager = {
-      async workspaceForOrCreateFile(requestedUri: string) {
+      servingWorkspaceFor(requestedUri: string) {
         return requestedUri === uri ? workspace : undefined;
       },
     } as never;

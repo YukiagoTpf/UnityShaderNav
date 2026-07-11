@@ -32,8 +32,13 @@ export function onSettingsChanged(
   connection: Connection,
   onChange: (settings: ExtensionSettings) => void | Promise<void>,
 ): void {
-  connection.onDidChangeConfiguration(async (params) => {
-    const settings = settingsFromDidChange(params) ?? await loadSettings(connection);
-    await onChange(settings);
+  let changeTail: Promise<void> = Promise.resolve();
+  connection.onDidChangeConfiguration((params) => {
+    const change = changeTail.then(async () => {
+      const settings = settingsFromDidChange(params) ?? await loadSettings(connection);
+      await onChange(settings);
+    });
+    changeTail = change.catch(() => {});
+    return change;
   });
 }

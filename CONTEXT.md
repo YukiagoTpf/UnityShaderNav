@@ -60,6 +60,22 @@ _Avoid_: symbol record, symbol info
 实际生成 `FileIndex` 的 server 与 parser runtime 的内容身份。它是 cache fingerprint 的一部分；identity 不同或无法确定时只能从源码重建，不能恢复可能由另一套索引语义产生的记录。
 _Avoid_: cache version, release version, Git revision
 
+**Index revision**:
+单个 `Workspace` 在一次 language-server session 内成功发布的索引代次。`0` 表示尚无可服务索引；成功发布单调递增，失败不递增。它只排序该 Workspace 的索引数据，不是时间戳，也不等于 status sequence。
+_Avoid_: index version, cache generation, status sequence
+
+**Serving workspace**:
+请求路径按 URI 找到、且当前拥有可服务 index revision 的 `Workspace`。该查询不等待初始化、不创建 Workspace；不处于全局 full-rebuild suspension 时，没有 serving workspace 的 handler 立即返回对应的 neutral LSP result。后台文档与文件生命周期使用单独的 ensure/create 路径。
+_Avoid_: ready promise, lazy request workspace
+
+**Index status snapshot**:
+当前所有 Workspace folder 的完整、按根排序的状态快照。每个根同时报告 `unity` / `standalone` mode 与 `indexing` / `ready` / `failed` lifecycle；server 同时提供 pull request 和 full-snapshot changed notification，避免 client 因错过通知而停留在旧状态。
+_Avoid_: mode notification, readiness flag, status delta
+
+**Status sequence**:
+`WorkspaceManager` 在一次 LSP session 内为 index status snapshot 分配的单调递增顺序号。根新增、移除或 lifecycle 变化时递增；client 重连时重置 last-seen sequence。它排序状态快照，不标识索引数据。
+_Avoid_: index revision, workspace generation
+
 ### 跳转行为
 
 **Multi-candidate Peek**:

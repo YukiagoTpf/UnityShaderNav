@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { withWorkspaceFolder } from './helpers/workspace';
+import { waitForEventually, withWorkspaceFolder } from './helpers/workspace';
 
 function fixturePath(...segments: string[]): string {
   return path.resolve(__dirname, '../../../integration/client/fixtures', ...segments);
@@ -55,18 +55,16 @@ async function waitForReferences(
   position: vscode.Position,
   predicate: (locations: vscode.Location[] | undefined) => boolean,
 ): Promise<vscode.Location[] | undefined> {
-  const deadline = Date.now() + 6000;
-  let latest: vscode.Location[] | undefined;
-  while (Date.now() < deadline) {
-    latest = await vscode.commands.executeCommand<vscode.Location[]>(
+  return waitForEventually(
+    `references for ${uri.fsPath}`,
+    async () => vscode.commands.executeCommand<vscode.Location[]>(
       'vscode.executeReferenceProvider',
       uri,
       position,
-    );
-    if (predicate(latest)) return latest;
-    await new Promise((resolve) => setTimeout(resolve, 150));
-  }
-  return latest;
+    ),
+    predicate,
+    { timeoutMs: 6000, retryMs: 150 },
+  );
 }
 
 function positionOf(doc: vscode.TextDocument, needle: string, offset = 2): vscode.Position {
@@ -114,9 +112,8 @@ suite('Find References', () => {
         await config.update(
           'findReferences.includePackages',
           false,
-          vscode.ConfigurationTarget.Workspace,
+          vscode.ConfigurationTarget.WorkspaceFolder,
         );
-        await new Promise((resolve) => setTimeout(resolve, 1000));
 
         const userOnly = await waitForReferences(
           uri,
@@ -132,9 +129,8 @@ suite('Find References', () => {
         await config.update(
           'findReferences.includePackages',
           true,
-          vscode.ConfigurationTarget.Workspace,
+          vscode.ConfigurationTarget.WorkspaceFolder,
         );
-        await new Promise((resolve) => setTimeout(resolve, 1200));
 
         const withPackages = await waitForReferences(
           uri,
@@ -150,7 +146,7 @@ suite('Find References', () => {
         await config.update(
           'findReferences.includePackages',
           undefined,
-          vscode.ConfigurationTarget.Workspace,
+          vscode.ConfigurationTarget.WorkspaceFolder,
         );
         await vscode.workspace.fs
           .delete(vscode.Uri.joinPath(folder.uri, '.vscode', 'settings.json'), { useTrash: false })

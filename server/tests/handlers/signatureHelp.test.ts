@@ -45,7 +45,7 @@ function captureSignatureHelp(
     },
   } as never;
   const manager = {
-    async workspaceForOrCreateFile(requestedUri: string) {
+    servingWorkspaceFor(requestedUri: string) {
       return requestedUri === uri ? workspace : undefined;
     },
   } as never;

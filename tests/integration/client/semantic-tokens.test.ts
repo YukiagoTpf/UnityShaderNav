@@ -1,24 +1,22 @@
 import * as assert from 'node:assert';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { withWorkspaceFolder } from './helpers/workspace';
+import { waitForEventually, withWorkspaceFolder } from './helpers/workspace';
 
 function fixturePath(...segments: string[]): string {
   return path.resolve(__dirname, '../../../integration/client/fixtures', ...segments);
 }
 
 async function waitForSemanticTokens(uri: vscode.Uri): Promise<vscode.SemanticTokens | undefined> {
-  const deadline = Date.now() + 6000;
-  let latest: vscode.SemanticTokens | undefined;
-  while (Date.now() < deadline) {
-    latest = await vscode.commands.executeCommand<vscode.SemanticTokens>(
+  return waitForEventually(
+    `semantic tokens for ${uri.fsPath}`,
+    async () => vscode.commands.executeCommand<vscode.SemanticTokens>(
       'vscode.provideDocumentSemanticTokens',
       uri,
-    );
-    if (latest && latest.data.length > 0) return latest;
-    await new Promise((resolve) => setTimeout(resolve, 150));
-  }
-  return latest;
+    ),
+    (tokens) => !!tokens && tokens.data.length > 0,
+    { timeoutMs: 6000, retryMs: 150 },
+  );
 }
 
 suite('Semantic Tokens', () => {

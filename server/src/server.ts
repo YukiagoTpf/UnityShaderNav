@@ -1,4 +1,8 @@
 import { getConnection, createInitializeResult } from './connection';
+import {
+  INDEX_STATUS_REQUEST,
+  type IndexStatusSnapshot,
+} from '@unity-shader-nav/shared';
 import { loadSettings, onSettingsChanged } from './config';
 import { registerCompletionHandler } from './handlers/completion';
 import { registerDefinitionHandler } from './handlers/definition';
@@ -11,15 +15,23 @@ import { registerReferencesHandler } from './handlers/references';
 import { registerSemanticTokensHandler } from './handlers/semanticTokens';
 import { registerSignatureHelpHandler } from './handlers/signatureHelp';
 import { registerWorkspaceSymbolHandler } from './handlers/workspaceSymbol';
-import { applyWorkspaceFolderChanges, registerFileWatchers } from './lifecycle/fileWatcher';
+import { registerFileWatchers } from './lifecycle/fileWatcher';
 import { applyScopedSettingsAndRebuild, reindexOpenDocuments } from './lifecycle/rebuild';
 import { RequestSuspender } from './lifecycle/requestSuspender';
+import { initializeWorkspaceFolders } from './lifecycle/workspaceFolderCoordinator';
 import { WorkspaceManager } from './workspace';
 
 const connection = getConnection();
 const manager = new WorkspaceManager();
 const suspender = new RequestSuspender({ timeoutMs: 5000 });
 let globalStorageDir: string | undefined;
+
+// Status must remain queryable while ordinary requests are suspended behind
+// initial indexing or rebuild work.
+connection.onRequest(
+  INDEX_STATUS_REQUEST,
+  (): IndexStatusSnapshot => manager.statusSnapshot(),
+);
 
 connection.onInitialize((params) => {
   const options = params.initializationOptions as { globalStorageDir?: unknown } | undefined;
@@ -35,37 +47,27 @@ manager.configureSettingsResolver((scopeUri) => loadSettings(connection, scopeUr
 
 connection.onInitialized(async () => {
   suspender.suspend();
+  let startupSuspensionReleased = false;
   try {
-    const settings = await loadSettings(connection);
-    manager.configure(settings, connection, globalStorageDir);
-    const folders = await connection.workspace.getWorkspaceFolders() ?? [];
-    for (const folder of folders) {
-      await manager.addFolder(
-        folder.uri,
-        await loadSettings(connection, folder.uri),
-        connection,
-        globalStorageDir,
-      );
-    }
-    await reindexOpenDocuments(manager, openDocuments);
-    connection.sendNotification('unityShaderNav/mode', { mode: manager.mode() });
-
-    connection.workspace.onDidChangeWorkspaceFolders((event) => {
-      void applyWorkspaceFolderChanges(event, {
-        manager,
-        connection,
-        loadSettings: (scopeUri) => loadSettings(connection, scopeUri),
-        globalStorageDir,
-        suspender,
-      }).catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
-        connection.console.error(`[UnityShaderNav] workspace folder change failed: ${message}`);
-      });
+    const initializations = initializeWorkspaceFolders({
+      manager,
+      connection,
+      loadSettings: (scopeUri) => loadSettings(connection, scopeUri),
+      globalStorageDir,
+      onInitializationsStarted() {
+        // Root records now register independently as scoped settings arrive.
+        // Do not let one slow bootstrap suspend requests for another ready root.
+        suspender.release();
+        startupSuspensionReleased = true;
+      },
     });
+
+    await initializations;
+    await reindexOpenDocuments(manager, openDocuments);
 
     connection.console.log('[UnityShaderNav] server initialized');
   } finally {
-    suspender.release();
+    if (!startupSuspensionReleased) suspender.release();
   }
 });
 

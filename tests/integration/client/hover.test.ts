@@ -1,7 +1,7 @@
 import * as assert from 'node:assert';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { withWorkspaceFolder } from './helpers/workspace';
+import { waitForEventually, withWorkspaceFolder } from './helpers/workspace';
 
 function fixturePath(...segments: string[]): string {
   return path.resolve(__dirname, '../../../integration/client/fixtures', ...segments);
@@ -12,18 +12,16 @@ async function waitForHover(
   position: vscode.Position,
   predicate: (hovers: vscode.Hover[] | undefined) => boolean,
 ): Promise<vscode.Hover[] | undefined> {
-  const deadline = Date.now() + 5000;
-  let latest: vscode.Hover[] | undefined;
-  while (Date.now() < deadline) {
-    latest = await vscode.commands.executeCommand<vscode.Hover[]>(
+  return waitForEventually(
+    'hover result',
+    async () => vscode.commands.executeCommand<vscode.Hover[]>(
       'vscode.executeHoverProvider',
       uri,
       position,
-    );
-    if (predicate(latest)) return latest;
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  return latest;
+    ),
+    predicate,
+    { timeoutMs: 5000, retryMs: 100 },
+  );
 }
 
 function hoverText(hovers: vscode.Hover[]): string {

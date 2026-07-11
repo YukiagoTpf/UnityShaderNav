@@ -57,16 +57,21 @@ describe('RequestSuspender', () => {
     }
   });
 
-  it('times out and returns null after timeoutMs', async () => {
+  it('times out, detaches its waiter, and never runs stale work', async () => {
     vi.useFakeTimers();
     try {
       const suspender = new RequestSuspender({ timeoutMs: 100 });
       suspender.suspend();
+      const work = vi.fn(async () => 'never');
 
-      const promise = suspender.run(async () => 'never');
+      const promise = suspender.run(work);
       vi.advanceTimersByTime(100);
 
       await expect(promise).resolves.toBeNull();
+      const waiters = Reflect.get(suspender, 'waiters') as Set<() => void>;
+      expect(waiters.size).toBe(0);
+      suspender.release();
+      expect(work).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }

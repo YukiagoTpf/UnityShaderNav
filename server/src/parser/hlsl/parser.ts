@@ -38,7 +38,21 @@ async function ensureReady(): Promise<void> {
       language = await TS.Language.load(resolveWasmPath());
     })();
   }
-  await initPromise;
+  const attempt = initPromise;
+  try {
+    await attempt;
+  } catch (error) {
+    if (initPromise === attempt) {
+      initPromise = undefined;
+      language = undefined;
+      TS = undefined;
+    }
+    throw error;
+  }
+}
+
+export async function ensureParserReady(): Promise<void> {
+  await ensureReady();
 }
 
 export async function parseHlsl(text: string): Promise<Parser.Tree> {

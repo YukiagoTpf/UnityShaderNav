@@ -62,7 +62,7 @@ async function createHighlightFixture(
     index: { store, global, globalRefs },
   };
   const manager = {
-    async workspaceForOrCreateFile(requestedUri: string) {
+    servingWorkspaceFor(requestedUri: string) {
       return requestedUri === uri ? workspace : undefined;
     },
   } as never;
@@ -140,7 +140,7 @@ describe('registerDocumentHighlightHandler', () => {
       },
     } as never;
     const manager = {
-      async workspaceForOrCreateFile(requestedUri: string) {
+      servingWorkspaceFor(requestedUri: string) {
         return requestedUri === uri ? workspace : undefined;
       },
     } as never;

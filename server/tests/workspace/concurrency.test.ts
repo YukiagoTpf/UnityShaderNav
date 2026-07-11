@@ -36,4 +36,29 @@ describe('mapWithConcurrency', () => {
       return value;
     })).rejects.toThrow('boom');
   });
+
+  it('waits for in-flight workers and stops scheduling before rejecting', async () => {
+    let releaseSlow!: () => void;
+    const slow = new Promise<void>((resolve) => {
+      releaseSlow = resolve;
+    });
+    const started: number[] = [];
+    let settled = false;
+    const operation = mapWithConcurrency([1, 2, 3], 2, async (value) => {
+      started.push(value);
+      if (value === 1) await slow;
+      if (value === 2) throw new Error('boom');
+      return value;
+    }).finally(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(started).toEqual([1, 2]);
+    expect(settled).toBe(false);
+    releaseSlow();
+    await expect(operation).rejects.toThrow('boom');
+    expect(started).toEqual([1, 2]);
+  });
 });

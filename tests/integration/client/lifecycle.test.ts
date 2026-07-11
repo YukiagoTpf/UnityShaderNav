@@ -3,7 +3,11 @@ import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { closeEditorsForFolder, withWorkspaceFolder } from './helpers/workspace';
+import {
+  closeEditorsForFolder,
+  waitForEventually,
+  withWorkspaceFolder,
+} from './helpers/workspace';
 
 function sourceFixtureRoot(): string {
   return path.resolve(__dirname, '../../../../server/tests/include/fixtures/projectA');
@@ -27,18 +31,15 @@ async function waitForDefinitions(
   uri: vscode.Uri,
   position: vscode.Position,
 ): Promise<Array<vscode.LocationLink | vscode.Location> | undefined> {
-  const deadline = Date.now() + 6000;
-  let latest: Array<vscode.LocationLink | vscode.Location> | undefined;
-  while (Date.now() < deadline) {
-    latest = await vscode.commands.executeCommand<Array<vscode.LocationLink | vscode.Location>>(
+  return waitForEventually(
+    `NewlyAdded definition for ${uri.fsPath}`,
+    () => vscode.commands.executeCommand<Array<vscode.LocationLink | vscode.Location>>(
       'vscode.executeDefinitionProvider',
       uri,
       position,
-    );
-    if ((latest?.length ?? 0) > 0) return latest;
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  return latest;
+    ),
+    (latest) => (latest?.length ?? 0) > 0,
+  );
 }
 
 suite('Lifecycle: edit triggers reindex', () => {
@@ -60,7 +61,6 @@ suite('Lifecycle: edit triggers reindex', () => {
           const inserted = '    float4 _z = NewlyAdded();\n';
           edit.insert(mainUri, new vscode.Position(endLine, 0), inserted);
           assert.ok(await vscode.workspace.applyEdit(edit), 'expected Main.shader edit to apply');
-          await new Promise((resolve) => setTimeout(resolve, 800));
 
           const unresolved = await vscode.commands.executeCommand<Array<vscode.LocationLink | vscode.Location>>(
             'vscode.executeDefinitionProvider',
@@ -70,7 +70,6 @@ suite('Lifecycle: edit triggers reindex', () => {
           assert.equal(unresolved?.length ?? 0, 0, 'NewlyAdded should not resolve before external file change');
 
           await fs.writeFile(commonPath, `${before}\nfloat4 NewlyAdded() { return 1; }\n`);
-          await new Promise((resolve) => setTimeout(resolve, 1000));
 
           const links = await waitForDefinitions(
             mainUri,

@@ -1,7 +1,7 @@
 import * as assert from 'node:assert';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { withWorkspaceFolder } from './helpers/workspace';
+import { waitForEventually, withWorkspaceFolder } from './helpers/workspace';
 
 function fixturePath(...segments: string[]): string {
   return path.resolve(__dirname, '../../../integration/client/fixtures', ...segments);
@@ -12,18 +12,16 @@ async function waitForHighlights(
   position: vscode.Position,
   predicate: (highlights: vscode.DocumentHighlight[] | undefined) => boolean,
 ): Promise<vscode.DocumentHighlight[] | undefined> {
-  const deadline = Date.now() + 6000;
-  let latest: vscode.DocumentHighlight[] | undefined;
-  while (Date.now() < deadline) {
-    latest = await vscode.commands.executeCommand<vscode.DocumentHighlight[]>(
+  return waitForEventually(
+    'document highlights',
+    async () => vscode.commands.executeCommand<vscode.DocumentHighlight[]>(
       'vscode.executeDocumentHighlights',
       uri,
       position,
-    );
-    if (predicate(latest)) return latest;
-    await new Promise((resolve) => setTimeout(resolve, 150));
-  }
-  return latest;
+    ),
+    predicate,
+    { timeoutMs: 6000, retryMs: 150 },
+  );
 }
 
 function rangeKey(range: vscode.Range): string {
