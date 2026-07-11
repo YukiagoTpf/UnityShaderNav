@@ -19,8 +19,49 @@ const REQUIRED_VSIX_ENTRIES = [
   'extension/out/server/node_modules/web-tree-sitter/tree-sitter.wasm',
 ] as const;
 
+interface ParserRuntimeAssets {
+  readonly layout: 'source' | 'tsc-out' | 'copied-server' | 'bundled-server';
+  readonly runtimeRoot: string;
+  readonly hlslGrammar: {
+    readonly path: string;
+    readonly contentHash: string;
+    readBytes(): Uint8Array;
+  };
+}
+
 function monorepoRoot(): string {
   return path.resolve(__dirname, '../../..');
+}
+
+function parseRuntimeAssetInChild(
+  runtimeAssetsModulePath: string,
+  moduleFile: string,
+  serverEntry: string,
+): ReturnType<typeof spawnSync> {
+  const script = `
+const { createRequire } = require('node:module');
+const [runtimeAssetsModulePath, moduleFile, serverEntry] = process.argv.slice(1);
+const { resolveParserRuntimeAssets } = require(runtimeAssetsModulePath);
+const runtimeAssets = resolveParserRuntimeAssets(moduleFile);
+const requireFromServer = createRequire(serverEntry);
+(async () => {
+  const TS = requireFromServer('web-tree-sitter');
+  await TS.init();
+  const language = await TS.Language.load(runtimeAssets.hlslGrammar.readBytes());
+  const parser = new TS();
+  parser.setLanguage(language);
+  const tree = parser.parse('float exactRuntimeAsset() { return 1; }');
+  if (tree.rootNode.type !== 'translation_unit' || tree.rootNode.hasError) process.exit(2);
+})().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+`;
+  return spawnSync(
+    process.execPath,
+    ['-e', script, runtimeAssetsModulePath, moduleFile, serverEntry],
+    { encoding: 'utf8', timeout: 60000 },
+  );
 }
 
 suite('packaged server layout', () => {
@@ -33,6 +74,48 @@ suite('packaged server layout', () => {
     const tree = await parseHlsl('float f() { return 1; }');
     assert.strictEqual(tree.rootNode.type, 'translation_unit');
     assert.strictEqual(tree.rootNode.hasError, false);
+  });
+
+  test('every supported current-run layout loads and identifies its exact grammar', async () => {
+    const root = monorepoRoot();
+    const serverRoot = path.resolve(root, 'client/out/server');
+    const serverEntry = path.join(serverRoot, 'server.js');
+    const runtimeAssetsModulePath = path.join(serverRoot, 'parser/runtimeAssets.js');
+    const identityModulePath = path.join(serverRoot, 'cache/implementationIdentity.js');
+    const { resolveParserRuntimeAssets } = require(runtimeAssetsModulePath) as {
+      resolveParserRuntimeAssets(moduleFile: string): ParserRuntimeAssets;
+    };
+    const { implementationIdentityForModule } = require(identityModulePath) as {
+      implementationIdentityForModule(
+        moduleFile: string,
+        runtimeAssets: ParserRuntimeAssets,
+      ): string | undefined;
+    };
+    const layouts = [
+      ['source', path.join(root, 'server/src/parser/runtimeAssets.ts')],
+      ['tsc-out', path.join(root, 'server/out/parser/runtimeAssets.js')],
+      ['copied-server', path.join(serverRoot, 'parser/runtimeAssets.js')],
+      ['bundled-server', serverEntry],
+    ] as const;
+
+    for (const [layout, moduleFile] of layouts) {
+      const assets = resolveParserRuntimeAssets(moduleFile);
+      assert.strictEqual(assets.layout, layout);
+      assert.match(
+        implementationIdentityForModule(moduleFile, assets) ?? '',
+        /^[0-9a-f]{64}$/,
+      );
+      const parseResult = parseRuntimeAssetInChild(
+        runtimeAssetsModulePath,
+        moduleFile,
+        serverEntry,
+      );
+      assert.strictEqual(
+        parseResult.status,
+        0,
+        parseResult.error?.message || String(parseResult.stderr || parseResult.stdout),
+      );
+    }
   });
 
   test('bundled server entry does not depend on private workspace packages at runtime', () => {
@@ -61,27 +144,77 @@ suite('packaged server layout', () => {
     const serverRoot = path.resolve(root, 'client/out/server');
     const serverEntry = path.join(serverRoot, 'server.js');
     const identityModulePath = path.join(serverRoot, 'cache/implementationIdentity.js');
+    const runtimeAssetsModulePath = path.join(serverRoot, 'parser/runtimeAssets.js');
     const { implementationIdentityForModule } = require(identityModulePath) as {
-      implementationIdentityForModule(moduleFile: string): string | undefined;
+      implementationIdentityForModule(
+        moduleFile: string,
+        runtimeAssets: ParserRuntimeAssets,
+      ): string | undefined;
     };
-    const identity = implementationIdentityForModule(serverEntry);
+    const { resolveParserRuntimeAssets } = require(runtimeAssetsModulePath) as {
+      resolveParserRuntimeAssets(moduleFile: string): ParserRuntimeAssets;
+    };
+    const runtimeAssets = resolveParserRuntimeAssets(serverEntry);
+    const shippedGrammar = path.join(
+      root,
+      'client/out/grammars/tree-sitter-hlsl.wasm',
+    );
+    assert.strictEqual(runtimeAssets.hlslGrammar.path, fs.realpathSync(shippedGrammar));
+    assert.deepStrictEqual(
+      Buffer.from(runtimeAssets.hlslGrammar.readBytes()),
+      fs.readFileSync(shippedGrammar),
+    );
+
+    const identity = implementationIdentityForModule(serverEntry, runtimeAssets);
     assert.match(identity ?? '', /^[0-9a-f]{64}$/);
 
     const tempRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'usn-runtime-identity-')));
-    const movedServerRoot = path.join(tempRoot, 'server');
+    const movedServerRoot = path.join(tempRoot, 'out', 'server');
     try {
       fs.cpSync(serverRoot, movedServerRoot, { recursive: true });
+      fs.cpSync(
+        path.join(root, 'client/out/grammars'),
+        path.join(tempRoot, 'out', 'grammars'),
+        { recursive: true },
+      );
       const movedEntry = path.join(movedServerRoot, 'server.js');
-      assert.strictEqual(implementationIdentityForModule(movedEntry), identity);
+      let movedAssets = resolveParserRuntimeAssets(movedEntry);
+      assert.strictEqual(
+        implementationIdentityForModule(movedEntry, movedAssets),
+        identity,
+      );
 
       fs.appendFileSync(movedEntry, '\n// changed runtime bytes\n');
-      assert.notStrictEqual(implementationIdentityForModule(movedEntry), identity);
+      assert.notStrictEqual(
+        implementationIdentityForModule(movedEntry, movedAssets),
+        identity,
+      );
+      fs.writeFileSync(movedEntry, fs.readFileSync(serverEntry));
+
+      fs.appendFileSync(
+        path.join(tempRoot, 'out', 'grammars', 'tree-sitter-hlsl.wasm'),
+        Buffer.from('changed grammar bytes'),
+      );
+      movedAssets = resolveParserRuntimeAssets(movedEntry);
+      assert.notStrictEqual(
+        implementationIdentityForModule(movedEntry, movedAssets),
+        identity,
+      );
 
       fs.rmSync(path.join(
         movedServerRoot,
         'node_modules/web-tree-sitter/tree-sitter.wasm',
       ));
-      assert.strictEqual(implementationIdentityForModule(movedEntry), undefined);
+      assert.strictEqual(
+        implementationIdentityForModule(movedEntry, movedAssets),
+        undefined,
+      );
+
+      fs.rmSync(path.join(tempRoot, 'out', 'grammars', 'tree-sitter-hlsl.wasm'));
+      assert.throws(
+        () => resolveParserRuntimeAssets(movedEntry),
+        /Unable to load parser runtime asset/,
+      );
     } finally {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }

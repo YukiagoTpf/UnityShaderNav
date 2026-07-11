@@ -66,6 +66,7 @@ function isCacheFingerprint(value: unknown): value is CacheFingerprint {
     && typeof value.indexImplementation === 'string'
     && /^[0-9a-f]{64}$/.test(value.indexImplementation)
     && typeof value.grammarVersion === 'string'
+    && /^[0-9a-f]{64}$/.test(value.grammarVersion)
     && typeof value.settingsHash === 'string'
     && typeof value.macroTableHash === 'string';
 }

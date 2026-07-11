@@ -154,6 +154,31 @@ describe('server dependency direction', () => {
     }
   });
 
+  it('uses one parser runtime asset fact for execution and cache compatibility', () => {
+    const parser = readFileSync(
+      resolve(SOURCE_ROOT, 'parser/hlsl/parser.ts'),
+      'utf8',
+    );
+    expect(parser).toMatch(/from ['"]\.\.\/runtimeAssets['"]/);
+    expect(parser).toMatch(/loadHlslGrammar\s*\(/);
+    expect(parser).not.toMatch(/tree-sitter-hlsl\.wasm|resolveWasmPath|existsSync/);
+
+    const fingerprint = readFileSync(
+      resolve(SOURCE_ROOT, 'cache/fingerprint.ts'),
+      'utf8',
+    );
+    expect(fingerprint).toMatch(/ParserRuntimeAssets/);
+    expect(fingerprint).not.toMatch(/readFile|no-wasm|wasmPath/);
+
+    const workspace = readFileSync(
+      resolve(SOURCE_ROOT, 'workspace/workspace.ts'),
+      'utf8',
+    );
+    expect(workspace).toMatch(/const runtimeAssets = await this\.preflightParser\(\)/);
+    expect(workspace).toMatch(/buildFingerprint\([\s\S]*?runtimeAssets/);
+    expect(workspace).not.toMatch(/resolveWasmPath|tree-sitter-hlsl\.wasm|no-wasm/);
+  });
+
   it('composes shared ShaderLab document facts at one production boundary', () => {
     const analysis = readFileSync(
       resolve(SOURCE_ROOT, 'analysis/documentAnalysis.ts'),

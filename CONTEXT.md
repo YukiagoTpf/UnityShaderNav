@@ -80,8 +80,12 @@ _Avoid_: document generation, text document reference
 打开或未保存文档覆盖在磁盘索引之上的索引记录。edit 只允许最新 document attempt 发布；close 在 candidate 中恢复最后有效的磁盘记录，没有磁盘版本时删除该 URI，随后原子发布。等价 file URI 共用一个 identity；一个 snapshot 只属于最长路径匹配的 Workspace，根拓扑变化时在旧、新 owner 之间迁移；没有新 owner 时，下一次需要该打开文档的 index-backed 请求可以重新进入 lazy routing。
 _Avoid_: temporary index, unsaved cache
 
+**Parser runtime assets**:
+一次成功的 parser readiness attempt 所解析并加载的不可变运行时事实。它明确区分 source、tsc-out、copied-server 和 bundled-server 四种布局，把 vendored HLSL grammar 读成进程稳定的 bytes 与 content identity；Parser 执行和 cache compatibility 必须消费同一个事实。未知布局、缺失或无法加载的 grammar 是可观察的 parser initialization failure，不能猜路径、写 sentinel fingerprint 或恢复缓存。失败 attempt 可在同一进程修复后重试；一旦成功，该进程不再从磁盘重新解释 grammar。
+_Avoid_: grammar path guess, wasm fallback, parser asset cache
+
 **Index implementation identity**:
-实际生成 `FileIndex` 的 server 与 parser runtime 的内容身份。它是 cache fingerprint 的一部分；identity 不同或无法确定时只能从源码重建，不能恢复可能由另一套索引语义产生的记录。
+实际生成 `FileIndex` 的 server、resolved shared/runtime packages 与成功加载的 exact grammar bytes 的内容身份。它是 cache fingerprint 的一部分；identity 不同或无法确定时只能从源码重建，不能恢复可能由另一套索引语义产生的记录。
 _Avoid_: cache version, release version, Git revision
 
 **Cache workspace identity**:

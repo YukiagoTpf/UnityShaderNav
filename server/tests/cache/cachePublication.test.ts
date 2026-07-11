@@ -14,7 +14,7 @@ import { CacheStore } from '../../src/cache/cacheStore';
 
 const fingerprint: CacheFingerprint = {
   indexImplementation: 'a'.repeat(64),
-  grammarVersion: 'grammar',
+  grammarVersion: 'c'.repeat(64),
   settingsHash: 'settings',
   macroTableHash: 'macros',
 };

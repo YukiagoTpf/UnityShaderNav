@@ -1,5 +1,4 @@
-import { existsSync, promises as fs } from 'node:fs';
-import { join } from 'node:path';
+import { promises as fs } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type {
   CompletionItem,
@@ -23,9 +22,13 @@ import {
 } from '@unity-shader-nav/shared';
 import { CacheManager, cacheWorkspaceMatches } from '../cache';
 import { buildFingerprint } from '../cache/fingerprint';
-import { INDEX_IMPLEMENTATION_IDENTITY } from '../cache/implementationIdentity';
+import { runningIndexImplementationIdentity } from '../cache/implementationIdentity';
 import { PackageContext } from '../packages';
 import { ensureParserReady } from '../parser/hlsl';
+import {
+  resolveRunningParserRuntimeAssets,
+  type ParserRuntimeAssets,
+} from '../parser/runtimeAssets';
 import { uriKey } from '../uriKey';
 import type {
   DefinitionAtInput,
@@ -64,7 +67,8 @@ const CACHE_IO_CONCURRENCY = 32;
 export interface WorkspaceRuntimeOptions {
   indexImplementation?: string | null;
   onIndexStatusChanged?: () => void;
-  ensureParserReady?: () => Promise<void>;
+  ensureParserReady?: () => Promise<ParserRuntimeAssets | void>;
+  resolveParserRuntimeAssets?: () => ParserRuntimeAssets;
   indexDocument?: DocumentIndexer;
   analyzeDocument?: DocumentAnalyzer;
   openDocuments?: OpenDocumentsProvider;
@@ -106,9 +110,10 @@ export class Workspace implements IndexedWorkspace {
   private published: PublishedIndexedRevision | undefined;
   private stagedCandidate: IndexedRevisionBuilder | undefined;
   private globalStorageDir: string | undefined;
-  private readonly indexImplementation: string | null;
+  private readonly indexImplementation: string | null | undefined;
   private readonly lifecycle: IndexLifecycle;
-  private readonly parserReady: () => Promise<void>;
+  private readonly parserReady: () => Promise<ParserRuntimeAssets | void>;
+  private readonly resolveRuntimeAssets: () => ParserRuntimeAssets;
   private readonly indexDocument: DocumentIndexer | undefined;
   private readonly analyzeDocument: DocumentAnalyzer | undefined;
   private readonly openDocuments: OpenDocumentsProvider | undefined;
@@ -127,11 +132,11 @@ export class Workspace implements IndexedWorkspace {
     this.folderUri = folderUri;
     this.requestedSettings = normalizeSettings(settings);
     this.statusMode = this.requestedSettings.projectRoot.trim() ? 'unity' : 'standalone';
-    this.indexImplementation = options.indexImplementation === undefined
-      ? INDEX_IMPLEMENTATION_IDENTITY ?? null
-      : options.indexImplementation;
+    this.indexImplementation = options.indexImplementation;
     this.lifecycle = new IndexLifecycle(options.onIndexStatusChanged);
     this.parserReady = options.ensureParserReady ?? ensureParserReady;
+    this.resolveRuntimeAssets = options.resolveParserRuntimeAssets
+      ?? resolveRunningParserRuntimeAssets;
     this.indexDocument = options.indexDocument;
     this.analyzeDocument = options.analyzeDocument;
     this.openDocuments = options.openDocuments;
@@ -727,13 +732,13 @@ export class Workspace implements IndexedWorkspace {
       }
     }
 
-    await this.preflightParser();
+    const runtimeAssets = await this.preflightParser();
     const cacheConfiguration = await this.configureCache(
-      folderPath,
       unityRoot,
       settings,
       globalStorageDir,
       connection,
+      runtimeAssets,
     );
     const builder = IndexedRevisionBuilder.create({
       folderUri: this.folderUri,
@@ -782,10 +787,11 @@ export class Workspace implements IndexedWorkspace {
     return builder;
   }
 
-  private async preflightParser(): Promise<void> {
+  private async preflightParser(): Promise<ParserRuntimeAssets> {
     try {
-      await this.parserReady();
+      const readyAssets = await this.parserReady();
       this.throwIfDisposed();
+      return readyAssets ?? this.resolveRuntimeAssets();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new IndexInfrastructureError(
@@ -797,11 +803,11 @@ export class Workspace implements IndexedWorkspace {
   }
 
   private async configureCache(
-    folderPath: string,
     unityRoot: string | undefined,
     settings: ExtensionSettings,
     globalStorageDir: string | undefined,
     connection: Connection,
+    runtimeAssets: ParserRuntimeAssets,
   ): Promise<CacheConfiguration> {
     let cache = CacheManager.create({
       unityProjectRoot: unityRoot,
@@ -810,10 +816,13 @@ export class Workspace implements IndexedWorkspace {
     });
     if (!cache) return { cache: undefined, fingerprint: undefined };
 
-    const fingerprint = await buildFingerprint(
+    const indexImplementation = this.indexImplementation === undefined
+      ? runningIndexImplementationIdentity(runtimeAssets)
+      : this.indexImplementation ?? undefined;
+    const fingerprint = buildFingerprint(
       settings,
-      this.resolveWasmPath(folderPath),
-      this.indexImplementation ?? undefined,
+      runtimeAssets,
+      indexImplementation,
     );
     this.throwIfDisposed();
     if (!fingerprint) {
@@ -823,15 +832,6 @@ export class Workspace implements IndexedWorkspace {
       cache = undefined;
     }
     return { cache, fingerprint: cache ? fingerprint : undefined };
-  }
-
-  private resolveWasmPath(folderPath: string): string {
-    const candidates = [
-      join(__dirname, '..', '..', 'grammars', 'tree-sitter-hlsl.wasm'),
-      join(__dirname, '..', 'grammars', 'tree-sitter-hlsl.wasm'),
-      join(folderPath, 'server', 'grammars', 'tree-sitter-hlsl.wasm'),
-    ];
-    return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0];
   }
 
   private async bootstrapFromCache(

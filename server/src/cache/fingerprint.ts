@@ -1,23 +1,18 @@
 import { createHash } from 'node:crypto';
-import { promises as fs } from 'node:fs';
 import type { CacheFingerprint, ExtensionSettings } from '@unity-shader-nav/shared';
 import {
   BUILTIN_DECLARATION_MACROS,
   BUILTIN_REFERENCE_MACROS,
   BUILTIN_SENTINEL_MACROS,
 } from '../macros/builtin';
+import type { ParserRuntimeAssets } from '../parser/runtimeAssets';
 
 function sha1(value: string): string {
   return createHash('sha1').update(value).digest('hex');
 }
 
-export async function grammarVersionHash(wasmPath: string): Promise<string> {
-  try {
-    const bytes = await fs.readFile(wasmPath);
-    return createHash('sha1').update(bytes).digest('hex');
-  } catch {
-    return 'no-wasm';
-  }
+export function grammarVersionHash(runtimeAssets: ParserRuntimeAssets): string {
+  return runtimeAssets.hlslGrammar.contentHash;
 }
 
 export function settingsHash(settings: ExtensionSettings): string {
@@ -63,15 +58,19 @@ export function macroTableHash(userMacros: ExtensionSettings['declarationMacros'
   return sha1(JSON.stringify(all));
 }
 
-export async function buildFingerprint(
+export function buildFingerprint(
   settings: ExtensionSettings,
-  wasmPath: string,
+  runtimeAssets: ParserRuntimeAssets | undefined,
   indexImplementation: string | undefined,
-): Promise<CacheFingerprint | undefined> {
-  if (!indexImplementation || !/^[0-9a-f]{64}$/.test(indexImplementation)) return undefined;
+): CacheFingerprint | undefined {
+  if (
+    !runtimeAssets
+    || !indexImplementation
+    || !/^[0-9a-f]{64}$/.test(indexImplementation)
+  ) return undefined;
   return {
     indexImplementation,
-    grammarVersion: await grammarVersionHash(wasmPath),
+    grammarVersion: grammarVersionHash(runtimeAssets),
     settingsHash: settingsHash(settings),
     macroTableHash: macroTableHash(settings.declarationMacros),
   };

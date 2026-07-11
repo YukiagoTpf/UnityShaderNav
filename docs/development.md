@@ -73,6 +73,10 @@ npm run grammar:rebuild
   references, Agent entrypoints, and the vendored grammar provenance, artifact,
   and upstream license.
 - Parser and index behavior belongs in server unit tests.
+- Parser-runtime tests cover the source, tsc-out, copied-server, and bundled
+  layouts with real grammar loading. They must prove that parser readiness,
+  implementation identity, and cache fingerprints consume the same captured
+  bytes; missing or unknown assets cannot use a fallback fingerprint.
 - Include-resolution rule tests inject an in-memory `FileProbe`; they do not use
   disk fixtures to prove candidate ordering or casing behavior. Handler and
   Electron include tests exercise the default Node filesystem adapter and its
@@ -82,7 +86,9 @@ npm run grammar:rebuild
   lifetimes. Disk/cache records must remain analysis-free.
 - `npm run test:package` is the authoritative package check. One invocation
   removes generated output, rebuilds current source, creates the versioned VSIX,
-  verifies its manifest and runtime files, then runs package-layout tests.
+  verifies its manifest and runtime files, then runs package-layout tests. The
+  package-layout gate resolves the shipped grammar through the same runtime
+  adapter as the bundled server, loads it, and verifies its bytes and identity.
 - Thin LSP adapter behavior belongs in server handler tests. Every index-backed
   query adapter and the document lifecycle fake only Indexed Workspace behavior;
   tests must not reconstruct `store/global/globalRefs` Workspace shapes or
@@ -208,6 +214,11 @@ Docker, network access to GitHub, Docker Hub, and the public npm registry, and a
 runtime capable of executing the pinned Linux/amd64 Emscripten image. The
 command is intentionally verification-only: changing the vendored artifact is
 a separate, reviewable provenance update.
+
+At runtime the grammar is not located through Workspace paths. The parser
+runtime-assets Module maps the four supported build layouts to one exact file,
+captures its bytes for the successful parser attempt, and supplies that same
+fact to cache compatibility. Missing or unrecognized layouts fail observably.
 
 ## CI
 

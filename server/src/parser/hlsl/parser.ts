@@ -1,7 +1,10 @@
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import type Parser from 'web-tree-sitter';
+import {
+  loadHlslGrammar,
+  resolveRunningParserRuntimeAssets,
+  type ParserRuntimeAssets,
+} from '../runtimeAssets';
 
 // web-tree-sitter 0.22 mutates module.exports during init(); the captured
 // ESM default import keeps a stale binding under vite/vitest. Re-resolve via
@@ -11,31 +14,22 @@ const requireCjs = createRequire(__filename);
 
 let initPromise: Promise<void> | undefined;
 let language: Parser.Language | undefined;
+let readyAssets: ParserRuntimeAssets | undefined;
 let TS: any;
 
-const HLSL_WASM = 'tree-sitter-hlsl.wasm';
 const STRUCT_FIELD_MACRO_LINE_RE = /^([ \t]*)(UNITY_VERTEX_INPUT_INSTANCE_ID|UNITY_VERTEX_OUTPUT_STEREO)([ \t]*)$/gm;
 
-function resolveWasmPath(): string {
-  const candidates = [
-    // server/{src,out}/parser/hlsl and client/out/server/parser/hlsl after copy-server.
-    join(__dirname, '..', '..', '..', 'grammars', HLSL_WASM),
-    // client/out/server/server.js when scripts/build.mjs bundles the server.
-    join(__dirname, '..', 'grammars', HLSL_WASM),
-  ];
-  const wasm = candidates.find((candidate) => existsSync(candidate));
-  if (!wasm) {
-    throw new Error(`Unable to find ${HLSL_WASM}. Tried: ${candidates.join(', ')}`);
-  }
-  return wasm;
-}
-
-async function ensureReady(): Promise<void> {
+async function ensureReady(): Promise<ParserRuntimeAssets> {
   if (!initPromise) {
+    const assets = resolveRunningParserRuntimeAssets();
     initPromise = (async () => {
       TS = requireCjs('web-tree-sitter');
       await TS.init();
-      language = await TS.Language.load(resolveWasmPath());
+      language = await loadHlslGrammar(
+        assets,
+        (bytes) => TS.Language.load(bytes),
+      );
+      readyAssets = assets;
     })();
   }
   const attempt = initPromise;
@@ -45,14 +39,16 @@ async function ensureReady(): Promise<void> {
     if (initPromise === attempt) {
       initPromise = undefined;
       language = undefined;
+      readyAssets = undefined;
       TS = undefined;
     }
     throw error;
   }
+  return readyAssets!;
 }
 
-export async function ensureParserReady(): Promise<void> {
-  await ensureReady();
+export async function ensureParserReady(): Promise<ParserRuntimeAssets> {
+  return ensureReady();
 }
 
 export async function parseHlsl(text: string): Promise<Parser.Tree> {

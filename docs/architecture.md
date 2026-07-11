@@ -8,7 +8,9 @@ VS Code extension client
   -> language server process
      -> exact-source document analysis
         -> ShaderLab block/token scanners
-     -> tree-sitter HLSL parser
+     -> parser runtime assets
+        -> tree-sitter HLSL parser
+        -> cache implementation identity
      -> macro pattern recognizer
      -> per-file symbol/reference indexes
      -> workspace/global indexes
@@ -36,6 +38,10 @@ handling. Important modules:
   tokens. Indexing and Semantic Tokens consume this result instead of
   independently rescanning the same live source.
 - `parser/hlsl`: wraps tree-sitter and collects symbols/references.
+- `parser/runtimeAssets`: maps only the supported source, tsc-out,
+  copied-server, and bundled-server layouts to the vendored HLSL grammar. A
+  successful parser attempt captures its bytes once; parser execution and
+  cache compatibility consume that same immutable fact.
 - `parser/lexical`: owns cursor analysis behind `analyzeCursor` plus the narrow
   `classifyCursor` and gate-free `memberAccessAt` derived interfaces.
 - `macros`: recognizes built-in and user-configured declaration/reference
@@ -212,6 +218,13 @@ revision before asynchronous manifest preparation. Cache failures remain
 best-effort and cannot invalidate an in-memory publication. See
 [ADR-0006](adr/0006-index-lifecycle-and-failure-semantics.md).
 
+Parser readiness resolves runtime assets before candidate cache work. A missing
+or unknown grammar layout is classified as parser initialization failure, so no
+cache can be restored or persisted for that attempt. Failed readiness remains
+retryable for same-process recovery. After success, the loaded language,
+grammar SHA-256, and index implementation identity remain bound to those exact
+captured bytes even if a watch build later replaces the file on disk.
+
 Lifecycle state is observable through the same LSP connection used by editor
 features. The server exposes both an index-status pull request and a changed
 notification carrying the complete, folder-URI-sorted snapshot. Root add or
@@ -297,10 +310,11 @@ so Windows path casing cannot split one physical manifest into separate queues.
 Standalone mode retains its per-workspace bucket under VS Code global storage.
 
 The manifest has a schema version and source fingerprint. The fingerprint
-content-addresses the actual server bundle and the external parser runtime
-package (including its resolved entry), grammar bytes, index-affecting settings,
-and macro table; a different or unavailable implementation identity forces a
-source rebuild without a manual version bump. Cache contents are limited to the
+content-addresses the captured server implementation, resolved shared and
+external parser runtimes, the exact grammar bytes already accepted by parser
+initialization, index-affecting settings, and macro table. It never reopens or
+guesses a grammar path. A different or unavailable implementation identity
+forces a source rebuild without a manual version bump. Cache contents are limited to the
 published revision's disk projection and source identities. Live overlays,
 document analysis, lifecycle state, source warnings, and document attempts are
 not persisted. Package entries are restored only while the current

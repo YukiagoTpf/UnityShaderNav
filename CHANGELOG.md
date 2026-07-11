@@ -15,8 +15,10 @@ and uses semantic versioning for extension releases.
 - Added fixed public provenance, an upstream license, offline integrity checks,
   and a byte-for-byte rebuild command for the vendored HLSL grammar.
 - Cache fingerprints now content-address the running index implementation and
-  complete parser runtime package, so semantic code changes automatically
-  reject stale indexes.
+  complete parser runtime package. Parser execution and cache compatibility now
+  share one exact, process-stable grammar byte snapshot across source, tsc-out,
+  copied-server, and bundled-server layouts; missing or unknown assets cannot
+  create a fallback fingerprint or restore stale indexes.
 - Partitioned Unity cache manifests by canonical Workspace identity under
   `Library/UnityShaderNavCache/workspaces/<identity-hash>/index.json`. Each
   identity keeps one monolithic manifest, while Package restore eligibility

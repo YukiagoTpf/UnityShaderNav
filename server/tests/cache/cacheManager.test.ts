@@ -80,7 +80,7 @@ describe('CacheManager.buildManifest', () => {
     const manager = new CacheManager(new CacheStore('/tmp/no-write'));
     const fingerprint: CacheFingerprint = {
       indexImplementation: 'a'.repeat(64),
-      grammarVersion: 'g',
+      grammarVersion: 'c'.repeat(64),
       settingsHash: 's',
       macroTableHash: 'm',
     };

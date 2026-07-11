@@ -1,6 +1,6 @@
 import type { FileIndex } from './symbols';
 
-export const CACHE_VERSION = 7;
+export const CACHE_VERSION = 8;
 
 /**
  * Fields that invalidate the whole cache when changed between runs.
@@ -9,7 +9,7 @@ export const CACHE_VERSION = 7;
 export interface CacheFingerprint {
   /** SHA-256 of the actual server and parser runtime that produced FileIndex. */
   indexImplementation: string;
-  /** SHA-1 of the vendored tree-sitter-hlsl.wasm bytes, or a fixed sentinel. */
+  /** SHA-256 of the exact vendored grammar bytes loaded by the running parser. */
   grammarVersion: string;
   /** SHA-1 over settings keys that influence indexing. */
   settingsHash: string;

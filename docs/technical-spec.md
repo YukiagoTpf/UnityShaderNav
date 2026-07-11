@@ -371,12 +371,15 @@ identity, including Windows path casing. Standalone mode keeps its existing
 per-workspace bucket in VS Code global storage. Each identity uses one
 monolithic JSON manifest.
 
-Cache records have a schema version and a fingerprint. The fingerprint includes
-the actual index implementation, the complete external parser runtime package,
-grammar, index-affecting settings, and macro table. The package entry must also
-resolve successfully. A missing, malformed, or different implementation
-identity is a cache miss and triggers source indexing; it never changes source
-files. Restored Package files must still belong to the dependency graph resolved
+Cache records have a schema version and a fingerprint. Parser initialization
+first resolves one supported runtime layout and successfully loads a captured
+grammar byte snapshot. The fingerprint then consumes that same snapshot plus
+the captured index implementation, resolved shared and external parser runtime
+packages, index-affecting settings, and macro table. No component independently
+searches for or reopens the grammar. An unknown layout, missing grammar, or
+unidentifiable implementation cannot produce a persistable fingerprint or
+restore a manifest. A different identity is a cache miss and triggers source
+indexing; it never changes source files. Restored Package files must still belong to the dependency graph resolved
 from the current `Packages/packages-lock.json`. A cached file outside the Unity
 root is eligible only while it belongs to a currently resolved external package.
 

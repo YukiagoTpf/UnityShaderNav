@@ -37,7 +37,7 @@ vi.mock('node:fs', async (importOriginal) => {
 
 const fingerprint: CacheFingerprint = {
   indexImplementation: INDEX_IMPLEMENTATION_A,
-  grammarVersion: 'g',
+  grammarVersion: 'c'.repeat(64),
   settingsHash: 's',
   macroTableHash: 'm',
 };
@@ -108,7 +108,7 @@ describe('CacheStore', () => {
     const store = new CacheStore(dir);
     const fingerprint: CacheFingerprint = {
       indexImplementation: INDEX_IMPLEMENTATION_A,
-      grammarVersion: 'g1',
+      grammarVersion: 'd'.repeat(64),
       settingsHash: 's1',
       macroTableHash: 'm1',
     };
@@ -143,7 +143,7 @@ describe('CacheStore', () => {
       workspaceFolderUri: 'file:///x',
       unityProjectRoot: '/x',
       createdAt: 123,
-      fingerprint: { grammarVersion: 'g', settingsHash: 's', macroTableHash: 'm' },
+      fingerprint: { grammarVersion: 'c'.repeat(64), settingsHash: 's', macroTableHash: 'm' },
       files: [],
     }), 'utf8');
     expect(await store.load()).toBeNull();
@@ -153,7 +153,7 @@ describe('CacheStore', () => {
       workspaceFolderUri: 'file:///x',
       unityProjectRoot: '/x',
       createdAt: 123,
-      fingerprint: { grammarVersion: 'g', settingsHash: 's', macroTableHash: 'm' },
+      fingerprint: { grammarVersion: 'c'.repeat(64), settingsHash: 's', macroTableHash: 'm' },
       files: [],
     }), 'utf8');
     expect(await store.load()).toBeNull();
@@ -170,7 +170,7 @@ describe('CacheStore', () => {
       workspaceFolderUri: 'file:///x',
       unityProjectRoot: '/x',
       createdAt: 123,
-      fingerprint: { grammarVersion: 'g', settingsHash: 's', macroTableHash: 'm' },
+      fingerprint: { grammarVersion: 'c'.repeat(64), settingsHash: 's', macroTableHash: 'm' },
       files: [],
     }), 'utf8');
 
@@ -188,7 +188,7 @@ describe('CacheStore', () => {
       workspaceFolderUri: 'file:///x',
       unityProjectRoot: '/x',
       createdAt: 123,
-      fingerprint: { grammarVersion: 'g', settingsHash: 's', macroTableHash: 'm' },
+      fingerprint: { grammarVersion: 'c'.repeat(64), settingsHash: 's', macroTableHash: 'm' },
       files: [],
     }), 'utf8');
 
@@ -206,7 +206,7 @@ describe('CacheStore', () => {
       workspaceFolderUri: 'file:///x',
       unityProjectRoot: '/x',
       createdAt: 123,
-      fingerprint: { grammarVersion: 'g', settingsHash: 's', macroTableHash: 'm' },
+      fingerprint: { grammarVersion: 'c'.repeat(64), settingsHash: 's', macroTableHash: 'm' },
       files: [],
     }), 'utf8');
 
@@ -224,7 +224,7 @@ describe('CacheStore', () => {
       workspaceFolderUri: 'file:///x',
       unityProjectRoot: '/x',
       createdAt: 123,
-      fingerprint: { grammarVersion: 'g', settingsHash: 's', macroTableHash: 'm' },
+      fingerprint: { grammarVersion: 'c'.repeat(64), settingsHash: 's', macroTableHash: 'm' },
       files: [],
     }), 'utf8');
 
@@ -242,8 +242,20 @@ describe('CacheStore', () => {
       workspaceFolderUri: 'file:///x',
       unityProjectRoot: '/x',
       createdAt: 123,
-      fingerprint: { grammarVersion: 'g', settingsHash: 's', macroTableHash: 'm' },
+      fingerprint: { grammarVersion: 'c'.repeat(64), settingsHash: 's', macroTableHash: 'm' },
       files: [],
+    });
+
+    expect(await store.load()).toBeNull();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('rejects v7 manifests from before exact parser runtime assets', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'usn-cache-pre-runtime-assets-'));
+    const store = new CacheStore(dir);
+    await writeRawManifest(dir, {
+      ...validManifest(),
+      version: 7,
     });
 
     expect(await store.load()).toBeNull();
@@ -255,13 +267,13 @@ describe('CacheStore', () => {
     const store = new CacheStore(dir);
     const fpA: CacheFingerprint = {
       indexImplementation: INDEX_IMPLEMENTATION_A,
-      grammarVersion: 'g',
+      grammarVersion: 'c'.repeat(64),
       settingsHash: 's1',
       macroTableHash: 'm1',
     };
     const fpB: CacheFingerprint = {
       indexImplementation: INDEX_IMPLEMENTATION_B,
-      grammarVersion: 'g',
+      grammarVersion: 'c'.repeat(64),
       settingsHash: 's1',
       macroTableHash: 'm1',
     };
@@ -313,11 +325,26 @@ describe('CacheStore', () => {
 
     await writeRawManifest(dir, {
       ...validManifest(),
-      fingerprint: { grammarVersion: 'g', settingsHash: 's' },
+      fingerprint: { grammarVersion: 'c'.repeat(64), settingsHash: 's' },
     });
 
     expect(await store.load()).toBeNull();
 
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('rejects the legacy missing-grammar sentinel', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'usn-cache-no-grammar-sentinel-'));
+    const store = new CacheStore(dir);
+    await writeRawManifest(dir, {
+      ...validManifest(),
+      fingerprint: {
+        ...fingerprint,
+        grammarVersion: 'no-wasm',
+      },
+    });
+
+    expect(await store.load()).toBeNull();
     await rm(dir, { recursive: true, force: true });
   });
 
@@ -514,7 +541,7 @@ describe('CacheStore', () => {
     const store = new CacheStore(dir);
     const fingerprint: CacheFingerprint = {
       indexImplementation: INDEX_IMPLEMENTATION_A,
-      grammarVersion: 'g',
+      grammarVersion: 'c'.repeat(64),
       settingsHash: 's',
       macroTableHash: 'm',
     };

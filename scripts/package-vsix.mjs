@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { inflateRawSync } from 'node:zlib';
 
 const defaultRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = parseArgs(process.argv.slice(2));
@@ -86,7 +87,10 @@ try {
   if (args.checkOutput) process.exit(0);
 
   const vsixPath = await packageVsix();
-  await assertVsixContents(vsixPath);
+  await assertVsixContents(
+    vsixPath,
+    resolve(monorepoRoot, 'client/out/grammars/tree-sitter-hlsl.wasm'),
+  );
 
   console.log(`[package-vsix] verified ${relative(monorepoRoot, vsixPath)}`);
   for (const entry of requiredVsixEntries) console.log(`[package-vsix] contains ${entry}`);
@@ -106,7 +110,7 @@ async function assertFreshBuildOutputs(root) {
   }
 }
 
-async function assertVsixContents(vsixPath) {
+async function assertVsixContents(vsixPath, expectedGrammarPath) {
   const entries = await listZipEntries(vsixPath);
   for (const entry of requiredVsixEntries) {
     if (!entries.has(entry)) {
@@ -116,6 +120,16 @@ async function assertVsixContents(vsixPath) {
   for (const entry of entries) {
     if (forbiddenVsixEntryPatterns.some((pattern) => pattern.test(entry))) {
       throw new Error(`VSIX must not include generated file ${entry}`);
+    }
+  }
+  if (expectedGrammarPath) {
+    const expectedGrammar = await readFile(expectedGrammarPath);
+    const packagedGrammar = await readZipEntry(
+      vsixPath,
+      'extension/out/grammars/tree-sitter-hlsl.wasm',
+    );
+    if (!packagedGrammar.equals(expectedGrammar)) {
+      throw new Error('VSIX grammar bytes do not match the parser runtime asset');
     }
   }
 }
@@ -279,6 +293,54 @@ async function listZipEntries(zipPath) {
   }
 
   return entries;
+}
+
+async function readZipEntry(zipPath, targetName) {
+  const buffer = await readFile(zipPath);
+  const eocdOffset = findEndOfCentralDirectory(buffer);
+  const centralDirectorySize = buffer.readUInt32LE(eocdOffset + 12);
+  const centralDirectoryOffset = buffer.readUInt32LE(eocdOffset + 16);
+  const end = centralDirectoryOffset + centralDirectorySize;
+  let offset = centralDirectoryOffset;
+
+  while (offset < end) {
+    if (buffer.readUInt32LE(offset) !== 0x02014b50) {
+      throw new Error(`Invalid ZIP central directory in ${zipPath}`);
+    }
+    const compression = buffer.readUInt16LE(offset + 10);
+    const compressedSize = buffer.readUInt32LE(offset + 20);
+    const uncompressedSize = buffer.readUInt32LE(offset + 24);
+    const nameLength = buffer.readUInt16LE(offset + 28);
+    const extraLength = buffer.readUInt16LE(offset + 30);
+    const commentLength = buffer.readUInt16LE(offset + 32);
+    const localHeaderOffset = buffer.readUInt32LE(offset + 42);
+    const nameStart = offset + 46;
+    const name = buffer.toString('utf8', nameStart, nameStart + nameLength);
+    if (name === targetName) {
+      if (buffer.readUInt32LE(localHeaderOffset) !== 0x04034b50) {
+        throw new Error(`Invalid ZIP local header for ${targetName}`);
+      }
+      const localNameLength = buffer.readUInt16LE(localHeaderOffset + 26);
+      const localExtraLength = buffer.readUInt16LE(localHeaderOffset + 28);
+      const dataStart = localHeaderOffset + 30 + localNameLength + localExtraLength;
+      const compressed = buffer.subarray(dataStart, dataStart + compressedSize);
+      const contents = compression === 0
+        ? Buffer.from(compressed)
+        : compression === 8
+          ? inflateRawSync(compressed)
+          : undefined;
+      if (!contents) {
+        throw new Error(`Unsupported ZIP compression ${compression} for ${targetName}`);
+      }
+      if (contents.byteLength !== uncompressedSize) {
+        throw new Error(`Invalid ZIP entry size for ${targetName}`);
+      }
+      return contents;
+    }
+    offset = nameStart + nameLength + extraLength + commentLength;
+  }
+
+  throw new Error(`VSIX is missing required file ${targetName}`);
 }
 
 function findEndOfCentralDirectory(buffer) {
