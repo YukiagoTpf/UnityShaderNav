@@ -36,7 +36,7 @@ import {
   toSignatureInformation,
   type SuggestionCandidateSelector,
 } from '../suggestions';
-import { BUILTIN_ENTRIES } from '../vocabulary';
+import { findBuiltinEntries } from '../vocabulary';
 import type { PackageContext } from '../packages';
 import type {
   DocumentPositionInput,
@@ -148,7 +148,7 @@ export async function queryHover(
     return contents.value.length > 0 ? { contents, range: word.range } : null;
   }
 
-  const builtins = BUILTIN_ENTRIES.filter((entry) => entry.name === word.text);
+  const builtins = findBuiltinEntries(word.text);
   if (builtins.length === 0) return null;
   const contents = formatHoverCandidates(builtins.map((entry): HoverInput => ({
     source: 'builtin',

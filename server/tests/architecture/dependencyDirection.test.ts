@@ -154,6 +154,71 @@ describe('server dependency direction', () => {
     }
   });
 
+  it('keeps built-in semantic roles authoritative in the neutral vocabulary', () => {
+    const vocabulary = readFileSync(resolve(SOURCE_ROOT, 'vocabulary.ts'), 'utf8');
+    for (const api of [
+      'findBuiltinEntries',
+      'builtinEntriesForContext',
+      'findBuiltinFunctions',
+      'builtinLexicalRole',
+      'asShaderLabPropertyType',
+      'isShaderLabStateValueContext',
+    ]) {
+      expect(vocabulary, api).toMatch(new RegExp('export function ' + api + '\\b'));
+    }
+    expect(vocabulary).toMatch(/satisfies Record<ShaderLabPropertyType, true>/);
+    expect(vocabulary).not.toMatch(/from ['"].*suggestions/);
+
+    for (const sourceFile of collectTypeScriptFiles(SOURCE_ROOT)) {
+      const moduleId = relativeModuleId(SOURCE_ROOT, sourceFile);
+      if (moduleId === 'vocabulary.ts') continue;
+      expect(readFileSync(sourceFile, 'utf8'), moduleId)
+        .not.toMatch(/\bBUILTIN_ENTRIES\b/);
+    }
+
+    const consumers: ReadonlyArray<{
+      readonly moduleId: string;
+      readonly required: RegExp;
+      readonly forbidden: RegExp;
+    }> = [
+      {
+        moduleId: 'parser/shaderlab/tokenScanner.ts',
+        required: /builtinLexicalRole|asShaderLabPropertyType/,
+        forbidden: /SHADERLAB_KEYWORDS|PROPERTY_TYPES|BUILTIN_TOKEN_TYPES/,
+      },
+      {
+        moduleId: 'parser/shaderlab/propertiesScanner.ts',
+        required: /asShaderLabPropertyType/,
+        forbidden: /\bPROPERTY_TYPES\b|as Set<string>/,
+      },
+      {
+        moduleId: 'parser/lexical/cursor.ts',
+        required: /isShaderLabStateValueContext/,
+        forbidden: /SHADERLAB_STATE_VALUE_CONTEXTS/,
+      },
+      {
+        moduleId: 'suggestions/builtins/filter.ts',
+        required: /builtinEntriesForContext/,
+        forbidden: /SHADERLAB_STATE_VALUE_NAMES|entry\.category|entry\.kind/,
+      },
+      {
+        moduleId: 'suggestions/builtins/signatures.ts',
+        required: /findBuiltinFunctions/,
+        forbidden: /entry\.name|entry\.kind|entry\.parameters/,
+      },
+      {
+        moduleId: 'workspace/queries.ts',
+        required: /findBuiltinEntries/,
+        forbidden: /BUILTIN_ENTRIES\.filter/,
+      },
+    ];
+    for (const consumer of consumers) {
+      const source = readFileSync(resolve(SOURCE_ROOT, consumer.moduleId), 'utf8');
+      expect(source, consumer.moduleId).toMatch(consumer.required);
+      expect(source, consumer.moduleId).not.toMatch(consumer.forbidden);
+    }
+  });
+
   it('uses one parser runtime asset fact for execution and cache compatibility', () => {
     const parser = readFileSync(
       resolve(SOURCE_ROOT, 'parser/hlsl/parser.ts'),

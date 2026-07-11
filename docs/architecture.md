@@ -46,8 +46,10 @@ handling. Important modules:
   `classifyCursor` and gate-free `memberAccessAt` derived interfaces.
 - `macros`: recognizes built-in and user-configured declaration/reference
   patterns.
-- `vocabulary.ts`: owns the neutral Unity/HLSL/ShaderLab built-in vocabulary
-  consumed by parsing-derived coloring, hover, completion, and signature help.
+- `vocabulary.ts`: owns the neutral Unity/HLSL/ShaderLab built-in vocabulary,
+  stable ShaderLab semantic roles, and narrow projections consumed by
+  parsing-derived coloring, Properties, hover, completion, and signature help.
+  Consumers cannot import a raw catalog or keep parallel term sets.
 - `include` and `packages`: resolve relative includes and Unity Package paths.
   Include path and casing rules depend on a narrow filesystem probe rather than
   direct I/O; Package membership still comes from the resolved lockfile graph.
@@ -86,7 +88,9 @@ The index is intentionally pragmatic:
 - Parser modules may consume the neutral vocabulary but cannot depend on the
   suggestion projection. A transitive dependency-direction test enforces this
   boundary for statically analyzable TypeScript imports, re-exports, `require`
-  calls, and dynamic imports.
+  calls, and dynamic imports. The same guard prevents vocabulary consumers from
+  reconstructing ShaderLab keyword, Property-type, state-head, or state-value
+  lists.
 - A `.shader` indexing cycle derives ordered embedded-code blocks and structure
   from one exact source analysis, then passes the blocks to Properties scanning
   and publishes the structure through `FileIndex` for Outline. A full live

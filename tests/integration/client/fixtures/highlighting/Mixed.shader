@@ -2,12 +2,15 @@ Shader "Custom/Mixed" {
   Properties {
     [Header(Main)] [Space]
     _BaseMap ("Base Map", 2D) = "white" {}
+    _LayerMap ("Layers", 2DArray) = "" {}
+    _ProbeMap ("Probes", CubeArray) = "" {}
     _Tint ("Tint", Color) = (1, 0.5, 0, 1)
     _Roughness ("Roughness", Range(0, 1)) = 0.5
   }
   SubShader {
     Tags { "LightMode"="UniversalForward" "RenderType"="Opaque" }
     LOD 100
+    UsePass "Hidden/SHADOWCASTER"
     Pass {
       Name "Forward"
       Cull Back

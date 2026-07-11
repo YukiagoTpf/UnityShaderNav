@@ -2,23 +2,10 @@ import type {
   Range,
   ShaderLabBlock,
   ShaderLabPropertyEntry,
-  ShaderLabPropertyType,
 } from '@unity-shader-nav/shared';
+import { asShaderLabPropertyType } from '../../vocabulary';
 import { maskCommentsLine } from '../masking';
 import { scanBlocks } from './blockScanner';
-
-const PROPERTY_TYPES = new Set<ShaderLabPropertyType>([
-  '2D',
-  '2DArray',
-  '3D',
-  'Cube',
-  'CubeArray',
-  'Color',
-  'Vector',
-  'Float',
-  'Range',
-  'Int',
-]);
 
 // Captures:
 //   1: optional decorator run (e.g. "[NoScaleOffset] [HDR] ")
@@ -122,10 +109,7 @@ export function scanProperties(
           // `\r` (CRLF) as a visible character.
           const trimmedEnd = rawLine.replace(/\s+$/, '').length;
 
-          const type: ShaderLabPropertyType | null =
-            (PROPERTY_TYPES as Set<string>).has(typeToken)
-              ? (typeToken as ShaderLabPropertyType)
-              : null;
+          const type = asShaderLabPropertyType(typeToken);
 
           entries.push({
             name,

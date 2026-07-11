@@ -1,6 +1,6 @@
 import type { ShaderSuggestion } from '../types';
 import type { SuggestionContext } from '../context';
-import { BUILTIN_ENTRIES } from '../../vocabulary';
+import { findBuiltinFunctions } from '../../vocabulary';
 import { builtinEntryToSuggestion } from './toSuggestion';
 
 export function collectBuiltinFunctionSuggestions(
@@ -9,11 +9,6 @@ export function collectBuiltinFunctionSuggestions(
 ): ShaderSuggestion[] {
   if (context.kind !== 'hlslCode') return [];
 
-  return BUILTIN_ENTRIES
-    .filter((entry) =>
-      entry.name === name
-      && entry.kind === 'function'
-      && Array.isArray(entry.parameters)
-    )
+  return findBuiltinFunctions(name)
     .map(builtinEntryToSuggestion);
 }

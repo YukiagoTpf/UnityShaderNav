@@ -1,3 +1,5 @@
+import type { ShaderLabPropertyType } from '@unity-shader-nav/shared';
+
 export type BuiltinCategory =
   | 'hlsl'
   | 'unitycg'
@@ -7,24 +9,112 @@ export type BuiltinCategory =
   | 'semantic';
 
 export interface BuiltinEntry {
-  name: string;
-  kind: 'function' | 'keyword' | 'semantic' | 'state' | 'macro' | 'type';
-  category: BuiltinCategory;
-  detail?: string;
-  documentation?: string;
-  insertText?: string;
-  returnType?: string;
-  parameters?: Array<{
-    name: string;
-    type: string;
-    documentation?: string;
-  }>;
+  readonly name: string;
+  readonly kind: 'function' | 'keyword' | 'semantic' | 'state' | 'macro' | 'type';
+  readonly category: BuiltinCategory;
+  readonly roles?: readonly BuiltinRole[];
+  readonly detail?: string;
+  readonly documentation?: string;
+  readonly insertText?: string;
+  readonly returnType?: string;
+  readonly parameters?: readonly {
+    readonly name: string;
+    readonly type: string;
+    readonly documentation?: string;
+  }[];
 }
+
+export type BuiltinRole =
+  | 'shaderLabKeyword'
+  | 'shaderLabRenderState'
+  | 'shaderLabStateValueContext'
+  | 'shaderLabStateValue'
+  | 'shaderLabPropertyType';
+
+export type BuiltinContext =
+  | 'hlsl'
+  | 'semantic'
+  | 'shaderLab'
+  | 'shaderLabStateValue';
+
+export type BuiltinLexicalContext = 'hlsl' | 'shaderLab' | 'shaderLabProperty';
+export type BuiltinLexicalRole = 'keyword' | 'function' | 'macro' | 'type' | 'semantic';
 
 const shaderLabStateDetail = 'ShaderLab render state';
 const shaderLabValueDetail = 'ShaderLab state value';
+const shaderLabPropertyTypeDetail = 'ShaderLab Property type';
 
-export const BUILTIN_ENTRIES = [
+function shaderLabKeyword(name: string, detail = 'ShaderLab keyword'): BuiltinEntry {
+  return {
+    name,
+    kind: 'keyword',
+    category: 'shaderlab',
+    roles: ['shaderLabKeyword'],
+    detail,
+  };
+}
+
+function shaderLabStateKeyword(name: string): BuiltinEntry {
+  return {
+    name,
+    kind: 'state',
+    category: 'shaderlab',
+    roles: ['shaderLabKeyword'],
+    detail: shaderLabStateDetail,
+  };
+}
+
+function shaderLabRenderState(name: string, acceptsValue = false): BuiltinEntry {
+  return {
+    name,
+    kind: 'state',
+    category: 'shaderlab',
+    roles: acceptsValue
+      ? ['shaderLabRenderState', 'shaderLabStateValueContext']
+      : ['shaderLabRenderState'],
+    detail: shaderLabStateDetail,
+  };
+}
+
+function shaderLabStateValue(name: string): BuiltinEntry {
+  return {
+    name,
+    kind: 'keyword',
+    category: 'shaderlab',
+    roles: ['shaderLabStateValue'],
+    detail: shaderLabValueDetail,
+  };
+}
+
+function shaderLabPropertyType(name: ShaderLabPropertyType): BuiltinEntry {
+  return {
+    name,
+    kind: 'type',
+    category: 'shaderlab',
+    roles: ['shaderLabPropertyType'],
+    detail: shaderLabPropertyTypeDetail,
+  };
+}
+
+const SHADERLAB_PROPERTY_TYPE_NAMES = {
+  '2D': true,
+  '2DArray': true,
+  '3D': true,
+  Cube: true,
+  CubeArray: true,
+  Color: true,
+  Vector: true,
+  Float: true,
+  Range: true,
+  Int: true,
+} satisfies Record<ShaderLabPropertyType, true>;
+
+function shaderLabPropertyTypes(): BuiltinEntry[] {
+  return (Object.keys(SHADERLAB_PROPERTY_TYPE_NAMES) as ShaderLabPropertyType[])
+    .map(shaderLabPropertyType);
+}
+
+const BUILTIN_ENTRIES = [
   {
     name: 'float2',
     kind: 'type',
@@ -397,65 +487,74 @@ export const BUILTIN_ENTRIES = [
   { name: 'SV_Target', kind: 'semantic', category: 'semantic', detail: 'System value semantic' },
   { name: 'SV_VertexID', kind: 'semantic', category: 'semantic', detail: 'System value semantic' },
   { name: 'SV_InstanceID', kind: 'semantic', category: 'semantic', detail: 'System value semantic' },
-  { name: 'Blend', kind: 'state', category: 'shaderlab', detail: shaderLabStateDetail },
-  { name: 'Cull', kind: 'state', category: 'shaderlab', detail: shaderLabStateDetail },
-  { name: 'ZWrite', kind: 'state', category: 'shaderlab', detail: shaderLabStateDetail },
-  { name: 'ZTest', kind: 'state', category: 'shaderlab', detail: shaderLabStateDetail },
-  { name: 'Offset', kind: 'state', category: 'shaderlab', detail: shaderLabStateDetail },
-  { name: 'ColorMask', kind: 'state', category: 'shaderlab', detail: shaderLabStateDetail },
-  { name: 'Tags', kind: 'state', category: 'shaderlab', detail: shaderLabStateDetail },
-  { name: 'LOD', kind: 'state', category: 'shaderlab', detail: shaderLabStateDetail },
-  { name: 'Pass', kind: 'keyword', category: 'shaderlab', detail: 'ShaderLab block keyword' },
-  { name: 'SubShader', kind: 'keyword', category: 'shaderlab', detail: 'ShaderLab block keyword' },
-  { name: 'Off', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'On', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'Back', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'Front', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'Always', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'LEqual', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'Less', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'Greater', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'Equal', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  // === Additional ShaderLab states ===
-  { name: 'Stencil', kind: 'state', category: 'shaderlab', detail: shaderLabStateDetail },
-  { name: 'BlendOp', kind: 'state', category: 'shaderlab', detail: shaderLabStateDetail },
-  { name: 'Lighting', kind: 'state', category: 'shaderlab', detail: shaderLabStateDetail },
-  { name: 'Material', kind: 'state', category: 'shaderlab', detail: shaderLabStateDetail },
-  { name: 'Fog', kind: 'state', category: 'shaderlab', detail: shaderLabStateDetail },
-  { name: 'AlphaToMask', kind: 'state', category: 'shaderlab', detail: shaderLabStateDetail },
-  { name: 'Conservative', kind: 'state', category: 'shaderlab', detail: shaderLabStateDetail },
-  { name: 'Name', kind: 'keyword', category: 'shaderlab', detail: 'ShaderLab Pass name declaration' },
-  { name: 'UsePass', kind: 'keyword', category: 'shaderlab', detail: 'ShaderLab pass reuse directive' },
-  { name: 'GrabPass', kind: 'keyword', category: 'shaderlab', detail: 'ShaderLab grab pass directive' },
-  { name: 'Fallback', kind: 'keyword', category: 'shaderlab', detail: 'ShaderLab fallback shader directive' },
-  { name: 'CustomEditor', kind: 'keyword', category: 'shaderlab', detail: 'ShaderLab custom inspector directive' },
-  { name: 'Category', kind: 'keyword', category: 'shaderlab', detail: 'ShaderLab category block keyword' },
-  // === Additional ShaderLab state values (blend factors, blend ops, ztest, stencil ops) ===
-  { name: 'Zero', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'One', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'SrcColor', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'SrcAlpha', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'DstColor', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'DstAlpha', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'OneMinusSrcColor', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'OneMinusSrcAlpha', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'OneMinusDstColor', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'OneMinusDstAlpha', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'Add', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'Sub', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'RevSub', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'Min', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'Max', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'Never', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'GEqual', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'NotEqual', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'Replace', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'Keep', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'Invert', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'IncrSat', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'DecrSat', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'IncrWrap', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
-  { name: 'DecrWrap', kind: 'keyword', category: 'shaderlab', detail: shaderLabValueDetail },
+  // === ShaderLab syntax and semantic roles ===
+  shaderLabKeyword('Shader', 'ShaderLab Shader block keyword'),
+  shaderLabKeyword('Properties', 'ShaderLab Properties block keyword'),
+  shaderLabKeyword('SubShader', 'ShaderLab SubShader block keyword'),
+  shaderLabKeyword('Pass', 'ShaderLab Pass block keyword'),
+  shaderLabKeyword('Name', 'ShaderLab Pass name declaration'),
+  shaderLabKeyword('UsePass', 'ShaderLab pass reuse directive'),
+  shaderLabKeyword('GrabPass', 'ShaderLab grab pass directive'),
+  shaderLabKeyword('Fallback', 'ShaderLab fallback shader directive'),
+  shaderLabKeyword('CustomEditor', 'ShaderLab custom inspector directive'),
+  shaderLabKeyword('Category', 'ShaderLab category block keyword'),
+  shaderLabKeyword('HLSLPROGRAM', 'ShaderLab HLSL program marker'),
+  shaderLabKeyword('ENDHLSL', 'ShaderLab HLSL program marker'),
+  shaderLabKeyword('CGPROGRAM', 'ShaderLab CG program marker'),
+  shaderLabKeyword('ENDCG', 'ShaderLab CG program marker'),
+  shaderLabKeyword('HLSLINCLUDE', 'ShaderLab HLSL include marker'),
+  shaderLabKeyword('CGINCLUDE', 'ShaderLab CG include marker'),
+  shaderLabRenderState('Blend', true),
+  shaderLabRenderState('Cull', true),
+  shaderLabRenderState('ZWrite', true),
+  shaderLabRenderState('ZTest', true),
+  shaderLabRenderState('Offset', true),
+  shaderLabRenderState('ColorMask', true),
+  shaderLabStateKeyword('Tags'),
+  shaderLabStateKeyword('LOD'),
+  shaderLabRenderState('Stencil'),
+  shaderLabRenderState('BlendOp', true),
+  shaderLabRenderState('Lighting', true),
+  shaderLabRenderState('Material'),
+  shaderLabRenderState('Fog', true),
+  shaderLabRenderState('AlphaToMask', true),
+  shaderLabRenderState('Conservative', true),
+  ...shaderLabPropertyTypes(),
+  // === ShaderLab state values (blend factors, blend ops, ztest, stencil ops) ===
+  shaderLabStateValue('Off'),
+  shaderLabStateValue('On'),
+  shaderLabStateValue('Back'),
+  shaderLabStateValue('Front'),
+  shaderLabStateValue('Always'),
+  shaderLabStateValue('LEqual'),
+  shaderLabStateValue('Less'),
+  shaderLabStateValue('Greater'),
+  shaderLabStateValue('Equal'),
+  shaderLabStateValue('Zero'),
+  shaderLabStateValue('One'),
+  shaderLabStateValue('SrcColor'),
+  shaderLabStateValue('SrcAlpha'),
+  shaderLabStateValue('DstColor'),
+  shaderLabStateValue('DstAlpha'),
+  shaderLabStateValue('OneMinusSrcColor'),
+  shaderLabStateValue('OneMinusSrcAlpha'),
+  shaderLabStateValue('OneMinusDstColor'),
+  shaderLabStateValue('OneMinusDstAlpha'),
+  shaderLabStateValue('Add'),
+  shaderLabStateValue('Sub'),
+  shaderLabStateValue('RevSub'),
+  shaderLabStateValue('Min'),
+  shaderLabStateValue('Max'),
+  shaderLabStateValue('Never'),
+  shaderLabStateValue('GEqual'),
+  shaderLabStateValue('NotEqual'),
+  shaderLabStateValue('Replace'),
+  shaderLabStateValue('Keep'),
+  shaderLabStateValue('Invert'),
+  shaderLabStateValue('IncrSat'),
+  shaderLabStateValue('DecrSat'),
+  shaderLabStateValue('IncrWrap'),
+  shaderLabStateValue('DecrWrap'),
   // === Additional shader semantics ===
   { name: 'TEXCOORD2', kind: 'semantic', category: 'semantic', detail: 'Shader semantic' },
   { name: 'TEXCOORD3', kind: 'semantic', category: 'semantic', detail: 'Shader semantic' },
@@ -484,3 +583,96 @@ export const BUILTIN_ENTRIES = [
   { name: 'PSIZE', kind: 'semantic', category: 'semantic', detail: 'Shader semantic' },
   { name: 'VFACE', kind: 'semantic', category: 'semantic', detail: 'Shader semantic' },
 ] satisfies readonly BuiltinEntry[];
+
+const EMPTY_ENTRIES: readonly BuiltinEntry[] = Object.freeze([]);
+const ENTRIES_BY_NAME = new Map<string, readonly BuiltinEntry[]>();
+
+for (const entry of BUILTIN_ENTRIES) {
+  ENTRIES_BY_NAME.set(entry.name, [
+    ...(ENTRIES_BY_NAME.get(entry.name) ?? EMPTY_ENTRIES),
+    entry,
+  ]);
+}
+
+function hasRole(entry: BuiltinEntry, role: BuiltinRole): boolean {
+  return entry.roles?.includes(role) ?? false;
+}
+
+const ENTRIES_BY_CONTEXT: Readonly<Record<BuiltinContext, readonly BuiltinEntry[]>> = {
+  hlsl: BUILTIN_ENTRIES.filter((entry) => (
+    entry.category === 'hlsl'
+    || entry.category === 'unitycg'
+    || entry.category === 'urp'
+    || entry.category === 'hdrp'
+  )),
+  semantic: BUILTIN_ENTRIES.filter((entry) => entry.kind === 'semantic'),
+  shaderLab: BUILTIN_ENTRIES.filter((entry) => (
+    entry.category === 'shaderlab' && !hasRole(entry, 'shaderLabStateValue')
+  )),
+  shaderLabStateValue: BUILTIN_ENTRIES.filter((entry) => (
+    hasRole(entry, 'shaderLabStateValue')
+  )),
+};
+
+/** Exact-name lookup used by Hover and other name-oriented projections. */
+export function findBuiltinEntries(name: string): readonly BuiltinEntry[] {
+  return ENTRIES_BY_NAME.get(name) ?? EMPTY_ENTRIES;
+}
+
+/** Context projection used by Completion without reinterpreting category/kind. */
+export function builtinEntriesForContext(
+  context: BuiltinContext,
+): readonly BuiltinEntry[] {
+  return ENTRIES_BY_CONTEXT[context];
+}
+
+/** Exact callable lookup used by Signature Help. */
+export function findBuiltinFunctions(name: string): readonly BuiltinEntry[] {
+  return findBuiltinEntries(name).filter((entry) => (
+    entry.kind === 'function' && entry.parameters !== undefined
+  ));
+}
+
+/** Neutral lexical projection consumed by parsing-derived semantic coloring. */
+export function builtinLexicalRole(
+  name: string,
+  context: BuiltinLexicalContext,
+): BuiltinLexicalRole | undefined {
+  for (const entry of findBuiltinEntries(name)) {
+    switch (context) {
+      case 'hlsl':
+        if (entry.category === 'shaderlab') break;
+        if (entry.kind === 'function' || entry.kind === 'macro' || entry.kind === 'type') {
+          return entry.kind;
+        }
+        if (entry.kind === 'semantic') return 'semantic';
+        break;
+      case 'shaderLab':
+        if (
+          hasRole(entry, 'shaderLabKeyword')
+          || hasRole(entry, 'shaderLabRenderState')
+        ) return 'keyword';
+        break;
+      case 'shaderLabProperty':
+        if (hasRole(entry, 'shaderLabPropertyType')) return 'type';
+        break;
+    }
+  }
+  return undefined;
+}
+
+/** Parse one authoritative ShaderLab Property type term. */
+export function asShaderLabPropertyType(name: string): ShaderLabPropertyType | null {
+  return findBuiltinEntries(name).some((entry) => (
+    hasRole(entry, 'shaderLabPropertyType')
+  ))
+    ? name as ShaderLabPropertyType
+    : null;
+}
+
+/** Whether a ShaderLab command head admits the curated state-value context. */
+export function isShaderLabStateValueContext(name: string): boolean {
+  return findBuiltinEntries(name).some((entry) => (
+    hasRole(entry, 'shaderLabStateValueContext')
+  ));
+}

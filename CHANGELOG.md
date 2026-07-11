@@ -33,6 +33,10 @@ and uses semantic versioning for extension releases.
 - Moved shared shader vocabulary behind a neutral domain interface and added a
   transitive dependency check that keeps parser modules independent of
   suggestion-specific code.
+- Made the neutral built-in vocabulary authoritative for ShaderLab keyword,
+  render-state, state-value, and Property-type roles. Semantic coloring,
+  Properties, cursor classification, Completion, Hover, and Signature Help now
+  use narrow vocabulary projections instead of caller-local name lists.
 - Narrowed cursor analysis to three runtime entry points and centralized the
   inclusive position geometry shared by navigation and suggestion visibility.
 - Added end-to-end index lifecycle status for every workspace root, including
@@ -75,6 +79,9 @@ and uses semantic versioning for extension releases.
 
 ### Fixed
 
+- `UsePass` now receives ShaderLab keyword semantic coloring, and `2DArray` /
+  `CubeArray` Properties receive the same type classification and coloring as
+  the other curated Property types.
 - Signature Help now selects the first arity-compatible overload before
   clamping the active parameter, so a second argument focuses a compatible
   two-parameter candidate while retaining one-parameter and ambiguous results.

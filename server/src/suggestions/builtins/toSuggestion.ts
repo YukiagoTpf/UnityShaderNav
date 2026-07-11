@@ -11,6 +11,6 @@ export function builtinEntryToSuggestion(entry: BuiltinEntry): ShaderSuggestion 
     insertText: entry.insertText,
     sortText: `9_${entry.name}`,
     returnType: entry.returnType,
-    parameters: entry.parameters,
+    parameters: entry.parameters?.map((parameter) => ({ ...parameter })),
   };
 }

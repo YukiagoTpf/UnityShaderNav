@@ -1,4 +1,5 @@
 import type { Position, Range } from '@unity-shader-nav/shared';
+import { isShaderLabStateValueContext } from '../../vocabulary';
 import { scanBlocks } from '../shaderlab/blockScanner';
 import { scanCommentRoles } from '../masking';
 
@@ -265,24 +266,10 @@ function isSemanticPosition(lineText: string, prefix: CompletionPrefix): boolean
   return /^[A-Za-z_][A-Za-z0-9_<>,\s*&]*\s+[A-Za-z_][A-Za-z0-9_]*\s*\([^)]*\)$/.test(segment);
 }
 
-const SHADERLAB_STATE_VALUE_CONTEXTS = new Set([
-  'Blend',
-  'BlendOp',
-  'Cull',
-  'ZWrite',
-  'ZTest',
-  'Offset',
-  'ColorMask',
-  'AlphaToMask',
-  'Lighting',
-  'Fog',
-  'Conservative',
-]);
-
 function isShaderLabStateValuePosition(lineText: string, prefix: CompletionPrefix): boolean {
   const beforePrefix = lineText.slice(0, prefix.range.start.character).trimEnd();
   const match = /\b([A-Za-z][A-Za-z0-9_]*)$/.exec(beforePrefix);
-  return match ? SHADERLAB_STATE_VALUE_CONTEXTS.has(match[1]) : false;
+  return match ? isShaderLabStateValueContext(match[1]) : false;
 }
 
 export interface CursorClassification {

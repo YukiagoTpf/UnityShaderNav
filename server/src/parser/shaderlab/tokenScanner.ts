@@ -1,6 +1,9 @@
 import type { Range, ShaderLabBlock } from '@unity-shader-nav/shared';
 import { BUILTIN_DECLARATION_MACROS } from '../../macros/builtin';
-import { BUILTIN_ENTRIES } from '../../vocabulary';
+import {
+  asShaderLabPropertyType,
+  builtinLexicalRole,
+} from '../../vocabulary';
 import { maskCommentsLine } from '../masking';
 
 export type ShaderLabLexicalTokenType =
@@ -19,61 +22,12 @@ export interface ShaderLabLexicalToken {
   tokenType: ShaderLabLexicalTokenType;
 }
 
-const SHADERLAB_KEYWORDS = new Set([
-  'Shader',
-  'Properties',
-  'SubShader',
-  'Pass',
-  'Tags',
-  'Name',
-  'LOD',
-  'Blend',
-  'Cull',
-  'ZWrite',
-  'ZTest',
-  'Offset',
-  'ColorMask',
-  'Stencil',
-  'HLSLPROGRAM',
-  'ENDHLSL',
-  'CGPROGRAM',
-  'ENDCG',
-  'HLSLINCLUDE',
-  'CGINCLUDE',
-]);
-
-const PROPERTY_TYPES = new Set([
-  '2D',
-  '3D',
-  'Cube',
-  'Color',
-  'Vector',
-  'Float',
-  'Range',
-  'Int',
-]);
-
-const BUILTIN_TOKEN_TYPES = new Map<string, ShaderLabLexicalTokenType>(
-  BUILTIN_ENTRIES.flatMap((entry): Array<[string, ShaderLabLexicalTokenType]> => {
-    switch (entry.kind) {
-      case 'function':
-      case 'macro':
-      case 'type':
-        return [[entry.name, entry.kind]];
-      case 'semantic':
-        return [[entry.name, 'enumMember']];
-      case 'keyword':
-      case 'state':
-        return [];
-    }
-  }),
+const BUILTIN_DECLARATION_MACRO_NAMES = new Set(
+  BUILTIN_DECLARATION_MACROS.map((macro) => macro.pattern.split('(')[0]),
 );
 
-for (const macro of BUILTIN_DECLARATION_MACROS) {
-  BUILTIN_TOKEN_TYPES.set(macro.pattern.split('(')[0], 'macro');
-}
-
 const WORD_RE = /[A-Za-z_][A-Za-z0-9_]*/g;
+const TERM_RE = /[A-Za-z0-9_]+/g;
 const NUMBER_RE = /(?<![A-Za-z_])\d+(?:\.\d+)?(?![A-Za-z_])/g;
 const STRING_RE = /"([^"\\]*(?:\\.[^"\\]*)*)"/g;
 const SWIZZLE_RE = /\.(?:[xyzw]{1,4}|[rgba]{1,4})\b/g;
@@ -131,10 +85,6 @@ function countChar(text: string, ch: string): number {
   return count;
 }
 
-function keywordPattern(words: ReadonlySet<string>): RegExp {
-  return new RegExp(`\\b(?:${[...words].sort((a, b) => b.length - a.length).join('|')})\\b`, 'g');
-}
-
 function tokenKey(token: ShaderLabLexicalToken): string {
   const { range } = token;
   return [
@@ -155,8 +105,6 @@ export function scanShaderLabTokens(
   const tokens: ShaderLabLexicalToken[] = [];
   const seen = new Set<string>();
   const commentState: CommentState = { inBlockComment: false };
-  const shaderLabKeywordRe = keywordPattern(SHADERLAB_KEYWORDS);
-  const propertyTypeRe = keywordPattern(PROPERTY_TYPES);
   let propertiesDepth = 0;
   let tagsDepth = 0;
   let blockIndex = 0;
@@ -194,7 +142,8 @@ export function scanShaderLabTokens(
 
     scanStrings(lineNo, code, 'string');
 
-    for (const match of codeNoStrings.matchAll(propertyTypeRe)) {
+    for (const match of codeNoStrings.matchAll(TERM_RE)) {
+      if (!asShaderLabPropertyType(match[0])) continue;
       push(lineNo, match.index ?? 0, (match.index ?? 0) + match[0].length, 'type');
     }
 
@@ -247,7 +196,12 @@ export function scanShaderLabTokens(
     }
 
     for (const match of codeNoStrings.matchAll(WORD_RE)) {
-      const tokenType = BUILTIN_TOKEN_TYPES.get(match[0]);
+      const lexicalRole = builtinLexicalRole(match[0], 'hlsl');
+      const tokenType: ShaderLabLexicalTokenType | undefined = lexicalRole === 'semantic'
+        ? 'enumMember'
+        : lexicalRole ?? (
+          BUILTIN_DECLARATION_MACRO_NAMES.has(match[0]) ? 'macro' : undefined
+        );
       if (!tokenType) continue;
       push(lineNo, match.index ?? 0, (match.index ?? 0) + match[0].length, tokenType);
     }
@@ -259,7 +213,8 @@ export function scanShaderLabTokens(
   }
 
   function scanShaderLabKeywords(lineNo: number, code: string): void {
-    for (const match of code.matchAll(shaderLabKeywordRe)) {
+    for (const match of code.matchAll(WORD_RE)) {
+      if (builtinLexicalRole(match[0], 'shaderLab') !== 'keyword') continue;
       push(lineNo, match.index ?? 0, (match.index ?? 0) + match[0].length, 'keyword');
     }
   }

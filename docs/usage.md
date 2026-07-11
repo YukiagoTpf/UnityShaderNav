@@ -78,9 +78,10 @@ multiline comments or string literals do not create or reshape Outline nodes.
 
 The language server provides semantic tokens for common HLSL and ShaderLab
 syntax. In `.shader` files this includes ShaderLab block keywords, Properties
-entries, Tags keys and values, render-state directives, HLSL preprocessor
-directives and include paths, macro-style declarations, shader semantics,
-members, functions, swizzles, and indexed project symbols.
+entries and types (including `2DArray` and `CubeArray`), Tags keys and values,
+render-state and `UsePass` directives, HLSL preprocessor directives and include
+paths, macro-style declarations, shader semantics, members, functions,
+swizzles, and indexed project symbols.
 
 Semantic coloring depends on the active VS Code theme. Themes with semantic
 highlighting disabled or sparse semantic token rules may show less visible

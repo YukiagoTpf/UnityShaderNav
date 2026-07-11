@@ -73,6 +73,13 @@ npm run grammar:rebuild
   references, Agent entrypoints, and the vendored grammar provenance, artifact,
   and upstream license.
 - Parser and index behavior belongs in server unit tests.
+- Shared built-in language facts belong in `vocabulary.ts` roles and narrow
+  projections. Do not add caller-local ShaderLab keyword, Property-type,
+  state-head, or state-value name sets. Vocabulary tests must cover the role,
+  exact lookup, context, callable, lexical, and Property-type APIs; consumer
+  tests must prove the resulting parser, Completion, Hover, and Signature Help
+  behavior. Extension Host semantic-token tests decode exact token positions
+  and types for cross-consumer vocabulary changes.
 - Parser-runtime tests cover the source, tsc-out, copied-server, and bundled
   layouts with real grammar loading. They must prove that parser readiness,
   implementation identity, and cache fingerprints consume the same captured

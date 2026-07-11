@@ -284,12 +284,22 @@ Find References. Conservative inactive-region dimming remains a separate
 client presentation layer and does not alter analysis, index, or token facts.
 
 Built-in vocabulary entries and their neutral metadata live behind the single
-`server/src/vocabulary.ts` production interface. Parsing-derived semantic
-coloring and hover consume that interface directly; completion and signature
-help adapt it into suggestion-specific results. Parser modules must not import
-suggestion modules, including through transitive imports. When adding a new
-category or changing metadata, update the direct vocabulary tests plus the
-projection tests for each affected consumer.
+`server/src/vocabulary.ts` production interface. Stable roles distinguish
+ShaderLab keywords, render states, state-value heads and values, and Property
+types. Exact-name Hover lookup, Completion contexts, callable Signature Help,
+lexical coloring, cursor state contexts, and Property parsing each consume a
+narrow neutral projection; no consumer reads a raw catalog or reinterprets
+category/kind with a private name list. Parser modules must not import
+suggestion modules, including through transitive imports.
+
+The curated Property-type contract includes `2DArray` and `CubeArray`, and
+ShaderLab lexical coloring classifies `UsePass` as a keyword. These facts follow
+the Unity 6 [UsePass directive reference](https://docs.unity3d.com/6000.0/Documentation/Manual/SL-UsePass.html)
+and [Properties block reference](https://docs.unity3d.com/6000.0/Documentation/Manual/SL-Properties.html).
+The catalog intentionally retains its existing `Int` scope instead of claiming
+every current or package-specific language term. When adding a shared term,
+assign its vocabulary role and update direct API tests plus every affected
+consumer projection; do not add a caller-local term set.
 
 Cursor-sensitive features consume the lexical cursor module through three
 runtime entry points: full `analyzeCursor`, completion-oriented

@@ -135,6 +135,26 @@ describe('scanProperties', () => {
     ]);
   });
 
+  it('keeps authoritative Property type matching case-sensitive', () => {
+    const text = shader(
+      'Shader "Test/TypeCase" {',
+      '  Properties {',
+      '    _Good2DArray ("Good", 2DArray) = "" {}',
+      '    _GoodCubeArray ("Good", CubeArray) = "" {}',
+      '    _Bad2DArray ("Bad", 2darray) = "" {}',
+      '    _BadCubeArray ("Bad", cubearray) = "" {}',
+      '  }',
+      '}',
+    );
+
+    expect(scanProperties(text).map((entry) => [entry.name, entry.type])).toEqual([
+      ['_Good2DArray', '2DArray'],
+      ['_GoodCubeArray', 'CubeArray'],
+      ['_Bad2DArray', null],
+      ['_BadCubeArray', null],
+    ]);
+  });
+
   it('handles a single leading decorator', () => {
     const text = shader(
       'Shader "Test/Deco" {',

@@ -135,7 +135,7 @@ _Avoid_: completion mode, parser state
 _Avoid_: autocomplete symbol, completion cache
 
 **Built-in vocabulary**:
-独立于 parser 和 suggestion 展示形态的精选 Unity/HLSL/ShaderLab 领域词表。解析衍生的语义着色、hover、补全和部分内置函数签名帮助都从这一个词表投影；它不是编译器完整标准库，也不应该假装覆盖所有 pipeline/package 版本。
+独立于 parser 和 suggestion 展示形态的精选 Unity/HLSL/ShaderLab 领域词表。词条携带稳定的 ShaderLab keyword、render state、state-value context/value 和 Property type 角色；解析衍生的语义着色、Properties、hover、补全和部分内置函数签名帮助只通过中立的精确查询、上下文投影、词法角色和类型转换接口消费这些事实。它不是编译器完整标准库，也不应该假装覆盖所有 pipeline/package 版本。
 _Avoid_: standard library, compiler symbols
 
 **Signature help**:

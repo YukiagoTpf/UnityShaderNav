@@ -57,6 +57,24 @@ describe('built-in suggestion filtering', () => {
     expect(result).not.toContain('Off');
   });
 
+  it('projects authoritative ShaderLab directives and Property types in outer code', () => {
+    const shader = 'Shader "T/Test" { SubShader {  } }';
+    const result = names(
+      shader,
+      0,
+      shader.indexOf(' }'),
+      'shaderlab',
+      'file:///t/test.shader',
+    );
+
+    expect(result).toEqual(expect.arrayContaining([
+      'UsePass',
+      '2DArray',
+      'CubeArray',
+    ]));
+    expect(result).not.toContain('Off');
+  });
+
   it('returns ShaderLab state values after state names', () => {
     const shader = 'Shader "T/Test" { SubShader { Pass { Cull  } } }';
     const result = names(shader, 0, 43, 'shaderlab', 'file:///t/test.shader');
@@ -90,6 +108,9 @@ describe('built-in suggestion filtering', () => {
 
     expect(result).not.toContain('SV_Target');
     expect(result).not.toContain('Off');
+    expect(result).not.toContain('UsePass');
+    expect(result).not.toContain('2DArray');
+    expect(result).not.toContain('CubeArray');
   });
 
   it('surfaces URP and HDRP entries together in generic HLSL code', () => {
