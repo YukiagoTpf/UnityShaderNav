@@ -41,6 +41,12 @@ and uses semantic versioning for extension releases.
   last-known-good revision and retain it after failure. All index-backed LSP
   queries now use Workspace behavior, while mutable index stores remain private
   to candidate construction.
+- Shared one immutable, exact-source ShaderLab `DocumentAnalysis` between file
+  indexing and Semantic Tokens. Index-only analysis is temporary; only a
+  committed open-document attempt retains full lexical facts with its published
+  revision. Close or replacement drops them from the next publication, while a
+  reader that already captured the prior revision retains its self-consistent
+  facts until it finishes. Source analysis is never persisted or globally cached.
 
 ### Fixed
 

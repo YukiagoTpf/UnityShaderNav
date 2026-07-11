@@ -17,6 +17,7 @@ import type {
   SymbolEntry,
   SymbolKind,
 } from '@unity-shader-nav/shared';
+import type { DocumentLexicalToken } from '../analysis';
 import { formatHoverCandidates, type HoverInput } from '../hover';
 import {
   collectVisibleUriKeys,
@@ -28,7 +29,6 @@ import {
 import { buildDocumentSymbols } from '../index/documentSymbols';
 import { HIDDEN_SYMBOL_KINDS, SYMBOL_KIND_MAP } from '../index/symbolKindMap';
 import { isGenericDefinitionContext } from '../parser/lexical/context';
-import { scanShaderLabTokens } from '../parser/shaderlab/tokenScanner';
 import {
   callContextAt,
   collectBuiltinFunctionSuggestions,
@@ -287,10 +287,11 @@ export function queryDocumentSymbols(
 export function querySemanticTokens(
   state: WorkspaceQueryState,
   input: IndexedDocumentQueryInput,
+  lexicalTokens?: readonly DocumentLexicalToken[],
 ): SemanticTokens {
   const index = state.index.store.get(input.uri);
   return index
-    ? semanticTokensForIndex(index, state.index.global, input.document?.text)
+    ? semanticTokensForIndex(index, state.index.global, lexicalTokens)
     : { data: [] };
 }
 
@@ -423,7 +424,7 @@ function referenceTokenType(
 function semanticTokensForIndex(
   index: FileIndex,
   global?: SymbolLookup,
-  text?: string,
+  lexicalTokens?: readonly DocumentLexicalToken[],
 ): SemanticTokens {
   const macroNames = new Set(index.symbols
     .filter((symbol) => symbol.kind === 'macro')
@@ -444,8 +445,8 @@ function semanticTokensForIndex(
     const tokenType = referenceTokenType(reference, macroNames);
     if (tokenType) tokens.push({ range: reference.location.range, tokenType });
   }
-  if (text && /\.shader(?:$|[?#])/i.test(index.uri)) {
-    for (const token of scanShaderLabTokens(text)) {
+  if (lexicalTokens) {
+    for (const token of lexicalTokens) {
       tokens.push({ range: token.range, tokenType: token.tokenType });
     }
   }

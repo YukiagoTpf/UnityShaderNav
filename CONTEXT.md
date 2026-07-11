@@ -39,6 +39,10 @@ _Avoid_: symbol record, symbol info
 **Proximity tie-break**:
 同函数内多个同名局部变量声明（如不同 block scope 里重复用 `temp`）的 F12 消歧策略——返回引用位置之前最近的可见声明。
 
+**Document analysis**:
+`DocumentAnalysis` 是从一份完全匹配的 ShaderLab 源码快照派生出的不可变事实：按源码顺序排列的 HLSL/CG blocks，以及 full analysis 才包含的可选 ShaderLab lexical tokens。磁盘和其他 index-only 路径只临时构造并立即丢弃 analysis；只有当前 open-document attempt 的 full analysis 与对应 **Published indexed revision** 同寿命，供 Semantic Tokens 复用。文档关闭或 attempt 被替换时，下一 revision 不再持有它；已捕获的旧 revision 仍保持自洽，直到其 reader 释放。Analysis 不进入 `FileIndex`、磁盘索引记录、manifest、持久化缓存或进程级缓存。
+_Avoid_: document cache, parse cache, global analysis cache
+
 ### 索引生命周期
 
 **Cold start**:

@@ -103,6 +103,26 @@ async function publishTextFiles(
   return publishIndexes(folderUri, indexes);
 }
 
+async function publishOpenDocument(
+  folderUri: string,
+  document: IndexedDocumentSnapshot,
+): Promise<PublishedIndexedRevision> {
+  const settings = DEFAULT_SETTINGS;
+  const builder = IndexedRevisionBuilder.create({
+    folderUri,
+    settings,
+    unityRoot: undefined,
+    packages: PackageContext.standalone(settings),
+    cache: undefined,
+    fingerprint: undefined,
+  });
+  const candidate = await builder.prepareDocument(document, () => true);
+  if (!candidate || !builder.commitDocument(document, candidate, () => true)) {
+    throw new Error(`failed to prepare ${document.uri}`);
+  }
+  return builder.publish(1);
+}
+
 interface DecodedToken {
   readonly line: number;
   readonly character: number;
@@ -343,11 +363,12 @@ describe('published query behavior', () => {
       '  }',
       '}',
     ].join('\n');
-    const revision = await publishTextFiles('file:///project', [{ uri, text }]);
+    const document = snapshot(uri, text);
+    const revision = await publishOpenDocument('file:///project', document);
 
     const tokens = decodeTokens(revision.semanticTokens({
       uri,
-      document: snapshot(uri, text),
+      document,
     }));
     const rendered = tokenTexts(text, tokens);
 
@@ -407,11 +428,12 @@ describe('published query behavior', () => {
       '  }',
       '}',
     ].join('\n');
-    const revision = await publishTextFiles('file:///project', [{ uri, text }]);
+    const document = snapshot(uri, text);
+    const revision = await publishOpenDocument('file:///project', document);
 
     const tokens = decodeTokens(revision.semanticTokens({
       uri,
-      document: snapshot(uri, text),
+      document,
     }));
     const rendered = tokenTexts(text, tokens);
 

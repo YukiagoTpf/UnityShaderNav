@@ -7,6 +7,11 @@ import type {
   SymbolEntry,
   UserDeclarationMacro,
 } from '@unity-shader-nav/shared';
+import {
+  analyzeDocument,
+  type DocumentAnalysis,
+  type DocumentAnalysisDemand,
+} from '../analysis';
 import { GlobalReferenceIndex, GlobalSymbolIndex, IndexStore } from '../index';
 import { uriKey } from '../uriKey';
 import { MacroPatternTable } from '../macros';
@@ -21,7 +26,14 @@ export type DocumentIndexer = (
   uri: string,
   text: string,
   table: MacroPatternTable,
+  analysis?: DocumentAnalysis,
 ) => Promise<FileIndex>;
+
+export type DocumentAnalyzer = (
+  uri: string,
+  text: string,
+  demand: DocumentAnalysisDemand,
+) => DocumentAnalysis | undefined;
 
 export interface DiskSourceIdentity {
   readonly mtimeMs: number;
@@ -36,6 +48,7 @@ export interface DiskIndexRecord {
 export interface PreparedDocumentIndex {
   readonly uri: string;
   readonly liveIndex: FileIndex;
+  readonly liveAnalysis: DocumentAnalysis | undefined;
   /** undefined: keep scan state; null: standalone file has no disk form. */
   readonly diskIndex: DiskIndexRecord | null | undefined;
 }
@@ -75,18 +88,21 @@ export class WorkspaceIndex {
   private readonly table: MacroPatternTable;
   private readonly standalone: boolean;
   private readonly indexDocument: DocumentIndexer;
+  private readonly analyzeSource: DocumentAnalyzer;
   readonly read: WorkspaceIndexReadView;
 
   constructor(
     declarationMacros: readonly UserDeclarationMacro[] | MacroPatternTable,
     standalone: boolean | (() => boolean),
     indexDocument: DocumentIndexer = indexFile,
+    analyzeSource: DocumentAnalyzer = analyzeDocument,
   ) {
     this.table = declarationMacros instanceof MacroPatternTable
       ? declarationMacros
       : new MacroPatternTable([...declarationMacros]);
     this.standalone = typeof standalone === 'function' ? standalone() : standalone;
     this.indexDocument = indexDocument;
+    this.analyzeSource = analyzeSource;
     this.read = Object.freeze({
       store: Object.freeze({
         get: (uri: string) => this.store.get(uri),
@@ -104,7 +120,12 @@ export class WorkspaceIndex {
 
   /** Copy-on-write base for an incremental candidate. */
   fork(): WorkspaceIndex {
-    const next = new WorkspaceIndex(this.table, this.standalone, this.indexDocument);
+    const next = new WorkspaceIndex(
+      this.table,
+      this.standalone,
+      this.indexDocument,
+      this.analyzeSource,
+    );
 
     for (const [key, diskIndex] of this.diskIndexes) {
       next.diskIndexes.set(key, diskIndex);
@@ -218,7 +239,9 @@ export class WorkspaceIndex {
     text: string,
     shouldContinue: () => boolean = () => true,
   ): Promise<PreparedDocumentIndex | undefined> {
-    const liveIndex = await this.createFileIndex(uri, text);
+    if (!shouldContinue()) return undefined;
+    const liveAnalysis = this.analyzeSource(uri, text, 'full');
+    const liveIndex = await this.createFileIndex(uri, text, liveAnalysis);
     if (!shouldContinue()) return undefined;
 
     let diskIndex: DiskIndexRecord | null | undefined;
@@ -226,7 +249,12 @@ export class WorkspaceIndex {
       diskIndex = await this.readStandaloneDiskIndex(uri, text, liveIndex);
       if (!shouldContinue()) return undefined;
     }
-    return { uri, liveIndex, diskIndex };
+    return {
+      uri,
+      liveIndex,
+      liveAnalysis,
+      diskIndex,
+    };
   }
 
   commitDocument(
@@ -293,8 +321,13 @@ export class WorkspaceIndex {
     return Object.freeze({ index, source: source.identity });
   }
 
-  private async createFileIndex(uri: string, text: string): Promise<FileIndex> {
-    return freezeFileIndex(await this.indexDocument(uri, text, this.table));
+  private async createFileIndex(
+    uri: string,
+    text: string,
+    preparedAnalysis?: DocumentAnalysis,
+  ): Promise<FileIndex> {
+    const analysis = preparedAnalysis ?? this.analyzeSource(uri, text, 'index');
+    return freezeFileIndex(await this.indexDocument(uri, text, this.table, analysis));
   }
 
   private setEffective(index: FileIndex): void {

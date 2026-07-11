@@ -51,7 +51,7 @@ VS Code extension client
 Language server
   - detects Unity project roots
   - scans user files and resolved package files
-  - parses ShaderLab blocks and HLSL syntax
+  - derives exact-source ShaderLab document analysis and parses HLSL syntax
   - builds symbol/reference indexes
   - answers LSP definition, references, symbols, highlight, and semantic-token requests
   - persists cache under Library/UnityShaderNavCache
@@ -144,6 +144,20 @@ canonical key for both live attempts and disk baselines. Parser/index exceptions
 discard the candidate, fail the workspace lifecycle, and are observed by
 fire-and-forget document routing instead of becoming unhandled promise
 rejections.
+
+For an exact ShaderLab open-document attempt, preparation produces one
+immutable `DocumentAnalysis`: ordered HLSL/CG block ranges plus ShaderLab
+lexical tokens. The same block ranges feed file indexing and Properties
+scanning. A successful publication keeps the full analysis beside that live
+overlay in the `PublishedIndexedRevision`, so Semantic Tokens reads facts from
+the same committed source and attempt as the index. Close or replacement by a
+newer attempt removes it from the next publication; a request that already
+captured the prior revision keeps a self-consistent immutable result. Disk and
+other index-only paths use a temporary analysis only while creating the
+`FileIndex`; analysis and its source text are not fields of `FileIndex`,
+`DiskIndexRecord`, cache
+manifests, persisted cache records, or a process-wide cache. Cache restoration
+therefore restores indexes without reconstructing source analysis.
 
 Workspace routing changes also form an ownership boundary. Adding a nested root
 removes its open-document overlays from the former parent before the nested
@@ -242,12 +256,15 @@ Built-in functions participate in signature help only when the catalog includes
 parameter metadata.
 
 Semantic coloring combines index-derived HLSL tokens with lexical ShaderLab
-tokens. The index remains the source for project symbols such as functions,
-variables, parameters, structs, struct members, and macros. The lexical pass
-fills visible ShaderLab and highlight-only HLSL gaps: ShaderLab blocks,
-Properties, Tags, render states, preprocessor directives, include paths,
-macro-style declaration heads, shader semantics, and swizzles. Highlight-only
-tokens do not participate in Go to Definition or Find References.
+tokens. For a committed open ShaderLab document, both come from the captured
+revision: project symbols come from its file index, while the lexical layer
+consumes the exact attempt's full `DocumentAnalysis` instead of rescanning
+request text. The lexical pass fills visible ShaderLab and highlight-only HLSL
+gaps: ShaderLab blocks, Properties, Tags, render states, preprocessor
+directives, include paths, macro-style declaration heads, shader semantics,
+and swizzles. Highlight-only tokens do not participate in Go to Definition or
+Find References. Conservative inactive-region dimming remains a separate
+client presentation layer and does not alter analysis, index, or token facts.
 
 Built-in vocabulary entries and their neutral metadata live behind the single
 `server/src/vocabulary.ts` production interface. Parsing-derived semantic

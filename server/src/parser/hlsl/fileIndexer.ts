@@ -1,13 +1,17 @@
 import { extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { FileIndex, ReferenceEntry, SymbolEntry } from '@unity-shader-nav/shared';
+import {
+  analysisMatchesSource,
+  analyzeDocument,
+  type DocumentAnalysis,
+} from '../../analysis';
 import type { MacroPatternTable } from '../../macros';
 import { parseHlsl } from './parser';
 import { collect } from './collector';
 import { scanPragmaLines } from '../../macros/matcher';
 import { scanIncludes } from '../include/lineScanner';
 import { scanDefines } from '../preproc/scanDefines';
-import { scanBlocks } from '../shaderlab/blockScanner';
 import { scanProperties } from '../shaderlab/propertiesScanner';
 import { scanStructure } from '../shaderlab/structureScanner';
 
@@ -101,7 +105,11 @@ export async function indexFile(
   uri: string,
   text: string,
   table?: MacroPatternTable,
+  preparedAnalysis?: DocumentAnalysis,
 ): Promise<FileIndex> {
+  const analysis = preparedAnalysis && analysisMatchesSource(preparedAnalysis, text)
+    ? preparedAnalysis
+    : analyzeDocument(uri, text, 'index');
   const ext = extOf(uri);
   if (HLSL_EXTS.has(ext)) {
     const tree = await parseHlsl(text);
@@ -113,7 +121,8 @@ export async function indexFile(
   }
 
   if (ext === '.shader') {
-    const { blocks } = scanBlocks(text);
+    if (!analysis) throw new Error(`missing ShaderLab analysis for ${uri}`);
+    const { blocks } = analysis;
     const lines = text.split(/\r?\n/);
 
     const merged: FileIndex = { uri, symbols: [], references: [] };
@@ -132,7 +141,7 @@ export async function indexFile(
       }
     }
     merged.structure = scanStructure(text);
-    const properties = scanProperties(text);
+    const properties = scanProperties(text, blocks);
     if (properties.length > 0) merged.properties = properties;
     return merged;
   }

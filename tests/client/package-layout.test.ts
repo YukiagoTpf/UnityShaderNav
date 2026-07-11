@@ -360,6 +360,10 @@ suite('verification command contract', () => {
       'node scripts/rebuild-tree-sitter-hlsl.mjs',
     );
     assert.strictEqual(scripts['bench:index-cache'], 'node scripts/benchmark-index-cache.mjs');
+    assert.strictEqual(
+      scripts['bench:document-analysis'],
+      'node scripts/benchmark-document-analysis.mjs',
+    );
     assert.strictEqual(scripts['bench:issue3'], undefined);
   });
 

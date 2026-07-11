@@ -1,8 +1,7 @@
-import type { Range } from '@unity-shader-nav/shared';
+import type { Range, ShaderLabBlock } from '@unity-shader-nav/shared';
 import { BUILTIN_DECLARATION_MACROS } from '../../macros/builtin';
 import { BUILTIN_ENTRIES } from '../../vocabulary';
 import { maskCommentsLine } from '../masking';
-import { scanBlocks } from './blockScanner';
 
 export type ShaderLabLexicalTokenType =
   | 'keyword'
@@ -147,9 +146,12 @@ function tokenKey(token: ShaderLabLexicalToken): string {
   ].join(':');
 }
 
-export function scanShaderLabTokens(text: string): ShaderLabLexicalToken[] {
+/** `blocks` must be the ordered, non-overlapping result for this exact source. */
+export function scanShaderLabTokens(
+  text: string,
+  blocks: readonly ShaderLabBlock[],
+): ShaderLabLexicalToken[] {
   const lines = text.split(/\r?\n/);
-  const blocks = scanBlocks(text).blocks;
   const tokens: ShaderLabLexicalToken[] = [];
   const seen = new Set<string>();
   const commentState: CommentState = { inBlockComment: false };
@@ -157,6 +159,7 @@ export function scanShaderLabTokens(text: string): ShaderLabLexicalToken[] {
   const propertyTypeRe = keywordPattern(PROPERTY_TYPES);
   let propertiesDepth = 0;
   let tagsDepth = 0;
+  let blockIndex = 0;
 
   function push(line: number, start: number, end: number, tokenType: ShaderLabLexicalTokenType): void {
     if (end <= start) return;
@@ -264,9 +267,13 @@ export function scanShaderLabTokens(text: string): ShaderLabLexicalToken[] {
   for (let lineNo = 0; lineNo < lines.length; lineNo++) {
     const code = maskComments(lines[lineNo], commentState);
     const codeNoStrings = maskStrings(code);
-    const block = blocks.find((candidate) => (
-      candidate.startLine <= lineNo && lineNo <= candidate.endLine
-    ));
+    while (blocks[blockIndex] && blocks[blockIndex].endLine < lineNo) blockIndex++;
+    const candidate = blocks[blockIndex];
+    const block = candidate
+      && candidate.startLine <= lineNo
+      && lineNo <= candidate.endLine
+      ? candidate
+      : undefined;
     const inHlslContent = block !== undefined
       && block.contentStartLine <= lineNo
       && lineNo <= block.contentEndLine;

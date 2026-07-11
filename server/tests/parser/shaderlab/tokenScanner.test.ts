@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { scanBlocks } from '../../../src/parser/shaderlab/blockScanner';
 import { scanShaderLabTokens } from '../../../src/parser/shaderlab/tokenScanner';
 
 function tokenTexts(text: string): Array<{ text: string; type: string }> {
   const lines = text.split(/\r?\n/);
-  return scanShaderLabTokens(text).map((token) => ({
+  return scanShaderLabTokens(text, scanBlocks(text).blocks).map((token) => ({
     text: lines[token.range.start.line].slice(
       token.range.start.character,
       token.range.end.character,
@@ -136,7 +137,7 @@ describe('scanShaderLabTokens', () => {
       '}',
     ].join('\n');
 
-    const tokens = scanShaderLabTokens(text);
+    const tokens = scanShaderLabTokens(text, scanBlocks(text).blocks);
     const rendered = tokenTexts(text);
 
     expect(rendered).toEqual(expect.arrayContaining([

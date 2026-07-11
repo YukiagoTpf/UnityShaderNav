@@ -50,7 +50,11 @@ import {
   completionWithoutIndex,
   signatureHelpNeedsIndex,
 } from './queries';
-import type { DocumentIndexer, FileEvent } from './workspaceIndex';
+import type {
+  DocumentAnalyzer,
+  DocumentIndexer,
+  FileEvent,
+} from './workspaceIndex';
 import { walkFiles } from './walkFiles';
 
 export type { FileEvent } from './workspaceIndex';
@@ -63,6 +67,7 @@ export interface WorkspaceRuntimeOptions {
   onIndexStatusChanged?: () => void;
   ensureParserReady?: () => Promise<void>;
   indexDocument?: DocumentIndexer;
+  analyzeDocument?: DocumentAnalyzer;
   openDocuments?: OpenDocumentsProvider;
 }
 
@@ -106,6 +111,7 @@ export class Workspace implements IndexedWorkspace {
   private readonly lifecycle: IndexLifecycle;
   private readonly parserReady: () => Promise<void>;
   private readonly indexDocument: DocumentIndexer | undefined;
+  private readonly analyzeDocument: DocumentAnalyzer | undefined;
   private readonly openDocuments: OpenDocumentsProvider | undefined;
   private operationTail: Promise<void> = Promise.resolve();
   private readonly desiredDocuments = new Map<string, DesiredDocumentState>();
@@ -128,6 +134,7 @@ export class Workspace implements IndexedWorkspace {
     this.lifecycle = new IndexLifecycle(options.onIndexStatusChanged);
     this.parserReady = options.ensureParserReady ?? ensureParserReady;
     this.indexDocument = options.indexDocument;
+    this.analyzeDocument = options.analyzeDocument;
     this.openDocuments = options.openDocuments;
   }
 
@@ -570,7 +577,7 @@ export class Workspace implements IndexedWorkspace {
       packages: PackageContext.standalone(this.requestedSettings),
       cache: undefined,
       fingerprint: undefined,
-    }, this.indexDocument);
+    }, this.indexDocument, this.analyzeDocument);
   }
 
   reconfigure(connection: Connection, settings: ExtensionSettings): Promise<boolean> {
@@ -735,7 +742,7 @@ export class Workspace implements IndexedWorkspace {
       unityRoot,
       packages,
       ...cacheConfiguration,
-    }, this.indexDocument);
+    }, this.indexDocument, this.analyzeDocument);
     const compatiblePrevious = this.isCompatiblePrevious(
       previous,
       unityRoot,

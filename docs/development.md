@@ -57,6 +57,7 @@ npm test
 npm run test:electron:activation
 npm run test:electron
 npm run bench:index-cache -- --files 800
+npm run bench:document-analysis -- --passes 32 --properties 64 --iterations 250 --warmup 50
 npm run package:vsix
 npm run grammar:rebuild
 ```
@@ -72,6 +73,9 @@ npm run grammar:rebuild
   references, Agent entrypoints, and the vendored grammar provenance, artifact,
   and upstream license.
 - Parser and index behavior belongs in server unit tests.
+- Document-analysis tests should prove exact-source matching, immutable shared
+  blocks/tokens, index-only versus full demand, and revision-owned live
+  lifetimes. Disk/cache records must remain analysis-free.
 - `npm run test:package` is the authoritative package check. One invocation
   removes generated output, rebuilds current source, creates the versioned VSIX,
   verifies its manifest and runtime files, then runs package-layout tests.
@@ -123,6 +127,24 @@ npm run grammar:rebuild
   disposable directory before allowing `Library/UnityShaderNavCache/` writes.
 - Add fixtures that describe the shader shape being fixed. Small, explicit
   fixtures are easier to maintain than copied production shaders.
+
+## Document Analysis Benchmark
+
+Build the server output first, then run the benchmark from the repository root:
+
+```powershell
+npm run build
+npm run bench:document-analysis
+```
+
+The command generates one representative multi-pass ShaderLab source and
+alternates two paths in the same Node.js process. The legacy path independently
+composes indexing block discovery, Properties scanning, and lexical-token block
+discovery; the shared path runs one full `analyzeDocument` and passes its blocks
+to `scanProperties`. Output includes artifact counts, sample count, median,
+p95, and the shared-to-legacy ratio. Count equality is a correctness check.
+Timing is diagnostic only: there is deliberately no timing threshold in CI,
+and performance comparisons should use the same machine, build, and arguments.
 
 ## Vendored HLSL Grammar
 

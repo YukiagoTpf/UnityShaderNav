@@ -5,6 +5,10 @@ import type {
   FileIndex,
 } from '@unity-shader-nav/shared';
 import { normalizeSettings } from '@unity-shader-nav/shared';
+import {
+  analysisMatchesSource,
+  type DocumentAnalysis,
+} from '../analysis';
 import type {
   CompletionItem,
   Connection,
@@ -46,6 +50,7 @@ import {
 } from './queries';
 import {
   WorkspaceIndex,
+  type DocumentAnalyzer,
   type DiskIndexRecord,
   type DiskSourceIdentity,
   type DocumentIndexer,
@@ -56,6 +61,7 @@ import {
 export interface CommittedDocumentAttempt {
   readonly openId: number;
   readonly version: number;
+  readonly analysis: DocumentAnalysis | undefined;
 }
 
 export interface IndexedRevisionConfiguration {
@@ -158,7 +164,11 @@ export class PublishedIndexedRevision {
   }
 
   semanticTokens(input: IndexedDocumentQueryInput): SemanticTokens {
-    return querySemanticTokens(this.queryState(), input);
+    return querySemanticTokens(
+      this.queryState(),
+      input,
+      this.documentAnalysis(input)?.lexicalTokens,
+    );
   }
 
   workspaceSymbols(query: string): SymbolInformation[] {
@@ -219,6 +229,19 @@ export class PublishedIndexedRevision {
       includePackages: this.settings.findReferences.includePackages,
     };
   }
+
+  private documentAnalysis(input: IndexedDocumentQueryInput): DocumentAnalysis | undefined {
+    if (!input.document || uriKey(input.document.uri) !== uriKey(input.uri)) return undefined;
+    const committed = this.committedDocuments.get(uriKey(input.uri));
+    if (
+      !committed
+      || committed.openId !== input.document.openId
+      || committed.version !== input.document.version
+      || !committed.analysis
+      || !analysisMatchesSource(committed.analysis, input.document.text)
+    ) return undefined;
+    return committed.analysis;
+  }
 }
 
 /** One-shot mutable candidate. It becomes inaccessible after publish(). */
@@ -250,6 +273,7 @@ export class IndexedRevisionBuilder {
   static create(
     configuration: IndexedRevisionConfiguration,
     indexDocument?: DocumentIndexer,
+    analyzeDocument?: DocumentAnalyzer,
   ): IndexedRevisionBuilder {
     const settings = immutableSettings(configuration.settings);
     return new IndexedRevisionBuilder(
@@ -258,6 +282,7 @@ export class IndexedRevisionBuilder {
         settings.declarationMacros,
         configuration.unityRoot === undefined,
         indexDocument,
+        analyzeDocument,
       ),
     );
   }
@@ -350,10 +375,11 @@ export class IndexedRevisionBuilder {
   ): boolean {
     this.assertMutable();
     if (!this.index.commitDocument(candidate, shouldStore)) return false;
-    this.committedDocuments.set(uriKey(document.uri), {
+    this.committedDocuments.set(uriKey(document.uri), Object.freeze({
       openId: document.openId,
       version: document.version,
-    });
+      analysis: candidate.liveAnalysis,
+    }));
     return true;
   }
 

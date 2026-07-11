@@ -117,6 +117,30 @@ describe('fileIndexer: .shader multi-pass', () => {
     expect(pragmaRefs.map((r) => r.name)).toEqual(['vert']);
     expect(pragmaRefs[0]?.location.range.start).toEqual({ line: 8, character: 21 });
   });
+
+  it('keeps symbols and references from presentation-only inactive branches', async () => {
+    const text = [
+      'Shader "T/Inactive" {',
+      '  SubShader {',
+      '    Pass {',
+      '      HLSLPROGRAM',
+      '      #if 0',
+      '      float4 InactiveTarget() { return 0; }',
+      '      #endif',
+      '      float4 ActiveCaller() { return InactiveTarget(); }',
+      '      ENDHLSL',
+      '    }',
+      '  }',
+      '}',
+    ].join('\n');
+
+    const idx = await indexFile('file:///t/inactive.shader', text);
+
+    expect(idx.symbols.some((symbol) => symbol.name === 'InactiveTarget')).toBe(true);
+    expect(idx.references.some((reference) => (
+      reference.name === 'InactiveTarget' && reference.context === 'call'
+    ))).toBe(true);
+  });
 });
 
 describe('fileIndexer: .shader Properties attachment', () => {

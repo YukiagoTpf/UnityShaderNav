@@ -1,4 +1,9 @@
-import type { Range, ShaderLabPropertyEntry, ShaderLabPropertyType } from '@unity-shader-nav/shared';
+import type {
+  Range,
+  ShaderLabBlock,
+  ShaderLabPropertyEntry,
+  ShaderLabPropertyType,
+} from '@unity-shader-nav/shared';
 import { maskCommentsLine } from '../masking';
 import { scanBlocks } from './blockScanner';
 
@@ -61,12 +66,17 @@ function countChar(text: string, ch: string): number {
  * property declaration. Comment- and string-aware; HLSL/CG block ranges are
  * skipped. Never throws.
  */
-export function scanProperties(text: string): ShaderLabPropertyEntry[] {
+export function scanProperties(
+  text: string,
+  /** Ordered, non-overlapping block facts for this exact source when already available. */
+  knownBlocks?: readonly ShaderLabBlock[],
+): ShaderLabPropertyEntry[] {
   const lines = text.split(/\r?\n/);
-  const blocks = scanBlocks(text).blocks;
+  const blocks = knownBlocks ?? scanBlocks(text).blocks;
   const entries: ShaderLabPropertyEntry[] = [];
   const commentState: CommentState = { inBlockComment: false };
   let propertiesDepth = 0;
+  let blockIndex = 0;
   // Sticky flag: set when the `Properties` keyword is seen, cleared the first
   // time we count an opening brace into propertiesDepth. Lets us handle the
   // Unity-common `Properties\n{` style where the opening brace is on the line
@@ -80,9 +90,11 @@ export function scanProperties(text: string): ShaderLabPropertyEntry[] {
 
     // Skip HLSL/CG content lines entirely (do not contribute to brace depth
     // either — HLSL braces belong to the HLSL block, not to Properties).
-    const inHlslContent = blocks.some(
-      (b) => b.contentStartLine <= lineNo && lineNo <= b.contentEndLine,
-    );
+    while (blocks[blockIndex] && blocks[blockIndex].endLine < lineNo) blockIndex++;
+    const block = blocks[blockIndex];
+    const inHlslContent = block !== undefined
+      && block.contentStartLine <= lineNo
+      && lineNo <= block.contentEndLine;
     if (inHlslContent) continue;
 
     const hasProperties = /\bProperties\b/.test(masked);

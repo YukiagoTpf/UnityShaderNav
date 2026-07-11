@@ -6,7 +6,8 @@ UnityShaderNav is a VS Code extension backed by a separate language server.
 VS Code extension client
   -> vscode-languageclient
   -> language server process
-     -> ShaderLab block scanner
+     -> exact-source document analysis
+        -> ShaderLab block/token scanners
      -> tree-sitter HLSL parser
      -> macro pattern recognizer
      -> per-file symbol/reference indexes
@@ -30,6 +31,10 @@ The server owns parsing, indexing, cache restore/persist, and LSP request
 handling. Important modules:
 
 - `parser/shaderlab`: scans ShaderLab and extracts HLSL/CG blocks.
+- `analysis`: composes one immutable, exact-source `DocumentAnalysis` from
+  ordered ShaderLab HLSL/CG blocks and, on full demand, ShaderLab lexical
+  tokens. Indexing and Semantic Tokens consume this result instead of
+  independently rescanning the same live source.
 - `parser/hlsl`: wraps tree-sitter and collects symbols/references.
 - `parser/lexical`: owns cursor analysis behind `analyzeCursor` plus the narrow
   `classifyCursor` and gate-free `memberAccessAt` derived interfaces.
@@ -70,11 +75,14 @@ The index is intentionally pragmatic:
   suggestion projection. A transitive dependency-direction test enforces this
   boundary for statically analyzable TypeScript imports, re-exports, `require`
   calls, and dynamic imports.
+- A `.shader` indexing cycle derives ordered embedded-code blocks once and
+  passes them to both file indexing and Properties scanning. A full live
+  `DocumentAnalysis` adds the lexical tokens used by Semantic Tokens.
 - Preprocessor conditions are not evaluated for navigation, references, or
   completion. A separate presentation-only layer does apply conservative
   preprocessor branch dimming (inactive and variant-gated `#if`/`#ifdef`/
   `#ifndef` branches are visually dimmed via client decorations), but it never
-  changes index results. See
+  changes index results or `DocumentAnalysis`. See
   [ADR-0005](adr/0005-conservative-preprocessor-branch-dimming.md).
 
 ## Live Documents and Indexed Query Boundary
@@ -89,7 +97,8 @@ didOpen / didChange / didClose
   -> open-document snapshot registry
   -> Workspace.updateDocument / closeDocument
   -> create an initial/rebuild candidate or fork the published revision
-  -> prepare parse + optional disk baseline in the candidate
+  -> prepare exact-source analysis + parse
+  -> prepare optional disk baseline in the candidate
   -> validate openId + version
   -> publish once by swapping the Workspace revision pointer
 ```
@@ -135,6 +144,20 @@ object even if another publication occurs.
 Include visibility, scope resolution, proximity tie-breaks, property bridging,
 Package filtering, semantic-token construction, symbol formatting, and
 multi-candidate results remain revision-owned behavior.
+
+For a ShaderLab open-document attempt, the candidate builds a full
+`DocumentAnalysis` from that attempt's exact source. It becomes query-visible
+only when the same candidate publishes, and Semantic Tokens consumes its
+committed lexical tokens through the captured revision. The analysis stays
+beside the live overlay rather than inside `FileIndex`; close or a newer attempt
+removes it from the next publication, while an already captured old revision
+keeps its immutable facts until that reader finishes. Disk scans
+and other index-only source paths may construct an analysis while producing a
+`FileIndex`, but discard it immediately afterward; cache restoration does not
+reconstruct one. `DiskIndexRecord`, cache manifests, persisted cache entries,
+and process-wide caches never retain source analysis. This revision-owned
+lifetime prevents token requests from observing facts derived from a different
+source snapshot.
 
 An index-dependent open-document query whose exact `openId + version` is not
 published first joins that document attempt through Workspace behavior. It then

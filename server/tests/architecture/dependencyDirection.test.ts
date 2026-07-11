@@ -154,6 +154,58 @@ describe('server dependency direction', () => {
     }
   });
 
+  it('composes shared ShaderLab document facts at one production boundary', () => {
+    const analysis = readFileSync(
+      resolve(SOURCE_ROOT, 'analysis/documentAnalysis.ts'),
+      'utf8',
+    );
+    expect(analysis).toMatch(/from ['"]\.\.\/parser\/shaderlab\/blockScanner['"]/);
+    expect(analysis).toMatch(/from ['"]\.\.\/parser\/shaderlab\/tokenScanner['"]/);
+    expect(analysis).not.toMatch(/analyzeInactiveRegions/);
+
+    const fileIndexer = readFileSync(
+      resolve(SOURCE_ROOT, 'parser/hlsl/fileIndexer.ts'),
+      'utf8',
+    );
+    expect(fileIndexer).toMatch(/from ['"]\.\.\/\.\.\/analysis['"]/);
+    expect(fileIndexer).not.toMatch(/shaderlab\/(?:blockScanner|tokenScanner)/);
+    expect(fileIndexer).toMatch(/scanProperties\(text, blocks\)/);
+
+    const tokenScanner = readFileSync(
+      resolve(SOURCE_ROOT, 'parser/shaderlab/tokenScanner.ts'),
+      'utf8',
+    );
+    expect(tokenScanner).not.toMatch(/blockScanner|\bscanBlocks\b/);
+
+    const queries = readFileSync(resolve(SOURCE_ROOT, 'workspace/queries.ts'), 'utf8');
+    expect(queries).not.toMatch(/shaderlab\/tokenScanner|\bscanShaderLabTokens\b/);
+
+    const navigation = readFileSync(resolve(SOURCE_ROOT, 'workspace/navigation.ts'), 'utf8');
+    expect(navigation).not.toMatch(/documentAnalysis|analyzeInactiveRegions/);
+
+    const workspaceIndex = readFileSync(
+      resolve(SOURCE_ROOT, 'workspace/workspaceIndex.ts'),
+      'utf8',
+    );
+    const diskRecord = /export interface DiskIndexRecord \{([\s\S]*?)\n\}/.exec(workspaceIndex)?.[1];
+    expect(diskRecord).toBeDefined();
+    expect(diskRecord).not.toMatch(/analysis|lexicalTokens/);
+    for (const moduleId of ['cache/cacheManager.ts', 'cache/cacheStore.ts']) {
+      expect(readFileSync(resolve(SOURCE_ROOT, moduleId), 'utf8'), moduleId)
+        .not.toMatch(/DocumentAnalysis|lexicalTokens/);
+    }
+
+    for (const sourceFile of collectTypeScriptFiles(SOURCE_ROOT)) {
+      const moduleId = relativeModuleId(SOURCE_ROOT, sourceFile);
+      if (
+        moduleId === 'analysis/documentAnalysis.ts'
+        || moduleId === 'parser/shaderlab/tokenScanner.ts'
+      ) continue;
+      expect(readFileSync(sourceFile, 'utf8'), moduleId)
+        .not.toMatch(/\bscanShaderLabTokens\s*\(/);
+    }
+  });
+
   it('keeps every production query adapter behind the Indexed Workspace behavior', () => {
     const graph = buildSourceGraph(SOURCE_ROOT);
     for (const adapter of QUERY_ADAPTERS) {
