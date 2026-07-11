@@ -58,6 +58,10 @@ and uses semantic versioning for extension releases.
   revision. Close or replacement drops them from the next publication, while a
   reader that already captured the prior revision retains its self-consistent
   facts until it finishes. Source analysis is never persisted or globally cached.
+- Separated include candidate and casing rules from Node filesystem access
+  behind a narrow `FileProbe`. Deterministic in-memory tests now pin candidate
+  priority, Package mapping, and case-insensitive fallback while production
+  resolution behavior remains unchanged.
 
 ### Fixed
 

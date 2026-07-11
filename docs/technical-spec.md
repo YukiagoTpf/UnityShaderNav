@@ -332,16 +332,27 @@ Projects can add custom declaration patterns with
 
 ## Include and Package Resolution
 
-Include resolution checks:
+For ordinary relative include paths, resolution checks:
 
 1. The including file's directory.
 2. The Unity project `Assets/` root.
-3. Resolved Unity package physical paths.
-4. User-configured include directories.
+3. User-configured include directories, in configuration order.
 
-`Packages/<name>/...` paths are mapped through `Packages/packages-lock.json`.
-This avoids scanning stale package cache folders and follows Unity's resolved
-dependency state.
+Absolute include paths are checked directly. `Packages/<name>/...` paths use an
+exclusive branch that maps the package name through the physical paths derived
+from `Packages/packages-lock.json`; an absent mapping does not fall through to
+ordinary path search. This avoids scanning stale package cache folders and
+follows Unity's resolved dependency state.
+
+Resolution checks every applicable candidate for an exact-case match before it
+tries any case-insensitive match in the same candidate order. A fallback returns
+the path spelling found on disk and sets the existing warning flag while
+preserving the candidate's source classification.
+
+Candidate and casing rules operate above a narrow `FileProbe` (`exists` plus
+`listDir`). Production uses its Node filesystem adapter; direct rule tests use
+an in-memory directory tree. Probe failures make that candidate unresolved and
+do not escape into an LSP request.
 
 ## Cache
 

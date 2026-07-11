@@ -43,6 +43,8 @@ handling. Important modules:
 - `vocabulary.ts`: owns the neutral Unity/HLSL/ShaderLab built-in vocabulary
   consumed by parsing-derived coloring, hover, completion, and signature help.
 - `include` and `packages`: resolve relative includes and Unity Package paths.
+  Include path and casing rules depend on a narrow filesystem probe rather than
+  direct I/O; Package membership still comes from the resolved lockfile graph.
 - `index`: stores symbols, references, visibility, and chain lookup data. Its
   position geometry module owns shared inclusive range containment and
   before-or-at ordering used by index and suggestion visibility rules.
@@ -235,6 +237,20 @@ Document requests may use the `openId`-guarded lazy route only when a current
 open snapshot has lost its owner. A reconnect starts a new sequence domain; the
 client resets its last-seen sequence before accepting snapshots from the new
 server session.
+
+## Include Resolution Boundary
+
+The include resolver owns candidate generation, ordering, exact-case
+verification, and case-insensitive fallback above a narrow `FileProbe` with
+`exists` and `listDir` operations. Production resolution uses the default Node
+filesystem adapter; rule tests inject an in-memory directory tree. The seam
+keeps filesystem failures and test setup below the rules without adding I/O
+capabilities to Workspace query interfaces or changing the resolver's result
+contract.
+
+Package include candidates consume the physical-path map already captured by
+the Workspace revision's `PackageContext`. The probe does not discover packages
+or broaden package membership.
 
 ## Package Resolution
 

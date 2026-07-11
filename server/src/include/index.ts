@@ -1,2 +1,2 @@
 export * from './types';
-export { resolveInclude } from './resolver';
+export { resolveInclude, type FileProbe } from './resolver';

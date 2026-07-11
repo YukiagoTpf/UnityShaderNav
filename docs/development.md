@@ -73,6 +73,10 @@ npm run grammar:rebuild
   references, Agent entrypoints, and the vendored grammar provenance, artifact,
   and upstream license.
 - Parser and index behavior belongs in server unit tests.
+- Include-resolution rule tests inject an in-memory `FileProbe`; they do not use
+  disk fixtures to prove candidate ordering or casing behavior. Handler and
+  Electron include tests exercise the default Node filesystem adapter and its
+  production wiring.
 - Document-analysis tests should prove exact-source matching, immutable shared
   blocks/tokens, index-only versus full demand, and revision-owned live
   lifetimes. Disk/cache records must remain analysis-free.

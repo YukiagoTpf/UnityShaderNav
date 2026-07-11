@@ -10,14 +10,29 @@ import {
 import { fileURLToPath } from 'node:url';
 import type { IncludeContext, ResolvedInclude } from './types';
 
-async function exists(path: string): Promise<boolean> {
-  try {
-    await fs.access(path);
-    return true;
-  } catch {
-    return false;
-  }
+/**
+ * Narrow filesystem seam owned by include resolution. `exists` resolves false
+ * for inaccessible paths; `listDir` may reject an inaccessible directory. The
+ * resolver treats either outcome as an unresolved candidate.
+ */
+export interface FileProbe {
+  exists(path: string): Promise<boolean>;
+  listDir(path: string): Promise<readonly string[]>;
 }
+
+const nodeFileProbe: FileProbe = {
+  async exists(path) {
+    try {
+      await fs.access(path);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+  listDir(path) {
+    return fs.readdir(path);
+  },
+};
 
 function pathSegments(path: string): { root: string; parts: string[] } {
   const root = parse(path).root;
@@ -28,15 +43,15 @@ function pathSegments(path: string): { root: string; parts: string[] } {
   };
 }
 
-async function existsCaseSensitive(path: string): Promise<boolean> {
-  if (!(await exists(path))) return false;
+async function existsCaseSensitive(path: string, probe: FileProbe): Promise<boolean> {
+  if (!(await probe.exists(path))) return false;
 
   const { root, parts } = pathSegments(pathResolve(path));
   let acc = root;
   for (const part of parts) {
-    let entries: string[];
+    let entries: readonly string[];
     try {
-      entries = await fs.readdir(acc);
+      entries = await probe.listDir(acc);
     } catch {
       return false;
     }
@@ -46,13 +61,13 @@ async function existsCaseSensitive(path: string): Promise<boolean> {
   return true;
 }
 
-async function findIgnoreCase(path: string): Promise<string | null> {
+async function findIgnoreCase(path: string, probe: FileProbe): Promise<string | null> {
   const { root, parts } = pathSegments(pathResolve(path));
   let acc = root;
   for (const part of parts) {
-    let entries: string[];
+    let entries: readonly string[];
     try {
-      entries = await fs.readdir(acc);
+      entries = await probe.listDir(acc);
     } catch {
       return null;
     }
@@ -67,6 +82,7 @@ export async function resolveInclude(
   includePath: string,
   fromFileUri: string,
   ctx: IncludeContext,
+  probe: FileProbe = nodeFileProbe,
 ): Promise<ResolvedInclude | null> {
   let fromPath: string;
   try {
@@ -84,7 +100,7 @@ export async function resolveInclude(
     if (!packageRoot) return null;
 
     const candidate = subpath ? join(packageRoot, subpath) : packageRoot;
-    if (await existsCaseSensitive(candidate)) {
+    if (await existsCaseSensitive(candidate, probe)) {
       return {
         absolutePath: candidate,
         via: 'package',
@@ -92,7 +108,7 @@ export async function resolveInclude(
       };
     }
 
-    const caseInsensitive = await findIgnoreCase(candidate);
+    const caseInsensitive = await findIgnoreCase(candidate, probe);
     if (caseInsensitive) {
       return {
         absolutePath: caseInsensitive,
@@ -121,7 +137,7 @@ export async function resolveInclude(
   }
 
   for (const candidate of candidates) {
-    if (await existsCaseSensitive(candidate.path)) {
+    if (await existsCaseSensitive(candidate.path, probe)) {
       return {
         absolutePath: candidate.path,
         via: candidate.via,
@@ -131,7 +147,7 @@ export async function resolveInclude(
   }
 
   for (const candidate of candidates) {
-    const found = await findIgnoreCase(candidate.path);
+    const found = await findIgnoreCase(candidate.path, probe);
     if (found) {
       return {
         absolutePath: found,
