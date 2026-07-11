@@ -31,3 +31,17 @@
 - Git 仓库根目录同时是源码、npm workspace、文档和 Agent 上下文的唯一项目根目录。
 - 顶层命令在仓库根目录运行：`npm run build` / `npm test` / `npm run watch`。
 - 调试：在 VS Code 里打开仓库根目录后按 F5。
+
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs are tracked in GitHub Issues for `YukiagoTpf/UnityShaderNav`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the canonical triage labels mapped in `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This is a single-context repository with `CONTEXT.md` and `docs/adr/` at the repository root. See `docs/agents/domain.md`.
