@@ -1,5 +1,6 @@
 import type { FileIndex, Position, Range, SymbolEntry } from '@unity-shader-nav/shared';
 import type { GlobalSymbolIndex } from './globalIndex';
+import { inRange, isBeforeOrAt } from './positionGeometry';
 import { uriKey } from './uriKey';
 
 export interface LocationLink {
@@ -13,17 +14,6 @@ export type ResolutionTrace = (event: string, data: Record<string, unknown>) => 
 export interface ResolutionOptions {
   visibleUriKeys?: ReadonlySet<string>;
   trace?: ResolutionTrace;
-}
-
-function inRange(pos: Position, range: Range): boolean {
-  if (pos.line < range.start.line || pos.line > range.end.line) return false;
-  if (pos.line === range.start.line && pos.character < range.start.character) return false;
-  if (pos.line === range.end.line && pos.character > range.end.character) return false;
-  return true;
-}
-
-function isBeforeOrAt(a: Position, b: Position): boolean {
-  return a.line < b.line || (a.line === b.line && a.character <= b.character);
 }
 
 function asLink(symbol: SymbolEntry): LocationLink {

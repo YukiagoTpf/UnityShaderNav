@@ -2,8 +2,8 @@ import type { Position, Range } from '@unity-shader-nav/shared';
 import { scanBlocks } from '../shaderlab/blockScanner';
 import { scanCommentRoles } from '../masking';
 
-export const ID_CHAR_RE = /[A-Za-z0-9_]/;
-export const ID_START_RE = /[A-Za-z_]/;
+const ID_CHAR_RE = /[A-Za-z0-9_]/;
+const ID_START_RE = /[A-Za-z_]/;
 
 export interface WordAt {
   text: string;
@@ -44,7 +44,7 @@ export interface CursorContext {
   memberPrefix?: CursorMember;
 }
 
-export function wordAt(text: string, pos: Position): WordAt | null {
+function wordAt(text: string, pos: Position): WordAt | null {
   const lines = text.split(/\r?\n/);
   if (pos.line < 0 || pos.line >= lines.length) return null;
 
@@ -112,7 +112,7 @@ export function memberAccessAt(text: string, pos: Position): MemberAccess | null
   };
 }
 
-export function receiverExpressionStart(line: string, end: number): number {
+function receiverExpressionStart(line: string, end: number): number {
   let cursor = end - 1;
   let squareDepth = 0;
   let parenDepth = 0;
@@ -168,7 +168,7 @@ export function receiverExpressionStart(line: string, end: number): number {
   return cursor + 1;
 }
 
-export function lexicalContextAt(text: string, pos: Position): LexicalContext {
+function lexicalContextAt(text: string, pos: Position): LexicalContext {
   if (pos.line < 0 || pos.character < 0) return 'code';
   const lines = text.split(/\r?\n/);
   if (pos.line >= lines.length) return 'code';
@@ -194,17 +194,17 @@ export function lexicalContextAt(text: string, pos: Position): LexicalContext {
   return 'code';
 }
 
-export function isShaderLabDocument(languageId: string | undefined, uri: string): boolean {
+function isShaderLabDocument(languageId: string | undefined, uri: string): boolean {
   return languageId === 'shaderlab' || /\.shader(?:$|[?#])/i.test(uri);
 }
 
-export function isInsideShaderLabHlslBlock(text: string, pos: Position): boolean {
+function isInsideShaderLabHlslBlock(text: string, pos: Position): boolean {
   return scanBlocks(text).blocks.some((block) =>
     pos.line >= block.contentStartLine && pos.line <= block.contentEndLine,
   );
 }
 
-export function emptyPrefix(line: number, character: number): CompletionPrefix {
+function emptyPrefix(line: number, character: number): CompletionPrefix {
   return {
     text: '',
     range: {
@@ -214,7 +214,7 @@ export function emptyPrefix(line: number, character: number): CompletionPrefix {
   };
 }
 
-export function prefixAtLine(lineText: string, pos: Position): CompletionPrefix {
+function prefixAtLine(lineText: string, pos: Position): CompletionPrefix {
   const character = Math.max(0, Math.min(pos.character, lineText.length));
   let start = character;
   while (start > 0 && ID_CHAR_RE.test(lineText[start - 1])) start--;
@@ -231,7 +231,7 @@ export function prefixAtLine(lineText: string, pos: Position): CompletionPrefix 
   };
 }
 
-export function memberContextAt(lineText: string, prefix: CompletionPrefix): CursorMember | undefined {
+function memberContextAt(lineText: string, prefix: CompletionPrefix): CursorMember | undefined {
   const dot = prefix.range.start.character - 1;
   if (dot < 0 || lineText[dot] !== '.') return undefined;
   const receiverStart = receiverExpressionStart(lineText, dot);
@@ -244,7 +244,7 @@ export function memberContextAt(lineText: string, prefix: CompletionPrefix): Cur
   };
 }
 
-export function isSemanticPosition(lineText: string, prefix: CompletionPrefix): boolean {
+function isSemanticPosition(lineText: string, prefix: CompletionPrefix): boolean {
   const beforePrefix = lineText.slice(0, prefix.range.start.character).trimEnd();
   if (!beforePrefix.endsWith(':')) return false;
 
@@ -265,7 +265,7 @@ export function isSemanticPosition(lineText: string, prefix: CompletionPrefix): 
   return /^[A-Za-z_][A-Za-z0-9_<>,\s*&]*\s+[A-Za-z_][A-Za-z0-9_]*\s*\([^)]*\)$/.test(segment);
 }
 
-export const SHADERLAB_STATE_VALUE_CONTEXTS = new Set([
+const SHADERLAB_STATE_VALUE_CONTEXTS = new Set([
   'Blend',
   'BlendOp',
   'Cull',
@@ -279,7 +279,7 @@ export const SHADERLAB_STATE_VALUE_CONTEXTS = new Set([
   'Conservative',
 ]);
 
-export function isShaderLabStateValuePosition(lineText: string, prefix: CompletionPrefix): boolean {
+function isShaderLabStateValuePosition(lineText: string, prefix: CompletionPrefix): boolean {
   const beforePrefix = lineText.slice(0, prefix.range.start.character).trimEnd();
   const match = /\b([A-Za-z][A-Za-z0-9_]*)$/.exec(beforePrefix);
   return match ? SHADERLAB_STATE_VALUE_CONTEXTS.has(match[1]) : false;

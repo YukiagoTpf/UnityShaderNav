@@ -71,7 +71,7 @@ struct 成员 F12（如 `surface.positionWS`）的解析过程——先推导 re
 ### 补全与签名
 
 **Cursor context**:
-由 `analyzeCursor()`（`server/src/parser/lexical/cursor.ts`）统一产出的"光标处词法信息"结构：当前 word、member access（导航用）、词法态（code/comment/string）、补全分类（HLSL/ShaderLab/semantic/state-value）、补全前缀与 member 补全上下文。F12/hover/highlight 等导航与补全/签名共用这一份分析，取代了过去散落在 `wordAt`/`suggestionContextAt`/`isGenericDefinitionContext` 三处的重复实现。
+由 `analyzeCursor()`（`server/src/parser/lexical/cursor.ts`）统一产出的"光标处词法信息"结构：当前 word、member access（导航用）、词法态（code/comment/string）、补全分类（HLSL/ShaderLab/semantic/state-value）、补全前缀与 member 补全上下文。完整分析以 `analyzeCursor` 为主入口；`classifyCursor` 和不带语言门控的 `memberAccessAt` 是两个窄派生接口，其余词法 helpers 属于 Module 内部实现。
 _Avoid_: lexical state, parser context
 
 **Suggestion context**:

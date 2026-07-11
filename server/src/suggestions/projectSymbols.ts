@@ -1,5 +1,6 @@
 import type { FileIndex, FunctionSymbolEntry, Position, SymbolEntry } from '@unity-shader-nav/shared';
 import type { IndexStore } from '../index';
+import { inRange, isBeforeOrAt } from '../index/positionGeometry';
 import { uriKey } from '../index/uriKey';
 import type { ShaderSuggestion } from './types';
 
@@ -8,17 +9,6 @@ export interface CollectProjectSuggestionsInput {
   store: Pick<IndexStore, 'get' | 'uris'>;
   visibleUriKeys: ReadonlySet<string>;
   position: Position;
-}
-
-function inRange(pos: Position, range: NonNullable<SymbolEntry['scopeRange']>): boolean {
-  if (pos.line < range.start.line || pos.line > range.end.line) return false;
-  if (pos.line === range.start.line && pos.character < range.start.character) return false;
-  if (pos.line === range.end.line && pos.character > range.end.character) return false;
-  return true;
-}
-
-function isBeforeOrAt(a: Position, b: Position): boolean {
-  return a.line < b.line || (a.line === b.line && a.character <= b.character);
 }
 
 function isScopedVisible(symbol: SymbolEntry, position: Position): boolean {

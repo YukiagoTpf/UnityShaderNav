@@ -7,6 +7,7 @@ import type {
   SymbolKind,
 } from '@unity-shader-nav/shared';
 import type { ReferenceTarget } from './referenceResolver';
+import { containsPosition } from './positionGeometry';
 
 function samePosition(a: Range['start'], b: Range['start']): boolean {
   return a.line === b.line && a.character === b.character;
@@ -14,13 +15,6 @@ function samePosition(a: Range['start'], b: Range['start']): boolean {
 
 export function sameRange(a: Range, b: Range): boolean {
   return samePosition(a.start, b.start) && samePosition(a.end, b.end);
-}
-
-export function containsPosition(range: Range, position: Range['start']): boolean {
-  if (position.line < range.start.line || position.line > range.end.line) return false;
-  if (position.line === range.start.line && position.character < range.start.character) return false;
-  if (position.line === range.end.line && position.character > range.end.character) return false;
-  return true;
 }
 
 export function sameTarget(a: ReferenceTarget, b: ReferenceTarget): boolean {

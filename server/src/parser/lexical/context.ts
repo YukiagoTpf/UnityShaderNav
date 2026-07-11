@@ -1,5 +1,5 @@
 import type { Position } from '@unity-shader-nav/shared';
-import { lexicalContextAt, isShaderLabDocument, isInsideShaderLabHlslBlock } from './cursor';
+import { classifyCursor } from './cursor';
 
 // Generic definition lookup is allowed only in HLSL code, including semantic positions.
 export function isGenericDefinitionContext(
@@ -8,9 +8,6 @@ export function isGenericDefinitionContext(
   languageId: string | undefined,
   uri: string,
 ): boolean {
-  if (isShaderLabDocument(languageId, uri) && !isInsideShaderLabHlslBlock(text, pos)) {
-    return false;
-  }
-
-  return lexicalContextAt(text, pos) === 'code';
+  const classification = classifyCursor(text, pos, languageId, uri).classification;
+  return classification === 'hlslCode' || classification === 'semanticPosition';
 }

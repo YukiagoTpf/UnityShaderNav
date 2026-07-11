@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { IndexStore } from '../../src/index';
 import { indexFile } from '../../src/parser/hlsl';
-import { wordAt } from '../../src/index/wordAt';
+import { analyzeCursor } from '../../src/parser/lexical/cursor';
 import { resolveDefinition } from '../../src/index/symbolResolver';
 
 describe('e2e (in-process): F12 inside .hlsl', () => {
@@ -16,7 +16,7 @@ float4 main() { return add(float4(0,0,0,1), float4(1,1,1,1)); }
     store.set(uri, await indexFile(uri, text));
 
     const pos = { line: 1, character: 24 };
-    const word = wordAt(text, pos);
+    const word = analyzeCursor(text, pos, 'hlsl', uri).word;
     expect(word?.text).toBe('add');
 
     const links = resolveDefinition(store.get(uri)!, word!.text, pos);
@@ -33,7 +33,7 @@ float4 main() { return add(float4(0,0,0,1), float4(1,1,1,1)); }
     store.set(uri, await indexFile(uri, text));
 
     const pos = { line: 0, character: 36 };
-    const word = wordAt(text, pos);
+    const word = analyzeCursor(text, pos, 'hlsl', uri).word;
     expect(word?.text).toBe('color');
 
     const links = resolveDefinition(store.get(uri)!, word!.text, pos);

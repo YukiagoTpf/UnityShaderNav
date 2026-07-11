@@ -125,6 +125,13 @@ suggestion modules, including through transitive imports. When adding a new
 category or changing metadata, update the direct vocabulary tests plus the
 projection tests for each affected consumer.
 
+Cursor-sensitive features consume the lexical cursor module through three
+runtime entry points: full `analyzeCursor`, completion-oriented
+`classifyCursor`, and gate-free `memberAccessAt` for navigation resolution.
+Lower-level word, prefix, lexical-state, and ShaderLab-context helpers remain
+private to that module. Shared range-containment and before-or-at comparisons
+use one geometry utility; range start and end positions are both inclusive.
+
 ## Scope and Visibility
 
 The server tracks enough scope to resolve common navigation cases:

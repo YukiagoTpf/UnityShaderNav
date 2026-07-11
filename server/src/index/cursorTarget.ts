@@ -1,6 +1,6 @@
 import type { Position } from '@unity-shader-nav/shared';
 import { scanIncludes, type IncludeDirective } from '../parser/include/lineScanner';
-import { memberAccessAt, type WordAt } from './wordAt';
+import { memberAccessAt, type WordAt } from '../parser/lexical/cursor';
 
 export type CursorTarget =
   | { kind: 'include'; include: IncludeDirective }

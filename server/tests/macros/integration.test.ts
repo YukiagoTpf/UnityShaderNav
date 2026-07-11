@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { indexFile } from '../../src/parser/hlsl';
 import { MacroPatternTable } from '../../src/macros';
-import { wordAt } from '../../src/index/wordAt';
+import { analyzeCursor } from '../../src/parser/lexical/cursor';
 import { resolveDefinition } from '../../src/index/symbolResolver';
 
 const fixture = (name: string) => readFileSync(join(__dirname, 'fixtures', name), 'utf8');
@@ -108,7 +108,7 @@ describe('integration: macros end-to-end', () => {
 
     const idx = await indexFile(uri, text, new MacroPatternTable());
     const pos = { line: 0, character: 17 };
-    const word = wordAt(text, pos);
+    const word = analyzeCursor(text, pos, 'hlsl', uri).word;
     expect(word?.text).toBe('CSMain');
 
     const links = resolveDefinition(idx, word!.text, pos);

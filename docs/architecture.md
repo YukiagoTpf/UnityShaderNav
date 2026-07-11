@@ -27,12 +27,16 @@ handling. Important modules:
 
 - `parser/shaderlab`: scans ShaderLab and extracts HLSL/CG blocks.
 - `parser/hlsl`: wraps tree-sitter and collects symbols/references.
+- `parser/lexical`: owns cursor analysis behind `analyzeCursor` plus the narrow
+  `classifyCursor` and gate-free `memberAccessAt` derived interfaces.
 - `macros`: recognizes built-in and user-configured declaration/reference
   patterns.
 - `vocabulary.ts`: owns the neutral Unity/HLSL/ShaderLab built-in vocabulary
   consumed by parsing-derived coloring, hover, completion, and signature help.
 - `include` and `packages`: resolve relative includes and Unity Package paths.
-- `index`: stores symbols, references, visibility, and chain lookup data.
+- `index`: stores symbols, references, visibility, and chain lookup data. Its
+  position geometry module owns shared inclusive range containment and
+  before-or-at ordering used by index and suggestion visibility rules.
 - `suggestions`: classifies completion/signature contexts, enumerates visible
   project symbols, formats LSP completion/signature items, and adapts filtered
   vocabulary entries to suggestion results.

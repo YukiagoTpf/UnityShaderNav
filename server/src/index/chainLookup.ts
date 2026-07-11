@@ -1,18 +1,8 @@
-import type { FileIndex, FunctionSymbolEntry, Position, Range, SymbolEntry } from '@unity-shader-nav/shared';
+import type { FileIndex, FunctionSymbolEntry, Position, SymbolEntry } from '@unity-shader-nav/shared';
 import type { GlobalSymbolIndex } from './globalIndex';
 import type { LocationLink, ResolutionOptions } from './symbolResolver';
+import { inRange, isBeforeOrAt } from './positionGeometry';
 import { uriKey } from './uriKey';
-
-function inRange(pos: Position, range: Range): boolean {
-  if (pos.line < range.start.line || pos.line > range.end.line) return false;
-  if (pos.line === range.start.line && pos.character < range.start.character) return false;
-  if (pos.line === range.end.line && pos.character > range.end.character) return false;
-  return true;
-}
-
-function isBeforeOrAt(a: Position, b: Position): boolean {
-  return a.line < b.line || (a.line === b.line && a.character <= b.character);
-}
 
 function laterThan(a: Position, b: Position): boolean {
   return a.line > b.line || (a.line === b.line && a.character > b.character);

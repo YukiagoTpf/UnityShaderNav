@@ -20,6 +20,8 @@ and uses semantic versioning for extension releases.
 - Moved shared shader vocabulary behind a neutral domain interface and added a
   transitive dependency check that keeps parser modules independent of
   suggestion-specific code.
+- Narrowed cursor analysis to three runtime entry points and centralized the
+  inclusive position geometry shared by navigation and suggestion visibility.
 
 ### Fixed
 

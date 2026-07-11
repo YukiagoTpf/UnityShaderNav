@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { FileIndex, Position, Range, SymbolEntry } from '@unity-shader-nav/shared';
 import { GlobalSymbolIndex } from '../../src/index/globalIndex';
-import type { CursorTarget, WordAt } from '../../src/index/cursorTarget';
+import type { CursorTarget } from '../../src/index/cursorTarget';
 import type { IncludeDirective } from '../../src/parser/include/lineScanner';
+import type { WordAt } from '../../src/parser/lexical/cursor';
 import { resolveDefinition, type ResolverContext } from '../../src/index/resolution';
 
 const uri = 'file:///t/main.hlsl';

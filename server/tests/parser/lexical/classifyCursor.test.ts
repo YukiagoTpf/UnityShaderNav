@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { lexicalContextAt } from '../../../src/parser/lexical/cursor';
+import type { Position } from '@unity-shader-nav/shared';
+import { classifyCursor, type LexicalContext } from '../../../src/parser/lexical/cursor';
 
-describe('lexicalContextAt — preserved behavior', () => {
+function lexicalContextAt(text: string, position: Position): LexicalContext {
+  return classifyCursor(text, position, 'hlsl', 'file:///test.hlsl').lexical;
+}
+
+describe('classifyCursor lexical context — preserved behavior', () => {
   it('classifies a cursor inside a // line comment as comment', () => {
     const text = 'float a = 1; // note';
     expect(lexicalContextAt(text, { line: 0, character: 'float a = 1; // no'.length })).toBe('comment');
@@ -33,7 +38,7 @@ describe('lexicalContextAt — preserved behavior', () => {
   });
 });
 
-describe('lexicalContextAt — out-of-range and boundary parity', () => {
+describe('classifyCursor lexical context — out-of-range and boundary parity', () => {
   it('returns comment past EOL when a // ran to end of line (Class B parity)', () => {
     const text = 'a // b';
     expect(lexicalContextAt(text, { line: 0, character: 20 })).toBe('comment');
@@ -51,7 +56,7 @@ describe('lexicalContextAt — out-of-range and boundary parity', () => {
   });
 });
 
-describe('lexicalContextAt — on-delimiter refinement', () => {
+describe('classifyCursor lexical context — on-delimiter refinement', () => {
   it('classifies a cursor exactly on a comment delimiter as comment', () => {
     // A cursor sitting on the comment slashes is now part of the comment
     // (degenerate refinement: old returned 'code' here). Realistically reachable
