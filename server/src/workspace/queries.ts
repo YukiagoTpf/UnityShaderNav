@@ -18,6 +18,11 @@ import type {
   SymbolKind,
 } from '@unity-shader-nav/shared';
 import type { DocumentLexicalToken } from '../analysis';
+import {
+  documentationTargetAt,
+  type DocumentationResolver,
+  type DocumentationTarget,
+} from '../documentation';
 import type { IncludeChain } from '../include';
 import { formatHoverCandidates, type HoverInput } from '../hover';
 import {
@@ -63,6 +68,7 @@ export interface WorkspaceQueryState {
   readonly includeChain: IncludeChain;
   readonly includePackages: boolean;
   readonly suggestionCandidates: SuggestionCandidateSelector;
+  readonly documentation: DocumentationResolver;
 }
 
 type SuggestionWorkspaceQueryState = Pick<
@@ -111,6 +117,7 @@ export function signatureHelpNeedsIndex(input: DocumentPositionInput): boolean {
 export async function queryHover(
   state: WorkspaceQueryState,
   input: DocumentPositionInput,
+  lexicalTokens?: readonly DocumentLexicalToken[],
 ): Promise<Hover | null> {
   const { document, position } = input;
   const index = state.index.store.get(document.uri);
@@ -123,6 +130,28 @@ export async function queryHover(
     ).length > 0
       ? shaderLabNameHover(shaderLabNameTarget)
       : null;
+  }
+  const documentationTarget = documentationTargetAt(
+    document.text,
+    position,
+    document.languageId,
+    document.uri,
+    lexicalTokens,
+  );
+  if (documentationTarget && documentationTarget.role !== 'hlslIdentifier') {
+    const curated = state.documentation.curated(
+      entriesForDocumentationTarget(documentationTarget),
+      new Set(),
+    );
+    if (curated.length > 0) {
+      const contents = formatHoverCandidates(curated.map(({ entry, package: pkg }): HoverInput => ({
+        source: 'builtin',
+        entry,
+        package: pkg,
+      })));
+      return { contents, range: documentationTarget.range };
+    }
+    if (documentationTarget.role !== 'semantic') return null;
   }
   if (!isGenericDefinitionContext(document.text, position, document.languageId, document.uri)) {
     return null;
@@ -147,6 +176,7 @@ export async function queryHover(
         source: 'project',
         symbol,
         workspaceRootUri: state.folderUri,
+        package: state.documentation.projectProvenance(symbol),
       })));
       return contents.value.length > 0
         ? { contents, range: target.member.range }
@@ -168,17 +198,48 @@ export async function queryHover(
       source: 'project',
       symbol,
       workspaceRootUri: state.folderUri,
+      package: state.documentation.projectProvenance(symbol),
     })));
     return contents.value.length > 0 ? { contents, range: word.range } : null;
   }
 
-  const builtins = findBuiltinEntries(word.text);
+  const builtins = state.documentation.curated(
+    documentationTarget
+      ? entriesForDocumentationTarget(documentationTarget)
+      : findBuiltinEntries(word.text),
+    visibleUriKeys,
+  );
   if (builtins.length === 0) return null;
-  const contents = formatHoverCandidates(builtins.map((entry): HoverInput => ({
+  const contents = formatHoverCandidates(builtins.map(({ entry, package: pkg }): HoverInput => ({
     source: 'builtin',
     entry,
+    package: pkg,
   })));
   return contents.value.length > 0 ? { contents, range: word.range } : null;
+}
+
+function entriesForDocumentationTarget(target: DocumentationTarget): readonly import('../vocabulary').BuiltinEntry[] {
+  return findBuiltinEntries(target.name).filter((entry) => {
+    switch (target.role) {
+      case 'shaderLabTerm':
+        return entry.quickDocumentation !== undefined
+          && (entry.roles?.includes('shaderLabKeyword') === true
+            || entry.roles?.includes('shaderLabRenderState') === true);
+      case 'renderStateValue':
+        return entry.quickDocumentation !== undefined
+          && entry.roles?.includes('shaderLabStateValue') === true;
+      case 'propertyAttribute':
+        return entry.quickDocumentation !== undefined
+          && entry.roles?.includes('shaderLabPropertyAttribute') === true;
+      case 'propertyType':
+        return entry.quickDocumentation !== undefined
+          && entry.roles?.includes('shaderLabPropertyType') === true;
+      case 'semantic':
+        return entry.category === 'semantic';
+      case 'hlslIdentifier':
+        return entry.category !== 'shaderlab' && entry.category !== 'semantic';
+    }
+  });
 }
 
 export async function queryCompletion(

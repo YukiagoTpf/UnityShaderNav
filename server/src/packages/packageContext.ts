@@ -3,6 +3,7 @@ import type { ExtensionSettings } from '@unity-shader-nav/shared';
 import type { IncludeContext } from '../include';
 import { containsPath } from '../workspace/pathUtils';
 import { PackageResolver } from './packageResolver';
+import type { ResolvedPackage } from './packageResolver';
 
 /**
  * Immutable package-resolution context published with one indexed revision:
@@ -65,6 +66,48 @@ export class PackageContext {
   /** Physical roots of resolved packages. Empty when standalone. */
   packageRoots(): string[] {
     return this.resolver?.allPaths().map(({ path }) => path) ?? [];
+  }
+
+  packageVersion(name: string): string | undefined {
+    return this.resolver?.getVersion(name);
+  }
+
+  package(name: string): ResolvedPackage | undefined {
+    return this.resolver?.getPackage(name);
+  }
+
+  packages(): readonly ResolvedPackage[] {
+    if (!this.resolver) return [];
+    return this.resolver.allPaths()
+      .map(({ name }) => this.resolver!.getPackage(name))
+      .filter((entry): entry is ResolvedPackage => entry !== undefined)
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  identity(): string {
+    return JSON.stringify(this.packages().map((entry) => ({
+      name: entry.name,
+      path: entry.path,
+      source: entry.source,
+      lockVersion: entry.lockVersion,
+      version: entry.version,
+      official: entry.official,
+    })));
+  }
+
+  packageForUri(uri: string): { name: string; version: string | undefined } | undefined {
+    if (!this.resolver) return undefined;
+    let filePath: string;
+    try {
+      filePath = fileURLToPath(uri);
+    } catch {
+      return undefined;
+    }
+    const match = this.resolver.allPaths()
+      .filter((entry) => containsPath(entry.path, filePath))
+      .sort((left, right) => right.path.length - left.path.length)[0];
+    if (!match) return undefined;
+    return { name: match.name, version: this.resolver.getVersion(match.name) };
   }
 
   /** Is the URI under a resolved package physical root? */

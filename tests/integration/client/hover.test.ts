@@ -32,6 +32,34 @@ function hoverText(hovers: vscode.Hover[]): string {
 }
 
 suite('hover', () => {
+  test('shows sourced ShaderLab Quick Documentation in the Extension Host', async () => {
+    const root = fixturePath('shaderlab-names');
+    await withWorkspaceFolder(root, async () => {
+      const uri = vscode.Uri.file(fixturePath(
+        'shaderlab-names',
+        'Assets',
+        'Consumer.shader',
+      ));
+      const doc = await vscode.workspace.openTextDocument(uri);
+      await vscode.window.showTextDocument(doc);
+      const line = doc.getText().split(/\r?\n/)
+        .findIndex((candidate) => candidate.includes('Cull Back'));
+      assert.ok(line >= 0, 'expected Cull render state fixture');
+      const character = doc.lineAt(line).text.indexOf('Cull') + 1;
+
+      const hovers = await waitForHover(
+        uri,
+        new vscode.Position(line, character),
+        (result) => result ? hoverText(result).includes('SL-Cull.html') : false,
+      );
+      assert.ok(hovers, 'expected ShaderLab Quick Documentation');
+      const text = hoverText(hovers);
+      assert.ok(text.includes('Curated fallback'), text);
+      assert.ok(text.includes('Unity 2022.3 manual'), text);
+      assert.ok(text.includes('/2022.3/Documentation/Manual/SL-Cull.html'), text);
+    });
+  });
+
   test('hovers a project function from a call site in .hlsl', async () => {
     await withWorkspaceFolder(fixturePath(), async () => {
       const uri = vscode.Uri.file(fixturePath('single-file', 'test.hlsl'));

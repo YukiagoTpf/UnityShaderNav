@@ -9,6 +9,15 @@ and uses semantic versioning for extension releases.
 
 ### Added
 
+- Added sourced, cursor-context-aware Quick Documentation for selected
+  ShaderLab directives, render states, Property attributes and types, HLSL
+  semantics, and SRP helpers. Indexed project or Package declarations take
+  precedence; curated Package fallback requires an include-visible built-in or
+  default-registry Unity Package in a supported major-version range, while
+  unknown, scoped-registry, or incompatible facts remain neutral. Editor,
+  project manifest, and embedded package manifest changes now rebuild the
+  captured project facts.
+
 - Added conservative SRP Batcher material-contract diagnostics for supported
   scalar/vector ShaderLab Properties missing from `UnityPerMaterial`,
   incompatible field types, and deterministic cross-Pass layout differences.

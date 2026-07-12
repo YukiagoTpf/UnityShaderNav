@@ -19,13 +19,17 @@ suite('ShaderLab names', () => {
       const libraryUri = vscode.Uri.file(fixturePath('Assets', 'Library.shader'));
       const consumer = await vscode.workspace.openTextDocument(consumerUri);
       await vscode.window.showTextDocument(consumer);
+      const lines = consumer.getText().split(/\r?\n/);
+      const fallbackLine = lines.findIndex((line) => line.includes('Fallback'));
+      const usePassLine = lines.findIndex((line) => line.includes('UsePass'));
+      assert.ok(fallbackLine >= 0 && usePassLine >= 0, 'expected ShaderLab name fixtures');
       const shaderPosition = new vscode.Position(
-        2,
-        consumer.lineAt(2).text.indexOf('Integration/Library') + 1,
+        fallbackLine,
+        consumer.lineAt(fallbackLine).text.indexOf('Integration/Library') + 1,
       );
       const passPosition = new vscode.Position(
-        5,
-        consumer.lineAt(5).text.indexOf('FORWARDLIT') + 1,
+        usePassLine,
+        consumer.lineAt(usePassLine).text.indexOf('FORWARDLIT') + 1,
       );
 
       const shaderDefinitions = await waitForEventually(

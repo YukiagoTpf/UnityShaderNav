@@ -25,6 +25,8 @@ import type {
 } from 'vscode-languageserver/node';
 import type { CacheManager } from '../cache';
 import { createIncludeChain, type IncludeChain } from '../include';
+import { DocumentationResolver } from '../documentation';
+import { UnityProjectFacts } from '../project';
 import { uriKey } from '../uriKey';
 import type { PackageContext } from '../packages';
 import {
@@ -84,6 +86,7 @@ export interface IndexedRevisionConfiguration {
   readonly settings: ExtensionSettings;
   readonly unityRoot: string | undefined;
   readonly packages: PackageContext;
+  readonly project: UnityProjectFacts;
   readonly membership: IndexedSourceMembership;
   readonly cache: CacheManager | undefined;
   readonly fingerprint: CacheFingerprint | undefined;
@@ -91,9 +94,10 @@ export interface IndexedRevisionConfiguration {
 
 type IndexedRevisionConfigurationInput = Omit<
   IndexedRevisionConfiguration,
-  'membership'
+  'membership' | 'project'
 > & {
   readonly membership?: IndexedSourceMembership;
+  readonly project?: UnityProjectFacts;
 };
 
 /**
@@ -107,6 +111,7 @@ export class PublishedIndexedRevision {
   readonly settings: ExtensionSettings;
   readonly unityRoot: string | undefined;
   readonly packages: PackageContext;
+  readonly project: UnityProjectFacts;
   readonly membership: IndexedSourceMembership;
   readonly cache: CacheManager | undefined;
   readonly fingerprint: CacheFingerprint | undefined;
@@ -114,6 +119,7 @@ export class PublishedIndexedRevision {
   private readonly index: WorkspaceIndex;
   private readonly includeChain: IncludeChain;
   private readonly suggestionCandidates: SuggestionCandidateSelector;
+  private readonly documentation: DocumentationResolver;
   private readonly committedDocuments: ReadonlyMap<string, CommittedDocumentAttempt>;
   private readonly sourceWarnings: ReadonlySet<string>;
 
@@ -129,6 +135,7 @@ export class PublishedIndexedRevision {
     this.settings = configuration.settings;
     this.unityRoot = configuration.unityRoot;
     this.packages = configuration.packages;
+    this.project = configuration.project;
     this.membership = configuration.membership;
     this.cache = configuration.cache;
     this.fingerprint = configuration.fingerprint;
@@ -145,6 +152,7 @@ export class PublishedIndexedRevision {
       index.read,
       this.includeChain,
     );
+    this.documentation = new DocumentationResolver(configuration.packages, configuration.project);
     this.committedDocuments = new Map(committedDocuments);
     this.sourceWarnings = new Set(sourceWarnings);
     this.sourceWarningCount = this.sourceWarnings.size;
@@ -197,7 +205,11 @@ export class PublishedIndexedRevision {
   }
 
   hoverAt(input: DocumentPositionInput): Promise<Hover | null> {
-    return queryHover(this.queryState(), input);
+    return queryHover(
+      this.queryState(),
+      input,
+      this.documentAnalysis({ uri: input.document.uri, document: input.document })?.lexicalTokens,
+    );
   }
 
   completionAt(input: DocumentPositionInput): Promise<CompletionItem[] | null> {
@@ -273,6 +285,7 @@ export class PublishedIndexedRevision {
         settings: immutableSettings(settings),
         unityRoot: this.unityRoot,
         packages: this.packages,
+        project: this.project,
         membership,
         cache: this.cache,
         fingerprint: this.fingerprint,
@@ -301,6 +314,7 @@ export class PublishedIndexedRevision {
       includeChain: this.includeChain,
       includePackages: this.settings.findReferences.includePackages,
       suggestionCandidates: this.suggestionCandidates,
+      documentation: this.documentation,
     };
   }
 
@@ -357,7 +371,12 @@ export class IndexedRevisionBuilder {
       packages: configuration.packages,
     });
     return new IndexedRevisionBuilder(
-      { ...configuration, settings, membership },
+      {
+        ...configuration,
+        settings,
+        membership,
+        project: configuration.project ?? UnityProjectFacts.unknown(),
+      },
       new WorkspaceIndex(
         settings.declarationMacros,
         configuration.unityRoot === undefined,

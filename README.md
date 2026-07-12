@@ -28,7 +28,10 @@ The extension focuses on fast code navigation:
   deterministic cross-Pass layout drift. A Quick Fix is offered only when one
   exact insertion target is safe.
 - Hover for declarations of indexed shader symbols (functions, structs,
-  members, variables, parameters, macros) and selected built-ins.
+  members, variables, parameters, macros), plus sourced Quick Documentation
+  for selected ShaderLab terms, Property syntax, semantics, and SRP helpers.
+  Project and Package declarations win over the curated, version-scoped
+  fallback.
 - Conservative completion and signature help for indexed HLSL/CG code, plus a
   curated Unity/HLSL/ShaderLab/URP/HDRP built-in vocabulary covering common
   intrinsics, helper macros, render states, and semantics.
@@ -140,6 +143,11 @@ See [Configuration](docs/configuration.md) for the full explanation and examples
   indexed as special sources.
 - Built-in completion and signature help are curated and non-exhaustive.
   Project symbols are preferred when names collide with built-ins.
+- Quick Documentation is curated and non-exhaustive. Package-specific fallback
+  appears only for a compatible, include-visible built-in or default-registry
+  Unity Package. Unity-scoped prose is currently verified for Editor 2022.3;
+  other, unknown, scoped-registry, forked, local, and incompatible facts remain
+  neutral unless an actual indexed declaration is available.
 - Chain lookup intentionally stays conservative for multiline receivers,
   macro-expanded receivers, branch-dependent types, and overload-specific return
   type inference.

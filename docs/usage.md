@@ -36,10 +36,20 @@ Pause the mouse over (or press `Ctrl+K Ctrl+I` on) an indexed shader symbol to
 see a declaration-style summary and source location. Hover covers project
 functions, structs, struct members, variables, parameters, macros, and
 ShaderLab Shader/Pass names, plus selected built-ins from the curated catalog.
-Ambiguous symbols are listed
-without ranking, matching Go to Definition behavior; very large candidate sets
-are truncated with a `… and N more candidates` footer to keep the bubble
-readable.
+Selected ShaderLab directives, render states, Property attributes and types,
+HLSL semantics, and SRP helpers also provide Quick Documentation with a public
+source and an explicit Unity or Package version scope. An indexed project or
+Package declaration always wins. Package-specific curated text appears only
+when the owning built-in or default-registry Unity Package is include-visible
+and its resolved manifest version is supported. Unity-scoped entries are
+currently verified for Editor 2022.3, read from
+`ProjectSettings/ProjectVersion.txt`. Other, unknown, scoped-registry,
+local/forked, or incompatible facts stay neutral. The catalog is intentionally
+useful rather than exhaustive.
+
+Ambiguous symbols are listed without ranking, matching Go to Definition
+behavior; very large candidate sets are truncated with a `… and N more
+candidates` footer to keep the bubble readable.
 
 ### Find References
 

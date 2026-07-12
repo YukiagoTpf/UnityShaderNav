@@ -196,7 +196,7 @@ describe('registerFileWatchers', () => {
     }
   });
 
-  it('rebuilds all workspaces when git HEAD or packages-lock changes', async () => {
+  it('rebuilds all workspaces when git, project, or Package identity facts change', async () => {
     vi.useFakeTimers();
     try {
       let handler: ((event: FileEvent) => void) | undefined;
@@ -223,8 +223,17 @@ describe('registerFileWatchers', () => {
       await vi.advanceTimersByTimeAsync(501);
       handler?.({ uri: 'file:///projectA/Packages/packages-lock.json', type: 'changed' });
       await vi.advanceTimersByTimeAsync(501);
+      handler?.({ uri: 'file:///projectA/Packages/manifest.json', type: 'changed' });
+      await vi.advanceTimersByTimeAsync(501);
+      handler?.({ uri: 'file:///projectA/ProjectSettings/ProjectVersion.txt', type: 'changed' });
+      await vi.advanceTimersByTimeAsync(501);
+      handler?.({
+        uri: 'file:///projectA/Packages/com.example.embedded/package.json',
+        type: 'changed',
+      });
+      await vi.advanceTimersByTimeAsync(501);
 
-      expect(workspace.rebuild).toHaveBeenCalledTimes(2);
+      expect(workspace.rebuild).toHaveBeenCalledTimes(5);
       expect(workspace.applyChanges).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();

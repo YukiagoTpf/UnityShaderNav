@@ -11,6 +11,7 @@ import { buildFingerprint } from '../cache/fingerprint';
 import { runningIndexImplementationIdentity } from '../cache/implementationIdentity';
 import { PackageContext } from '../packages';
 import { ensureParserReady } from '../parser/hlsl';
+import { UnityProjectFacts } from '../project';
 import {
   resolveRunningParserRuntimeAssets,
   type ParserRuntimeAssets,
@@ -109,6 +110,10 @@ export class DefaultIndexedRevisionCandidateConstructor
     input.onModeResolved?.(unityRoot ? 'unity' : 'standalone');
 
     const packages = await this.loadPackages(unityRoot, input.settings, input.signal);
+    const project = unityRoot
+      ? await UnityProjectFacts.load(unityRoot)
+      : UnityProjectFacts.unknown();
+    this.throwIfAborted(input.signal);
     const runtimeAssets = await this.preflightParser(input.signal);
     const cacheConfiguration = await this.configureCache(
       unityRoot,
@@ -129,6 +134,7 @@ export class DefaultIndexedRevisionCandidateConstructor
       settings: input.settings,
       unityRoot,
       packages,
+      project,
       membership,
       ...cacheConfiguration,
     }, this.indexDocument, this.analyzeDocument);
@@ -136,6 +142,7 @@ export class DefaultIndexedRevisionCandidateConstructor
       input.previous,
       unityRoot,
       packages,
+      project,
       cacheConfiguration.fingerprint,
     );
 
@@ -406,13 +413,14 @@ export class DefaultIndexedRevisionCandidateConstructor
     previous: PublishedIndexedRevision | undefined,
     unityRoot: string | undefined,
     packages: PackageContext,
+    project: UnityProjectFacts,
     fingerprint: CacheFingerprint | undefined,
   ): boolean {
     if (!previous || !previous.fingerprint || !fingerprint) return false;
     if (previous.unityRoot !== unityRoot) return false;
+    if (previous.project.identity() !== project.identity()) return false;
     if (JSON.stringify(previous.fingerprint) !== JSON.stringify(fingerprint)) return false;
-    return JSON.stringify([...previous.packages.packageRoots()].sort())
-      === JSON.stringify([...packages.packageRoots()].sort());
+    return previous.packages.identity() === packages.identity();
   }
 
   private throwIfAborted(signal: AbortSignal): void {

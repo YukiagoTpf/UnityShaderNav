@@ -3,6 +3,7 @@ import type { ShaderLabPropertyType } from '@unity-shader-nav/shared';
 export type BuiltinCategory =
   | 'hlsl'
   | 'unitycg'
+  | 'srp-core'
   | 'urp'
   | 'hdrp'
   | 'shaderlab'
@@ -15,6 +16,7 @@ export interface BuiltinEntry {
   readonly roles?: readonly BuiltinRole[];
   readonly detail?: string;
   readonly documentation?: string;
+  readonly quickDocumentation?: BuiltinQuickDocumentation;
   readonly insertText?: string;
   readonly returnType?: string;
   readonly parameters?: readonly {
@@ -24,12 +26,34 @@ export interface BuiltinEntry {
   }[];
 }
 
+export interface BuiltinQuickDocumentation {
+  readonly summary: string;
+  readonly source: {
+    readonly label: string;
+    readonly url: string;
+  };
+  readonly scope:
+    | {
+      readonly kind: 'unity';
+      readonly label: string;
+      readonly supportedEditorVersions: readonly string[];
+    }
+    | { readonly kind: 'hlsl'; readonly label: string }
+    | {
+      readonly kind: 'package';
+      readonly label: string;
+      readonly packageName: string;
+      readonly supportedMajorVersions: readonly number[];
+    };
+}
+
 export type BuiltinRole =
   | 'shaderLabKeyword'
   | 'shaderLabRenderState'
   | 'shaderLabStateValueContext'
   | 'shaderLabStateValue'
-  | 'shaderLabPropertyType';
+  | 'shaderLabPropertyType'
+  | 'shaderLabPropertyAttribute';
 
 export type BuiltinContext =
   | 'hlsl'
@@ -44,13 +68,18 @@ const shaderLabStateDetail = 'ShaderLab render state';
 const shaderLabValueDetail = 'ShaderLab state value';
 const shaderLabPropertyTypeDetail = 'ShaderLab Property type';
 
-function shaderLabKeyword(name: string, detail = 'ShaderLab keyword'): BuiltinEntry {
+function shaderLabKeyword(
+  name: string,
+  detail = 'ShaderLab keyword',
+  quickDocumentation?: BuiltinQuickDocumentation,
+): BuiltinEntry {
   return {
     name,
     kind: 'keyword',
     category: 'shaderlab',
     roles: ['shaderLabKeyword'],
     detail,
+    quickDocumentation,
   };
 }
 
@@ -64,7 +93,11 @@ function shaderLabStateKeyword(name: string): BuiltinEntry {
   };
 }
 
-function shaderLabRenderState(name: string, acceptsValue = false): BuiltinEntry {
+function shaderLabRenderState(
+  name: string,
+  acceptsValue = false,
+  quickDocumentation?: BuiltinQuickDocumentation,
+): BuiltinEntry {
   return {
     name,
     kind: 'state',
@@ -73,6 +106,7 @@ function shaderLabRenderState(name: string, acceptsValue = false): BuiltinEntry 
       ? ['shaderLabRenderState', 'shaderLabStateValueContext']
       : ['shaderLabRenderState'],
     detail: shaderLabStateDetail,
+    quickDocumentation,
   };
 }
 
@@ -93,7 +127,83 @@ function shaderLabPropertyType(name: ShaderLabPropertyType): BuiltinEntry {
     category: 'shaderlab',
     roles: ['shaderLabPropertyType'],
     detail: shaderLabPropertyTypeDetail,
+    quickDocumentation: propertyTypeDocumentation(name),
   };
+}
+
+function shaderLabPropertyAttribute(
+  name: string,
+  summary: string,
+): BuiltinEntry {
+  return {
+    name,
+    kind: 'keyword',
+    category: 'shaderlab',
+    roles: ['shaderLabPropertyAttribute'],
+    detail: 'ShaderLab Property attribute',
+    quickDocumentation: unityDocumentation(
+      summary,
+      'Properties block reference',
+      'https://docs.unity3d.com/2022.3/Documentation/Manual/SL-Properties.html',
+    ),
+  };
+}
+
+function unityDocumentation(
+  summary: string,
+  label: string,
+  url: string,
+): BuiltinQuickDocumentation {
+  return {
+    summary,
+    source: { label, url },
+    scope: {
+      kind: 'unity',
+      label: 'Unity 2022.3 manual',
+      supportedEditorVersions: ['2022.3'],
+    },
+  };
+}
+
+function packageDocumentation(
+  summary: string,
+  label: string,
+  url: string,
+  packageName: string,
+  scopeLabel: string,
+  supportedMajorVersions: readonly number[],
+): BuiltinQuickDocumentation {
+  return {
+    summary,
+    source: { label, url },
+    scope: {
+      kind: 'package',
+      label: scopeLabel,
+      packageName,
+      supportedMajorVersions,
+    },
+  };
+}
+
+function propertyTypeDocumentation(name: ShaderLabPropertyType): BuiltinQuickDocumentation {
+  const summaries: Record<ShaderLabPropertyType, string> = {
+    '2D': 'Declares a 2D texture Material property.',
+    '2DArray': 'Declares a 2D texture-array Material property.',
+    '3D': 'Declares a 3D texture Material property.',
+    Cube: 'Declares a cubemap Material property.',
+    CubeArray: 'Declares a cubemap-array Material property.',
+    Color: 'Declares a color picker backed by a four-component value.',
+    Vector: 'Declares a four-component vector Material property.',
+    Float: 'Declares a floating-point Material property.',
+    Range: 'Declares a floating-point slider with inclusive bounds.',
+    Int: 'Declares the legacy float-backed integer-looking Property type.',
+    Integer: 'Declares a Material property backed by a real integer.',
+  };
+  return unityDocumentation(
+    summaries[name],
+    'Properties block reference',
+    'https://docs.unity3d.com/2022.3/Documentation/Manual/SL-Properties.html',
+  );
 }
 
 const SHADERLAB_PROPERTY_TYPE_NAMES = {
@@ -421,14 +531,44 @@ const BUILTIN_ENTRIES = [
   { name: 'TEXTURE2D_PARAM', kind: 'macro', category: 'urp', detail: 'URP texture parameter macro', documentation: 'Declares a Texture2D function parameter together with its sampler.' },
   { name: 'TEXTURE2D_ARGS', kind: 'macro', category: 'urp', detail: 'URP texture argument macro', documentation: 'Forwards a Texture2D and its sampler as function arguments.' },
   // === URP/SRP Core transformation helpers ===
-  { name: 'TransformObjectToWorld', kind: 'function', category: 'urp', returnType: 'float3', parameters: [{ type: 'float3', name: 'positionOS' }], documentation: 'Transforms an object-space position to world space.' },
-  { name: 'TransformObjectToHClip', kind: 'function', category: 'urp', returnType: 'float4', parameters: [{ type: 'float3', name: 'positionOS' }], documentation: 'Transforms an object-space position to homogeneous clip space.' },
-  { name: 'TransformWorldToHClip', kind: 'function', category: 'urp', returnType: 'float4', parameters: [{ type: 'float3', name: 'positionWS' }], documentation: 'Transforms a world-space position to homogeneous clip space.' },
-  { name: 'TransformObjectToWorldNormal', kind: 'function', category: 'urp', returnType: 'float3', parameters: [{ type: 'float3', name: 'normalOS' }], documentation: 'Transforms an object-space normal to world space.' },
+  { name: 'TransformObjectToWorld', kind: 'function', category: 'srp-core', returnType: 'float3', parameters: [{ type: 'float3', name: 'positionOS' }], documentation: 'Transforms an object-space position to world space.' },
+  {
+    name: 'TransformObjectToHClip',
+    kind: 'function',
+    category: 'srp-core',
+    returnType: 'float4',
+    parameters: [{ type: 'float3', name: 'positionOS' }],
+    documentation: 'Transforms an object-space position to homogeneous clip space.',
+    quickDocumentation: packageDocumentation(
+      'Transforms an object-space position to homogeneous clip space.',
+      'SRP Core built-in shader methods',
+      'https://docs.unity.cn/Packages/com.unity.render-pipelines.core@17.0/manual/built-in-shader-methods.html',
+      'com.unity.render-pipelines.core',
+      'SRP Core package major 17',
+      [17],
+    ),
+  },
+  { name: 'TransformWorldToHClip', kind: 'function', category: 'srp-core', returnType: 'float4', parameters: [{ type: 'float3', name: 'positionWS' }], documentation: 'Transforms a world-space position to homogeneous clip space.' },
+  { name: 'TransformObjectToWorldNormal', kind: 'function', category: 'srp-core', returnType: 'float3', parameters: [{ type: 'float3', name: 'normalOS' }], documentation: 'Transforms an object-space normal to world space.' },
   { name: 'TransformWorldToView', kind: 'function', category: 'urp', returnType: 'float3', parameters: [{ type: 'float3', name: 'positionWS' }], documentation: 'Transforms a world-space position to view space.' },
   { name: 'GetWorldSpaceViewDir', kind: 'function', category: 'urp', returnType: 'float3', parameters: [{ type: 'float3', name: 'positionWS' }], documentation: 'Returns the unnormalized world-space view direction from a position.' },
   { name: 'GetWorldSpaceNormalizeViewDir', kind: 'function', category: 'urp', returnType: 'float3', parameters: [{ type: 'float3', name: 'positionWS' }], documentation: 'Returns the normalized world-space view direction from a position.' },
-  { name: 'GetVertexPositionInputs', kind: 'function', category: 'urp', returnType: 'VertexPositionInputs', parameters: [{ type: 'float3', name: 'positionOS' }], documentation: 'Computes URP vertex position values (object, world, view, clip, NDC).' },
+  {
+    name: 'GetVertexPositionInputs',
+    kind: 'function',
+    category: 'urp',
+    returnType: 'VertexPositionInputs',
+    parameters: [{ type: 'float3', name: 'positionOS' }],
+    documentation: 'Computes URP vertex position values (object, world, view, clip, NDC).',
+    quickDocumentation: packageDocumentation(
+      'Converts an object-space position to world, view, clip, and normalized-device-coordinate positions.',
+      'Transform positions in a custom URP shader',
+      'https://docs.unity3d.com/6000.0/Documentation/Manual/urp/use-built-in-shader-methods-transformations.html',
+      'com.unity.render-pipelines.universal',
+      'URP package major 17',
+      [17],
+    ),
+  },
   { name: 'GetVertexNormalInputs', kind: 'function', category: 'urp', returnType: 'VertexNormalInputs', parameters: [{ type: 'float3', name: 'normalOS' }], documentation: 'Computes URP vertex normal/tangent/bitangent in world space.' },
   // === URP lighting helpers ===
   { name: 'GetMainLight', kind: 'function', category: 'urp', returnType: 'Light', parameters: [], documentation: 'Returns the main directional light data for the current fragment.' },
@@ -439,7 +579,7 @@ const BUILTIN_ENTRIES = [
   { name: 'UNITY_VERTEX_INPUT_INSTANCE_ID', kind: 'macro', category: 'urp', detail: 'Unity instancing macro', documentation: 'Declares the instance ID input field on a vertex input struct.' },
   { name: 'UNITY_VERTEX_OUTPUT_STEREO', kind: 'macro', category: 'urp', detail: 'Unity stereo macro', documentation: 'Declares the stereo eye index output field on a vertex output struct.' },
   { name: 'MainLightRealtimeShadow', kind: 'function', category: 'urp', returnType: 'half', parameters: [{ type: 'float4', name: 'shadowCoord' }], documentation: 'Samples the URP realtime shadow attenuation for the main light.' },
-  // === HDRP helpers (HDRP-specific; SRP Core shared helpers live under URP) ===
+  // === HDRP helpers (HDRP-specific; shared transformations live under SRP Core) ===
   { name: 'GetShadowFade', kind: 'function', category: 'hdrp', returnType: 'float', parameters: [{ type: 'float3', name: 'positionWS' }, { type: 'float3', name: 'cameraDirection' }], documentation: 'Returns the shadow fade factor for a position relative to the camera.' },
   { name: 'GetCurrentExposureMultiplier', kind: 'function', category: 'hdrp', returnType: 'float', parameters: [], documentation: 'Returns the current camera exposure multiplier used by HDRP shaders.' },
   { name: 'ApplyDecalToSurfaceData', kind: 'function', category: 'hdrp', returnType: 'void', parameters: [{ type: 'DecalSurfaceData', name: 'decalSurfaceData' }, { type: 'float3', name: 'vtxNormal' }, { type: 'inout SurfaceData', name: 'surfaceData' }], documentation: 'Composites an HDRP decal sample into the lit SurfaceData of the current pixel.' },
@@ -484,30 +624,106 @@ const BUILTIN_ENTRIES = [
   { name: 'TEXCOORD0', kind: 'semantic', category: 'semantic', detail: 'Shader semantic' },
   { name: 'TEXCOORD1', kind: 'semantic', category: 'semantic', detail: 'Shader semantic' },
   { name: 'COLOR', kind: 'semantic', category: 'semantic', detail: 'Shader semantic' },
-  { name: 'SV_POSITION', kind: 'semantic', category: 'semantic', detail: 'System value semantic' },
-  { name: 'SV_Target', kind: 'semantic', category: 'semantic', detail: 'System value semantic' },
+  {
+    name: 'SV_POSITION',
+    kind: 'semantic',
+    category: 'semantic',
+    detail: 'System position semantic',
+    quickDocumentation: unityDocumentation(
+      'Carries the system position between shader stages; Unity cross-compiles this semantic for supported graphics APIs.',
+      'Unity shader semantics',
+      'https://docs.unity3d.com/2022.3/Documentation/Manual/SL-ShaderSemantics.html',
+    ),
+  },
+  {
+    name: 'SV_Target',
+    kind: 'semantic',
+    category: 'semantic',
+    detail: 'Render-target output semantic',
+    quickDocumentation: unityDocumentation(
+      'Writes a fragment-shader output to a render target; an optional index selects the target.',
+      'Unity shader semantics',
+      'https://docs.unity3d.com/2022.3/Documentation/Manual/SL-ShaderSemantics.html',
+    ),
+  },
   { name: 'SV_VertexID', kind: 'semantic', category: 'semantic', detail: 'System value semantic' },
   { name: 'SV_InstanceID', kind: 'semantic', category: 'semantic', detail: 'System value semantic' },
   // === ShaderLab syntax and semantic roles ===
-  shaderLabKeyword('Shader', 'ShaderLab Shader block keyword'),
-  shaderLabKeyword('Properties', 'ShaderLab Properties block keyword'),
-  shaderLabKeyword('SubShader', 'ShaderLab SubShader block keyword'),
-  shaderLabKeyword('Pass', 'ShaderLab Pass block keyword'),
+  shaderLabKeyword('Shader', 'ShaderLab Shader block keyword', unityDocumentation(
+    'Defines a Shader object and contains Properties, SubShaders, and optional fallback/editor declarations.',
+    'Shader block reference',
+    'https://docs.unity3d.com/2022.3/Documentation/Manual/SL-Shader.html',
+  )),
+  shaderLabKeyword('Properties', 'ShaderLab Properties block keyword', unityDocumentation(
+    'Defines Material properties that Unity serializes with each Material asset.',
+    'Properties block reference',
+    'https://docs.unity3d.com/2022.3/Documentation/Manual/SL-Properties.html',
+  )),
+  shaderLabKeyword('SubShader', 'ShaderLab SubShader block keyword', unityDocumentation(
+    'Defines one render-pipeline or hardware-compatible implementation of a Shader.',
+    'SubShader block reference',
+    'https://docs.unity3d.com/2022.3/Documentation/Manual/SL-SubShader.html',
+  )),
+  shaderLabKeyword('Pass', 'ShaderLab Pass block keyword', unityDocumentation(
+    'Defines one rendering Pass and its render state and shader programs.',
+    'Pass block reference',
+    'https://docs.unity3d.com/2022.3/Documentation/Manual/SL-Pass.html',
+  )),
   shaderLabKeyword('Name', 'ShaderLab Pass name declaration'),
-  shaderLabKeyword('UsePass', 'ShaderLab pass reuse directive'),
+  shaderLabKeyword(
+    'UsePass',
+    'ShaderLab pass reuse directive',
+    unityDocumentation(
+      'Inserts a named Pass from another Shader; the referenced Pass name is uppercase.',
+      'UsePass directive reference',
+      'https://docs.unity3d.com/2022.3/Documentation/Manual/SL-UsePass.html',
+    ),
+  ),
   shaderLabKeyword('GrabPass', 'ShaderLab grab pass directive'),
-  shaderLabKeyword('Fallback', 'ShaderLab fallback shader directive'),
+  shaderLabKeyword('Fallback', 'ShaderLab fallback shader directive', unityDocumentation(
+    'Selects another Shader when no SubShader in this Shader is supported.',
+    'Fallback block reference',
+    'https://docs.unity3d.com/2022.3/Documentation/Manual/SL-Fallback.html',
+  )),
   shaderLabKeyword('CustomEditor', 'ShaderLab custom inspector directive'),
   shaderLabKeyword('Category', 'ShaderLab category block keyword'),
-  shaderLabKeyword('HLSLPROGRAM', 'ShaderLab HLSL program marker'),
+  shaderLabKeyword('HLSLPROGRAM', 'ShaderLab HLSL program marker', unityDocumentation(
+    'Starts an HLSL program block compiled for the containing Pass.',
+    'ShaderLab code blocks',
+    'https://docs.unity3d.com/2022.3/Documentation/Manual/shader-shaderlab-code-blocks.html',
+  )),
   shaderLabKeyword('ENDHLSL', 'ShaderLab HLSL program marker'),
   shaderLabKeyword('CGPROGRAM', 'ShaderLab CG program marker'),
   shaderLabKeyword('ENDCG', 'ShaderLab CG program marker'),
   shaderLabKeyword('HLSLINCLUDE', 'ShaderLab HLSL include marker'),
   shaderLabKeyword('CGINCLUDE', 'ShaderLab CG include marker'),
-  shaderLabRenderState('Blend', true),
-  shaderLabRenderState('Cull', true),
-  shaderLabRenderState('ZWrite', true),
+  shaderLabRenderState(
+    'Blend',
+    true,
+    unityDocumentation(
+      'Configures how the GPU combines source and destination colors.',
+      'Blend command reference',
+    'https://docs.unity3d.com/2022.3/Documentation/Manual/SL-Blend.html',
+    ),
+  ),
+  shaderLabRenderState(
+    'Cull',
+    true,
+    unityDocumentation(
+      'Selects front-face, back-face, or disabled polygon culling.',
+      'Cull command reference',
+    'https://docs.unity3d.com/2022.3/Documentation/Manual/SL-Cull.html',
+    ),
+  ),
+  shaderLabRenderState(
+    'ZWrite',
+    true,
+    unityDocumentation(
+      'Enables or disables writing fragment depth to the depth buffer.',
+      'ZWrite command reference',
+    'https://docs.unity3d.com/2022.3/Documentation/Manual/SL-ZWrite.html',
+    ),
+  ),
   shaderLabRenderState('ZTest', true),
   shaderLabRenderState('Offset', true),
   shaderLabRenderState('ColorMask', true),
@@ -521,6 +737,14 @@ const BUILTIN_ENTRIES = [
   shaderLabRenderState('AlphaToMask', true),
   shaderLabRenderState('Conservative', true),
   ...shaderLabPropertyTypes(),
+  shaderLabPropertyAttribute('Gamma', 'Marks a float or vector Property as an sRGB value.'),
+  shaderLabPropertyAttribute('HDR', 'Marks a texture or color Property as high dynamic range.'),
+  shaderLabPropertyAttribute('HideInInspector', 'Hides the Property in the Material Inspector.'),
+  shaderLabPropertyAttribute('MainTexture', 'Selects the Material main texture Property.'),
+  shaderLabPropertyAttribute('MainColor', 'Selects the Material main color Property.'),
+  shaderLabPropertyAttribute('NoScaleOffset', 'Hides tiling and offset controls for a texture Property.'),
+  shaderLabPropertyAttribute('Normal', 'Marks a texture Property as expecting a normal map.'),
+  shaderLabPropertyAttribute('PerRendererData', 'Sources a texture Property from per-renderer data.'),
   // === ShaderLab state values (blend factors, blend ops, ztest, stencil ops) ===
   shaderLabStateValue('Off'),
   shaderLabStateValue('On'),
@@ -603,6 +827,7 @@ const ENTRIES_BY_CONTEXT: Readonly<Record<BuiltinContext, readonly BuiltinEntry[
   hlsl: BUILTIN_ENTRIES.filter((entry) => (
     entry.category === 'hlsl'
     || entry.category === 'unitycg'
+    || entry.category === 'srp-core'
     || entry.category === 'urp'
     || entry.category === 'hdrp'
   )),

@@ -3,17 +3,20 @@ import { fileURLToPath } from 'node:url';
 import { MarkupKind, type MarkupContent } from 'vscode-languageserver/node';
 import type { FunctionSymbolEntry, SymbolEntry } from '@unity-shader-nav/shared';
 import type { BuiltinCategory, BuiltinEntry } from '../vocabulary';
+import type { PackageProvenance } from '../documentation';
 
 export interface ProjectHoverInput {
   source: 'project';
   symbol: SymbolEntry;
   /** Optional workspace root URI for relativizing the source-location footer. */
   workspaceRootUri?: string;
+  package?: PackageProvenance;
 }
 
 export interface BuiltinHoverInput {
   source: 'builtin';
   entry: BuiltinEntry;
+  package?: PackageProvenance;
 }
 
 export type HoverInput = ProjectHoverInput | BuiltinHoverInput;
@@ -21,6 +24,7 @@ export type HoverInput = ProjectHoverInput | BuiltinHoverInput;
 const CATEGORY_LABEL: Record<BuiltinCategory, string> = {
   hlsl: 'HLSL built-in',
   unitycg: 'Unity built-in',
+  'srp-core': 'SRP Core built-in',
   urp: 'URP built-in',
   hdrp: 'HDRP built-in',
   shaderlab: 'ShaderLab built-in',
@@ -30,11 +34,11 @@ const CATEGORY_LABEL: Record<BuiltinCategory, string> = {
 /** Format a single candidate into a markdown MarkupContent block (no separator). */
 export function formatHoverCandidate(input: HoverInput): MarkupContent {
   if (input.source === 'builtin') {
-    return { kind: MarkupKind.Markdown, value: formatBuiltinValue(input.entry) };
+    return { kind: MarkupKind.Markdown, value: formatBuiltinValue(input) };
   }
   return {
     kind: MarkupKind.Markdown,
-    value: formatProjectValue(input.symbol, input.workspaceRootUri),
+    value: formatProjectValue(input.symbol, input.workspaceRootUri, input.package),
   };
 }
 
@@ -68,7 +72,11 @@ export function formatHoverCandidates(
 // Project symbol formatting
 // ---------------------------------------------------------------------------
 
-function formatProjectValue(symbol: SymbolEntry, workspaceRootUri: string | undefined): string {
+function formatProjectValue(
+  symbol: SymbolEntry,
+  workspaceRootUri: string | undefined,
+  packageProvenance: PackageProvenance | undefined,
+): string {
   const code = renderSymbolCode(symbol);
   const lines: string[] = [];
   lines.push(fence(code));
@@ -78,6 +86,12 @@ function formatProjectValue(symbol: SymbolEntry, workspaceRootUri: string | unde
   }
 
   lines.push(renderFooter(symbol, workspaceRootUri));
+  if (packageProvenance) {
+    const identity = packageProvenance.version
+      ? `${packageProvenance.name}@${packageProvenance.version}`
+      : packageProvenance.name;
+    lines.push(`_Package declaration_ ${safeInlineCode(identity)} (${safeInlineCode(packageProvenance.source ?? 'unknown source')})`);
+  }
   return lines.join('\n\n');
 }
 
@@ -164,11 +178,24 @@ function renderFooter(symbol: SymbolEntry, workspaceRootUri: string | undefined)
 // Built-in entry formatting
 // ---------------------------------------------------------------------------
 
-function formatBuiltinValue(entry: BuiltinEntry): string {
+function formatBuiltinValue(input: BuiltinHoverInput): string {
+  const { entry } = input;
   const lines: string[] = [];
   lines.push(fence(renderBuiltinCode(entry)));
   if (entry.documentation) {
     lines.push(entry.documentation);
+  }
+  if (entry.quickDocumentation) {
+    if (entry.documentation !== entry.quickDocumentation.summary) {
+      lines.push(entry.quickDocumentation.summary);
+    }
+    const { source, scope } = entry.quickDocumentation;
+    lines.push(`[${source.label}](${source.url})`);
+    lines.push(`_Curated fallback · ${scope.label}_`);
+    if (input.package) {
+      const identity = `${input.package.name}@${input.package.version ?? 'unknown'}`;
+      lines.push(`_Project Package_ ${safeInlineCode(identity)} (${safeInlineCode(input.package.source ?? 'unknown source')})`);
+    }
   }
   lines.push(`_${CATEGORY_LABEL[entry.category]}_`);
   return lines.join('\n\n');

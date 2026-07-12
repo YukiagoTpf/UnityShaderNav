@@ -16,6 +16,7 @@ import {
 import { describe, expect, it } from 'vitest';
 import { MacroPatternRecognizer } from '../../src/macros';
 import { PackageContext } from '../../src/packages';
+import { UnityProjectFacts } from '../../src/project';
 import { indexFile } from '../../src/parser/hlsl';
 import type { IndexedDocumentSnapshot } from '../../src/workspace/indexedWorkspace';
 import {
@@ -106,6 +107,7 @@ async function publishTextFiles(
 async function publishOpenDocument(
   folderUri: string,
   document: IndexedDocumentSnapshot,
+  project = UnityProjectFacts.unknown(),
 ): Promise<PublishedIndexedRevision> {
   const settings = DEFAULT_SETTINGS;
   const builder = IndexedRevisionBuilder.create({
@@ -113,6 +115,7 @@ async function publishOpenDocument(
     settings,
     unityRoot: undefined,
     packages: PackageContext.standalone(settings),
+    project,
     cache: undefined,
     fingerprint: undefined,
   });
@@ -196,6 +199,129 @@ function symbol(
 }
 
 describe('published query behavior', () => {
+  it('serves context-bound ShaderLab and semantic Quick Documentation', async () => {
+    const uri = 'file:///project/Assets/Documentation.shader';
+    const text = [
+      'Shader "Docs/Test" {',
+      '  Properties {',
+      '    [HDR] _Color ("Color", Color) = (1,1,1,1)',
+      '    _MainTex ("Texture", 2D) = "white" {}',
+      '  }',
+      '  SubShader {',
+      '    Cull Back',
+      '    Pass {',
+      '      HLSLPROGRAM',
+      '      float4 frag() : SV_Target { return 1; }',
+      '      ENDHLSL',
+      '    }',
+      '  }',
+      '}',
+    ].join('\n');
+    const document = snapshot(uri, text);
+    const revision = await publishOpenDocument(
+      'file:///project',
+      document,
+      UnityProjectFacts.fromProjectVersionText('m_EditorVersion: 2022.3.53f1\n'),
+    );
+
+    for (const [needle, source] of [
+      ['Cull Back', 'SL-Cull.html'],
+      ['HDR', 'SL-Properties.html'],
+      ['2D)', 'SL-Properties.html'],
+      ['SV_Target', 'SL-ShaderSemantics.html'],
+    ] as const) {
+      const hover = await revision.hoverAt({
+        document,
+        position: positionOf(text, needle, 0, needle === 'Cull Back' ? 1 : 0),
+      });
+      const value = (hover?.contents as { value?: string }).value ?? '';
+      expect(value).toContain(source);
+      expect(value).toContain('Curated fallback');
+    }
+
+    const unknown = await revision.hoverAt({
+      document,
+      position: positionOf(text, '_Color', 0, 1),
+    });
+    expect(unknown).toBeNull();
+  });
+
+  it('keeps a project declaration authoritative over a same-name curated helper', async () => {
+    const uri = 'file:///project/Assets/ProjectHelper.hlsl';
+    const text = [
+      'float4 GetVertexPositionInputs(float3 custom) { return 1; }',
+      'float4 Main() { return GetVertexPositionInputs(0); }',
+    ].join('\n');
+    const revision = await publishTextFiles('file:///project', [{ uri, text }]);
+    const document = snapshot(uri, text);
+    const hover = await revision.hoverAt({
+      document,
+      position: positionOf(text, 'GetVertexPositionInputs', 1, 1),
+    });
+    const value = (hover?.contents as { value?: string }).value ?? '';
+
+    expect(value).toContain('float4 GetVertexPositionInputs(float3 custom)');
+    expect(value).not.toContain('Curated fallback');
+  });
+
+  it('shows exact Package provenance when a visible HDRP declaration wins', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-package-hover-'));
+    const packageName = 'com.unity.render-pipelines.high-definition';
+    const packageRoot = join(root, 'Library', 'PackageCache', `${packageName}@hash`);
+    const mainPath = join(root, 'Assets', 'Main.hlsl');
+    const helperPath = join(packageRoot, 'ShaderLibrary', 'Exposure.hlsl');
+    const mainText = [
+      `#include "Packages/${packageName}/ShaderLibrary/Exposure.hlsl"`,
+      'float Main() { return GetCurrentExposureMultiplier(); }',
+    ].join('\n');
+    const helperText = 'float GetCurrentExposureMultiplier() { return 1; }';
+    await Promise.all([
+      mkdir(join(root, 'Packages'), { recursive: true }),
+      mkdir(join(root, 'Assets'), { recursive: true }),
+      mkdir(join(packageRoot, 'ShaderLibrary'), { recursive: true }),
+    ]);
+    await Promise.all([
+      writeFile(join(root, 'Packages', 'packages-lock.json'), JSON.stringify({
+        dependencies: {
+          [packageName]: { version: '17.0.3', source: 'registry', hash: 'hash' },
+        },
+      })),
+      writeFile(join(packageRoot, 'package.json'), JSON.stringify({
+        name: packageName,
+        version: '17.0.3',
+      })),
+      writeFile(mainPath, mainText),
+      writeFile(helperPath, helperText),
+    ]);
+
+    try {
+      const packages = await PackageContext.load(root, DEFAULT_SETTINGS);
+      const mainUri = pathToFileURL(mainPath).href;
+      const helperUri = pathToFileURL(helperPath).href;
+      const [mainIndex, helperIndex] = await Promise.all([
+        indexFile(mainUri, mainText),
+        indexFile(helperUri, helperText),
+      ]);
+      const revision = publishIndexes(pathToFileURL(root).href, [mainIndex, helperIndex], {
+        unityRoot: root,
+        packages,
+      });
+      const document = snapshot(mainUri, mainText);
+      const hover = await revision.hoverAt({
+        document,
+        position: positionOf(mainText, 'GetCurrentExposureMultiplier', 0, 1),
+      });
+      const value = (hover?.contents as { value?: string }).value ?? '';
+
+      expect(value).toContain('float GetCurrentExposureMultiplier()');
+      expect(value).toContain('com.unity.render-pipelines.high-definition@17.0.3');
+      expect(value).toContain('registry');
+      expect(value).not.toContain('Curated fallback');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('shares nearest scoped selection across definition, hover, and completion', async () => {
     const uri = 'file:///project/Assets/Selection.hlsl';
     const text = ['// 0', '// 1', '// 2', '// 3', 'value;', 'receiver.'].join('\n');

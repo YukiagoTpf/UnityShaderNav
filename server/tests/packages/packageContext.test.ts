@@ -64,6 +64,11 @@ describe('PackageContext.load', () => {
     ).href;
 
     expect(ctx.isInPackages(packageUri)).toBe(true);
+    expect(ctx.packageForUri(packageUri)).toEqual({
+      name: 'com.example.urp',
+      version: undefined,
+    });
+    expect(ctx.packageVersion('com.example.urp')).toBeUndefined();
   });
 
   it('reports a user asset file as not in packages', async () => {

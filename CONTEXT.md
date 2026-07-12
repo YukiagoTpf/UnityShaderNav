@@ -55,7 +55,10 @@ _Avoid_: document cache, parse cache, global analysis cache
 启动时读 `Packages/packages-lock.json`，构建 `package_name → physical_path` 映射的服务。是 ADR-0002 manifest-driven 策略的实现承担者。
 
 **PackageContext**:
-candidate 与 published revision 中 package 相关能力的边界：组合 **PackageResolver**、include 解析上下文和 package 成员关系。完整 candidate construction 创建它，并与索引数据一起发布；与 **PackageResolver** 成对理解，另见 Flagged ambiguities 的 "Package"。
+candidate 与 published revision 中 package 相关能力的边界：组合 **PackageResolver**、include 解析上下文、package 成员关系，以及从 package manifest 优先获得的不可变 version/source facts。完整 candidate construction 创建它，并与索引数据一起发布；与 **PackageResolver** 成对理解，另见 Flagged ambiguities 的 "Package"。
+
+**Unity project facts**:
+从 `ProjectSettings/ProjectVersion.txt` 捕获、随 **Published indexed revision** 原子发布的 Editor version 事实。版本缺失或格式未知时保持 unknown；Quick Documentation 只消费明确验证过的 major/minor，不从当前日期或文档 URL 猜测兼容性。它不属于 **PackageContext**。
 
 **Indexed source membership**:
 一个 **Published indexed revision** 对可进入磁盘索引的源码集合所持有的不可变事实。完整 **Indexed revision candidate construction** 从 settings、Unity root 与 **PackageContext** 构造它；cold start 发现、warm restore、file watcher 准入和文档关闭后的磁盘回落必须消费同一事实。它统一文件扩展名、用户排除规则、已解析 Package roots 及 Package 的 `Documentation~` / `Samples~` 边界；**PackageContext** 仍只负责 Package 解析与成员关系，`Workspace` 仍只负责 lifecycle 与 publication。
@@ -141,6 +144,12 @@ struct 成员 F12（如 `surface.positionWS`）的解析过程——先推导 re
 **Cursor context**:
 由 `analyzeCursor()`（`server/src/parser/lexical/cursor.ts`）统一产出的"光标处词法信息"结构：当前 word、member access（导航用）、词法态（code/comment/string）、补全分类（HLSL/ShaderLab/semantic/state-value）、补全前缀与 member 补全上下文。完整分析以 `analyzeCursor` 为主入口；`classifyCursor` 和不带语言门控的 `memberAccessAt` 是两个窄派生接口，其余词法 helpers 属于 Module 内部实现。
 _Avoid_: lexical state, parser context
+
+**Documentation target**:
+由 **Cursor context** 和同一份文档词法 tokens 精确推导的悬浮目标；区分 ShaderLab term、render-state value、Property attribute/type、HLSL semantic 与普通 HLSL identifier，并在 comment/string 或角色不匹配时保持中性。它表达“光标指向什么”，不负责挑选文档内容。
+
+**Documentation resolver**:
+每个 **Published indexed revision** 持有的 Quick Documentation 解析器。它先使用项目或 include-visible Package 的真实声明及该 revision 的 Package provenance；只有不存在真实声明时，才按 **Documentation target**、官方 package source、resolved manifest version 和 include visibility 选择精选兜底。未知、fork/local 或版本不兼容事实不会被猜测成官方兼容性。
 
 **Suggestion context**:
 补全/签名帮助请求位置的粗粒度上下文分类，例如 HLSL code、ShaderLab code、semantic position、ShaderLab state value、comment、string。用于避免把 ShaderLab 状态词塞进普通 HLSL 表达式，或在注释/字符串里返回建议。现在它是 **Cursor context** 面向补全的投影——即由 `classifyCursor` 产出的 `kind`/`prefix`/`member` 子集。

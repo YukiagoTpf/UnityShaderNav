@@ -102,6 +102,12 @@ The index is intentionally pragmatic:
   include-visibility rules as navigation through one candidate selector.
   Curated built-ins are merged only after project candidates, and a project
   name suppresses its built-in counterpart.
+- Hover derives an exact documentation target from cursor context and the
+  document's lexical tokens. A revision-owned documentation resolver prefers
+  indexed project or include-visible Package declarations, then applies only
+  sourced curated entries compatible with the captured Unity project and
+  Package version/source/registry facts. Presentation formatting does not
+  decide provenance or compatibility.
 - Parser modules may consume the neutral vocabulary but cannot depend on the
   suggestion projection. A transitive dependency-direction test enforces this
   boundary for statically analyzable TypeScript imports, re-exports, `require`
@@ -351,9 +357,11 @@ capabilities to Workspace query interfaces or changing the resolver's result
 contract.
 
 Package include candidates consume the physical-path map already captured by
-the Workspace revision's `PackageContext`. The probe does not discover packages
-or broaden package membership. `PackageResolver` exposes only that resolved map;
-there is no parallel Package include-path implementation.
+the Workspace revision's `PackageContext`. The same context captures package
+version and source facts, preferring each resolved package's manifest version
+and using registry/builtin lock versions only as a semantic-version fallback.
+The probe does not discover packages or broaden package membership; there is no
+parallel Package include-path or documentation-provenance implementation.
 
 ## Package Resolution
 

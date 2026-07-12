@@ -163,6 +163,7 @@ describe('built-in vocabulary', () => {
     const categories = new Set<BuiltinCategory>([
       'hlsl',
       'unitycg',
+      'srp-core',
       'urp',
       'hdrp',
       'shaderlab',

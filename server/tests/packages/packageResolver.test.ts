@@ -29,6 +29,11 @@ async function makeFakeProject(): Promise<string> {
   }));
 
   await mkdir(join(root, 'Packages', 'com.example.embedded'), { recursive: true });
+  await writeFile(join(root, 'Packages', 'com.example.embedded', 'package.json'), JSON.stringify({
+    name: 'com.example.embedded',
+    version: '1.2.3',
+    documentationUrl: 'https://example.com/docs',
+  }));
   await mkdir(join(root, 'Library', 'PackageCache', 'com.unity.render-pipelines.universal@abc'), {
     recursive: true,
   });
@@ -56,7 +61,14 @@ describe('PackageResolver', () => {
       .toBe(join(root, 'Packages', 'com.example.embedded'));
     expect(resolver.getPath('com.unity.builtin'))
       .toBe(join(root, 'Library', 'PackageCache', 'com.unity.builtin@1.0.0'));
+    expect(resolver.getVersion('com.unity.render-pipelines.universal')).toBe('14.0.10');
+    expect(resolver.getPackage('com.example.embedded')).toMatchObject({
+      source: 'embedded',
+      lockVersion: 'file:com.example.embedded',
+      version: '1.2.3',
+    });
     expect(resolver.getPath('com.unknown')).toBeUndefined();
+    expect(resolver.getVersion('com.unknown')).toBeUndefined();
   });
 
   it('reports actionable context when packages-lock.json is missing', async () => {

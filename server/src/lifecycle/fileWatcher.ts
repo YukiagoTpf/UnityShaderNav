@@ -7,7 +7,11 @@ import type { WorkspaceManager } from '../workspace/workspaceManager';
 const WATCHER_NOTIFICATION = 'unityShaderNav/fileChange';
 
 function isRebuildTrigger(uri: string): boolean {
-  return uri.endsWith('/.git/HEAD') || uri.endsWith('/Packages/packages-lock.json');
+  return uri.endsWith('/.git/HEAD')
+    || uri.endsWith('/Packages/packages-lock.json')
+    || uri.endsWith('/Packages/manifest.json')
+    || uri.endsWith('/ProjectSettings/ProjectVersion.txt')
+    || /\/Packages\/[^/]+\/package\.json$/.test(uri);
 }
 
 export function registerFileWatchers(

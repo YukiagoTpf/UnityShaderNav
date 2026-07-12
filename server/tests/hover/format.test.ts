@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FunctionSymbolEntry, SymbolEntry } from '@unity-shader-nav/shared';
-import type { BuiltinEntry } from '../../src/vocabulary';
+import { findBuiltinEntries, type BuiltinEntry } from '../../src/vocabulary';
 import {
   formatHoverCandidate,
   formatHoverCandidates,
@@ -243,6 +243,24 @@ describe('formatHoverCandidate — footer / path handling', () => {
 });
 
 describe('formatHoverCandidate — built-in entries', () => {
+  it('renders authoritative source, version scope, and resolved package provenance', () => {
+    const entry = findEntry('GetVertexPositionInputs');
+    const md = formatHoverCandidate({
+      source: 'builtin',
+      entry,
+      package: {
+        name: 'com.unity.render-pipelines.universal',
+        version: '14.0.10',
+        source: 'registry',
+      },
+    });
+
+    expect(md.value).toContain('Transform positions in a custom URP shader');
+    expect(md.value).toContain('URP package major 17');
+    expect(md.value).toContain('com.unity.render-pipelines.universal@14.0.10');
+    expect(md.value).toContain('Curated fallback');
+  });
+
   it('formats a built-in function with documentation and HLSL built-in label', () => {
     const entry: BuiltinEntry = {
       name: 'lerp',
@@ -323,6 +341,12 @@ describe('formatHoverCandidate — built-in entries', () => {
     expect(md.value).toContain('_HLSL built-in_');
   });
 });
+
+function findEntry(name: string): BuiltinEntry {
+  const entry = findBuiltinEntries(name)[0];
+  if (!entry) throw new Error(`missing ${name}`);
+  return entry;
+}
 
 describe('formatHoverCandidate — safe inline code escaping', () => {
   it('escapes a filename containing a backtick using a longer fence + padding spaces', () => {
