@@ -2,28 +2,15 @@ import type { Connection } from 'vscode-languageserver/node';
 import type { ExtensionSettings } from '@unity-shader-nav/shared';
 import type { Workspace } from '../workspace/workspace';
 import type { WorkspaceManager } from '../workspace/workspaceManager';
-import type { RequestSuspender } from './requestSuspender';
-
-type RebuildSuspender = Pick<RequestSuspender, 'suspend' | 'release'>;
-type RebuildSettingsProvider = (
-  workspace: Workspace,
-) => ExtensionSettings | undefined | Promise<ExtensionSettings | undefined>;
 
 export async function rebuildWorkspaces(
   connection: Connection,
   manager: WorkspaceManager,
-  _suspender?: RebuildSuspender,
-  settingsForRebuild?: RebuildSettingsProvider,
 ): Promise<void> {
   const workspaces = await manager.rebuildableList();
   await Promise.all(workspaces.map(async (workspace) => {
     try {
-      const settings = await settingsForRebuild?.(workspace);
-      if (settings) {
-        await workspace.rebuild(connection, settings);
-      } else {
-        await workspace.rebuild(connection);
-      }
+      await workspace.rebuild(connection);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       connection.console.error(
@@ -33,26 +20,10 @@ export async function rebuildWorkspaces(
   }));
 }
 
-export async function applySettingsAndRebuild(
-  connection: Connection,
-  manager: WorkspaceManager,
-  settings: ExtensionSettings,
-  suspender?: RebuildSuspender,
-): Promise<void> {
-  manager.configure(settings, connection);
-  await rebuildWorkspaces(
-    connection,
-    manager,
-    suspender,
-    () => settings,
-  );
-}
-
 export async function applyScopedSettingsAndRebuild(
   connection: Connection,
   manager: WorkspaceManager,
   settingsForWorkspace: (folderUri: string) => ExtensionSettings | Promise<ExtensionSettings>,
-  _suspender?: RebuildSuspender,
 ): Promise<void> {
   const updates = await Promise.all(manager.list().map(async (workspace) => {
     const settings = await settingsForWorkspace(workspace.folderUri);

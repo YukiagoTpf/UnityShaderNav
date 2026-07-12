@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_SETTINGS } from '@unity-shader-nav/shared';
-import { applyWorkspaceFolderChanges, registerFileWatchers } from '../../src/lifecycle/fileWatcher';
+import { registerFileWatchers } from '../../src/lifecycle/fileWatcher';
 import type { FileEvent } from '../../src/workspace/workspace';
 
 function deferred<T = void>(): {
@@ -263,12 +262,7 @@ describe('registerFileWatchers', () => {
           handler = callback;
         }),
       };
-      const suspender = {
-        suspend: vi.fn(),
-        release: vi.fn(),
-      };
-
-      registerFileWatchers(connection as never, manager as never, suspender);
+      registerFileWatchers(connection as never, manager as never);
       handler?.({ uri: 'file:///projectA/.git/HEAD', type: 'changed' });
       vi.advanceTimersByTime(501);
       await rebuildStarted.promise;
@@ -276,8 +270,6 @@ describe('registerFileWatchers', () => {
       expect(workspace.rebuild).toHaveBeenCalledTimes(1);
       expect(workspace.workspaceSymbols('BeforeRebuild')).toHaveLength(1);
       expect(workspace.workspaceSymbols('AfterRebuild')).toEqual([]);
-      expect(suspender.suspend).not.toHaveBeenCalled();
-      expect(suspender.release).not.toHaveBeenCalled();
 
       releaseRebuild.resolve();
       await vi.advanceTimersByTimeAsync(0);
@@ -317,24 +309,13 @@ describe('registerFileWatchers', () => {
           handler = callback;
         }),
       };
-      const suspender = {
-        suspend: vi.fn(() => calls.push('suspend')),
-        release: vi.fn(() => calls.push('release')),
-      };
-
-      registerFileWatchers(
-        connection as never,
-        manager as never,
-        suspender,
-      );
+      registerFileWatchers(connection as never, manager as never);
       handler?.({ uri: 'file:///projectA/.git/HEAD', type: 'changed' });
       await vi.advanceTimersByTimeAsync(501);
 
       expect(calls).toEqual(['rebuild']);
       expect(workspace.updateDocument).not.toHaveBeenCalled();
       expect(manager.workspaceForOrCreateFile).not.toHaveBeenCalled();
-      expect(suspender.suspend).not.toHaveBeenCalled();
-      expect(suspender.release).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }
@@ -365,11 +346,7 @@ describe('registerFileWatchers', () => {
         }),
       };
 
-      registerFileWatchers(
-        connection as never,
-        manager as never,
-        undefined,
-      );
+      registerFileWatchers(connection as never, manager as never);
       handler?.({ uri: 'file:///projectA/Assets/Shaders/Main.shader', type: 'changed' });
       vi.advanceTimersByTime(501);
       for (let i = 0; i < 10; i++) await Promise.resolve();
@@ -410,109 +387,5 @@ describe('registerFileWatchers', () => {
     } finally {
       vi.useRealTimers();
     }
-  });
-});
-
-describe('applyWorkspaceFolderChanges', () => {
-  it('suspends requests until folder removals and additions complete', async () => {
-    const calls: string[] = [];
-    const manager = {
-      removeFolder: vi.fn(async () => {
-        calls.push('removeFolder');
-      }),
-      addFolder: vi.fn(async () => {
-        calls.push('addFolder');
-      }),
-    };
-    const suspender = {
-      suspend: vi.fn(() => calls.push('suspend')),
-      release: vi.fn(() => calls.push('release')),
-    };
-
-    await applyWorkspaceFolderChanges(
-      {
-        removed: [{ uri: 'file:///removed' }],
-        added: [{ uri: 'file:///added' }],
-      },
-      {
-        manager: manager as never,
-        connection: {} as never,
-        loadSettings: async () => DEFAULT_SETTINGS,
-        suspender,
-      },
-    );
-
-    expect(calls).toEqual(['suspend', 'removeFolder', 'addFolder', 'release']);
-    expect(manager.removeFolder).toHaveBeenCalledWith('file:///removed');
-    expect(manager.addFolder).toHaveBeenCalledWith(
-      'file:///added',
-      DEFAULT_SETTINGS,
-      {},
-      undefined,
-    );
-  });
-
-  it('releases request suspension when adding a folder fails', async () => {
-    const manager = {
-      removeFolder: vi.fn(async () => {}),
-      addFolder: vi.fn(async () => {
-        throw new Error('bootstrap failed');
-      }),
-    };
-    const suspender = {
-      suspend: vi.fn(),
-      release: vi.fn(),
-    };
-
-    await expect(applyWorkspaceFolderChanges(
-      {
-        removed: [],
-        added: [{ uri: 'file:///added' }],
-      },
-      {
-        manager: manager as never,
-        connection: {} as never,
-        loadSettings: async () => DEFAULT_SETTINGS,
-        suspender,
-      },
-    )).rejects.toThrow('bootstrap failed');
-
-    expect(suspender.suspend).toHaveBeenCalledTimes(1);
-    expect(suspender.release).toHaveBeenCalledTimes(1);
-  });
-
-  it('starts additions independently after the removal phase', async () => {
-    const slowSettings = deferred<typeof DEFAULT_SETTINGS>();
-    const manager = {
-      removeFolder: vi.fn(async () => {}),
-      addFolder: vi.fn(async () => {}),
-    };
-
-    const applying = applyWorkspaceFolderChanges(
-      {
-        removed: [],
-        added: [{ uri: 'file:///slow' }, { uri: 'file:///ready' }],
-      },
-      {
-        manager: manager as never,
-        connection: {} as never,
-        loadSettings: async (uri) => (
-          uri === 'file:///slow' ? slowSettings.promise : DEFAULT_SETTINGS
-        ),
-      },
-    );
-    for (let i = 0; i < 10; i++) await Promise.resolve();
-
-    expect(manager.addFolder).toHaveBeenCalledTimes(1);
-    expect(manager.addFolder).toHaveBeenCalledWith(
-      'file:///ready',
-      DEFAULT_SETTINGS,
-      {},
-      undefined,
-    );
-
-    slowSettings.resolve(DEFAULT_SETTINGS);
-    await applying;
-    expect(manager.addFolder).toHaveBeenCalledTimes(2);
   });
 });

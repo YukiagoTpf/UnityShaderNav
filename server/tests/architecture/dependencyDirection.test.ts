@@ -546,6 +546,54 @@ describe('server dependency direction', () => {
     expect(resolver).not.toMatch(/resolveIncludePath/);
   });
 
+  it('keeps test-only lifecycle seams and rebuild suspension out of production', () => {
+    const rebuild = readFileSync(
+      resolve(SOURCE_ROOT, 'lifecycle/rebuild.ts'),
+      'utf8',
+    );
+    const watcher = readFileSync(
+      resolve(SOURCE_ROOT, 'lifecycle/fileWatcher.ts'),
+      'utf8',
+    );
+    const coordinator = readFileSync(
+      resolve(SOURCE_ROOT, 'lifecycle/workspaceFolderCoordinator.ts'),
+      'utf8',
+    );
+    const server = readFileSync(resolve(SOURCE_ROOT, 'server.ts'), 'utf8');
+
+    expect(rebuild).toMatch(/export async function applyScopedSettingsAndRebuild/);
+    expect(rebuild).toMatch(/export async function rebuildWorkspaces/);
+    expect(rebuild).not.toMatch(
+      /applySettingsAndRebuild|RequestSuspender|RebuildSuspender|settingsForRebuild|_suspender/,
+    );
+    expect(watcher).toMatch(/export function registerFileWatchers/);
+    expect(watcher).not.toMatch(
+      /applyWorkspaceFolderChanges|WorkspaceFolderChange|RequestSuspender|suspender/,
+    );
+    expect(coordinator).toMatch(/initializeWorkspaceFolders/);
+    expect(coordinator).toMatch(/registerWorkspaceFolderCoordinator/);
+
+    expect(server).toMatch(/registerFileWatchers\(connection, manager\)/);
+    expect(server).toMatch(
+      /applyScopedSettingsAndRebuild\(\s*connection,\s*manager,\s*\(folderUri\) => loadSettings\(connection, folderUri\),\s*\)/,
+    );
+    const statusRegistration = server.indexOf(`connection.onRequest(\n  INDEX_STATUS_REQUEST`);
+    const coldStart = server.indexOf('connection.onInitialized');
+    expect(statusRegistration).toBeGreaterThanOrEqual(0);
+    expect(statusRegistration).toBeLessThan(coldStart);
+
+    for (const sourceFile of collectTypeScriptFiles(SOURCE_ROOT)) {
+      const moduleId = relativeModuleId(SOURCE_ROOT, sourceFile);
+      const source = readFileSync(sourceFile, 'utf8');
+      if (
+        moduleId === 'server.ts'
+        || moduleId === 'lifecycle/requestSuspender.ts'
+        || moduleId.startsWith('handlers/')
+      ) continue;
+      expect(source, moduleId).not.toMatch(/RequestSuspender/);
+    }
+  });
+
   it('keeps every production query adapter behind the Indexed Workspace behavior', () => {
     const graph = buildSourceGraph(SOURCE_ROOT);
     for (const adapter of QUERY_ADAPTERS) {

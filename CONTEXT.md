@@ -46,10 +46,10 @@ _Avoid_: document cache, parse cache, global analysis cache
 ### 索引生命周期
 
 **Cold start**:
-扩展激活后到各 Workspace 首次发布索引之间的时间窗口。Server 只在读取全局设置与初始 folder snapshot、启动 per-root initialization 之前使用一个短暂、有上限的请求门；释放后，没有 published revision 的索引请求直接返回 neutral result，不等待该根完成扫描。
+扩展激活后到各 Workspace 首次发布索引之间的时间窗口。`RequestSuspender` 只在 Server 读取全局设置与初始 folder snapshot、启动 per-root initialization 之前，通过 handler Adapter 提供一个短暂、有上限的请求门；status request 始终绕过它。释放后，没有 published revision 的索引请求直接返回 neutral result，不等待该根完成扫描。Workspace folder event、scoped settings reconfiguration、watcher transaction 与 rebuild 不使用该请求门。
 
 **Rebuild mode**:
-外部状态变化使增量更新不再可靠时，Workspace 从零构建 candidate revision 并重新发布的状态。已有 published revision 在构建期间继续服务；成功时单次替换，失败时继续保留 last-known-good revision。区别于从当前 revision fork 的单文件增量路径。
+外部状态变化使增量更新不再可靠时，Workspace 从零构建 candidate revision 并重新发布的状态。已有 published revision 在构建期间继续服务；成功时单次替换，失败时继续保留 last-known-good revision。区别于从当前 revision fork 的单文件增量路径。生产 lifecycle 只通过 WorkspaceFolderCoordinator、scoped settings reconfiguration 和 watcher-triggered transaction 进入这些行为，不保留仅测试可见的平行入口。
 
 **PackageResolver**:
 启动时读 `Packages/packages-lock.json`，构建 `package_name → physical_path` 映射的服务。是 ADR-0002 manifest-driven 策略的实现承担者。

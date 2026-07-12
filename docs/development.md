@@ -148,6 +148,12 @@ npm run grammar:rebuild
   Package paths, and `Documentation~` / `Samples~`. Discovery and direct URI
   admission must agree; lifecycle tests additionally prove watcher and close
   paths consume the captured revision fact.
+- Lifecycle tests call the Workspace-folder coordinator, scoped settings
+  reconfiguration, and registered file watcher used by the server. Architecture
+  checks reject test-only folder/global-settings entry points and any
+  RequestSuspender parameter on watcher or rebuild paths. RequestSuspender unit
+  and handler tests cover only the bounded cold-start gate; status registration
+  stays outside it.
 - Publication tests must distinguish candidate state from published state.
   Cover copy-on-write isolation, the one-shot builder, one revision increment
   per successful pointer swap, and last-known-good query/persistence behavior

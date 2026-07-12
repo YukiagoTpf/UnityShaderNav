@@ -203,6 +203,13 @@ source membership. That same immutable fact governs cold discovery, warm
 restore, watcher admission, and close fallback, including extension, exclusion,
 resolved-Package, and `Documentation~` / `Samples~` rules.
 
+Workspace-folder membership is changed only through the coordinator that
+registers before the initial snapshot and reconciles buffered events. Settings
+changes use per-root scoped reconfiguration; watcher rebuilds use the watcher
+transaction. None of these paths suspend requests. `RequestSuspender` is
+restricted to the bounded cold-start handler gate, while index status remains
+queryable throughout startup, rebuild, and recovery.
+
 Every index-backed LSP query consumes the Indexed Workspace behavior interface:
 Definition, References, Hover, Completion, Signature Help, Document Highlight,
 Document Symbols, Semantic Tokens, and Workspace Symbols. Request handlers do

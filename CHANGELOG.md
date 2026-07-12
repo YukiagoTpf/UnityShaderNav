@@ -28,6 +28,10 @@ and uses semantic versioning for extension releases.
   Include chain per published Workspace revision. Definition, References,
   Hover, Completion, Signature Help, and Document Highlight now share the same
   revision facts; the unused parallel Package include-path helper was removed.
+- Removed test-only Workspace-folder and global-settings lifecycle entry points,
+  plus no-op request-suspension parameters from watcher and rebuild paths.
+  Lifecycle tests now exercise the production coordinator, scoped settings,
+  and watcher interfaces; request suspension remains limited to cold start.
 
 ## 0.0.8 - 2026-07-12
 

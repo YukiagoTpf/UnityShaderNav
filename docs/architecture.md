@@ -310,6 +310,14 @@ open snapshot has lost its owner. A reconnect starts a new sequence domain; the
 client resets its last-seen sequence before accepting snapshots from the new
 server session.
 
+Production lifecycle entry points are deliberately narrow: the
+Workspace-folder coordinator owns initial registration and live folder events,
+scoped settings reconfiguration owns configuration changes, and the file
+watcher owns incremental or full rebuild transactions. Rebuild and watcher APIs
+do not accept a request-suspension parameter. There is no separate global
+settings rebuild or Workspace-folder-change helper exposed only for tests;
+tests exercise those production interfaces directly.
+
 ## Include Resolution Boundary
 
 Each `PublishedIndexedRevision` owns one Include chain composed from that

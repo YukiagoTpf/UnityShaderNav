@@ -26,8 +26,7 @@ const manager = new WorkspaceManager();
 const suspender = new RequestSuspender({ timeoutMs: 5000 });
 let globalStorageDir: string | undefined;
 
-// Status must remain queryable while ordinary requests are suspended behind
-// initial indexing or rebuild work.
+// Status remains queryable during the bounded cold-start request gate.
 connection.onRequest(
   INDEX_STATUS_REQUEST,
   (): IndexStatusSnapshot => manager.statusSnapshot(),
@@ -77,7 +76,6 @@ onSettingsChanged(connection, async (settings) => {
     connection,
     manager,
     (folderUri) => loadSettings(connection, folderUri),
-    suspender,
   );
 });
 
@@ -102,7 +100,7 @@ registerInactiveRegionsHandler(
   (uri) => loadSettings(connection, uri),
   suspender,
 );
-registerFileWatchers(connection, manager, suspender);
+registerFileWatchers(connection, manager);
 
 connection.onShutdown(async () => {
   await manager.persistAll();

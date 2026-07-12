@@ -6,7 +6,6 @@ import { DEFAULT_SETTINGS, type ExtensionSettings } from '@unity-shader-nav/shar
 import { describe, expect, it, vi } from 'vitest';
 import {
   applyScopedSettingsAndRebuild,
-  applySettingsAndRebuild,
   rebuildWorkspaces,
 } from '../../src/lifecycle/rebuild';
 import { indexFile } from '../../src/parser/hlsl';
@@ -82,12 +81,7 @@ describe('rebuildWorkspaces', () => {
         rebuildableList: async () => [workspace],
         workspaceForOrCreateFile: vi.fn(),
       };
-      const suspender = { suspend: vi.fn(), release: vi.fn() };
-      const rebuilding = rebuildWorkspaces(
-        fakeConnection,
-        manager as never,
-        suspender,
-      );
+      const rebuilding = rebuildWorkspaces(fakeConnection, manager as never);
 
       await candidateStarted.promise;
       expect(workspace.indexStatus().lifecycle).toEqual({
@@ -97,8 +91,6 @@ describe('rebuildWorkspaces', () => {
       });
       expect(workspace.workspaceSymbols('BeforeRebuild')).toHaveLength(1);
       expect(workspace.workspaceSymbols('AfterRebuild')).toEqual([]);
-      expect(suspender.suspend).not.toHaveBeenCalled();
-      expect(suspender.release).not.toHaveBeenCalled();
       expect(manager.workspaceForOrCreateFile).not.toHaveBeenCalled();
 
       releaseCandidate.resolve();
@@ -117,7 +109,7 @@ describe('rebuildWorkspaces', () => {
     }
   });
 
-  it('waits for rebuildable workspaces without globally suspending requests', async () => {
+  it('waits for rebuildable workspaces before dispatching rebuilds', async () => {
     const calls: string[] = [];
     const ready = deferred();
     const workspace = {
@@ -134,29 +126,16 @@ describe('rebuildWorkspaces', () => {
         return [workspace];
       }),
     };
-    const suspender = {
-      suspend: vi.fn(() => calls.push('suspend')),
-      release: vi.fn(() => calls.push('release')),
-    };
-
-    const rebuild = rebuildWorkspaces(
-      fakeConnection,
-      manager as never,
-      suspender,
-    );
+    const rebuild = rebuildWorkspaces(fakeConnection, manager as never);
     await flushPromises();
 
     expect(calls).toEqual(['rebuildableList']);
     expect(workspace.rebuild).not.toHaveBeenCalled();
-    expect(suspender.suspend).not.toHaveBeenCalled();
-    expect(suspender.release).not.toHaveBeenCalled();
 
     ready.resolve();
     await rebuild;
 
     expect(calls).toEqual(['rebuildableList', 'ready', 'rebuild']);
-    expect(suspender.suspend).not.toHaveBeenCalled();
-    expect(suspender.release).not.toHaveBeenCalled();
   });
 
   it('starts rebuildable roots independently', async () => {
@@ -193,7 +172,7 @@ describe('rebuildWorkspaces', () => {
     expect(calls).toEqual(['slow:start', 'ready:done', 'slow:done']);
   });
 
-  it('settings rebuild clears symbols excluded by the new settings', async () => {
+  it('scoped settings reconfiguration clears symbols excluded by the new settings', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-settings-rebuild-'));
     await mkdir(join(root, 'Assets', 'Shaders'), { recursive: true });
     await mkdir(join(root, 'Packages'), { recursive: true });
@@ -209,13 +188,13 @@ describe('rebuildWorkspaces', () => {
     expect(workspace.workspaceSymbols('KeepSymbol').length).toBeGreaterThanOrEqual(1);
     expect(workspace.workspaceSymbols('StaleSymbol').length).toBeGreaterThanOrEqual(1);
 
-    await applySettingsAndRebuild(
+    await applyScopedSettingsAndRebuild(
       fakeConnection,
       manager,
-      {
+      async () => ({
         ...DEFAULT_SETTINGS,
         excludePatterns: [...DEFAULT_SETTINGS.excludePatterns, 'Assets/Shaders/Stale.hlsl'],
-      },
+      }),
     );
 
     expect(workspace.workspaceSymbols('KeepSymbol').length).toBeGreaterThanOrEqual(1);
