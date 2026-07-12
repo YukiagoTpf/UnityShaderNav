@@ -114,11 +114,21 @@ npm run grammar:rebuild
   forked publication cannot change the old selector. Extension Host coverage
   must exercise ordinary completion, receiver member completion, and a later
   argument whose first compatible overload is not candidate zero.
+- Full candidate-construction tests target
+  `IndexedRevisionCandidateConstructor` directly. Cover cold source scan, warm
+  restore, invalid or changed cache fallback, missing cached files, compatible
+  source retention, incompatible-retention abort, parser and Package
+  infrastructure failure, and incomplete or cancelled discovery. Assert a
+  complete unpublished builder; these tests must not publish a revision.
 - Publication tests must distinguish candidate state from published state.
   Cover copy-on-write isolation, the one-shot builder, one revision increment
   per successful pointer swap, and last-known-good query/persistence behavior
-  during and after a failed rebuild. Do not inspect private stores to prove
-  externally observable behavior.
+  during and after a failed rebuild. Initial, warm, rebuild, and recovery tests
+  exercise complete transactions through `Workspace`. For deterministic gates,
+  inject an `IndexedRevisionCandidateConstructor` that returns a real complete
+  builder; do not mock a public/internal bootstrap phase, depend on a staged/take
+  handoff, or synthesize an empty candidate. Do not inspect private stores to
+  prove externally observable behavior.
 - Cache-persistence tests use deferred barriers rather than timing assumptions.
   Cover one active plus latest pending request, replacement waiter inheritance,
   coordination across separate `CacheManager` instances for one path, failure
@@ -132,8 +142,8 @@ npm run grammar:rebuild
   package outside the Unity root and prove that removing it from the
   lockfile removes both cached symbols and references.
 - Async lifecycle races use explicit deferred barriers and observable eventual
-  conditions. Do not add fixed settle sleeps to make a parse/close/edit race
-  appear deterministic.
+  conditions at the candidate-constructor or document-indexing boundary. Do not
+  add fixed settle sleeps to make a parse/close/edit race appear deterministic.
 - Workspace routing tests must cover nested-root ownership in both directions:
   add transfers the overlay away from the parent, remove republishes the latest
   open snapshot, and close leaves no stale former owner.

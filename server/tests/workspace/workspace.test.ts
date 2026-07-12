@@ -8,6 +8,13 @@ import { CacheManager, chooseCacheDir } from '../../src/cache/cacheManager';
 import { CacheStore } from '../../src/cache/cacheStore';
 import { Workspace } from '../../src/workspace/workspace';
 import { WorkspaceIndex } from '../../src/workspace/workspaceIndex';
+import {
+  DefaultIndexedRevisionCandidateConstructor,
+  type DefaultIndexedRevisionCandidateConstructorOptions,
+  type IndexedRevisionCandidateConstructionInput,
+  type IndexedRevisionCandidateConstructor,
+} from '../../src/workspace/indexedRevisionCandidate';
+import type { IndexedRevisionBuilder } from '../../src/workspace/indexedRevision';
 import type { IndexedDocumentSnapshot } from '../../src/workspace/indexedWorkspace';
 import {
   copyUnityProjectFixture,
@@ -41,6 +48,29 @@ function deferred<T = void>(): {
 
 async function flushPromises(times = 5): Promise<void> {
   for (let i = 0; i < times; i++) await Promise.resolve();
+}
+
+async function waitFor(predicate: () => boolean): Promise<void> {
+  for (let i = 0; i < 50; i++) {
+    if (predicate()) return;
+    await new Promise((resolveWait) => setTimeout(resolveWait, 0));
+  }
+  throw new Error('condition was not met');
+}
+
+type CandidateConstructionProceed = () => Promise<IndexedRevisionBuilder>;
+
+function interceptCandidateConstruction(
+  options: DefaultIndexedRevisionCandidateConstructorOptions,
+  interceptor: (
+    proceed: CandidateConstructionProceed,
+    input: IndexedRevisionCandidateConstructionInput,
+  ) => Promise<IndexedRevisionBuilder>,
+) {
+  const delegate = new DefaultIndexedRevisionCandidateConstructor(options);
+  return {
+    construct: vi.fn((input) => interceptor(() => delegate.construct(input), input)),
+  } satisfies IndexedRevisionCandidateConstructor;
 }
 
 function snapshot(
@@ -98,7 +128,7 @@ afterEach(async () => {
   await removeCopiedUnityProject(projectA);
 });
 
-describe('Workspace.bootstrap', () => {
+describe('Workspace candidate publication', () => {
   it('publishes an observable revision for initialization and rebuild', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-lifecycle-ready-'));
     const changed = vi.fn();
@@ -129,20 +159,27 @@ describe('Workspace.bootstrap', () => {
 
   it('does not publish a terminal lifecycle after disposal', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-lifecycle-disposed-'));
-    const initial = deferred<number>();
+    const initial = deferred();
     const changed = vi.fn();
     try {
-      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
+      const folderUri = pathToFileURL(root).href;
+      const candidateConstructor = interceptCandidateConstruction({
+        folderUri,
         ensureParserReady: async () => {},
         indexImplementation: null,
+      }, async (proceed) => {
+        await initial.promise;
+        return proceed();
+      });
+      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
+        candidateConstructor,
         onIndexStatusChanged: changed,
       });
-      vi.spyOn(workspace, 'bootstrap').mockReturnValue(initial.promise);
 
       const initializing = workspace.initialize(fakeConnection);
       await flushPromises();
       workspace.dispose();
-      initial.resolve(0);
+      initial.resolve();
       await initializing;
 
       expect(workspace.canServe()).toBe(false);
@@ -197,26 +234,30 @@ describe('Workspace.bootstrap', () => {
     await writeFile(join(root, 'Packages', 'packages-lock.json'), '{"dependencies":{}}');
 
     try {
-      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      const folderUri = pathToFileURL(root).href;
+      const candidateConstructor = interceptCandidateConstruction(
+        { folderUri },
+        (proceed) => proceed(),
+      );
+      const workspace = new Workspace(folderUri, DEFAULT_SETTINGS, { candidateConstructor });
       await workspace.initialize(fakeConnection);
+      candidateConstructor.construct.mockClear();
       const saveStarted = deferred();
       const releaseSave = deferred();
       const save = vi.spyOn(CacheStore.prototype, 'save').mockImplementation(async () => {
         saveStarted.resolve();
         await releaseSave.promise;
       });
-      const bootstrap = vi.spyOn(workspace, 'bootstrap').mockResolvedValueOnce(0);
-
       const persisting = workspace.persist();
       await saveStarted.promise;
       const rebuilding = workspace.rebuild(fakeConnection);
       await flushPromises();
-      expect(bootstrap).toHaveBeenCalledTimes(1);
+      expect(candidateConstructor.construct).toHaveBeenCalledTimes(1);
 
       releaseSave.resolve();
       await Promise.all([rebuilding, persisting]);
       expect(save).toHaveBeenCalledTimes(2);
-      expect(bootstrap).toHaveBeenCalledTimes(1);
+      expect(candidateConstructor.construct).toHaveBeenCalledTimes(1);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -225,20 +266,28 @@ describe('Workspace.bootstrap', () => {
   it('skips queued reconfiguration after disposal', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-disposed-queue-'));
     try {
-      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
+      const folderUri = pathToFileURL(root).href;
+      const rebuildGate = deferred();
+      let constructionCount = 0;
+      const candidateConstructor = interceptCandidateConstruction({
+        folderUri,
         ensureParserReady: async () => {},
         indexImplementation: null,
+      }, async (proceed) => {
+        const constructionNumber = ++constructionCount;
+        const candidate = await proceed();
+        if (constructionNumber === 2) await rebuildGate.promise;
+        return candidate;
       });
+      const workspace = new Workspace(folderUri, DEFAULT_SETTINGS, { candidateConstructor });
       await workspace.initialize(fakeConnection);
-      const rebuildGate = deferred<number>();
-      vi.spyOn(workspace, 'bootstrap').mockReturnValueOnce(rebuildGate.promise);
 
       const rebuilding = workspace.rebuild(fakeConnection);
       const nextSettings = { ...DEFAULT_SETTINGS, debug: { definitionTrace: true } };
       const reconfiguring = workspace.reconfigure(fakeConnection, nextSettings);
       await flushPromises();
       workspace.dispose();
-      rebuildGate.resolve(0);
+      rebuildGate.resolve();
       await Promise.all([rebuilding, reconfiguring]);
 
       expect(workspace.settings.debug.definitionTrace).toBe(false);
@@ -383,31 +432,40 @@ describe('Workspace.bootstrap', () => {
   it('serializes overlapping rebuild requests before publishing each revision', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-lifecycle-serialized-'));
     try {
-      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
-        ensureParserReady: async () => {},
-        indexImplementation: null,
-      });
-      await workspace.initialize(fakeConnection);
+      const folderUri = pathToFileURL(root).href;
       const first = deferred();
       const second = deferred();
-      const bootstrap = vi.spyOn(workspace, 'bootstrap')
-        .mockReturnValueOnce(first.promise.then(() => 0))
-        .mockReturnValueOnce(second.promise.then(() => 0));
+      let constructionCount = 0;
+      const candidateConstructor = interceptCandidateConstruction({
+        folderUri,
+        ensureParserReady: async () => {},
+        indexImplementation: null,
+      }, async (proceed) => {
+        const constructionNumber = ++constructionCount;
+        const candidate = await proceed();
+        if (constructionNumber === 2) await first.promise;
+        if (constructionNumber === 3) await second.promise;
+        return candidate;
+      });
+      const workspace = new Workspace(folderUri, DEFAULT_SETTINGS, { candidateConstructor });
+      await workspace.initialize(fakeConnection);
+      candidateConstructor.construct.mockClear();
 
       const firstRebuild = workspace.rebuild(fakeConnection);
       await flushPromises();
       const secondRebuild = workspace.rebuild(fakeConnection);
       await flushPromises();
 
-      expect(bootstrap).toHaveBeenCalledTimes(1);
+      expect(candidateConstructor.construct).toHaveBeenCalledTimes(1);
       expect(workspace.indexStatus().lifecycle).toMatchObject({
         state: 'indexing',
         operation: 'rebuild',
       });
 
       first.resolve();
-      await flushPromises(10);
-      expect(bootstrap).toHaveBeenCalledTimes(2);
+      await firstRebuild;
+      await waitFor(() => candidateConstructor.construct.mock.calls.length === 2);
+      expect(candidateConstructor.construct).toHaveBeenCalledTimes(2);
       expect(workspace.indexStatus().lifecycle).toMatchObject({
         state: 'indexing',
         operation: 'rebuild',
@@ -428,13 +486,21 @@ describe('Workspace.bootstrap', () => {
   it('does not apply settings in the middle of an active rebuild', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-settings-serialized-'));
     try {
-      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
+      const folderUri = pathToFileURL(root).href;
+      const rebuilding = deferred();
+      let constructionCount = 0;
+      const candidateConstructor = interceptCandidateConstruction({
+        folderUri,
         ensureParserReady: async () => {},
         indexImplementation: null,
+      }, async (proceed) => {
+        const constructionNumber = ++constructionCount;
+        const candidate = await proceed();
+        if (constructionNumber === 2) await rebuilding.promise;
+        return candidate;
       });
+      const workspace = new Workspace(folderUri, DEFAULT_SETTINGS, { candidateConstructor });
       await workspace.initialize(fakeConnection);
-      const rebuilding = deferred();
-      vi.spyOn(workspace, 'bootstrap').mockReturnValueOnce(rebuilding.promise.then(() => 0));
 
       const rebuild = workspace.rebuild(fakeConnection);
       await flushPromises();
@@ -457,12 +523,19 @@ describe('Workspace.bootstrap', () => {
   it('skips queued incremental changes when the preceding rebuild fails', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-failed-queue-'));
     try {
-      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
+      const folderUri = pathToFileURL(root).href;
+      let constructionCount = 0;
+      const candidateConstructor = interceptCandidateConstruction({
+        folderUri,
         ensureParserReady: async () => {},
         indexImplementation: null,
+      }, async (proceed) => {
+        constructionCount++;
+        if (constructionCount === 2) throw new Error('rebuild infrastructure failed');
+        return proceed();
       });
+      const workspace = new Workspace(folderUri, DEFAULT_SETTINGS, { candidateConstructor });
       await workspace.initialize(fakeConnection);
-      vi.spyOn(workspace, 'bootstrap').mockRejectedValueOnce(new Error('rebuild infrastructure failed'));
 
       const rebuild = workspace.rebuild(fakeConnection);
       const incremental = workspace.applyChanges(
@@ -514,8 +587,8 @@ describe('Workspace.bootstrap', () => {
     expect(refs?.some((ref) => ref.uri.endsWith('/Assets/Shaders/Main.shader'))).toBe(true);
   });
 
-  it('writes cache on first bootstrap and restores it on the second bootstrap', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'usn-cache-bootstrap-'));
+  it('writes cache on first initialization and restores it on the second initialization', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-cache-initialize-'));
     await mkdir(join(root, 'Assets', 'Shaders'), { recursive: true });
     await mkdir(join(root, 'Packages'), { recursive: true });
     await mkdir(join(root, 'ProjectSettings'), { recursive: true });
@@ -530,12 +603,10 @@ describe('Workspace.bootstrap', () => {
       const manifest = JSON.parse(await readFile(cachePath, 'utf8'));
       expect(manifest.files.length).toBeGreaterThanOrEqual(1);
 
-      const fullScan = vi.spyOn(Workspace.prototype, 'fullScan');
       const restore = vi.spyOn(WorkspaceIndex.prototype, 'restoreFromCache');
       const ws2 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
       await ws2.initialize(fakeConnection);
 
-      expect(fullScan).not.toHaveBeenCalled();
       expect(restore).toHaveBeenCalled();
       expect(hasWorkspaceSymbol(ws2, 'CachedSymbol')).toBe(true);
     } finally {
@@ -567,12 +638,10 @@ describe('Workspace.bootstrap', () => {
       manifest.fingerprint.indexImplementation = staleIdentity;
       await writeFile(cachePath, JSON.stringify(manifest), 'utf8');
 
-      const fullScan = vi.spyOn(Workspace.prototype, 'fullScan');
       const restore = vi.spyOn(WorkspaceIndex.prototype, 'restoreFromCache');
       const second = new Workspace(folderUri, DEFAULT_SETTINGS);
       await second.initialize(fakeConnection);
 
-      expect(fullScan).toHaveBeenCalledTimes(1);
       expect(restore).not.toHaveBeenCalled();
       expect(hasWorkspaceSymbol(second, 'CurrentImplementation')).toBe(true);
       expect(await readFile(shaderPath, 'utf8')).toBe(source);
@@ -634,18 +703,16 @@ describe('Workspace.bootstrap', () => {
       const { files: _files, ...corruptedManifest } = JSON.parse(await readFile(cachePath, 'utf8'));
       await writeFile(cachePath, JSON.stringify(corruptedManifest), 'utf8');
 
-      const fullScan = vi.spyOn(Workspace.prototype, 'fullScan');
       const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
       await workspace.initialize(fakeConnection);
 
-      expect(fullScan).toHaveBeenCalledTimes(1);
       expect(hasWorkspaceSymbol(workspace, 'RecoveredSymbol')).toBe(true);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   });
 
-  it('persists opened standalone files into global storage and restores them on next bootstrap', async () => {
+  it('persists opened standalone files into global storage and restores them on next initialization', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-standalone-cache-'));
     const globalStorageDir = await mkdtemp(join(tmpdir(), 'usn-global-storage-'));
     const shaderPath = join(root, 'Loose.hlsl');

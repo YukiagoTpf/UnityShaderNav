@@ -64,10 +64,16 @@ handling. Important modules:
 - `handlers`: adapts LSP messages to domain behavior. The document adapter owns
   the open-document registry; every index-backed query adapter calls only the
   Indexed Workspace behavior interface and never receives raw index stores.
-- `workspace`: detects Unity roots, owns each root's index lifecycle, scans
-  files, applies changes, owns live-document attempts and query behavior, and
-  manages persistent cache. `PublishedIndexedRevision` is the immutable query
-  view; `IndexedRevisionBuilder` is its one-shot mutable candidate; and
+- `workspace/indexedRevisionCandidate`: implements the one full-construction
+  path shared by cold start, warm cache restore, rebuild, and recovery. It
+  resolves the root, Package context, parser runtime identity, cache
+  compatibility/restore, source discovery, and retain-or-fail policy, then
+  returns one complete unpublished `IndexedRevisionBuilder`.
+- `workspace`: serializes each root's lifecycle and mutations, reconciles the
+  latest open-document state, applies incremental changes, owns query behavior,
+  and is the only publication and cache-persistence caller.
+  `PublishedIndexedRevision` is the immutable query view;
+  `IndexedRevisionBuilder` is its one-shot mutable candidate; and
   `WorkspaceIndex` is private to those revision types. `WorkspaceManager` owns
   root routing, cross-root query aggregation, the current-open-document
   provider, and the separate status-snapshot sequence.
@@ -113,18 +119,21 @@ and always routes the current snapshot rather than a captured stale value.
 didOpen / didChange / didClose
   -> open-document snapshot registry
   -> Workspace.updateDocument / closeDocument
-  -> create an initial/rebuild candidate or fork the published revision
+  -> receive a complete full candidate or fork the published revision
   -> prepare exact-source analysis + parse
   -> prepare optional disk baseline in the candidate
   -> validate openId + version
   -> publish once by swapping the Workspace revision pointer
 ```
 
-`Workspace` serializes candidate construction and coalesces document attempts
-per canonical URI. A parse that finishes after a newer edit, close, or
-close/reopen pair cannot publish. Closing restores the last valid disk index in
-the candidate; a live-only file is removed. File-watcher changes fork each
-eligible owner that can accept incremental work, update its disk baseline
+`Workspace` serializes mutation transactions and coalesces document attempts per
+canonical URI. Full transactions delegate to the indexed revision candidate
+constructor and receive the completed disk/package builder directly; no hidden
+Workspace staging handoff or second take operation exists. A parse that finishes
+after a newer edit, close, or close/reopen pair cannot publish. Closing restores
+the last valid disk index in the candidate; a live-only file is removed.
+File-watcher changes fork each eligible owner that can accept incremental work,
+update its disk baseline
 without replacing an open overlay, and publish the complete candidate once.
 Eligibility means an existing disk baseline or the same exact user/package
 candidate rules used by scanning; excluded paths and packages absent from the
@@ -195,17 +204,25 @@ captured revision's include context.
 ## Index Lifecycle and Publication
 
 Each Workspace owns exactly one pointer to its latest immutable published
-revision. Initialization and full rebuild create a new candidate; live edits,
-close, watcher batches, and settings-only changes fork the current revision.
+revision. Initialization, rebuild, recovery, and warm restore all call the same
+candidate constructor. Cache hit and source scan converge on one explicit return
+value: a complete unpublished builder for the discovered disk/package baseline.
+The constructor does not own lifecycle state, allocate a revision, publish, or
+persist. Live edits, close, watcher batches, and settings-only changes instead
+fork the current revision.
 `WorkspaceIndex.fork()` copies mutable maps and global-index arrays while
 sharing immutable per-file indexes. Settings, Package context, cache identity,
 committed document attempts, source warnings, and effective index data cross
 the publication boundary together. A one-shot builder cannot be mutated again
 after it creates a published revision.
 
-Publication is one synchronous pointer swap after all parsing, I/O, replay, and
-attempt validation completes. Every successful externally observable
-publication increments that Workspace's session-local `revision` exactly once.
+Before full publication, Workspace replays its latest open-document desired
+state into the isolated builder. Publication is one synchronous commit after all
+construction, parsing, I/O, replay, and attempt validation completes: materialize
+the immutable revision, swap the pointer once, commit reconciled close state,
+and advance revision/lifecycle status without an intervening `await`. Every
+successful externally observable publication increments that Workspace's
+session-local `revision` exactly once.
 An empty event batch or watcher transaction with no effective change does not
 publish; neither does a stale, superseded, or failed attempt. A request that
 reads indexed state captures the published object, so it observes either the
@@ -232,12 +249,14 @@ revision before asynchronous manifest preparation. Cache failures remain
 best-effort and cannot invalidate an in-memory publication. See
 [ADR-0006](adr/0006-index-lifecycle-and-failure-semantics.md).
 
-Parser readiness resolves runtime assets before candidate cache work. A missing
-or unknown grammar layout is classified as parser initialization failure, so no
-cache can be restored or persisted for that attempt. Failed readiness remains
-retryable for same-process recovery. After success, the loaded language,
-grammar SHA-256, and index implementation identity remain bound to those exact
-captured bytes even if a watch build later replaces the file on disk.
+Candidate construction consumes parser readiness and resolves runtime assets
+before cache work. A missing or unknown grammar layout is classified as parser
+initialization failure, so no cache can be restored or persisted for that
+attempt. Failed readiness remains retryable for same-process recovery. After
+success, the loaded language, grammar SHA-256, and index implementation identity
+remain bound to those exact captured bytes even if a watch build later replaces
+the file on disk. Cache persistence begins only after Workspace publishes and
+remains best effort.
 
 Lifecycle state is observable through the same LSP connection used by editor
 features. The server exposes both an index-status pull request and a changed

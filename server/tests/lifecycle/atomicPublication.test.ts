@@ -8,7 +8,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { registerFileWatchers } from '../../src/lifecycle/fileWatcher';
 import { indexFile } from '../../src/parser/hlsl';
 import { Workspace, type FileEvent } from '../../src/workspace/workspace';
-import { WorkspaceManager } from '../../src/workspace/workspaceManager';
+import {
+  DefaultIndexedRevisionCandidateConstructor,
+} from '../../src/workspace/indexedRevisionCandidate';
+import {
+  WorkspaceManager,
+  type WorkspaceManagerRuntimeOptions,
+} from '../../src/workspace/workspaceManager';
 import type { IndexedDocumentSnapshot } from '../../src/workspace/indexedWorkspace';
 
 const connection = {
@@ -377,21 +383,33 @@ describe('atomic indexed revision acceptance', () => {
     const sourceB = join(rootB, 'Assets', 'Shaders', 'RootB.hlsl');
     const candidateStarted = deferred();
     const releaseCandidate = deferred();
+    const rootAUri = pathToFileURL(rootA).href;
+    let gateRebuild = false;
     await writeFile(sourceA, 'float4 OldRootA() { return 0; }');
     await writeFile(sourceB, 'float4 StableRootB() { return 0; }');
 
     try {
-      const manager = new WorkspaceManager();
+      const runtimeOptions = {
+        createCandidateConstructor(folderUri: string) {
+          const delegate = new DefaultIndexedRevisionCandidateConstructor({ folderUri });
+          return {
+            async construct(input: Parameters<typeof delegate.construct>[0]) {
+              const candidate = await delegate.construct(input);
+              if (gateRebuild && folderUri === rootAUri) {
+                candidateStarted.resolve();
+                await releaseCandidate.promise;
+              }
+              return candidate;
+            },
+          };
+        },
+      } satisfies WorkspaceManagerRuntimeOptions;
+      const manager = new WorkspaceManager(runtimeOptions);
       manager.configure(DEFAULT_SETTINGS, connection);
-      await manager.addFolder(pathToFileURL(rootA).href, DEFAULT_SETTINGS, connection);
+      await manager.addFolder(rootAUri, DEFAULT_SETTINGS, connection);
       await manager.addFolder(pathToFileURL(rootB).href, DEFAULT_SETTINGS, connection);
       const workspaceA = manager.workspaceFor(pathToFileURL(sourceA).href)!;
-      const originalBootstrap = workspaceA.bootstrap.bind(workspaceA);
-      vi.spyOn(workspaceA, 'bootstrap').mockImplementation(async (...args) => {
-        candidateStarted.resolve();
-        await releaseCandidate.promise;
-        return originalBootstrap(...args);
-      });
+      gateRebuild = true;
 
       await writeFile(sourceA, 'float4 NewAndLongerRootA() { return 0; }');
       await rm(join(rootA, 'Library', 'UnityShaderNavCache'), {

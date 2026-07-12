@@ -235,13 +235,40 @@ describe('server dependency direction', () => {
     expect(fingerprint).toMatch(/ParserRuntimeAssets/);
     expect(fingerprint).not.toMatch(/readFile|no-wasm|wasmPath/);
 
+    const candidate = readFileSync(
+      resolve(SOURCE_ROOT, 'workspace/indexedRevisionCandidate.ts'),
+      'utf8',
+    );
+    expect(candidate).toMatch(/const runtimeAssets = await this\.preflightParser\(input\.signal\)/);
+    expect(candidate).toMatch(/buildFingerprint\([\s\S]*?runtimeAssets/);
+    expect(candidate).not.toMatch(/resolveWasmPath|tree-sitter-hlsl\.wasm|no-wasm/);
+  });
+
+  it('keeps complete candidate construction behind the Workspace publication seam', () => {
     const workspace = readFileSync(
       resolve(SOURCE_ROOT, 'workspace/workspace.ts'),
       'utf8',
     );
-    expect(workspace).toMatch(/const runtimeAssets = await this\.preflightParser\(\)/);
-    expect(workspace).toMatch(/buildFingerprint\([\s\S]*?runtimeAssets/);
-    expect(workspace).not.toMatch(/resolveWasmPath|tree-sitter-hlsl\.wasm|no-wasm/);
+    const candidate = readFileSync(
+      resolve(SOURCE_ROOT, 'workspace/indexedRevisionCandidate.ts'),
+      'utf8',
+    );
+
+    expect(workspace).toMatch(/this\.candidateConstructor\.construct\(\{/);
+    expect(workspace).toMatch(/const revision = builder\.publish\(next\)/);
+    expect(workspace).toMatch(/this\.published = revision/);
+    expect(workspace).toMatch(/await this\.persistRevision\(revision\)/);
+    expect(workspace).not.toMatch(
+      /\bstagedCandidate\b|\btakeStagedCandidate\b|\bbootstrap\s*\(|\bfullScan\s*\(/,
+    );
+    expect(workspace).not.toMatch(
+      /buildFingerprint|CacheManager|detectUnityRoot|ensureParserReady|mapWithConcurrency|walkFiles/,
+    );
+
+    expect(candidate).toMatch(/class DefaultIndexedRevisionCandidateConstructor/);
+    expect(candidate).toMatch(/Promise<IndexedRevisionBuilder>/);
+    expect(candidate).toMatch(/PackageContext|cacheWorkspaceMatches|walkFiles/);
+    expect(candidate).not.toMatch(/\bIndexLifecycle\b|\.publish\(|persistPublication/);
   });
 
   it('composes shared ShaderLab document facts at one production boundary', () => {

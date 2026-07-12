@@ -1,5 +1,4 @@
-import { promises as fs } from 'node:fs';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import type {
   CompletionItem,
   Connection,
@@ -15,20 +14,9 @@ import type {
 import {
   normalizeSettings,
   settingsRequireReindex,
-  type CacheFingerprint,
-  type CacheManifest,
   type ExtensionSettings,
   type WorkspaceIndexStatus,
 } from '@unity-shader-nav/shared';
-import { CacheManager, cacheWorkspaceMatches } from '../cache';
-import { buildFingerprint } from '../cache/fingerprint';
-import { runningIndexImplementationIdentity } from '../cache/implementationIdentity';
-import { PackageContext } from '../packages';
-import { ensureParserReady } from '../parser/hlsl';
-import {
-  resolveRunningParserRuntimeAssets,
-  type ParserRuntimeAssets,
-} from '../parser/runtimeAssets';
 import { uriKey } from '../uriKey';
 import type {
   DefinitionAtInput,
@@ -40,10 +28,14 @@ import type {
   ReferencesAtInput,
 } from './indexedWorkspace';
 import { canNavigateDefinitionWithoutDocumentIndex } from './navigation';
-import { detectUnityRoot } from './detectUnityRoot';
 import { containsPath } from './pathUtils';
-import { mapWithConcurrency } from './concurrency';
-import { IndexInfrastructureError, IndexLifecycle } from './indexLifecycle';
+import { IndexLifecycle } from './indexLifecycle';
+import {
+  createDefaultIndexedRevisionCandidateConstructor,
+  createStandalonePackageContext,
+  type DefaultIndexedRevisionCandidateConstructorOptions,
+  type IndexedRevisionCandidateConstructor,
+} from './indexedRevisionCandidate';
 import {
   IndexedRevisionBuilder,
   PublishedIndexedRevision,
@@ -52,26 +44,15 @@ import {
   completionWithoutIndex,
   signatureHelpNeedsIndex,
 } from './queries';
-import type {
-  DocumentAnalyzer,
-  DocumentIndexer,
-  FileEvent,
-} from './workspaceIndex';
-import { walkFiles } from './walkFiles';
+import type { FileEvent } from './workspaceIndex';
 
 export type { FileEvent } from './workspaceIndex';
 
-const INDEX_CONCURRENCY = 8;
-const CACHE_IO_CONCURRENCY = 32;
-
-export interface WorkspaceRuntimeOptions {
-  indexImplementation?: string | null;
+export interface WorkspaceRuntimeOptions
+  extends Omit<DefaultIndexedRevisionCandidateConstructorOptions, 'folderUri'> {
   onIndexStatusChanged?: () => void;
-  ensureParserReady?: () => Promise<ParserRuntimeAssets | void>;
-  resolveParserRuntimeAssets?: () => ParserRuntimeAssets;
-  indexDocument?: DocumentIndexer;
-  analyzeDocument?: DocumentAnalyzer;
   openDocuments?: OpenDocumentsProvider;
+  candidateConstructor?: IndexedRevisionCandidateConstructor;
 }
 
 type DesiredDocumentState =
@@ -94,11 +75,6 @@ interface DocumentReconcileRun {
   promise: Promise<void>;
 }
 
-interface CacheConfiguration {
-  readonly cache: CacheManager | undefined;
-  readonly fingerprint: CacheFingerprint | undefined;
-}
-
 /**
  * Lifecycle owner for one root. Only `published` is request-visible; every
  * mutation builds an isolated candidate and swaps this pointer once.
@@ -108,14 +84,9 @@ export class Workspace implements IndexedWorkspace {
   private requestedSettings: ExtensionSettings;
   private statusMode: WorkspaceIndexStatus['mode'];
   private published: PublishedIndexedRevision | undefined;
-  private stagedCandidate: IndexedRevisionBuilder | undefined;
   private globalStorageDir: string | undefined;
-  private readonly indexImplementation: string | null | undefined;
   private readonly lifecycle: IndexLifecycle;
-  private readonly parserReady: () => Promise<ParserRuntimeAssets | void>;
-  private readonly resolveRuntimeAssets: () => ParserRuntimeAssets;
-  private readonly indexDocument: DocumentIndexer | undefined;
-  private readonly analyzeDocument: DocumentAnalyzer | undefined;
+  private readonly candidateConstructor: IndexedRevisionCandidateConstructor;
   private readonly openDocuments: OpenDocumentsProvider | undefined;
   private operationTail: Promise<void> = Promise.resolve();
   private readonly desiredDocuments = new Map<string, DesiredDocumentState>();
@@ -132,13 +103,9 @@ export class Workspace implements IndexedWorkspace {
     this.folderUri = folderUri;
     this.requestedSettings = normalizeSettings(settings);
     this.statusMode = this.requestedSettings.projectRoot.trim() ? 'unity' : 'standalone';
-    this.indexImplementation = options.indexImplementation;
     this.lifecycle = new IndexLifecycle(options.onIndexStatusChanged);
-    this.parserReady = options.ensureParserReady ?? ensureParserReady;
-    this.resolveRuntimeAssets = options.resolveParserRuntimeAssets
-      ?? resolveRunningParserRuntimeAssets;
-    this.indexDocument = options.indexDocument;
-    this.analyzeDocument = options.analyzeDocument;
+    this.candidateConstructor = options.candidateConstructor
+      ?? createDefaultIndexedRevisionCandidateConstructor(folderUri, options);
     this.openDocuments = options.openDocuments;
   }
 
@@ -151,8 +118,8 @@ export class Workspace implements IndexedWorkspace {
     return this.published?.unityRoot;
   }
 
-  get packages(): PackageContext {
-    return this.published?.packages ?? PackageContext.standalone(this.requestedSettings);
+  get packages(): PublishedIndexedRevision['packages'] {
+    return this.published?.packages ?? createStandalonePackageContext(this.requestedSettings);
   }
 
   isStandalone(): boolean {
@@ -539,49 +506,35 @@ export class Workspace implements IndexedWorkspace {
     this.globalStorageDir = globalStorageDir;
     try {
       if (this.disposed) return;
-      await this.bootstrap(connection, globalStorageDir);
-      const builder = this.takeStagedCandidate();
+      const builder = await this.constructCandidate(connection, globalStorageDir);
       const reconciledCloses = await this.reconcileOpenDocumentsBeforePublish(builder);
       if (this.disposed) return;
       const revision = this.publishComplete(builder, reconciledCloses);
       await this.persistRevision(revision);
     } catch (error) {
-      this.stagedCandidate = undefined;
       if (this.disposed) return;
       this.lifecycle.fail(error);
       throw error;
     }
   }
 
-  /** Build and stage a candidate; publication remains the caller's responsibility. */
-  async bootstrap(connection: Connection, globalStorageDir?: string): Promise<number> {
-    const builder = await this.buildCandidate(
+  private constructCandidate(
+    connection: Connection,
+    globalStorageDir: string | undefined,
+  ): Promise<IndexedRevisionBuilder> {
+    return this.candidateConstructor.construct({
       connection,
-      this.requestedSettings,
-      globalStorageDir,
-      this.published,
-    );
-    this.stagedCandidate = builder;
-    return builder.warningCount;
-  }
-
-  private takeStagedCandidate(): IndexedRevisionBuilder {
-    const staged = this.stagedCandidate;
-    this.stagedCandidate = undefined;
-    if (staged) return staged;
-
-    // Test seams may stub bootstrap only to control timing. Preserve the
-    // published base when present; initial stubs receive an empty candidate.
-    if (this.published) return this.published.fork(this.requestedSettings);
-    const unityRoot = this.requestedSettings.projectRoot.trim() || undefined;
-    return IndexedRevisionBuilder.create({
-      folderUri: this.folderUri,
       settings: this.requestedSettings,
-      unityRoot,
-      packages: PackageContext.standalone(this.requestedSettings),
-      cache: undefined,
-      fingerprint: undefined,
-    }, this.indexDocument, this.analyzeDocument);
+      globalStorageDir,
+      previous: this.published,
+      signal: this.abortController.signal,
+      // Candidate construction reports a detected-root fact; Workspace alone
+      // owns the observable mode. This preserves pre-publication Unity mode
+      // when a later package/parser step fails during initial construction.
+      onModeResolved: (mode) => {
+        if (!this.published) this.statusMode = mode;
+      },
+    });
   }
 
   reconfigure(connection: Connection, settings: ExtensionSettings): Promise<boolean> {
@@ -647,14 +600,12 @@ export class Workspace implements IndexedWorkspace {
     this.requestedSettings = settings;
     this.lifecycle.begin(this.lifecycle.nextRebuildOperation());
     try {
-      await this.bootstrap(connection, this.globalStorageDir);
-      const builder = this.takeStagedCandidate();
+      const builder = await this.constructCandidate(connection, this.globalStorageDir);
       const reconciledCloses = await this.reconcileOpenDocumentsBeforePublish(builder);
       if (this.disposed) return;
       const revision = this.publishComplete(builder, reconciledCloses);
       await this.persistRevision(revision);
     } catch (error) {
-      this.stagedCandidate = undefined;
       if (this.disposed) return;
       this.lifecycle.fail(error);
       throw error;
@@ -706,359 +657,6 @@ export class Workspace implements IndexedWorkspace {
     }
   }
 
-  private async buildCandidate(
-    connection: Connection,
-    settings: ExtensionSettings,
-    globalStorageDir: string | undefined,
-    previous: PublishedIndexedRevision | undefined,
-  ): Promise<IndexedRevisionBuilder> {
-    this.throwIfDisposed();
-    const folderPath = fileURLToPath(this.folderUri);
-    const configuredRoot = settings.projectRoot.trim();
-    const unityRoot = configuredRoot || await detectUnityRoot(folderPath) || undefined;
-    this.throwIfDisposed();
-    if (!this.published) this.statusMode = unityRoot ? 'unity' : 'standalone';
-
-    let packages: PackageContext;
-    if (!unityRoot) {
-      packages = PackageContext.standalone(settings);
-    } else {
-      try {
-        packages = await PackageContext.load(unityRoot, settings);
-        this.throwIfDisposed();
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        throw new IndexInfrastructureError('package-resolution', message, { cause: error });
-      }
-    }
-
-    const runtimeAssets = await this.preflightParser();
-    const cacheConfiguration = await this.configureCache(
-      unityRoot,
-      settings,
-      globalStorageDir,
-      connection,
-      runtimeAssets,
-    );
-    const builder = IndexedRevisionBuilder.create({
-      folderUri: this.folderUri,
-      settings,
-      unityRoot,
-      packages,
-      ...cacheConfiguration,
-    }, this.indexDocument, this.analyzeDocument);
-    const compatiblePrevious = this.isCompatiblePrevious(
-      previous,
-      unityRoot,
-      packages,
-      cacheConfiguration.fingerprint,
-    );
-
-    const manifest = await cacheConfiguration.cache?.load(cacheConfiguration.fingerprint);
-    this.throwIfDisposed();
-    if (manifest && cacheWorkspaceMatches(manifest, {
-      workspaceFolderUri: this.folderUri,
-      unityProjectRoot: unityRoot ?? null,
-    })) {
-      await this.bootstrapFromCache(
-        connection,
-        builder,
-        manifest,
-        cacheConfiguration.cache!,
-        unityRoot,
-        packages,
-        previous,
-        compatiblePrevious,
-      );
-      return builder;
-    }
-
-    if (unityRoot) {
-      await this.fullScan(
-        connection,
-        builder,
-        unityRoot,
-        packages,
-        settings,
-        previous,
-        compatiblePrevious,
-      );
-    }
-    return builder;
-  }
-
-  private async preflightParser(): Promise<ParserRuntimeAssets> {
-    try {
-      const readyAssets = await this.parserReady();
-      this.throwIfDisposed();
-      return readyAssets ?? this.resolveRuntimeAssets();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new IndexInfrastructureError(
-        'parser-initialization',
-        `Unable to initialize the shader parser: ${message}`,
-        { cause: error },
-      );
-    }
-  }
-
-  private async configureCache(
-    unityRoot: string | undefined,
-    settings: ExtensionSettings,
-    globalStorageDir: string | undefined,
-    connection: Connection,
-    runtimeAssets: ParserRuntimeAssets,
-  ): Promise<CacheConfiguration> {
-    let cache = CacheManager.create({
-      unityProjectRoot: unityRoot,
-      workspaceFolderUri: this.folderUri,
-      globalStorageDir,
-    });
-    if (!cache) return { cache: undefined, fingerprint: undefined };
-
-    const indexImplementation = this.indexImplementation === undefined
-      ? runningIndexImplementationIdentity(runtimeAssets)
-      : this.indexImplementation ?? undefined;
-    const fingerprint = buildFingerprint(
-      settings,
-      runtimeAssets,
-      indexImplementation,
-    );
-    this.throwIfDisposed();
-    if (!fingerprint) {
-      connection.console.warn(
-        'Index cache disabled: the running index implementation could not be identified.',
-      );
-      cache = undefined;
-    }
-    return { cache, fingerprint: cache ? fingerprint : undefined };
-  }
-
-  private async bootstrapFromCache(
-    connection: Connection,
-    builder: IndexedRevisionBuilder,
-    manifest: CacheManifest,
-    cache: CacheManager,
-    unityRoot: string | undefined,
-    packages: PackageContext,
-    previous: PublishedIndexedRevision | undefined,
-    compatiblePrevious: boolean,
-  ): Promise<void> {
-    const progress = await connection.window.createWorkDoneProgress();
-    progress.begin('UnityShaderNav', undefined, 'restoring cache...', false);
-    const refreshQueue: string[] = [];
-    try {
-      const restoreResults = await mapWithConcurrency(
-        manifest.files,
-        CACHE_IO_CONCURRENCY,
-        async (cachedFile) => {
-          this.throwIfDisposed();
-          const valid = this.shouldRestoreCachedFile(cachedFile.uri, packages)
-            && await cache.isValid(cachedFile);
-          this.throwIfDisposed();
-          return { cachedFile, valid };
-        },
-      );
-
-      for (const { cachedFile, valid } of restoreResults) {
-        this.throwIfDisposed();
-        if (!this.shouldRestoreCachedFile(cachedFile.uri, packages)) continue;
-        if (valid) {
-          builder.restoreFromCache(cachedFile.uri, cachedFile.index, {
-            mtimeMs: cachedFile.mtimeMs,
-            size: cachedFile.size,
-          });
-        }
-        else if (await fileExists(cachedFile.uri)) refreshQueue.push(cachedFile.uri);
-      }
-
-      progress.report(`re-parsing ${refreshQueue.length} changed files...`);
-      await mapWithConcurrency(refreshQueue, INDEX_CONCURRENCY, async (uri) => {
-        this.throwIfDisposed();
-        const indexed = await builder.indexAndStore(
-          fileURLToPath(uri),
-          connection,
-          () => !this.disposed,
-        );
-        this.throwIfDisposed();
-        this.retainCompatibleSourceFailure(
-          builder,
-          uri,
-          indexed,
-          previous,
-          compatiblePrevious,
-        );
-      });
-      if (unityRoot) {
-        await this.indexMissingDiskFiles(
-          connection,
-          builder,
-          unityRoot,
-          packages,
-          manifest.files,
-          previous,
-          compatiblePrevious,
-        );
-      }
-    } finally {
-      progress.done();
-    }
-  }
-
-  private shouldRestoreCachedFile(
-    uri: string,
-    packages: PackageContext,
-  ): boolean {
-    return packages.canRestoreCachedFile(uri);
-  }
-
-  private async indexMissingDiskFiles(
-    connection: Connection,
-    builder: IndexedRevisionBuilder,
-    unityRoot: string,
-    packages: PackageContext,
-    _cachedFiles: readonly { uri: string }[],
-    previous: PublishedIndexedRevision | undefined,
-    compatiblePrevious: boolean,
-  ): Promise<void> {
-    const userFiles = await walkFiles(
-      unityRoot,
-      [...builder.configuration.settings.excludePatterns, 'Packages/**'],
-      this.abortController.signal,
-    );
-    await mapWithConcurrency(userFiles, INDEX_CONCURRENCY, async (filePath) => {
-      this.throwIfDisposed();
-      const uri = pathToFileURL(filePath).href;
-      if (builder.file(uri)) return;
-      const indexed = await builder.indexAndStore(filePath, connection, () => !this.disposed);
-      this.throwIfDisposed();
-      this.retainCompatibleSourceFailure(
-        builder,
-        uri,
-        indexed,
-        previous,
-        compatiblePrevious,
-      );
-    });
-
-    await mapWithConcurrency(packages.packageRoots(), INDEX_CONCURRENCY, async (root) => {
-      const files = await walkFiles(
-        root,
-        ['**/Documentation~/**', '**/Samples~/**'],
-        this.abortController.signal,
-      );
-      await mapWithConcurrency(files, INDEX_CONCURRENCY, async (filePath) => {
-        this.throwIfDisposed();
-        const uri = pathToFileURL(filePath).href;
-        if (builder.file(uri)) return;
-        const indexed = await builder.indexAndStore(filePath, connection, () => !this.disposed);
-        this.throwIfDisposed();
-        this.retainCompatibleSourceFailure(
-          builder,
-          uri,
-          indexed,
-          previous,
-          compatiblePrevious,
-        );
-      });
-    });
-  }
-
-  async fullScan(
-    connection: Connection,
-    builder: IndexedRevisionBuilder,
-    unityRoot: string,
-    packages: PackageContext,
-    settings: ExtensionSettings,
-    previous: PublishedIndexedRevision | undefined,
-    compatiblePrevious: boolean,
-  ): Promise<number> {
-    const progress = await connection.window.createWorkDoneProgress();
-    progress.begin('UnityShaderNav', undefined, 'indexing user files...', false);
-    const before = builder.warningCount;
-    try {
-      const userFiles = await walkFiles(
-        unityRoot,
-        [...settings.excludePatterns, 'Packages/**'],
-        this.abortController.signal,
-      );
-      let done = 0;
-      await mapWithConcurrency(userFiles, INDEX_CONCURRENCY, async (filePath) => {
-        this.throwIfDisposed();
-        const uri = pathToFileURL(filePath).href;
-        const indexed = await builder.indexAndStore(filePath, connection, () => !this.disposed);
-        this.throwIfDisposed();
-        this.retainCompatibleSourceFailure(
-          builder,
-          uri,
-          indexed,
-          previous,
-          compatiblePrevious,
-        );
-        done++;
-        if (done % 25 === 0) progress.report(`${done}/${userFiles.length} files`);
-      });
-
-      progress.report('indexing Packages...');
-      await mapWithConcurrency(packages.packageRoots(), INDEX_CONCURRENCY, async (root) => {
-        const files = await walkFiles(
-          root,
-          ['**/Documentation~/**', '**/Samples~/**'],
-          this.abortController.signal,
-        );
-        await mapWithConcurrency(files, INDEX_CONCURRENCY, async (filePath) => {
-          this.throwIfDisposed();
-          const uri = pathToFileURL(filePath).href;
-          const indexed = await builder.indexAndStore(filePath, connection, () => !this.disposed);
-          this.throwIfDisposed();
-          this.retainCompatibleSourceFailure(
-            builder,
-            uri,
-            indexed,
-            previous,
-            compatiblePrevious,
-          );
-        });
-      });
-      return builder.warningCount - before;
-    } finally {
-      progress.done();
-    }
-  }
-
-  private retainCompatibleSourceFailure(
-    builder: IndexedRevisionBuilder,
-    uri: string,
-    indexed: boolean,
-    previous: PublishedIndexedRevision | undefined,
-    compatiblePrevious: boolean,
-  ): void {
-    if (indexed) return;
-    const previousRecord = previous?.diskRecord(uri);
-    if (!previousRecord) return;
-    if (!compatiblePrevious) {
-      throw new IndexInfrastructureError(
-        'indexing',
-        `Cannot retain unreadable source across incompatible index semantics: ${uri}`,
-      );
-    }
-    builder.restoreFromCache(uri, previousRecord.index, previousRecord.source);
-    builder.recordSourceResult(uri, false);
-  }
-
-  private isCompatiblePrevious(
-    previous: PublishedIndexedRevision | undefined,
-    unityRoot: string | undefined,
-    packages: PackageContext,
-    fingerprint: CacheFingerprint | undefined,
-  ): boolean {
-    if (!previous || !previous.fingerprint || !fingerprint) return false;
-    if (previous.unityRoot !== unityRoot) return false;
-    if (JSON.stringify(previous.fingerprint) !== JSON.stringify(fingerprint)) return false;
-    return JSON.stringify([...previous.packages.packageRoots()].sort())
-      === JSON.stringify([...packages.packageRoots()].sort());
-  }
-
   persist(): Promise<void> {
     const revision = this.published;
     return revision ? this.persistRevision(revision) : Promise.resolve();
@@ -1085,20 +683,6 @@ export class Workspace implements IndexedWorkspace {
       () => undefined,
     );
     return result;
-  }
-
-  private throwIfDisposed(): void {
-    if (this.disposed) throw new WorkspaceDisposedError(this.folderUri);
-  }
-}
-
-async function fileExists(uri: string): Promise<boolean> {
-  try {
-    await fs.stat(fileURLToPath(uri));
-    return true;
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    return code !== 'ENOENT' && code !== 'ENOTDIR';
   }
 }
 

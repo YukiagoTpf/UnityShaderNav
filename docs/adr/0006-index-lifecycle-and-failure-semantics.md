@@ -41,14 +41,26 @@ The implementation names that boundary directly:
 - `PublishedIndexedRevision` is the immutable, request-capturable behavior
   object. Its `WorkspaceIndex`, committed-document map, and source-warning set
   are private.
+- `IndexedRevisionCandidateConstructor` is the full-construction boundary used
+  by cold start, warm cache restore, rebuild, and recovery. Its default
+  implementation resolves the root, Package context, parser runtime identity,
+  cache restore or source scan, and compatible source retention, then explicitly
+  returns one complete unpublished builder. It owns no lifecycle or publication
+  state.
 - `IndexedRevisionBuilder` is a one-shot mutable candidate. Full indexing starts
   with an empty builder; incremental work forks the published revision.
 - `WorkspaceIndex.fork()` copies mutable maps and global-index arrays while
   sharing immutable per-file `FileIndex` values. Candidate mutation therefore
   cannot affect the published base.
-- `Workspace` publishes by assigning the completed revision to its single
-  current pointer. No asynchronous work occurs between that swap and the
-  matching lifecycle transition.
+- `Workspace` serializes construction, replays the latest open-document desired
+  state, and remains the only caller that materializes and publishes a revision.
+  It assigns the completed revision to its single current pointer. No
+  asynchronous work occurs between materialization, that swap, reconciled-close
+  commit, and the matching revision/lifecycle transition.
+
+Full construction has one explicit return value. It must not place a candidate
+on Workspace for a later take operation, expose a public phase-only bootstrap,
+or synthesize an empty candidate when a test replaces an internal phase.
 
 Each `Workspace` has one monotonically increasing `revision` counter:
 
@@ -193,9 +205,10 @@ The status request is never suspended behind indexing; clients must be able to
 diagnose a slow or failed bootstrap. A short bounded gate protects only server
 startup while global settings and the initial workspace-folder snapshot are
 read. Rebuild and recovery do not suspend requests: a retained revision serves
-immediately while its candidate builds. A recovery uses the same staging and
-publication rules as a rebuild. Full-rebuild triggers (relevant settings,
-package-lock or repository changes, and an explicit retry) may start recovery.
+immediately while its candidate builds. A recovery uses the same explicit
+construction and publication rules as a rebuild. Full-rebuild triggers
+(relevant settings, package-lock or repository changes, and an explicit retry)
+may start recovery.
 Parser initialization must discard a rejected initialization promise so an
 explicit recovery can retry in the same server process.
 
@@ -299,8 +312,8 @@ This lifecycle does not change earlier semantic decisions:
 
 ## Consequences
 
-- Rebuild requires staging plus a single pointer swap; clearing the published
-  index before rebuilding is not conforming.
+- Rebuild requires isolated candidate construction plus a single pointer swap;
+  clearing the published index before rebuilding is not conforming.
 - A published revision is immutable. This gives query handlers a deep Interface
   with high locality: they ask domain questions of one view instead of
   coordinating raw symbol/reference stores.

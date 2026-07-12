@@ -18,7 +18,7 @@ const fakeConnection = {
 } as never;
 
 describe('cold start with cache', () => {
-  it('second bootstrap restores a usable index from cache', async () => {
+  it('second initialization restores a usable index from cache', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-cold-cache-'));
     await mkdir(join(root, 'Assets', 'Shaders'), { recursive: true });
     await mkdir(join(root, 'Packages'), { recursive: true });

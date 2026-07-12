@@ -55,7 +55,7 @@ _Avoid_: document cache, parse cache, global analysis cache
 启动时读 `Packages/packages-lock.json`，构建 `package_name → physical_path` 映射的服务。是 ADR-0002 manifest-driven 策略的实现承担者。
 
 **PackageContext**:
-`Workspace` 中 package 相关能力的边界：组合 **PackageResolver**、include 解析上下文和 package 成员关系。与 **PackageResolver** 成对理解；另见 Flagged ambiguities 的 "Package"。
+candidate 与 published revision 中 package 相关能力的边界：组合 **PackageResolver**、include 解析上下文和 package 成员关系。完整 candidate construction 创建它，并与索引数据一起发布；与 **PackageResolver** 成对理解，另见 Flagged ambiguities 的 "Package"。
 
 **WorkspaceIndex**:
 revision candidate 内部的可变索引实现。它维护磁盘索引、打开文档覆盖、全局符号和全局引用之间的一致性；增量 candidate 通过 copy-on-write fork 获得独立 maps / global arrays，并复用不可变 `FileIndex` 值。发布后该实例不再变更；请求 handler 和公开 Workspace behavior 都不暴露它的 stores。
@@ -69,8 +69,12 @@ _Avoid_: index bundle, store context, workspace index facade
 _Avoid_: current store, live index object, mutable workspace index
 
 **Indexed revision candidate**:
-尚未发布的一次性可变 builder。完整扫描从空 candidate 开始；live document、close 和 watcher transaction 从 published revision fork。所有 parse / I/O / attempt 校验完成后才允许构造新 published revision，并通过一次 Workspace pointer swap 生效；失败 candidate 直接丢弃。
+尚未发布的一次性可变 builder。初始化、rebuild、recovery 和 warm cache restore 通过同一个 **Indexed revision candidate construction** 显式取得完成的 disk/package baseline；live document、close 和 watcher transaction 从 published revision fork。Workspace 随后把最新 open-document desired state replay 到隔离 candidate，完成所有 parse / I/O / attempt 校验后才构造新 published revision，并通过一次同步 pointer swap 生效；失败 candidate 直接丢弃。
 _Avoid_: staging store exposed to handlers, partial revision
+
+**Indexed revision candidate construction**:
+完整索引 transaction 的内部 Module。它负责 Unity root 检测、**PackageContext** 创建、parser readiness 与 runtime identity、cache compatibility / restore、source discovery，以及兼容的 retain-or-fail policy，并显式返回一个完成但未发布的 **Indexed revision candidate**。Cold start、warm restore、rebuild 和 recovery 由 request data 与可用 cache state 驱动，但不分叉 transaction policy。它不保存 candidate 到 `Workspace`，不拥有 open-document desired state、lifecycle、revision、publication、pointer swap 或 cache persistence。
+_Avoid_: staged candidate handoff, phase-only bootstrap, synthetic empty candidate
 
 **Open document snapshot**:
 一次编辑器文档状态的不可变值：`uri + languageId + text + openId + version`。`openId` 标识一次 `didOpen → didClose` 会话；`version` 只在同一 `openId` 内排序。两者共同构成 document attempt identity。

@@ -254,7 +254,6 @@ describe('Unity cache workspace identity isolation', () => {
       expect((await loadManifest(root, nestedUri)).workspaceFolderUri).toBe(nestedUri);
       for (const workspace of original.values()) workspace.dispose();
 
-      const fullScan = vi.spyOn(Workspace.prototype, 'fullScan');
       const restoreFromCache = vi.spyOn(WorkspaceIndex.prototype, 'restoreFromCache');
       const parentRestarted = new Workspace(parentUri, DEFAULT_SETTINGS);
       const nestedRestarted = new Workspace(nestedUri, DEFAULT_SETTINGS);
@@ -262,7 +261,6 @@ describe('Unity cache workspace identity isolation', () => {
       const parentRestoreCalls = restoreFromCache.mock.calls.length;
       await nestedRestarted.initialize(fakeConnection);
 
-      expect(fullScan).not.toHaveBeenCalled();
       expect(parentRestoreCalls).toBeGreaterThan(0);
       expect(restoreFromCache.mock.calls.length).toBeGreaterThan(parentRestoreCalls);
       expect(hasWorkspaceSymbol(parentRestarted, 'SharedAcrossFolders')).toBe(true);
@@ -296,12 +294,10 @@ describe('Unity cache workspace identity isolation', () => {
       cold.dispose();
       cold = undefined;
 
-      const fullScan = vi.spyOn(Workspace.prototype, 'fullScan');
       const restoreFromCache = vi.spyOn(WorkspaceIndex.prototype, 'restoreFromCache');
       warm = new Workspace(lowerDriveUri, settings);
       await warm.initialize(fakeConnection);
 
-      expect(fullScan).not.toHaveBeenCalled();
       expect(restoreFromCache).toHaveBeenCalled();
       expect(hasWorkspaceSymbol(warm, symbolName)).toBe(true);
     } finally {
@@ -358,12 +354,10 @@ describe('Unity cache package membership', () => {
       first.dispose();
 
       await writeFile(lockPath, '{"dependencies":{}}');
-      const fullScan = vi.spyOn(Workspace.prototype, 'fullScan');
       const restoreFromCache = vi.spyOn(WorkspaceIndex.prototype, 'restoreFromCache');
       const restarted = new Workspace(folderUri, DEFAULT_SETTINGS);
       await restarted.initialize(fakeConnection);
 
-      expect(fullScan).not.toHaveBeenCalled();
       expect(restoreFromCache).toHaveBeenCalled();
       const references = await restarted.referencesAt({
         document: snapshot(targetUri, targetSource),

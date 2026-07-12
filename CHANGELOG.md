@@ -58,6 +58,14 @@ and uses semantic versioning for extension releases.
   last-known-good revision and retain it after failure. All index-backed LSP
   queries now use Workspace behavior, while mutable index stores remain private
   to candidate construction.
+- Unified cold start, warm cache restore, rebuild, and recovery behind one
+  explicit indexed-revision candidate constructor. It now returns a complete
+  unpublished disk/package builder after root detection, package resolution,
+  parser readiness, cache restore or source discovery, and compatible source retention.
+  Workspace alone replays current open documents, publishes with one synchronous
+  pointer swap, advances revision/status, and starts best-effort persistence.
+  The hidden staged-candidate/take protocol, public phase-only bootstrap, and
+  synthetic empty test fallback were removed.
 - Shared one immutable, exact-source ShaderLab `DocumentAnalysis` between file
   indexing, Outline, and Semantic Tokens. Ordered blocks, multiline-aware
   structure, and lexical facts come from one source snapshot; `FileIndex`

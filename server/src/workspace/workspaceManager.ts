@@ -16,6 +16,7 @@ import type {
   OpenDocumentsProvider,
 } from './indexedWorkspace';
 import { compareWorkspaceSymbols } from './queries';
+import type { IndexedRevisionCandidateConstructor } from './indexedRevisionCandidate';
 
 const MAX_WORKSPACE_SYMBOLS = 1000;
 
@@ -34,6 +35,12 @@ interface AddFolderOptions {
   persistent?: boolean;
 }
 
+export interface WorkspaceManagerRuntimeOptions {
+  readonly createCandidateConstructor?: (
+    folderUri: string,
+  ) => IndexedRevisionCandidateConstructor;
+}
+
 export class WorkspaceManager implements IndexedWorkspaceService {
   private readonly byFolder = new Map<string, WorkspaceRecord>();
   private settings: ExtensionSettings | undefined;
@@ -43,6 +50,8 @@ export class WorkspaceManager implements IndexedWorkspaceService {
   private openDocuments: OpenDocumentsProvider | undefined;
   private readonly routingTransitions = new Map<Workspace, number>();
   private statusSequence = 0;
+
+  constructor(private readonly runtimeOptions: WorkspaceManagerRuntimeOptions = {}) {}
 
   configure(settings: ExtensionSettings, connection: Connection, globalStorageDir?: string): void {
     this.settings = settings;
@@ -213,6 +222,7 @@ export class WorkspaceManager implements IndexedWorkspaceService {
     const currentGlobalStorageDir = globalStorageDir ?? this.globalStorageDir;
     let workspace!: Workspace;
     workspace = new Workspace(folderUri, settings, {
+      candidateConstructor: this.runtimeOptions.createCandidateConstructor?.(folderUri),
       onIndexStatusChanged: () => {
         if (this.byFolder.get(folderUri)?.workspace === workspace) {
           this.publishStatus();

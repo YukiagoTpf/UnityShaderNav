@@ -50,9 +50,11 @@ VS Code extension client
 
 Language server
   - detects Unity project roots
-  - scans user files and resolved package files
+  - constructs one complete unpublished disk/package candidate through cold,
+    warm-cache, rebuild, and recovery paths
   - derives exact-source ShaderLab document analysis and parses HLSL syntax
   - builds symbol/reference indexes
+  - publishes only through the Workspace lifecycle boundary
   - answers LSP definition, references, symbols, highlight, and semantic-token requests
   - persists per-Workspace cache manifests under Library/UnityShaderNavCache
 ```
@@ -101,6 +103,17 @@ revision available under `failed(servingRevision)`. Each disk index is paired
 with the size and modification time from its stable source read. Retaining an
 older index retains that identity as well; cache persistence never samples new
 metadata for an older index value.
+
+Initial indexing, rebuild, recovery, and warm cache restore use one
+`IndexedRevisionCandidateConstructor`. It resolves the Unity root, creates the
+Package context, preflights the parser and its exact runtime identity, configures
+cache compatibility, restores or scans sources, and applies the shared
+retain-or-fail policy. The constructor returns one complete unpublished builder
+for the disk/package baseline; it does not mutate Workspace lifecycle, allocate
+a revision, publish, or persist. Workspace serializes the transaction, replays
+the latest open-document snapshots, and performs the only synchronous
+materialize/pointer-swap/revision-status commit. Cache persistence starts after
+that commit and is best effort.
 
 Recognized package source kinds must contain the fields needed for deterministic
 physical-path resolution. For example, git entries require a non-empty hash and
@@ -211,10 +224,13 @@ Workspace-owned include context. Other Definition and References requests join
 the current document attempt before reading indexed state.
 
 Every query that reads indexed state captures one `PublishedIndexedRevision`.
-Full indexing builds a new `IndexedRevisionBuilder`; incremental transactions
-fork the current revision, copy mutable maps/global arrays, and share immutable
-per-file index values. All work completes inside the one-shot candidate before
-a single synchronous Workspace pointer swap. Rebuild or recovery failure
+Full indexing receives a complete disk/package `IndexedRevisionBuilder`
+explicitly from the shared candidate constructor; incremental transactions fork
+the current revision, copy mutable maps/global arrays, and share immutable
+per-file index values. Workspace replays current open-document state into that
+one-shot candidate, then performs a single synchronous pointer swap. There is no
+Workspace-stored staged candidate, follow-up take protocol, synthetic empty
+fallback, or public construction-phase bootstrap. Rebuild or recovery failure
 discards its candidate and continues serving the retained revision. See
 [ADR-0006](adr/0006-index-lifecycle-and-failure-semantics.md).
 
@@ -398,11 +414,12 @@ identity, including Windows path casing. Standalone mode keeps its existing
 per-workspace bucket in VS Code global storage. Each identity uses one
 monolithic JSON manifest.
 
-Cache records have a schema version and a fingerprint. Parser initialization
-first resolves one supported runtime layout and successfully loads a captured
-grammar byte snapshot. The fingerprint then consumes that same snapshot plus
-the captured index implementation, resolved shared and external parser runtime
-packages, index-affecting settings, and macro table. No component independently
+Cache records have a schema version and a fingerprint. Candidate construction
+first completes parser readiness by resolving one supported runtime layout and
+successfully loading a captured grammar byte snapshot. The fingerprint then
+consumes that same snapshot plus the captured index implementation, resolved
+shared and external parser runtime packages, index-affecting settings, and macro
+table. No component independently
 searches for or reopens the grammar. An unknown layout, missing grammar, or
 unidentifiable implementation cannot produce a persistable fingerprint or
 restore a manifest. A different identity is a cache miss and triggers source
