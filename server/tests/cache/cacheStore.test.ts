@@ -131,6 +131,43 @@ describe('CacheStore', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
+  it('round-trips ShaderLab name facts', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'usn-cache-shaderlab-names-'));
+    const store = new CacheStore(dir);
+    const uri = 'file:///x/Named.shader';
+    const index: FileIndex = {
+      ...validIndex(uri),
+      shaderLabNames: {
+        shaders: [{ name: 'Library/Lit', nameRange: range, declarationRange: range }],
+        passes: [{
+          shaderName: 'Library/Lit',
+          name: 'ForwardLit',
+          canonicalName: 'FORWARDLIT',
+          nameRange: range,
+          declarationRange: range,
+        }],
+        references: [{
+          kind: 'usePass',
+          shaderName: 'Library/Lit',
+          passName: 'FORWARDLIT',
+          canonicalPassName: 'FORWARDLIT',
+          shaderNameRange: range,
+          passNameRange: range,
+          directiveRange: range,
+        }],
+      },
+    };
+
+    await store.save(validManifest({
+      files: [{ uri, mtimeMs: 1, size: 10, index }],
+    }));
+
+    expect((await store.load(fingerprint))?.files[0].index.shaderLabNames).toEqual(
+      index.shaderLabNames,
+    );
+    await rm(dir, { recursive: true, force: true });
+  });
+
   it('returns null for malformed JSON or unsupported versions', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'usn-cache-invalid-'));
     const store = new CacheStore(dir);

@@ -46,6 +46,7 @@ describe('Document analysis', () => {
     expect(fullAnalysis).toBeDefined();
     expect(indexAnalysis!.blocks).toEqual(fullAnalysis!.blocks);
     expect(indexAnalysis!.structure).toEqual(fullAnalysis!.structure);
+    expect(indexAnalysis!.shaderLabNames).toEqual(fullAnalysis!.shaderLabNames);
     expect(indexAnalysis!.blocks).toMatchObject([{
       kind: 'HLSLPROGRAM',
       contentStartLine: 8,
@@ -54,6 +55,10 @@ describe('Document analysis', () => {
     }]);
     expect(indexAnalysis!.structure.shaders[0].children[0].children[0])
       .toMatchObject({ name: 'FirstPass', headerLine: 5, closeLine: 10 });
+    expect(indexAnalysis!.shaderLabNames).toMatchObject({
+      shaders: [{ name: 'Tests/Shared' }],
+      passes: [{ shaderName: 'Tests/Shared', name: 'FirstPass', canonicalName: 'FIRSTPASS' }],
+    });
     expect(indexAnalysis!.lexicalTokens).toBeUndefined();
     expect(tokenTexts(source, fullAnalysis!)).toEqual(expect.arrayContaining([
       { text: 'Shader', type: 'keyword' },
@@ -72,6 +77,7 @@ describe('Document analysis', () => {
       expect.objectContaining({ name: '_FirstProperty', type: 'Float' }),
     ]));
     expect(index.structure).toBe(indexAnalysis!.structure);
+    expect(index.shaderLabNames).toBe(indexAnalysis!.shaderLabNames);
   });
 
   it('matches only the exact source text and regenerates stale prepared facts', async () => {
@@ -124,6 +130,8 @@ describe('Document analysis', () => {
     expect(Object.isFrozen(token.range)).toBe(true);
     expect(Object.isFrozen(token.range.start)).toBe(true);
     expect(Object.isFrozen(token.range.end)).toBe(true);
+    expect(Object.isFrozen(analysis.shaderLabNames)).toBe(true);
+    expect(Object.isFrozen(analysis.shaderLabNames.shaders)).toBe(true);
   });
 
   it.each([

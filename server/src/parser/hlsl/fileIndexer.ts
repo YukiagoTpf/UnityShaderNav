@@ -150,6 +150,7 @@ export async function indexFile(
       }
     }
     merged.structure = structure;
+    merged.shaderLabNames = analysis.shaderLabNames;
     const properties = scanProperties(text, blocks);
     if (properties.length > 0) merged.properties = properties;
     return merged;

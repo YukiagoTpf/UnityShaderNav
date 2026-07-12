@@ -44,6 +44,15 @@ import type {
 } from './indexedWorkspace';
 import type { WorkspaceIndexReadView } from './workspaceIndex';
 import { SEMANTIC_TOKEN_TYPES } from './semanticTokenLegend';
+import {
+  completeShaderLabName,
+  shaderLabNameDefinitions,
+  type ShaderLabNameState,
+  shaderLabNameCompletionContext,
+  shaderLabNameHover,
+  shaderLabNameTargetAt,
+  shaderLabWorkspaceSymbols,
+} from './shaderLabNames';
 
 export { SEMANTIC_TOKEN_TYPES } from './semanticTokenLegend';
 
@@ -61,6 +70,14 @@ type SuggestionWorkspaceQueryState = Pick<
   'suggestionCandidates'
 >;
 
+function shaderLabNameState(state: WorkspaceQueryState): ShaderLabNameState {
+  return {
+    index: state.index,
+    isInPackages: (uri) => state.packages.isInPackages(uri),
+    includePackages: state.includePackages,
+  };
+}
+
 /** Preserve completion's lexical early exit without publishing a document index. */
 export function completionWithoutIndex(
   input: DocumentPositionInput,
@@ -72,6 +89,7 @@ export function completionWithoutIndex(
     document.languageId,
     document.uri,
   );
+  if (shaderLabNameCompletionContext(document.text, position)) return undefined;
   return context.kind === 'comment' || context.kind === 'string' ? [] : undefined;
 }
 
@@ -97,6 +115,15 @@ export async function queryHover(
   const { document, position } = input;
   const index = state.index.store.get(document.uri);
   if (!index) return null;
+  const shaderLabNameTarget = shaderLabNameTargetAt(index, position);
+  if (shaderLabNameTarget) {
+    return shaderLabNameDefinitions(
+      shaderLabNameState(state),
+      shaderLabNameTarget,
+    ).length > 0
+      ? shaderLabNameHover(shaderLabNameTarget)
+      : null;
+  }
   if (!isGenericDefinitionContext(document.text, position, document.languageId, document.uri)) {
     return null;
   }
@@ -155,10 +182,16 @@ export async function queryHover(
 }
 
 export async function queryCompletion(
-  state: SuggestionWorkspaceQueryState,
+  state: WorkspaceQueryState,
   input: DocumentPositionInput,
 ): Promise<CompletionItem[] | null> {
   const { document, position } = input;
+  const shaderLabNames = completeShaderLabName(
+    shaderLabNameState(state),
+    document.text,
+    position,
+  );
+  if (shaderLabNames !== null) return shaderLabNames;
   const context = suggestionContextAt(
     document.text,
     position,
@@ -285,7 +318,10 @@ export function queryWorkspaceSymbols(
     if (!state.includePackages && state.packages.isInPackages(entry.location.uri)) continue;
     if (entry.name.toLowerCase().includes(needle)) matches.push(entry);
   }
-  return matches.sort(compareEntries).map(toSymbolInformation);
+  return [
+    ...matches.sort(compareEntries).map(toSymbolInformation),
+    ...shaderLabWorkspaceSymbols(shaderLabNameState(state), query),
+  ].sort(compareWorkspaceSymbols);
 }
 
 export function compareWorkspaceSymbols(

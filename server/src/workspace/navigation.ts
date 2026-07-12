@@ -19,6 +19,11 @@ import type {
   ReferencesAtInput,
 } from './indexedWorkspace';
 import type { WorkspaceIndexReadView } from './workspaceIndex';
+import {
+  shaderLabNameDefinitions,
+  shaderLabNameReferences,
+  shaderLabNameTargetAt,
+} from './shaderLabNames';
 
 export interface WorkspaceNavigationState {
   readonly index: WorkspaceIndexReadView;
@@ -87,6 +92,19 @@ export async function navigateDefinition(
     symbols: index.symbols.length,
     references: index.references.length,
   });
+
+  const shaderLabNameTarget = shaderLabNameTargetAt(index, position);
+  if (shaderLabNameTarget) {
+    const locations = shaderLabNameDefinitions(state, shaderLabNameTarget);
+    return locations.length > 0
+      ? locations.map((location) => ({
+        targetUri: location.uri,
+        targetRange: location.range,
+        targetSelectionRange: location.range,
+        originSelectionRange: shaderLabNameTarget.range,
+      }))
+      : null;
+  }
 
   // ShaderLab property -> HLSL declaration intentionally precedes the generic
   // HLSL lexical gate. Properties live outside HLSL blocks.
@@ -232,9 +250,23 @@ export async function navigateReferences(
     return uniqueLocations(locations);
   }
 
+  const index = state.index.store.get(document.uri);
+  if (index) {
+    const shaderLabNameTarget = shaderLabNameTargetAt(index, position);
+    if (shaderLabNameTarget) {
+      if (shaderLabNameDefinitions(state, shaderLabNameTarget).length === 0) return null;
+      const locations = shaderLabNameReferences(
+        state,
+        shaderLabNameTarget,
+        input.includeDeclaration,
+      );
+      return locations.length > 0 ? uniqueLocations(locations) : null;
+    }
+  }
+
   if (target.kind === 'none') return null;
   return findReferences(target, {
-    index: state.index.store.get(document.uri),
+    index,
     position,
     global: state.index.global,
     globalRefs: state.index.globalRefs,

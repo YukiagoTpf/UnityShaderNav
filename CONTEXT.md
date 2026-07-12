@@ -40,7 +40,7 @@ _Avoid_: symbol record, symbol info
 同函数内多个同名局部变量声明（如不同 block scope 里重复用 `temp`）的候选消歧策略——返回引用位置之前最近的可见声明。Definition、Hover、Chain lookup 与 Project-index suggestion 必须通过同一个 index-owned Symbol entry selection Module 解释 **Scope range**、声明顺序、Include chain 可见性和局部遮蔽；全局歧义继续保留全部候选。
 
 **Document analysis**:
-`DocumentAnalysis` 是从一份完全匹配的 ShaderLab 源码快照派生出的不可变事实：按源码顺序排列的 HLSL/CG blocks、同一份多行 comment/string/brace policy 下的 ShaderLab structure，以及 full analysis 才包含的可选 ShaderLab lexical tokens。`FileIndex` 持久投影 structure 供 Outline 使用，但不持有 analysis 容器或 source text。磁盘和其他 index-only 路径只临时构造并立即丢弃 analysis；只有当前 open-document attempt 的 full analysis 与对应 **Published indexed revision** 同寿命，供 Semantic Tokens 复用。文档关闭或 attempt 被替换时，下一 revision 不再持有它；已捕获的旧 revision 仍保持自洽，直到其 reader 释放。Analysis 容器不进入磁盘索引记录、manifest、持久化缓存或进程级缓存。
+`DocumentAnalysis` 是从一份完全匹配的 ShaderLab 源码快照派生出的不可变事实：按源码顺序排列的 HLSL/CG blocks、同一份多行 comment/string/brace policy 下的 ShaderLab structure、Shader/Pass 声明及 Fallback/UsePass 引用事实，以及 full analysis 才包含的可选 ShaderLab lexical tokens。`FileIndex` 持久投影 structure 与 ShaderLab name facts，分别供 Outline 和项目级名称查询使用，但不持有 analysis 容器或 source text。磁盘和其他 index-only 路径只临时构造并立即丢弃 analysis；只有当前 open-document attempt 的 full analysis 与对应 **Published indexed revision** 同寿命，供 Semantic Tokens 复用。文档关闭或 attempt 被替换时，下一 revision 不再持有它；已捕获的旧 revision 仍保持自洽，直到其 reader 释放。Analysis 容器本身不进入磁盘索引记录、manifest、持久化缓存或进程级缓存。
 _Avoid_: document cache, parse cache, global analysis cache
 
 ### 索引生命周期

@@ -161,20 +161,22 @@ rejections.
 
 For an exact ShaderLab open-document attempt, preparation produces one
 immutable `DocumentAnalysis`: ordered HLSL/CG block ranges, multiline-aware
-ShaderLab structure, and ShaderLab lexical tokens. The same block ranges feed
-file indexing and Properties scanning; `FileIndex.structure` is the durable
-projection consumed by Document Symbols. A successful publication keeps the
+ShaderLab structure, Shader/Pass declaration and Fallback/UsePass reference
+facts, and ShaderLab lexical tokens. The same block ranges feed file indexing
+and Properties scanning; `FileIndex.structure` and `FileIndex.shaderLabNames`
+are the durable projections consumed by Document Symbols and project-wide name
+queries. A successful publication keeps the
 full analysis beside that live overlay in the `PublishedIndexedRevision`, so
 Outline and Semantic Tokens read facts from the same committed source and
 attempt as the index. Close or replacement by a
 newer attempt removes it from the next publication; a request that already
 captured the prior revision keeps a self-consistent immutable result. Disk and
 other index-only paths use a temporary analysis only while creating the
-`FileIndex`; only the structure projection persists. The analysis container,
-source text, and lexical tokens are not fields of `FileIndex`, `DiskIndexRecord`,
-cache manifests, persisted cache records, or a process-wide cache. Cache
-restoration therefore restores Outline structure without reconstructing source
-analysis.
+`FileIndex`; only the structure and name-fact projections persist. The analysis
+container, source text, and lexical tokens are not fields of `FileIndex`,
+`DiskIndexRecord`, cache manifests, persisted cache records, or a process-wide
+cache. Cache restoration therefore restores Outline and ShaderLab name
+behavior without reconstructing source analysis.
 
 Workspace routing changes also form an ownership boundary. Adding a nested root
 removes its open-document overlays from the former parent before the nested

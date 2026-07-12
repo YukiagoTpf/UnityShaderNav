@@ -9,6 +9,12 @@ and uses semantic versioning for extension releases.
 
 ### Added
 
+- Added project-wide ShaderLab name semantics for `Shader`, `Fallback`, Pass
+  `Name`, and `UsePass`, including Definition, References, Hover, Completion,
+  Workspace Symbols, cache persistence, live-document updates, and conservative
+  Rename. Duplicate declarations stay multi-candidate and block Rename; Pass
+  references are rewritten using Unity's uppercase canonical form.
+
 - Added conservative Workspace Rename for unambiguous indexed HLSL/CG symbols.
   Prepare Rename and Rename share the same scope, proximity, member, include,
   Package, macro-reference, and published-revision interpretation as Definition

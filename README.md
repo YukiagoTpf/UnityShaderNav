@@ -16,6 +16,10 @@ The extension focuses on fast code navigation:
 - Workspace Rename for unambiguous indexed HLSL/CG symbols, including pragma
   entry-point references, with conservative refusal for overload-like or
   preprocessor ambiguity.
+- Project-wide ShaderLab name intelligence for `Shader`, `Fallback`, `Name`,
+  and `UsePass`: Definition, References, Hover, Completion, Workspace Symbols,
+  and conservative Rename. `UsePass` pass segments follow Unity's uppercase
+  canonical form.
 - Hover for declarations of indexed shader symbols (functions, structs,
   members, variables, parameters, macros) and selected built-ins.
 - Conservative completion and signature help for indexed HLSL/CG code, plus a
@@ -132,9 +136,12 @@ See [Configuration](docs/configuration.md) for the full explanation and examples
 - Chain lookup intentionally stays conservative for multiline receivers,
   macro-expanded receivers, branch-dependent types, and overload-specific return
   type inference.
-- Rename is limited to HLSL/CG symbols whose declaration identity is unique.
-  ShaderLab Properties, Shader/Pass names, built-ins, Package declarations, and
-  ambiguous candidates are intentionally refused rather than edited by name.
+- Rename requires a unique indexed declaration identity. ShaderLab Properties,
+  built-ins, Package declarations, and ambiguous Shader, Pass, or HLSL
+  candidates are intentionally refused rather than edited by name.
+- ShaderLab name intelligence is declaration-backed and limited to `Fallback`
+  and `UsePass`; external or Unity built-in names without an indexed declaration
+  stay unresolved rather than being guessed from a catalog.
 
 ## Contributing
 

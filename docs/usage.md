@@ -16,6 +16,8 @@ Use F12 or VS Code's `Go to Definition` command on:
 - `#pragma vertex`, `#pragma fragment`, and `#pragma kernel` entry points.
 - Macro names declared with `#define`.
 - Symbols declared through supported Unity declaration macros.
+- Shader names referenced by `Fallback` or the shader segment of `UsePass`.
+- Pass names referenced by the final segment of `UsePass`.
 
 When multiple definitions are valid, UnityShaderNav returns all candidates and
 lets VS Code show Peek Definition. This is expected for preprocessor branches,
@@ -32,8 +34,9 @@ conservative (see [ADR-0001](adr/0001-multi-candidate-peek-for-ambiguous-symbols
 
 Pause the mouse over (or press `Ctrl+K Ctrl+I` on) an indexed shader symbol to
 see a declaration-style summary and source location. Hover covers project
-functions, structs, struct members, variables, parameters, and macros, plus
-selected built-ins from the curated catalog. Ambiguous symbols are listed
+functions, structs, struct members, variables, parameters, macros, and
+ShaderLab Shader/Pass names, plus selected built-ins from the curated catalog.
+Ambiguous symbols are listed
 without ranking, matching Go to Definition behavior; very large candidate sets
 are truncated with a `… and N more candidates` footer to keep the bubble
 readable.
@@ -42,6 +45,9 @@ readable.
 
 Use Shift+F12 to find references in indexed user files. Package references are
 disabled by default because they can be noisy in large URP/HDRP projects.
+Shader declarations are connected to `Fallback` and the shader segment of
+`UsePass`; Pass `Name` declarations are connected to the final `UsePass`
+segment.
 
 Enable package references with:
 
@@ -63,9 +69,19 @@ Rename intentionally refuses the operation when it cannot prove one declaration
 identity. This includes overload-like or preprocessor ambiguity, built-ins,
 include paths, Package declarations, and HLSL variables linked to ShaderLab
 Properties. It also refuses a new name that is not an HLSL identifier or that
-conflicts with a visible indexed symbol. ShaderLab Property and Shader/Pass name
-Rename are separate future capabilities; UnityShaderNav does not perform a
-partial name-only edit for them.
+conflicts with a visible indexed symbol. ShaderLab Property Rename remains a
+separate capability; UnityShaderNav does not perform a partial name-only edit
+for that cross-language contract.
+
+ShaderLab Shader and Pass names use the same conservative rule. Shader Rename
+updates the declaration plus matching `Fallback` and `UsePass` shader segments.
+Pass Rename updates its `Name` declaration and matching `UsePass` pass segments;
+the reference segments are written in Unity's canonical uppercase form. A
+duplicate Shader name or duplicate Pass name within one Shader is returned as
+multiple Definition candidates and blocks Rename.
+External and Unity built-in Shader/Pass paths without an indexed declaration
+remain neutral: they do not acquire guessed navigation, Hover, References, or
+Rename behavior.
 
 ### Completion And Signature Help
 
@@ -82,6 +98,11 @@ when names collide with built-ins. On a later argument, Signature Help focuses
 the first candidate with enough parameters while keeping every conservative
 candidate available. Member completion follows the current file's transitive
 include chain and excludes unrelated indexed files.
+
+Inside an unfinished `Fallback "...` value, Completion suggests indexed Shader
+names. Inside `UsePass`, it first suggests Shader paths and then the named
+passes belonging to the selected Shader. Shader and Pass declarations also
+participate in Workspace Symbols (Ctrl+T / Cmd+T).
 
 ### Document Symbols
 

@@ -20,6 +20,11 @@ import type {
   RenamePreparationOutcome,
 } from './indexedWorkspace';
 import type { WorkspaceNavigationState } from './navigation';
+import {
+  prepareShaderLabNameRename,
+  renameShaderLabName,
+  shaderLabNameTargetAt,
+} from './shaderLabNames';
 
 type RenameTarget = ActiveReferenceTargetSelection['targets'][number];
 
@@ -182,6 +187,11 @@ export async function prepareWorkspaceRename(
   state: WorkspaceNavigationState,
   input: DocumentPositionInput,
 ): Promise<RenamePreparationOutcome> {
+  const index = state.index.store.get(input.document.uri);
+  const shaderLabNameTarget = index
+    ? shaderLabNameTargetAt(index, input.position)
+    : null;
+  if (shaderLabNameTarget) return prepareShaderLabNameRename(state, shaderLabNameTarget);
   const subject = await resolveRenameSubject(state, input);
   if (!isRenameSubject(subject)) return subject;
   return {
@@ -195,6 +205,13 @@ export async function renameWorkspaceSymbol(
   state: WorkspaceNavigationState,
   input: DocumentPositionInput & { readonly newName: string },
 ): Promise<RenameEditOutcome> {
+  const shaderLabIndex = state.index.store.get(input.document.uri);
+  const shaderLabNameTarget = shaderLabIndex
+    ? shaderLabNameTargetAt(shaderLabIndex, input.position)
+    : null;
+  if (shaderLabNameTarget) {
+    return renameShaderLabName(state, shaderLabNameTarget, input.newName);
+  }
   const subject = await resolveRenameSubject(state, input);
   if (!isRenameSubject(subject)) return subject;
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(input.newName)) {

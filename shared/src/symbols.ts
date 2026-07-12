@@ -1,4 +1,4 @@
-import type { StructureResult } from './structure';
+import type { ShaderLabNameFacts, StructureResult } from './structure';
 
 export type SymbolKind =
   | 'function'
@@ -76,4 +76,6 @@ export interface FileIndex {
   structure?: StructureResult;
   /** Only populated for .shader files. */
   properties?: ShaderLabPropertyEntry[];
+  /** Shader/Pass declarations and Fallback/UsePass references for `.shader`. */
+  shaderLabNames?: ShaderLabNameFacts;
 }

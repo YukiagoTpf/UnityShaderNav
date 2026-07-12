@@ -141,6 +141,40 @@ function isStructureResult(value: unknown): boolean {
     && value.shaders.every(isShaderLabStructureNode);
 }
 
+function isShaderLabNameFacts(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (!Array.isArray(value.shaders) || !Array.isArray(value.passes) || !Array.isArray(value.references)) {
+    return false;
+  }
+  return value.shaders.every((entry) => (
+    isRecord(entry)
+    && typeof entry.name === 'string'
+    && isRange(entry.nameRange)
+    && isRange(entry.declarationRange)
+  )) && value.passes.every((entry) => (
+    isRecord(entry)
+    && typeof entry.shaderName === 'string'
+    && typeof entry.name === 'string'
+    && typeof entry.canonicalName === 'string'
+    && isRange(entry.nameRange)
+    && isRange(entry.declarationRange)
+  )) && value.references.every((entry) => (
+    isRecord(entry)
+    && isRange(entry.shaderNameRange)
+    && isRange(entry.directiveRange)
+    && typeof entry.shaderName === 'string'
+    && (
+      entry.kind === 'fallback'
+      || (
+        entry.kind === 'usePass'
+        && typeof entry.passName === 'string'
+        && typeof entry.canonicalPassName === 'string'
+        && isRange(entry.passNameRange)
+      )
+    )
+  ));
+}
+
 function isFileIndex(value: unknown, expectedUri: string): value is FileIndex {
   return isRecord(value)
     && value.uri === expectedUri
@@ -155,7 +189,8 @@ function isFileIndex(value: unknown, expectedUri: string): value is FileIndex {
         && value.typeInferences.every(isTypeInferenceEntry)
       )
     )
-    && (value.structure === undefined || isStructureResult(value.structure));
+    && (value.structure === undefined || isStructureResult(value.structure))
+    && (value.shaderLabNames === undefined || isShaderLabNameFacts(value.shaderLabNames));
 }
 
 function isCachedFile(value: unknown): value is CachedFile {

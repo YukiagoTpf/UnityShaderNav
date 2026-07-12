@@ -194,14 +194,16 @@ results remain revision-owned behavior.
 For a ShaderLab open-document attempt, the candidate builds a full
 `DocumentAnalysis` from that attempt's exact source. It becomes query-visible
 only when the same candidate publishes. File indexing projects its structure
-into `FileIndex` for Outline, while Semantic Tokens consumes its committed
-lexical tokens through the captured revision. The analysis container and source
+and ShaderLab name facts into `FileIndex` for Outline and project-wide name
+queries, while Semantic Tokens consumes its committed lexical tokens through
+the captured revision. The analysis container and source
 stay beside the live overlay rather than inside `FileIndex`; close or a newer
 attempt removes them from the next publication, while an already captured old
 revision keeps its immutable facts until that reader finishes. Disk scans
 and other index-only source paths may construct an analysis while producing a
 `FileIndex`, but discard it immediately afterward; cache restoration does not
-reconstruct one. The durable `FileIndex.structure` projection may be cached;
+reconstruct one. The durable `FileIndex.structure` and
+`FileIndex.shaderLabNames` projections may be cached;
 `DiskIndexRecord`, cache manifests, persisted cache entries, and process-wide
 caches never retain the analysis container, source text, or lexical tokens.
 This revision-owned lifetime prevents Outline or token requests from observing
