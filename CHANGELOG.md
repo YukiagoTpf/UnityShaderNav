@@ -7,6 +7,8 @@ and uses semantic versioning for extension releases.
 
 ## Unreleased
 
+## 0.0.9 - 2026-07-12
+
 ### Changed
 
 - Unified cold discovery, warm cache restore, watcher admission, and close
