@@ -1,6 +1,8 @@
 import { fileURLToPath } from 'node:url';
 import type {
   CodeAction,
+  ColorInformation,
+  ColorPresentation,
   CompletionItem,
   Connection,
   Diagnostic,
@@ -12,6 +14,7 @@ import type {
   SemanticTokens,
   SignatureHelp,
   SymbolInformation,
+  TextEdit,
 } from 'vscode-languageserver/node';
 import {
   normalizeSettings,
@@ -23,6 +26,8 @@ import { uriKey } from '../uriKey';
 import type {
   DefinitionAtInput,
   CodeActionsAtInput,
+  ColorPresentationAtInput,
+  DocumentFormattingAtInput,
   DocumentPositionInput,
   IndexedDocumentSnapshot,
   IndexedDocumentQueryInput,
@@ -228,6 +233,28 @@ export class Workspace implements IndexedWorkspace {
     const revision = await this.revisionForDocument(input.document);
     if (!revision) return null;
     const result = await revision.completionAt(input);
+    return this.disposed ? null : result;
+  }
+
+  async documentColors(input: IndexedDocumentQueryInput): Promise<ColorInformation[]> {
+    if (!input.document) return [];
+    const revision = await this.revisionForDocument(input.document);
+    if (!revision) return [];
+    const result = revision.documentColors(input);
+    return this.disposed ? [] : result;
+  }
+
+  async colorPresentations(input: ColorPresentationAtInput): Promise<ColorPresentation[]> {
+    const revision = await this.revisionForDocument(input.document);
+    if (!revision) return [];
+    const result = revision.colorPresentations(input);
+    return this.disposed ? [] : result;
+  }
+
+  async formatDocument(input: DocumentFormattingAtInput): Promise<TextEdit[] | null> {
+    const revision = await this.revisionForDocument(input.document);
+    if (!revision) return null;
+    const result = revision.formatDocument(input);
     return this.disposed ? null : result;
   }
 

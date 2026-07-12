@@ -11,6 +11,8 @@ import {
 } from '../analysis';
 import type {
   CodeAction,
+  ColorInformation,
+  ColorPresentation,
   CompletionItem,
   Connection,
   Diagnostic,
@@ -22,8 +24,14 @@ import type {
   SemanticTokens,
   SignatureHelp,
   SymbolInformation,
+  TextEdit,
 } from 'vscode-languageserver/node';
 import type { CacheManager } from '../cache';
+import {
+  shaderLabColorPresentations,
+  shaderLabDocumentColors,
+  shaderLabIndentationEdits,
+} from '../authoring';
 import { createIncludeChain, type IncludeChain } from '../include';
 import { DocumentationResolver } from '../documentation';
 import { UnityProjectFacts } from '../project';
@@ -36,8 +44,10 @@ import {
 import { IndexedSourceMembership } from './indexedSourceMembership';
 import type {
   DefinitionAtInput,
-  DocumentPositionInput,
   CodeActionsAtInput,
+  ColorPresentationAtInput,
+  DocumentFormattingAtInput,
+  DocumentPositionInput,
   IndexedDocumentSnapshot,
   IndexedDocumentQueryInput,
   ReferencesAtInput,
@@ -213,7 +223,31 @@ export class PublishedIndexedRevision {
   }
 
   completionAt(input: DocumentPositionInput): Promise<CompletionItem[] | null> {
-    return queryCompletion(this.queryState(), input);
+    return queryCompletion(
+      this.queryState(),
+      input,
+      this.documentAnalysis({ uri: input.document.uri, document: input.document }),
+    );
+  }
+
+  documentColors(input: IndexedDocumentQueryInput): ColorInformation[] {
+    return shaderLabDocumentColors(this.documentAnalysis(input));
+  }
+
+  colorPresentations(input: ColorPresentationAtInput): ColorPresentation[] {
+    return shaderLabColorPresentations(
+      this.documentAnalysis({ uri: input.document.uri, document: input.document }),
+      input.range,
+      input.color,
+    );
+  }
+
+  formatDocument(input: DocumentFormattingAtInput): TextEdit[] | null {
+    return shaderLabIndentationEdits(
+      this.documentAnalysis({ uri: input.document.uri, document: input.document }),
+      input.document.text,
+      input.options,
+    );
   }
 
   signatureHelpAt(input: DocumentPositionInput): Promise<SignatureHelp | null> {

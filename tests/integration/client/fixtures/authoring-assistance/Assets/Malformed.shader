@@ -1,0 +1,4 @@
+Shader "Authoring/Malformed"
+{
+    SubShader
+    {

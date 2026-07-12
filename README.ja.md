@@ -14,6 +14,7 @@ UnityShaderNav は、Unity Shader プロジェクト向けの Visual Studio Code
 - SRP Batcher の material contract を保守的に検査し、`UnityPerMaterial` にないスカラー/ベクター Property、互換性のない型、確定可能な Pass 間 layout 差異を報告します。Quick Fix は安全な挿入先が一意の場合だけ提供します。
 - インデックス済みシェーダーシンボル（関数、struct、メンバー、変数、引数、マクロ）の宣言サマリーに加え、一部の ShaderLab 用語、Property 構文、セマンティクス、SRP helper に公開ソース付き Quick Documentation を表示します。プロジェクトおよび Package の実際の宣言は、バージョン範囲付きの厳選フォールバックより優先されます。
 - インデックス済み HLSL/CG コードの保守的な補完とシグネチャヘルプ、および厳選された Unity/HLSL/ShaderLab 組み込み語彙。
+- 正しいコンテキストだけに表示される一般的な Material Property、Pass、pipeline-neutral な vertex/fragment program snippets、正規化された Color 既定リテラルの編集、および安全な ShaderLab インデント整形。
 - ShaderLab ラッパー、Properties、Tags、render states、プリプロセッサ行、
   HLSL シンボル向けの Document Symbols とセマンティックカラーリング。
 - インデックス済みのシェーダー関数、struct、struct メンバー、cbuffer、マクロ、
@@ -118,6 +119,7 @@ npm run package:vsix
 - Surface Shader の暗黙パラメータや ShaderGraph 生成コードは、特別なソースとしてインデックスしません。
 - 組み込み補完とシグネチャヘルプは厳選された非網羅的な語彙です。プロジェクトシンボルと組み込み名が衝突する場合は、プロジェクトシンボルを優先します。
 - Quick Documentation も非網羅的です。Package 固有のフォールバックは、互換バージョンで include から可視な Unity built-in または既定 registry Package にだけ適用されます。Unity 向け文書は現在 Editor 2022.3 で検証済みです。それ以外、不明なバージョン、scoped registry、fork、ローカル由来、非互換の Package は、実際のインデックス済み宣言がない限り中立のままです。
+- Color presentation は HDR、Vector、式、範囲外の成分を扱いません。整形は ShaderLab の行頭インデントだけを変更し、埋め込み program/include block 全体のバイトを保持します。構造が不正な場合は拒否し、HLSL 整形は対象外です。
 - Chain lookup は、複数行 receiver、マクロ展開 receiver、分岐依存の型、overload-specific return type inference などに対して保守的に動作します。
 - SRP Batcher 検査は明示的な SRP 根拠を必要とし、`Color`、`Vector`、`Float`、`Range`、従来の float-backed `Int`、`Integer` Property のみを対象にします。texture resource、条件付きまたはマクロ生成の cbuffer layout、曖昧な複数 block の編集は自動修正しません。SubShader ごとの pipeline 所有権を証明できるまでは、複数 SubShader のファイルを診断しません。
 

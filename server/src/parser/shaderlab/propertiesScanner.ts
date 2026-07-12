@@ -20,6 +20,22 @@ interface CommentState {
   inBlockComment: boolean;
 }
 
+export interface ShaderLabLiteralColorFact {
+  readonly range: Range;
+  readonly components: readonly [number, number, number, number];
+  readonly hdr: boolean;
+}
+
+export interface ShaderLabPropertyFacts {
+  readonly entries: readonly ShaderLabPropertyEntry[];
+  readonly literalColors: readonly ShaderLabLiteralColorFact[];
+}
+
+const NUMBER = '[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?';
+const COLOR_LITERAL_RE = new RegExp(
+  `^\\(\\s*(${NUMBER})\\s*,\\s*(${NUMBER})\\s*,\\s*(${NUMBER})\\s*,\\s*(${NUMBER})\\s*\\)$`,
+);
+
 function makeRange(line: number, start: number, end: number): Range {
   return {
     start: { line, character: start },
@@ -53,14 +69,15 @@ function countChar(text: string, ch: string): number {
  * property declaration. Comment- and string-aware; HLSL/CG block ranges are
  * skipped. Never throws.
  */
-export function scanProperties(
+export function scanShaderLabPropertyFacts(
   text: string,
   /** Ordered, non-overlapping block facts for this exact source when already available. */
   knownBlocks?: readonly ShaderLabBlock[],
-): ShaderLabPropertyEntry[] {
+): ShaderLabPropertyFacts {
   const lines = text.split(/\r?\n/);
   const blocks = knownBlocks ?? scanBlocks(text).blocks;
   const entries: ShaderLabPropertyEntry[] = [];
+  const literalColors: ShaderLabLiteralColorFact[] = [];
   const commentState: CommentState = { inBlockComment: false };
   let propertiesDepth = 0;
   let blockIndex = 0;
@@ -117,6 +134,24 @@ export function scanProperties(
             declarationRange: makeRange(lineNo, 0, trimmedEnd),
             type,
           });
+
+          if (type === 'Color' && match[5]) {
+            const literal = match[5].trim();
+            const color = COLOR_LITERAL_RE.exec(literal);
+            const equals = masked.indexOf('=', nameStart + name.length);
+            const literalStart = equals >= 0 ? rawLine.indexOf(literal, equals + 1) : -1;
+            if (color && literalStart >= 0) {
+              const components = color.slice(1).map(Number) as unknown as
+                [number, number, number, number];
+              if (components.every(Number.isFinite)) {
+                literalColors.push({
+                  range: makeRange(lineNo, literalStart, literalStart + literal.length),
+                  components,
+                  hdr: /\[\s*HDR\s*\]/.test(decoratorRun),
+                });
+              }
+            }
+          }
         }
       }
     }
@@ -130,5 +165,13 @@ export function scanProperties(
     }
   }
 
-  return entries;
+  return { entries, literalColors };
+}
+
+/** Compatibility projection for index consumers. */
+export function scanProperties(
+  text: string,
+  knownBlocks?: readonly ShaderLabBlock[],
+): ShaderLabPropertyEntry[] {
+  return [...scanShaderLabPropertyFacts(text, knownBlocks).entries];
 }

@@ -32,6 +32,8 @@ export function createInitializeResult(prepareRenameSupported = true): Initializ
       textDocumentSync: TextDocumentSyncKind.Incremental,
       definitionProvider: true,
       hoverProvider: true,
+      colorProvider: true,
+      documentFormattingProvider: true,
       documentSymbolProvider: true,
       workspaceSymbolProvider: true,
       referencesProvider: true,

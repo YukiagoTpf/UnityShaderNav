@@ -199,6 +199,33 @@ function symbol(
 }
 
 describe('published query behavior', () => {
+  it('serves authoring facts only for the exact committed document attempt', async () => {
+    const uri = 'file:///project/Assets/Authoring.shader';
+    const text = [
+      'Shader "Authoring/Test" {',
+      '  Properties {',
+      '    _Color ("Color", Color) = (1, 0, 0, 1)',
+      '  }',
+      '  SubShader {}',
+      '}',
+    ].join('\n');
+    const document = snapshot(uri, text);
+    const revision = await publishOpenDocument('file:///project', document);
+
+    expect(revision.documentColors({ uri, document })).toHaveLength(1);
+    expect(revision.formatDocument({
+      document,
+      options: { tabSize: 2, insertSpaces: true },
+    })).not.toBeNull();
+
+    const stale = { ...document, version: document.version + 1 };
+    expect(revision.documentColors({ uri, document: stale })).toEqual([]);
+    expect(revision.formatDocument({
+      document: stale,
+      options: { tabSize: 2, insertSpaces: true },
+    })).toBeNull();
+  });
+
   it('serves context-bound ShaderLab and semantic Quick Documentation', async () => {
     const uri = 'file:///project/Assets/Documentation.shader';
     const text = [

@@ -38,6 +38,12 @@ describe('LSP handshake', () => {
     expect(result.capabilities.documentHighlightProvider).toBe(true);
   });
 
+  it('advertises document color and whole-document formatting providers', () => {
+    const result = createInitializeResult();
+    expect(result.capabilities.colorProvider).toBe(true);
+    expect(result.capabilities.documentFormattingProvider).toBe(true);
+  });
+
   it('advertises codeActionProvider', () => {
     const result = createInitializeResult();
     expect(result.capabilities.codeActionProvider).toBe(true);

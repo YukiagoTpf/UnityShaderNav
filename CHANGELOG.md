@@ -9,6 +9,12 @@ and uses semantic versioning for extension releases.
 
 ### Added
 
+- Added context-scoped ShaderLab snippets for common Properties, Passes, and a
+  pipeline-neutral vertex/fragment program; editable color presentations for
+  normalized non-HDR Color defaults; and deterministic ShaderLab indentation
+  formatting. Formatting emits only leading-whitespace edits, protects complete
+  embedded program/include blocks byte-for-byte, and refuses malformed layout.
+
 - Added sourced, cursor-context-aware Quick Documentation for selected
   ShaderLab directives, render states, Property attributes and types, HLSL
   semantics, and SRP helpers. Indexed project or Package declarations take

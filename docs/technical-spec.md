@@ -16,6 +16,9 @@ UnityShaderNav provides practical VS Code navigation for Unity shader projects:
   explicit Unity or Package version scope, while preferring indexed project and
   Package declarations over curated fallback. Unity-scoped curated entries are
   currently verified for Editor 2022.3; unknown versions stay neutral.
+- Context-scoped ShaderLab snippets, normalized literal Color presentations,
+  and deterministic ShaderLab-only indentation formatting with byte-preserved
+  embedded program/include blocks and explicit malformed-layout refusal.
 - Document Symbols for fast file outline navigation.
 - Document Highlight and semantic coloring for ShaderLab wrapper syntax and
   common HLSL symbols.

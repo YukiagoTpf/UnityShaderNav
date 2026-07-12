@@ -35,6 +35,9 @@ The extension focuses on fast code navigation:
 - Conservative completion and signature help for indexed HLSL/CG code, plus a
   curated Unity/HLSL/ShaderLab/URP/HDRP built-in vocabulary covering common
   intrinsics, helper macros, render states, and semantics.
+- Context-scoped ShaderLab snippets for common Material Properties, Passes, and
+  a pipeline-neutral vertex/fragment program; editable presentations for
+  normalized literal Color defaults; and safe ShaderLab indentation formatting.
 - Document Symbols and semantic coloring for ShaderLab wrappers, Properties,
   Tags, render states, preprocessor lines, and HLSL symbols.
 - Workspace symbol search (Ctrl+T / Cmd+T) across indexed shader functions,
@@ -148,6 +151,10 @@ See [Configuration](docs/configuration.md) for the full explanation and examples
   Unity Package. Unity-scoped prose is currently verified for Editor 2022.3;
   other, unknown, scoped-registry, forked, local, and incompatible facts remain
   neutral unless an actual indexed declaration is available.
+- Color presentations exclude HDR, Vector, expressions, and out-of-range
+  components. Formatting changes only leading ShaderLab indentation, preserves
+  complete embedded program/include blocks byte-for-byte, and refuses malformed
+  structure. HLSL formatting is out of scope.
 - Chain lookup intentionally stays conservative for multiline receivers,
   macro-expanded receivers, branch-dependent types, and overload-specific return
   type inference.

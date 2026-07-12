@@ -11,7 +11,6 @@ import { parseHlsl } from './parser';
 import { collect } from './collector';
 import { scanIncludes } from '../include/lineScanner';
 import { scanDefines } from '../preproc/scanDefines';
-import { scanProperties } from '../shaderlab/propertiesScanner';
 
 const HLSL_EXTS = new Set(['.hlsl', '.cginc', '.hlslinc', '.compute']);
 
@@ -152,8 +151,8 @@ export async function indexFile(
     merged.structure = structure;
     merged.shaderLabNames = analysis.shaderLabNames;
     merged.shaderLabMaterial = analysis.shaderLabMaterial;
-    const properties = scanProperties(text, blocks);
-    if (properties.length > 0) merged.properties = properties;
+    const properties = analysis.shaderLabProperties.entries;
+    if (properties.length > 0) merged.properties = [...properties];
     return merged;
   }
 

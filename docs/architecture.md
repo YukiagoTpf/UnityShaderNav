@@ -123,6 +123,11 @@ The index is intentionally pragmatic:
   from one exact source analysis, then passes the blocks to Properties scanning
   and publishes the structure through `FileIndex` for Outline. A full live
   analysis additionally carries the lexical tokens used by Semantic Tokens.
+- The same exact analysis carries a safety-bearing ShaderLab layout and
+  Property literal facts. Snippet Completion, Document Color, Color
+  Presentation, and Formatting are narrow projections of those immutable
+  facts. Formatting can emit only line-leading whitespace edits outside the
+  complete protected embedded-block ranges.
 - Preprocessor conditions are not evaluated for navigation, references, or
   completion. A separate presentation-only layer does apply conservative
   preprocessor branch dimming (inactive and variant-gated `#if`/`#ifdef`/

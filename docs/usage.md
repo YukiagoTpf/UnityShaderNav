@@ -157,6 +157,34 @@ names. Inside `UsePass`, it first suggests Shader paths and then the named
 passes belonging to the selected Shader. Shader and Pass declarations also
 participate in Workspace Symbols (Ctrl+T / Cmd+T).
 
+### ShaderLab Authoring Assistance
+
+Completion also exposes snippets only in their direct, structurally valid
+ShaderLab scope:
+
+- Color, Float, Range, Vector, and 2D texture Material Properties inside
+  `Properties`;
+- a Pass skeleton directly inside `SubShader`;
+- one pipeline-neutral `HLSLPROGRAM` vertex/fragment skeleton directly inside
+  a Pass that does not already contain a program block.
+
+Property snippets declare only the Material-facing Property; they do not claim
+to synchronize an HLSL variable or `UnityPerMaterial` field. The program
+snippet deliberately leaves the object-to-clip expression editable rather than
+guessing Built-in, URP, or HDRP ownership.
+
+VS Code shows a color decoration and picker for a `Color` Property default only
+when it is an exact, non-HDR four-number tuple with every component in `[0, 1]`.
+`Vector`, HDR, expressions, and out-of-range values stay neutral. Applying a
+presentation writes another ShaderLab tuple over that exact current range.
+
+Format Document changes only deterministic leading indentation outside embedded
+HLSL/CG program and include blocks. Those blocks, including their marker lines,
+remain byte-for-byte unchanged. Unbalanced braces, comments, or program markers
+cause formatting to return no edits. HLSL formatting, range formatting,
+trailing-whitespace cleanup, and whole-file rewriting are intentionally out of
+scope.
+
 ### Document Symbols
 
 Use Ctrl+Shift+O to view ShaderLab blocks, passes, pragmas, functions, structs,

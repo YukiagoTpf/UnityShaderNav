@@ -14,6 +14,7 @@ UnityShaderNav 是一个用于 Unity Shader 项目的 Visual Studio Code 扩展�
 - 保守检查 SRP Batcher 材质契约：标出未进入 `UnityPerMaterial` 的标量/向量 Property、不兼容字段类型及可确定的跨 Pass 布局差异；只有唯一且安全的插入位置才提供 Quick Fix。
 - 悬浮（Hover）显示已索引着色器符号（函数、struct、字段、变量、参数、宏）的声明摘要，并为部分 ShaderLab 术语、Property 语法、语义和 SRP helper 提供带公开来源的 Quick Documentation。项目和 Package 中的真实声明优先于带版本范围的精选兜底文档。
 - 为已索引的 HLSL/CG 代码提供保守的补全和签名帮助，并包含精选的 Unity/HLSL/ShaderLab 内置词汇。
+- 提供仅在正确上下文出现的常用 Material Property、Pass 和不绑定渲染管线的 vertex/fragment program snippets；可编辑归一化的 Color 默认字面量；并安全格式化 ShaderLab 缩进。
 - 为 ShaderLab 外层结构、Properties、Tags、render states、预处理行和
   HLSL 符号提供 Document Symbols 与语义着色。
 - 跨文件的 Workspace 符号搜索（Ctrl+T / Cmd+T），覆盖已索引的 shader 函数、
@@ -116,6 +117,7 @@ npm run package:vsix
 - 不把 Surface Shader 隐式参数和 ShaderGraph 生成代码作为特殊来源索引。
 - 内置补全和签名帮助是精选词表，不保证穷尽；当项目符号与内置名称冲突时，优先使用项目符号。
 - Quick Documentation 是精选内容，不保证穷尽。Package 专属兜底只会用于版本兼容、include 可见的 Unity built-in 或默认 registry Package；Unity 范围文档目前只验证 Editor 2022.3。其他版本、未知版本、scoped registry、fork、本地来源或版本不兼容时保持中性，除非存在已索引的真实声明。
+- Color presentation 不处理 HDR、Vector、表达式或越界分量。格式化只修改 ShaderLab 行首缩进，完整保留嵌入 program/include block 的原始字节；结构畸形时拒绝格式化。HLSL 格式化不在范围内。
 - Chain lookup 对跨行 receiver、宏展开 receiver、分支相关类型、overload-specific return type inference 等情况保持保守。
 - Rename 要求索引中存在唯一声明；ShaderLab Property、内建符号、Package 声明以及存在歧义的 Shader、Pass 或 HLSL 候选都会被拒绝。
 - SRP Batcher 检查要求源码中存在明确 SRP 证据，目前只覆盖 `Color`、`Vector`、`Float`、`Range`、旧版 float-backed `Int` 和 `Integer` Property。纹理资源、条件式或宏生成的 cbuffer 布局，以及有歧义的多 block 修改会保持中性或要求手工处理；在能证明逐 SubShader 的渲染管线归属前，多 SubShader 文件保持中性。

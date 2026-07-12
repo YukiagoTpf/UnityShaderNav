@@ -151,6 +151,12 @@ _Avoid_: lexical state, parser context
 **Documentation resolver**:
 每个 **Published indexed revision** 持有的 Quick Documentation 解析器。它先使用项目或 include-visible Package 的真实声明及该 revision 的 Package provenance；只有不存在真实声明时，才按 **Documentation target**、官方 package source、resolved manifest version 和 include visibility 选择精选兜底。未知、fork/local 或版本不兼容事实不会被猜测成官方兼容性。
 
+**ShaderLab layout analysis**:
+同一份精确 `.shader` source snapshot 的轻量、lossless 结构事实：记录 Shader/Properties/SubShader/Pass direct scope、逐行确定性缩进深度、完整 embedded program/include 保护区，以及显式 safety/issues。Outline structure 是它的兼容投影；snippet 与 formatter 只消费 safe layout，不从 handler 重新扫结构。
+
+**ShaderLab literal color fact**:
+Properties scanner 对 `Color` Property 默认值的窄事实：精确 tuple range、四个有限数字分量与 HDR decorator 状态。Document Color 只投影非 HDR 且全部位于 `[0,1]` 的事实；Color Presentation 必须重新匹配当前 exact range，禁止 clamp 或 Gamma/Linear 猜测。
+
 **Suggestion context**:
 补全/签名帮助请求位置的粗粒度上下文分类，例如 HLSL code、ShaderLab code、semantic position、ShaderLab state value、comment、string。用于避免把 ShaderLab 状态词塞进普通 HLSL 表达式，或在注释/字符串里返回建议。现在它是 **Cursor context** 面向补全的投影——即由 `classifyCursor` 产出的 `kind`/`prefix`/`member` 子集。
 _Avoid_: completion mode, parser state

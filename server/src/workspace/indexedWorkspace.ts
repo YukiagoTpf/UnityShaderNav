@@ -1,10 +1,14 @@
 import type {
   CompletionItem,
+  Color,
+  ColorInformation,
+  ColorPresentation,
   CodeAction,
   CodeActionContext,
   Diagnostic,
   DocumentHighlight,
   DocumentSymbol,
+  FormattingOptions,
   Hover,
   Location,
   LocationLink,
@@ -12,6 +16,7 @@ import type {
   SemanticTokens,
   SignatureHelp,
   SymbolInformation,
+  TextEdit,
   WorkspaceEdit,
 } from 'vscode-languageserver/node';
 
@@ -58,6 +63,17 @@ export interface CodeActionsAtInput {
   readonly context: CodeActionContext;
 }
 
+export interface ColorPresentationAtInput {
+  readonly document: IndexedDocumentSnapshot;
+  readonly range: import('vscode-languageserver/node').Range;
+  readonly color: Color;
+}
+
+export interface DocumentFormattingAtInput {
+  readonly document: IndexedDocumentSnapshot;
+  readonly options: FormattingOptions;
+}
+
 export interface RenamePreparation {
   readonly kind: 'ready';
   readonly range: import('vscode-languageserver/node').Range;
@@ -93,6 +109,9 @@ export interface IndexedWorkspace {
   referencesAt(input: ReferencesAtInput): Promise<Location[] | null>;
   hoverAt(input: DocumentPositionInput): Promise<Hover | null>;
   completionAt(input: DocumentPositionInput): Promise<CompletionItem[] | null>;
+  documentColors(input: IndexedDocumentQueryInput): Promise<ColorInformation[]>;
+  colorPresentations(input: ColorPresentationAtInput): Promise<ColorPresentation[]>;
+  formatDocument(input: DocumentFormattingAtInput): Promise<TextEdit[] | null>;
   signatureHelpAt(input: DocumentPositionInput): Promise<SignatureHelp | null>;
   highlightsAt(input: DocumentPositionInput): Promise<DocumentHighlight[] | null>;
   prepareRenameAt(input: DocumentPositionInput): Promise<RenamePreparationOutcome>;

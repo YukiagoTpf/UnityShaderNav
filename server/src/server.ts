@@ -6,12 +6,14 @@ import {
 import { loadSettings, onSettingsChanged } from './config';
 import { registerCompletionHandler } from './handlers/completion';
 import { registerCodeActionHandler } from './handlers/codeActions';
+import { registerColorHandlers } from './handlers/colors';
 import { registerDefinitionHandler } from './handlers/definition';
 import { registerDocumentHighlightHandler } from './handlers/documentHighlight';
 import { registerDocumentSymbolHandler } from './handlers/documentSymbol';
 import { registerDiagnosticsPublisher } from './handlers/diagnostics';
 import { registerDocuments } from './handlers/documents';
 import { registerHoverHandler } from './handlers/hover';
+import { registerDocumentFormattingHandler } from './handlers/formatting';
 import { registerInactiveRegionsHandler } from './handlers/inactiveRegions';
 import { registerReferencesHandler } from './handlers/references';
 import { registerRenameHandler } from './handlers/rename';
@@ -88,6 +90,8 @@ onSettingsChanged(connection, async (settings) => {
 registerDefinitionHandler(connection, documentRegistry, manager, suspender);
 registerCodeActionHandler(connection, documentRegistry, manager, suspender);
 registerHoverHandler(connection, documentRegistry, manager, suspender);
+registerColorHandlers(connection, documentRegistry, manager, suspender);
+registerDocumentFormattingHandler(connection, documentRegistry, manager, suspender);
 registerCompletionHandler(connection, documentRegistry, manager, suspender);
 registerSignatureHelpHandler(connection, documentRegistry, manager, suspender);
 registerDocumentHighlightHandler(connection, documentRegistry, manager, suspender);

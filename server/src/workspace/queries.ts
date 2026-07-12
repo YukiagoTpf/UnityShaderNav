@@ -17,7 +17,8 @@ import type {
   SymbolEntry,
   SymbolKind,
 } from '@unity-shader-nav/shared';
-import type { DocumentLexicalToken } from '../analysis';
+import type { DocumentAnalysis, DocumentLexicalToken } from '../analysis';
+import { shaderLabSnippetCompletions } from '../authoring';
 import {
   documentationTargetAt,
   type DocumentationResolver,
@@ -245,6 +246,7 @@ function entriesForDocumentationTarget(target: DocumentationTarget): readonly im
 export async function queryCompletion(
   state: WorkspaceQueryState,
   input: DocumentPositionInput,
+  analysis?: DocumentAnalysis,
 ): Promise<CompletionItem[] | null> {
   const { document, position } = input;
   const shaderLabNames = completeShaderLabName(
@@ -260,6 +262,13 @@ export async function queryCompletion(
     document.uri,
   );
   if (context.kind === 'comment' || context.kind === 'string') return [];
+  const snippets = shaderLabSnippetCompletions(
+    analysis,
+    document.text,
+    position,
+    document.languageId,
+    document.uri,
+  );
   const selection = await state.suggestionCandidates.select({
     uri: document.uri,
     position,
@@ -271,9 +280,8 @@ export async function queryCompletion(
       }
       : { kind: 'completion', context },
   });
-  return selection
-    ? selection.suggestions.map(toCompletionItem)
-    : null;
+  if (!selection) return snippets.length > 0 ? snippets : null;
+  return [...selection.suggestions.map(toCompletionItem), ...snippets];
 }
 
 export async function querySignatureHelp(
