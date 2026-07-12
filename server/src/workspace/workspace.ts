@@ -26,6 +26,8 @@ import type {
   IndexedWorkspace,
   OpenDocumentsProvider,
   ReferencesAtInput,
+  RenameEditOutcome,
+  RenamePreparationOutcome,
 } from './indexedWorkspace';
 import { canNavigateDefinitionWithoutDocumentIndex } from './navigation';
 import { containsPath } from './pathUtils';
@@ -220,6 +222,22 @@ export class Workspace implements IndexedWorkspace {
     const revision = await this.revisionForDocument(input.document);
     if (!revision) return null;
     const result = await revision.highlightsAt(input);
+    return this.disposed ? null : result;
+  }
+
+  async prepareRenameAt(input: DocumentPositionInput): Promise<RenamePreparationOutcome> {
+    const revision = await this.revisionForDocument(input.document);
+    if (!revision) return null;
+    const result = await revision.prepareRenameAt(input);
+    return this.disposed ? null : result;
+  }
+
+  async renameAt(
+    input: DocumentPositionInput & { readonly newName: string },
+  ): Promise<RenameEditOutcome> {
+    const revision = await this.revisionForDocument(input.document);
+    if (!revision) return null;
+    const result = await revision.renameAt(input);
     return this.disposed ? null : result;
   }
 

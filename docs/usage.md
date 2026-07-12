@@ -51,6 +51,22 @@ Enable package references with:
 }
 ```
 
+### Rename
+
+Use F2 or VS Code's `Rename Symbol` command on an indexed HLSL/CG function,
+struct, struct member, parameter, local/global variable, macro, or cbuffer.
+Rename updates the declaration and the references that resolve to that exact
+declaration, including supported `#pragma vertex`, `#pragma fragment`, and
+`#pragma kernel` entry-point references.
+
+Rename intentionally refuses the operation when it cannot prove one declaration
+identity. This includes overload-like or preprocessor ambiguity, built-ins,
+include paths, Package declarations, and HLSL variables linked to ShaderLab
+Properties. It also refuses a new name that is not an HLSL identifier or that
+conflicts with a visible indexed symbol. ShaderLab Property and Shader/Pass name
+Rename are separate future capabilities; UnityShaderNav does not perform a
+partial name-only edit for them.
+
 ### Completion And Signature Help
 
 Completion and signature help are backed by the project index. In HLSL/CG code,

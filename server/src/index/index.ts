@@ -10,8 +10,18 @@ export {
   selectScopedSymbolEntries,
   selectSymbolEntryGroups,
 } from './symbolSelection';
-export { resolveDefinition, findReferences, findHighlights } from './resolution';
-export type { ResolverContext, ReferenceCollectionContext, HighlightCollectionContext } from './resolution';
+export {
+  resolveDefinition,
+  findReferences,
+  findHighlights,
+  selectActiveReferenceTargets,
+} from './resolution';
+export type {
+  ResolverContext,
+  ReferenceCollectionContext,
+  HighlightCollectionContext,
+  ActiveReferenceTargetSelection,
+} from './resolution';
 export { cursorTargetAt } from './cursorTarget';
 // The reference-matching strategy (target predicates + referenceResolver
 // variants) is index-internal: only resolution.ts composes it. uniqueLocations

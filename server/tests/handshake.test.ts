@@ -23,6 +23,16 @@ describe('LSP handshake', () => {
     expect(result.capabilities.referencesProvider).toBe(true);
   });
 
+  it('advertises Rename with Prepare Rename when the client supports it', () => {
+    const result = createInitializeResult(true);
+    expect(result.capabilities.renameProvider).toEqual({ prepareProvider: true });
+  });
+
+  it('advertises Rename without Prepare Rename for older clients', () => {
+    const result = createInitializeResult(false);
+    expect(result.capabilities.renameProvider).toBe(true);
+  });
+
   it('advertises documentHighlightProvider', () => {
     const result = createInitializeResult();
     expect(result.capabilities.documentHighlightProvider).toBe(true);

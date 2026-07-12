@@ -12,6 +12,7 @@ import { registerDocuments } from './handlers/documents';
 import { registerHoverHandler } from './handlers/hover';
 import { registerInactiveRegionsHandler } from './handlers/inactiveRegions';
 import { registerReferencesHandler } from './handlers/references';
+import { registerRenameHandler } from './handlers/rename';
 import { registerSemanticTokensHandler } from './handlers/semanticTokens';
 import { registerSignatureHelpHandler } from './handlers/signatureHelp';
 import { registerWorkspaceSymbolHandler } from './handlers/workspaceSymbol';
@@ -38,7 +39,9 @@ connection.onInitialize((params) => {
     ? options.globalStorageDir
     : undefined;
   manager.configureRuntime(connection, globalStorageDir);
-  return createInitializeResult();
+  return createInitializeResult(
+    params.capabilities.textDocument?.rename?.prepareSupport === true,
+  );
 });
 
 const documentRegistry = registerDocuments(connection, manager);
@@ -93,6 +96,7 @@ registerReferencesHandler(
   manager,
   suspender,
 );
+registerRenameHandler(connection, documentRegistry, manager, suspender);
 registerInactiveRegionsHandler(
   connection,
   documents,

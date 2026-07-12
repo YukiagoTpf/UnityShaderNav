@@ -18,7 +18,7 @@ export function getConnection(): Connection {
   return _connection;
 }
 
-export function createInitializeResult(): InitializeResult {
+export function createInitializeResult(prepareRenameSupported = true): InitializeResult {
   const semanticTokensProvider: SemanticTokensOptions = {
     legend: {
       tokenTypes: [...SEMANTIC_TOKEN_TYPES],
@@ -35,6 +35,7 @@ export function createInitializeResult(): InitializeResult {
       documentSymbolProvider: true,
       workspaceSymbolProvider: true,
       referencesProvider: true,
+      renameProvider: prepareRenameSupported ? { prepareProvider: true } : true,
       documentHighlightProvider: true,
       completionProvider: {
         triggerCharacters: ['.'],

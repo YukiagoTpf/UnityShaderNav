@@ -61,6 +61,55 @@ export interface ReferenceCollectionContext {
   includeDeclaration: boolean;
 }
 
+export interface ActiveReferenceTargetSelection {
+  readonly queryName: string;
+  readonly targets: readonly ReferenceTarget[];
+}
+
+/**
+ * Resolve the declaration identity selected by one cursor occurrence. This is
+ * the shared narrowing policy for References and Rename: scoped declarations
+ * win, then typed members, then global candidates compatible with the
+ * occurrence's lexical role.
+ */
+export function selectActiveReferenceTargets(
+  target: CursorTarget,
+  index: FileIndex,
+  position: Position,
+  global: GlobalSymbolReader,
+  options?: ResolutionOptions,
+): ActiveReferenceTargetSelection {
+  const resolved = resolveReferenceTargetsForCursor(
+    index,
+    target,
+    position,
+    global,
+    options,
+  );
+  const scopedTargets = resolved.filter(isScopedTarget);
+  const memberTargets = resolved.filter(isMemberTarget);
+  const narrowedTargets = [...scopedTargets, ...memberTargets];
+  const word = target.kind === 'member'
+    ? target.member
+    : target.kind === 'symbol'
+      ? target.word
+      : undefined;
+  const queryName = resolved[0]?.name ?? word?.text ?? '';
+  const globalKindAwareTargets = narrowedTargets.length === 0
+    ? narrowGlobalTargetsForOccurrence(
+      resolved.filter(isGlobalKindAwareTarget),
+      index,
+      queryName,
+      position,
+    )
+    : [];
+
+  return {
+    queryName,
+    targets: narrowedTargets.length > 0 ? narrowedTargets : globalKindAwareTargets,
+  };
+}
+
 export async function findReferences(
   target: CursorTarget,
   ctx: ReferenceCollectionContext,
@@ -83,22 +132,18 @@ export async function findReferences(
   };
   const visibleUriKeys = idx ? await visibleForUri(idx.uri) : undefined;
   const resolutionOptions: ResolutionOptions | undefined = visibleUriKeys ? { visibleUriKeys } : undefined;
-  const targets = idx
-    ? resolveReferenceTargetsForCursor(idx, target, ctx.position, ctx.global, resolutionOptions)
-    : [];
-  const scopedTargets = targets.filter(isScopedTarget);
-  const memberTargets = targets.filter(isMemberTarget);
-  const narrowedTargets = [...scopedTargets, ...memberTargets];
-  const queryName = targets[0]?.name ?? word?.text ?? '';
-  const globalKindAwareTargets = narrowedTargets.length === 0
-    ? narrowGlobalTargetsForOccurrence(
-      targets.filter(isGlobalKindAwareTarget),
+  const selection = idx
+    ? selectActiveReferenceTargets(
+      target,
       idx,
-      queryName,
       ctx.position,
+      ctx.global,
+      resolutionOptions,
     )
-    : [];
-  const activeTargets = narrowedTargets.length > 0 ? narrowedTargets : globalKindAwareTargets;
+    : { queryName: word?.text ?? '', targets: [] };
+  const queryName = selection.queryName;
+  const activeTargets = [...selection.targets];
+  const globalKindAwareTargets = activeTargets.filter(isGlobalKindAwareTarget);
   const includePackages = ctx.includePackages;
   const symbolsAsReferences = ctx.includeDeclaration
     ? ctx.global

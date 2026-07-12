@@ -14,6 +14,10 @@ import {
   navigateDefinition,
   navigateReferences,
 } from '../../src/workspace/navigation';
+import {
+  prepareWorkspaceRename,
+  renameWorkspaceSymbol,
+} from '../../src/workspace/rename';
 import { WorkspaceIndex } from '../../src/workspace/workspaceIndex';
 
 interface NavigationFixtureOptions {
@@ -70,6 +74,14 @@ export function createIndexedWorkspaceFixture(
     async referencesAt(input) {
       await this.updateDocument(input.document);
       return navigateReferences(state(), input);
+    },
+    async prepareRenameAt(input) {
+      await this.updateDocument(input.document);
+      return prepareWorkspaceRename(state(), input);
+    },
+    async renameAt(input) {
+      await this.updateDocument(input.document);
+      return renameWorkspaceSymbol(state(), input);
     },
     async hoverAt() { return null; },
     async completionAt() { return null; },

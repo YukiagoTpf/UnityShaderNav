@@ -36,6 +36,8 @@ import type {
   IndexedDocumentSnapshot,
   IndexedDocumentQueryInput,
   ReferencesAtInput,
+  RenameEditOutcome,
+  RenamePreparationOutcome,
 } from './indexedWorkspace';
 import {
   navigateDefinition,
@@ -52,6 +54,10 @@ import {
   queryWorkspaceSymbols,
   type WorkspaceQueryState,
 } from './queries';
+import {
+  prepareWorkspaceRename,
+  renameWorkspaceSymbol,
+} from './rename';
 import {
   WorkspaceIndex,
   type DocumentAnalyzer,
@@ -179,6 +185,16 @@ export class PublishedIndexedRevision {
 
   highlightsAt(input: DocumentPositionInput): Promise<DocumentHighlight[] | null> {
     return queryHighlights(this.queryState(), input);
+  }
+
+  prepareRenameAt(input: DocumentPositionInput): Promise<RenamePreparationOutcome> {
+    return prepareWorkspaceRename(this.navigationState(), input);
+  }
+
+  renameAt(
+    input: DocumentPositionInput & { readonly newName: string },
+  ): Promise<RenameEditOutcome> {
+    return renameWorkspaceSymbol(this.navigationState(), input);
   }
 
   documentSymbols(input: IndexedDocumentQueryInput): DocumentSymbol[] | null {

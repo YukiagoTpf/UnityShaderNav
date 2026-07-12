@@ -13,6 +13,9 @@ The extension focuses on fast code navigation:
   macros, `#include` paths, and shader entry points.
 - Find References across indexed user files, with an option to include package
   references.
+- Workspace Rename for unambiguous indexed HLSL/CG symbols, including pragma
+  entry-point references, with conservative refusal for overload-like or
+  preprocessor ambiguity.
 - Hover for declarations of indexed shader symbols (functions, structs,
   members, variables, parameters, macros) and selected built-ins.
 - Conservative completion and signature help for indexed HLSL/CG code, plus a
@@ -129,6 +132,9 @@ See [Configuration](docs/configuration.md) for the full explanation and examples
 - Chain lookup intentionally stays conservative for multiline receivers,
   macro-expanded receivers, branch-dependent types, and overload-specific return
   type inference.
+- Rename is limited to HLSL/CG symbols whose declaration identity is unique.
+  ShaderLab Properties, Shader/Pass names, built-ins, Package declarations, and
+  ambiguous candidates are intentionally refused rather than edited by name.
 
 ## Contributing
 

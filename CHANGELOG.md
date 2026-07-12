@@ -7,6 +7,16 @@ and uses semantic versioning for extension releases.
 
 ## Unreleased
 
+### Added
+
+- Added conservative Workspace Rename for unambiguous indexed HLSL/CG symbols.
+  Prepare Rename and Rename share the same scope, proximity, member, include,
+  Package, macro-reference, and published-revision interpretation as Definition
+  and References. Supported pragma entry points update with their functions;
+  built-ins, Package declarations, ShaderLab Property contracts, invalid or
+  colliding names, and ambiguous candidates are refused with an actionable
+  message instead of receiving name-only edits.
+
 ## 0.0.9 - 2026-07-12
 
 ### Changed

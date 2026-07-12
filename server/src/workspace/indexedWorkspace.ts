@@ -9,6 +9,7 @@ import type {
   SemanticTokens,
   SignatureHelp,
   SymbolInformation,
+  WorkspaceEdit,
 } from 'vscode-languageserver/node';
 
 export interface IndexedDocumentSnapshot {
@@ -48,6 +49,26 @@ export interface DocumentPositionInput {
   readonly position: Position;
 }
 
+export interface RenamePreparation {
+  readonly kind: 'ready';
+  readonly range: import('vscode-languageserver/node').Range;
+  readonly placeholder: string;
+}
+
+export interface RenameFailure {
+  readonly kind: 'failure';
+  readonly message: string;
+}
+
+export type RenamePreparationOutcome = RenamePreparation | RenameFailure | null;
+export type RenameEditOutcome = WorkspaceEdit | RenameFailure | null;
+
+export function isRenameFailure(
+  outcome: RenamePreparationOutcome | RenameEditOutcome,
+): outcome is RenameFailure {
+  return !!outcome && 'kind' in outcome && outcome.kind === 'failure';
+}
+
 export interface IndexedDocumentQueryInput {
   readonly uri: string;
   readonly document?: IndexedDocumentSnapshot;
@@ -63,6 +84,10 @@ export interface IndexedWorkspace {
   completionAt(input: DocumentPositionInput): Promise<CompletionItem[] | null>;
   signatureHelpAt(input: DocumentPositionInput): Promise<SignatureHelp | null>;
   highlightsAt(input: DocumentPositionInput): Promise<DocumentHighlight[] | null>;
+  prepareRenameAt(input: DocumentPositionInput): Promise<RenamePreparationOutcome>;
+  renameAt(
+    input: DocumentPositionInput & { readonly newName: string },
+  ): Promise<RenameEditOutcome>;
   documentSymbols(input: IndexedDocumentQueryInput): Promise<DocumentSymbol[] | null>;
   semanticTokens(input: IndexedDocumentQueryInput): Promise<SemanticTokens>;
   workspaceSymbols(query: string): SymbolInformation[];
