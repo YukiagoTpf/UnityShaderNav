@@ -24,6 +24,10 @@ and uses semantic versioning for extension releases.
   sentinel filtering, built-in macro-head coloring, configuration diagnostics,
   and cache identity behind one recognizer. Compiled pattern representations
   no longer leak into parser, semantic-token, cache, or test consumers.
+- Bound direct include resolution and transitive include visibility to one
+  Include chain per published Workspace revision. Definition, References,
+  Hover, Completion, Signature Help, and Document Highlight now share the same
+  revision facts; the unused parallel Package include-path helper was removed.
 
 ## 0.0.8 - 2026-07-12
 

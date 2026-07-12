@@ -52,18 +52,6 @@ export class PackageResolver {
     return [...this.map].map(([name, path]) => ({ name, path }));
   }
 
-  resolveIncludePath(virtualPath: string): string | null {
-    if (!virtualPath.startsWith('Packages/')) return null;
-    const rest = virtualPath.substring('Packages/'.length);
-    const slash = rest.indexOf('/');
-    const name = slash < 0 ? rest : rest.substring(0, slash);
-    const subpath = slash < 0 ? '' : rest.substring(slash + 1);
-    const physicalPath = this.map.get(name);
-
-    if (!physicalPath) return null;
-    return subpath ? join(physicalPath, subpath) : physicalPath;
-  }
-
   asIncludeContextMap(): Map<string, string> {
     return new Map(this.map);
   }

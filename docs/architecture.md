@@ -312,6 +312,15 @@ server session.
 
 ## Include Resolution Boundary
 
+Each `PublishedIndexedRevision` owns one Include chain composed from that
+revision's immutable index view and the include context captured from its
+settings and `PackageContext`. Direct include jumps and transitive visibility
+for Definition, References, Hover, Completion, Signature Help, and Document
+Highlight consume this same behavior. Forked publications create a new chain;
+captured older revisions retain their original view. The chain intentionally
+does not memoize across requests, so filesystem state is not promoted to a
+process-lifetime cache.
+
 The include resolver owns candidate generation, ordering, exact-case
 verification, and case-insensitive fallback above a narrow `FileProbe` with
 `exists` and `listDir` operations. Production resolution uses the default Node
@@ -322,7 +331,8 @@ contract.
 
 Package include candidates consume the physical-path map already captured by
 the Workspace revision's `PackageContext`. The probe does not discover packages
-or broaden package membership.
+or broaden package membership. `PackageResolver` exposes only that resolved map;
+there is no parallel Package include-path implementation.
 
 ## Package Resolution
 

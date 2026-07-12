@@ -18,7 +18,6 @@ export { cursorTargetAt } from './cursorTarget';
 // stays public as a generic Location[] dedup util (references.ts uses it for
 // include-path dedup, independent of findReferences).
 export { uniqueLocations } from './referenceMatching';
-export { collectVisibleUriKeys } from './visibility';
 export { propertyAt, findPropertyCandidatesForName } from './propertyBridge';
 export type { LocationLink } from './symbolResolver';
 export type { CursorTarget, CursorTargetOptions } from './cursorTarget';

@@ -22,6 +22,7 @@ import type {
   SymbolInformation,
 } from 'vscode-languageserver/node';
 import type { CacheManager } from '../cache';
+import { createIncludeChain, type IncludeChain } from '../include';
 import { uriKey } from '../uriKey';
 import type { PackageContext } from '../packages';
 import {
@@ -100,6 +101,7 @@ export class PublishedIndexedRevision {
   readonly fingerprint: CacheFingerprint | undefined;
   readonly sourceWarningCount: number;
   private readonly index: WorkspaceIndex;
+  private readonly includeChain: IncludeChain;
   private readonly suggestionCandidates: SuggestionCandidateSelector;
   private readonly committedDocuments: ReadonlyMap<string, CommittedDocumentAttempt>;
   private readonly sourceWarnings: ReadonlySet<string>;
@@ -120,9 +122,17 @@ export class PublishedIndexedRevision {
     this.cache = configuration.cache;
     this.fingerprint = configuration.fingerprint;
     this.index = index;
+    const packageIncludeContext = configuration.packages.includeCtx;
+    this.includeChain = createIncludeChain(
+      index.read.store,
+      {
+        ...packageIncludeContext,
+        includeDirectories: configuration.settings.includeDirectories,
+      },
+    );
     this.suggestionCandidates = createSuggestionCandidateSelector(
       index.read,
-      configuration.packages.includeCtx,
+      this.includeChain,
     );
     this.committedDocuments = new Map(committedDocuments);
     this.sourceWarnings = new Set(sourceWarnings);
@@ -235,7 +245,7 @@ export class PublishedIndexedRevision {
   private navigationState(): WorkspaceNavigationState {
     return {
       index: this.index.read,
-      includeCtx: this.packages.includeCtx,
+      includeChain: this.includeChain,
       isInPackages: (uri) => this.packages.isInPackages(uri),
       includePackages: this.settings.findReferences.includePackages,
       definitionTrace: this.settings.debug.definitionTrace,
@@ -247,6 +257,7 @@ export class PublishedIndexedRevision {
       folderUri: this.folderUri,
       index: this.index.read,
       packages: this.packages,
+      includeChain: this.includeChain,
       includePackages: this.settings.findReferences.includePackages,
       suggestionCandidates: this.suggestionCandidates,
     };

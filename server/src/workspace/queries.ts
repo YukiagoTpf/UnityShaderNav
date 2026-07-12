@@ -18,9 +18,9 @@ import type {
   SymbolKind,
 } from '@unity-shader-nav/shared';
 import type { DocumentLexicalToken } from '../analysis';
+import type { IncludeChain } from '../include';
 import { formatHoverCandidates, type HoverInput } from '../hover';
 import {
-  collectVisibleUriKeys,
   cursorTargetAt,
   findHighlights,
   resolveDefinitionSymbols,
@@ -51,6 +51,7 @@ export interface WorkspaceQueryState {
   readonly folderUri: string;
   readonly index: WorkspaceIndexReadView;
   readonly packages: PackageContext;
+  readonly includeChain: IncludeChain;
   readonly includePackages: boolean;
   readonly suggestionCandidates: SuggestionCandidateSelector;
 }
@@ -102,11 +103,7 @@ export async function queryHover(
 
   const target = cursorTargetAt(document.text, position, { detectIncludes: false });
   if (target.kind === 'none') return null;
-  const visibleUriKeys = await collectVisibleUriKeys(
-    state.index.store,
-    state.packages.includeCtx,
-    document.uri,
-  );
+  const visibleUriKeys = await state.includeChain.visibleUriKeys(document.uri);
   const options = { visibleUriKeys };
 
   if (target.kind === 'member') {
@@ -243,11 +240,7 @@ export async function queryHighlights(
   }
   const target = cursorTargetAt(document.text, position, { detectIncludes: false });
   if (target.kind === 'none') return null;
-  const visibleUriKeys = await collectVisibleUriKeys(
-    state.index.store,
-    state.packages.includeCtx,
-    document.uri,
-  );
+  const visibleUriKeys = await state.includeChain.visibleUriKeys(document.uri);
   const highlights = findHighlights(target, {
     index,
     position,

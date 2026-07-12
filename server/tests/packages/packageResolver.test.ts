@@ -86,15 +86,6 @@ describe('PackageResolver', () => {
     );
   });
 
-  it('resolveIncludePath maps Packages/<name>/... to absolute path', async () => {
-    const root = await makeFakeProject();
-    const resolver = new PackageResolver(root);
-    await resolver.load();
-
-    expect(resolver.resolveIncludePath('Packages/com.example.embedded/Foo.hlsl'))
-      .toBe(join(root, 'Packages', 'com.example.embedded', 'Foo.hlsl'));
-  });
-
   it('skips unknown source entries and warns instead of guessing a path', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-unknown-'));
     await mkdir(join(root, 'Packages'), { recursive: true });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Location } from 'vscode-languageserver/node';
 import type { Position } from '@unity-shader-nav/shared';
+import { createIncludeChain } from '../../src/include';
 import {
   GlobalReferenceIndex,
   GlobalSymbolIndex,
@@ -36,7 +37,7 @@ function referencesAt(
     global: base.global,
     globalRefs: base.globalRefs,
     store: base.store,
-    includeCtx,
+    includeChain: createIncludeChain(base.store, includeCtx),
     isInPackages: () => false,
     includePackages: true,
     includeDeclaration,

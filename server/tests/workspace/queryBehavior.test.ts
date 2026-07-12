@@ -338,6 +338,127 @@ describe('published query behavior', () => {
     }
   });
 
+  it('keeps Definition and Hover bound to the Include chain of their captured revision', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-revision-include-chain-'));
+    const mainPath = join(root, 'Main.hlsl');
+    const oldPath = join(root, 'Old.hlsl');
+    const nextPath = join(root, 'Next.hlsl');
+    const oldMainText = [
+      '#include "Old.hlsl"',
+      'float4 Main() { return Target(); }',
+    ].join('\n');
+    const nextMainText = [
+      '#include "Next.hlsl"',
+      'float4 Main() { return Target(); }',
+    ].join('\n');
+    const oldText = 'float4 Target() { return 1; }';
+    const nextText = 'float4 Target() { return 2; }';
+    await Promise.all([
+      writeFile(mainPath, nextMainText),
+      writeFile(oldPath, oldText),
+      writeFile(nextPath, nextText),
+    ]);
+
+    try {
+      const mainUri = pathToFileURL(mainPath).href;
+      const oldUri = pathToFileURL(oldPath).href;
+      const nextUri = pathToFileURL(nextPath).href;
+      const [oldMainIndex, nextMainIndex, oldIndex, nextIndex] = await Promise.all([
+        indexFile(mainUri, oldMainText),
+        indexFile(mainUri, nextMainText),
+        indexFile(oldUri, oldText),
+        indexFile(nextUri, nextText),
+      ]);
+      const first = publishIndexes(pathToFileURL(root).href, [
+        oldMainIndex,
+        oldIndex,
+        nextIndex,
+      ]);
+      const nextBuilder = first.fork();
+      nextBuilder.restoreFromCache(mainUri, nextMainIndex);
+      const second = nextBuilder.publish(2);
+
+      const firstDocument = snapshot(mainUri, oldMainText);
+      const secondDocument = snapshot(mainUri, nextMainText);
+      const firstDefinition = await first.definitionAt({
+        document: firstDocument,
+        position: positionOf(oldMainText, 'Target();', 0, 1),
+      });
+      const secondDefinition = await second.definitionAt({
+        document: secondDocument,
+        position: positionOf(nextMainText, 'Target();', 0, 1),
+      });
+      expect(firstDefinition?.[0]).toMatchObject({ targetUri: oldUri });
+      expect(secondDefinition?.[0]).toMatchObject({ targetUri: nextUri });
+
+      const firstHover = await first.hoverAt({
+        document: firstDocument,
+        position: positionOf(oldMainText, 'Target();', 0, 1),
+      });
+      const secondHover = await second.hoverAt({
+        document: secondDocument,
+        position: positionOf(nextMainText, 'Target();', 0, 1),
+      });
+      expect((firstHover?.contents as { value?: string }).value).toContain('Old.hlsl');
+      expect((firstHover?.contents as { value?: string }).value).not.toContain('Next.hlsl');
+      expect((secondHover?.contents as { value?: string }).value).toContain('Next.hlsl');
+      expect((secondHover?.contents as { value?: string }).value).not.toContain('Old.hlsl');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('builds Include chain search roots from the captured revision settings', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-revision-include-settings-'));
+    const sourceRoot = join(root, 'Source');
+    const includeRoot = join(root, 'ConfiguredIncludes');
+    const mainPath = join(sourceRoot, 'Main.hlsl');
+    const sharedPath = join(includeRoot, 'Shared.hlsl');
+    const mainText = [
+      '#include "Shared.hlsl"',
+      'float4 Main() { return ConfiguredTarget(); }',
+    ].join('\n');
+    const sharedText = 'float4 ConfiguredTarget() { return 1; }';
+    await Promise.all([
+      mkdir(sourceRoot, { recursive: true }),
+      mkdir(includeRoot, { recursive: true }),
+    ]);
+    await Promise.all([
+      writeFile(mainPath, mainText),
+      writeFile(sharedPath, sharedText),
+    ]);
+
+    try {
+      const mainUri = pathToFileURL(mainPath).href;
+      const sharedUri = pathToFileURL(sharedPath).href;
+      const settings = {
+        ...DEFAULT_SETTINGS,
+        includeDirectories: [includeRoot],
+      };
+      const revision = publishIndexes(
+        pathToFileURL(root).href,
+        await Promise.all([
+          indexFile(mainUri, mainText),
+          indexFile(sharedUri, sharedText),
+        ]),
+        {
+          settings,
+          // Deliberately excludes the configured directory: revision settings
+          // own search roots while PackageContext owns package mappings.
+          packages: PackageContext.standalone(DEFAULT_SETTINGS),
+        },
+      );
+
+      const definition = await revision.definitionAt({
+        document: snapshot(mainUri, mainText),
+        position: positionOf(mainText, 'ConfiguredTarget();', 0, 1),
+      });
+      expect(definition?.[0]).toMatchObject({ targetUri: sharedUri });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('selects member candidates and the first arity-compatible overload through a published revision', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-query-candidates-'));
     const mainPath = join(root, 'Main.hlsl');

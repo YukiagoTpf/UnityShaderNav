@@ -18,7 +18,7 @@ VSCode 的 `${workspaceFolder}`——用户在 VSCode 里打开的根目录。**
 _Avoid_: degraded mode, no-project mode
 
 **Include chain**:
-从某文件出发递归跟随 `#include` 形成的传递闭包文件集合。用于跨文件跳转和 Find References 的范围判定。
+从某文件出发递归跟随 `#include` 形成的传递闭包文件集合。每个 **Published indexed revision** 持有一份 Include chain 行为，组合该 revision 的 immutable index view、settings、**PackageContext** 与 include resolver；Definition、References、Hover、Completion、Signature Help 和 Document Highlight 必须消费这同一份可见性解释。默认不跨请求 memoize，已捕获的旧 revision 不读取新 revision 的索引或配置事实。
 
 ### 符号收集
 

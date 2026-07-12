@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { Location } from 'vscode-languageserver/node';
 import type { Position } from '@unity-shader-nav/shared';
+import { createIncludeChain } from '../../src/include';
 import {
   GlobalSymbolIndex,
   IndexStore,
-  collectVisibleUriKeys,
   cursorTargetAt,
   findHighlights,
 } from '../../src/index';
@@ -18,7 +18,7 @@ async function highlightsAt(uri: string, text: string, position: Position): Prom
   store.set(uri, index);
   const global = new GlobalSymbolIndex();
   global.upsert(index);
-  const visibleUriKeys = await collectVisibleUriKeys(store, includeCtx, uri);
+  const visibleUriKeys = await createIncludeChain(store, includeCtx).visibleUriKeys(uri);
   const target = cursorTargetAt(text, position, { detectIncludes: false });
   return findHighlights(target, { index, position, global, options: { visibleUriKeys } });
 }

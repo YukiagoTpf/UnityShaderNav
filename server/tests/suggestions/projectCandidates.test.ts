@@ -8,6 +8,7 @@ import type {
   ReferenceEntry,
   SymbolEntry,
 } from '@unity-shader-nav/shared';
+import { createIncludeChain } from '../../src/include';
 import { describe, expect, it } from 'vitest';
 import { GlobalSymbolIndex, IndexStore } from '../../src/index';
 import {
@@ -87,7 +88,10 @@ function selectorFor(indexes: readonly FileIndex[]): SuggestionCandidateSelector
   }
   return createSuggestionCandidateSelector(
     { store, global },
-    { unityProjectRoot: undefined, includeDirectories: [] },
+    createIncludeChain(store, {
+      unityProjectRoot: undefined,
+      includeDirectories: [],
+    }),
   );
 }
 

@@ -3,7 +3,7 @@ import {
   type FileIndex,
 } from '@unity-shader-nav/shared';
 import type { TextDocument } from 'vscode-languageserver-textdocument';
-import type { IncludeContext } from '../../src/include';
+import { createIncludeChain, type IncludeContext } from '../../src/include';
 import { MacroPatternRecognizer } from '../../src/macros';
 import type {
   IndexedDocumentRegistry,
@@ -40,10 +40,13 @@ export function createIndexedWorkspaceFixture(
 
   const state = () => ({
     index: index.read,
-    includeCtx: options.includeCtx ?? {
-      unityProjectRoot: undefined,
-      includeDirectories: [],
-    },
+    includeChain: createIncludeChain(
+      index.read.store,
+      options.includeCtx ?? {
+        unityProjectRoot: undefined,
+        includeDirectories: [],
+      },
+    ),
     isInPackages: options.isInPackages ?? (() => false),
     includePackages: options.includePackages ?? false,
     definitionTrace: options.definitionTrace ?? false,

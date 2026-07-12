@@ -467,7 +467,7 @@ describe('server dependency direction', () => {
       'utf8',
     );
     expect(selector).toMatch(/interface SuggestionCandidateSelector/);
-    expect(selector).toMatch(/collectVisibleUriKeys/);
+    expect(selector).toMatch(/includeChain\.visibleUriKeys/);
     expect(selector).toMatch(/inferReceiverTypeForCompletion/);
     expect(selector).toMatch(/compatibleSignatureIndex/);
     expect(selector).toMatch(/mergeProjectAndBuiltinSuggestions/);
@@ -503,6 +503,47 @@ describe('server dependency direction', () => {
     );
     expect(revision).toMatch(/createSuggestionCandidateSelector\([\s\S]*?index\.read/);
     expect(revision).toMatch(/suggestionCandidates: this\.suggestionCandidates/);
+  });
+
+  it('binds one Include chain to each published revision and every visibility query', () => {
+    const includeChain = readFileSync(
+      resolve(SOURCE_ROOT, 'include/includeChain.ts'),
+      'utf8',
+    );
+    expect(includeChain).toMatch(/interface IncludeChain/);
+    expect(includeChain).toMatch(/resolveInclude/);
+    expect(includeChain).toMatch(/visibleUriKeys/);
+    expect(includeChain).toMatch(/const visible = new Set<string>\(\)/);
+    expect(includeChain).not.toMatch(/private readonly .*cache|new Map<string, Promise<ReadonlySet/);
+    expect(existsSync(resolve(SOURCE_ROOT, 'index/visibility.ts'))).toBe(false);
+
+    const revision = readFileSync(
+      resolve(SOURCE_ROOT, 'workspace/indexedRevision.ts'),
+      'utf8',
+    );
+    expect(revision).toMatch(/private readonly includeChain: IncludeChain/);
+    expect(revision).toMatch(
+      /const packageIncludeContext = configuration\.packages\.includeCtx[\s\S]*?this\.includeChain = createIncludeChain\([\s\S]*?index\.read\.store[\s\S]*?configuration\.settings\.includeDirectories/,
+    );
+    expect(revision).toMatch(/includeChain: this\.includeChain/g);
+    expect(revision).toMatch(/createSuggestionCandidateSelector\([\s\S]*?this\.includeChain/);
+
+    for (const moduleId of [
+      'workspace/navigation.ts',
+      'workspace/queries.ts',
+      'suggestions/projectCandidates.ts',
+      'index/resolution.ts',
+    ]) {
+      const source = readFileSync(resolve(SOURCE_ROOT, moduleId), 'utf8');
+      expect(source, moduleId).toMatch(/IncludeChain/);
+      expect(source, moduleId).not.toMatch(/resolveInclude|collectVisibleUriKeys|\.includeCtx/);
+    }
+
+    const resolver = readFileSync(
+      resolve(SOURCE_ROOT, 'packages/packageResolver.ts'),
+      'utf8',
+    );
+    expect(resolver).not.toMatch(/resolveIncludePath/);
   });
 
   it('keeps every production query adapter behind the Indexed Workspace behavior', () => {

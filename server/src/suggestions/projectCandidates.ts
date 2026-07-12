@@ -4,9 +4,8 @@ import type {
   Position,
   SymbolEntry,
 } from '@unity-shader-nav/shared';
-import type { IncludeContext } from '../include';
+import type { IncludeChain } from '../include';
 import {
-  collectVisibleUriKeys,
   inferReceiverTypeForCompletion,
   selectGlobalSymbolEntries,
   selectSymbolEntryGroups,
@@ -67,15 +66,15 @@ export interface SuggestionIndexReadView {
 
 export function createSuggestionCandidateSelector(
   index: SuggestionIndexReadView,
-  includeContext: IncludeContext,
+  includeChain: IncludeChain,
 ): SuggestionCandidateSelector {
-  return new PublishedSuggestionCandidateSelector(index, includeContext);
+  return new PublishedSuggestionCandidateSelector(index, includeChain);
 }
 
 class PublishedSuggestionCandidateSelector implements SuggestionCandidateSelector {
   constructor(
     private readonly index: SuggestionIndexReadView,
-    private readonly includeContext: IncludeContext,
+    private readonly includeChain: IncludeChain,
   ) {}
 
   async select(
@@ -175,8 +174,8 @@ class PublishedSuggestionCandidateSelector implements SuggestionCandidateSelecto
     };
   }
 
-  private visibleUriKeys(uri: string): Promise<Set<string>> {
-    return collectVisibleUriKeys(this.index.store, this.includeContext, uri);
+  private visibleUriKeys(uri: string): Promise<ReadonlySet<string>> {
+    return this.includeChain.visibleUriKeys(uri);
   }
 }
 

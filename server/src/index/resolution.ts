@@ -3,7 +3,7 @@ import type { FileIndex, Position, SymbolEntry } from '@unity-shader-nav/shared'
 import type { GlobalSymbolReader } from './globalIndex';
 import type { GlobalReferenceReader } from './globalReferences';
 import type { IndexStoreReader } from './indexStore';
-import type { IncludeContext } from '../include';
+import type { IncludeChain } from '../include';
 import type { CursorTarget } from './cursorTarget';
 import { resolveDefinitionSymbols, type ResolutionOptions } from './symbolResolver';
 import { resolveMemberSymbols } from './chainLookup';
@@ -23,7 +23,6 @@ import {
   symbolToTarget,
   uniqueLocations,
 } from './referenceMatching';
-import { collectVisibleUriKeys } from './visibility';
 
 export interface ResolverContext {
   index: FileIndex;
@@ -56,7 +55,7 @@ export interface ReferenceCollectionContext {
   global: GlobalSymbolReader;
   globalRefs: GlobalReferenceReader;
   store: IndexStoreReader;
-  includeCtx: IncludeContext;
+  includeChain: IncludeChain;
   isInPackages: (uri: string) => boolean;
   includePackages: boolean;
   includeDeclaration: boolean;
@@ -73,12 +72,12 @@ export async function findReferences(
       ? target.word
       : undefined;
 
-  const visibleByUri = new Map<string, Promise<Set<string>>>();
-  const visibleForUri = (uri: string): Promise<Set<string>> => {
+  const visibleByUri = new Map<string, Promise<ReadonlySet<string>>>();
+  const visibleForUri = (uri: string): Promise<ReadonlySet<string>> => {
     const existing = visibleByUri.get(uri);
     if (existing) return existing;
 
-    const next = collectVisibleUriKeys(ctx.store, ctx.includeCtx, uri);
+    const next = ctx.includeChain.visibleUriKeys(uri);
     visibleByUri.set(uri, next);
     return next;
   };

@@ -3,9 +3,8 @@ import type {
   Location,
   LocationLink,
 } from 'vscode-languageserver/node';
-import { resolveInclude, type IncludeContext } from '../include';
+import type { IncludeChain } from '../include';
 import {
-  collectVisibleUriKeys,
   cursorTargetAt,
   findPropertyCandidatesForName,
   findReferences,
@@ -23,7 +22,7 @@ import type { WorkspaceIndexReadView } from './workspaceIndex';
 
 export interface WorkspaceNavigationState {
   readonly index: WorkspaceIndexReadView;
-  readonly includeCtx: IncludeContext;
+  readonly includeChain: IncludeChain;
   readonly isInPackages: (uri: string) => boolean;
   readonly includePackages: boolean;
   readonly definitionTrace: boolean;
@@ -57,7 +56,7 @@ export async function navigateDefinition(
   const target = cursorTargetAt(document.text, position);
   if (target.kind === 'include') {
     const include = target.include;
-    const resolved = await resolveInclude(include.path, document.uri, state.includeCtx);
+    const resolved = await state.includeChain.resolve(include.path, document.uri);
     if (!resolved) return null;
     if (resolved.caseInsensitive) {
       observer?.caseInsensitiveInclude?.(include.path, resolved.absolutePath);
@@ -94,11 +93,7 @@ export async function navigateDefinition(
   const propertyHit = propertyAt(index, position);
   if (propertyHit) {
     trace('property.hit', { name: propertyHit.name });
-    const visibleUriKeys = await collectVisibleUriKeys(
-      state.index.store,
-      state.includeCtx,
-      document.uri,
-    );
+    const visibleUriKeys = await state.includeChain.visibleUriKeys(document.uri);
     const symbols = resolveDefinition(
       {
         kind: 'symbol',
@@ -134,11 +129,7 @@ export async function navigateDefinition(
     return null;
   }
 
-  const visibleUriKeys = await collectVisibleUriKeys(
-    state.index.store,
-    state.includeCtx,
-    document.uri,
-  );
+  const visibleUriKeys = await state.includeChain.visibleUriKeys(document.uri);
   const resolverContext: ResolverContext = {
     index,
     global: state.index.global,
@@ -213,7 +204,7 @@ export async function navigateReferences(
   const { document, position } = input;
   const target = cursorTargetAt(document.text, position);
   if (target.kind === 'include') {
-    const resolved = await resolveInclude(target.include.path, document.uri, state.includeCtx);
+    const resolved = await state.includeChain.resolve(target.include.path, document.uri);
     if (!resolved) return null;
 
     const targetUri = pathToFileURL(resolved.absolutePath).href;
@@ -226,10 +217,9 @@ export async function navigateReferences(
         if (reference.context !== 'include') continue;
         if (!state.includePackages && state.isInPackages(reference.location.uri)) continue;
 
-        const candidate = await resolveInclude(
+        const candidate = await state.includeChain.resolve(
           reference.name,
           reference.location.uri,
-          state.includeCtx,
         );
         if (!candidate) continue;
         if (pathToFileURL(candidate.absolutePath).href !== targetUri) continue;
@@ -249,7 +239,7 @@ export async function navigateReferences(
     global: state.index.global,
     globalRefs: state.index.globalRefs,
     store: state.index.store,
-    includeCtx: state.includeCtx,
+    includeChain: state.includeChain,
     isInPackages: state.isInPackages,
     includePackages: state.includePackages,
     includeDeclaration: input.includeDeclaration,

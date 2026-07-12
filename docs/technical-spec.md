@@ -266,7 +266,7 @@ show Peek Definition.
 
 Completion, member completion, and signature help submit intent to one
 candidate selector captured by the published revision. The selector expands
-the transitive include chain once for each project-backed query, excludes
+the revision-owned transitive Include chain once for each project-backed query, excludes
 unrelated files, and orders visible project candidates as in-scope
 local/parameter, current-file global, then include-visible global. Same-name
 scoped declarations resolve through the same index-owned selection module used
@@ -408,6 +408,15 @@ Candidate and casing rules operate above a narrow `FileProbe` (`exists` plus
 `listDir`). Production uses its Node filesystem adapter; direct rule tests use
 an in-memory directory tree. Probe failures make that candidate unresolved and
 do not escape into an LSP request.
+
+One Include chain is captured by each published revision from its immutable
+index view and matching settings/Package context. It owns direct resolution and
+cycle-safe transitive visibility for Definition, References, Hover, Completion,
+Signature Help, and Document Highlight. A resolved intermediate file with no
+`FileIndex` is visible but ends traversal. Results are recomputed per request;
+there is no cross-request memoization. Include Definition can resolve from the
+immutable request text and captured revision even before that document has a
+published `FileIndex`.
 
 ## Cache
 

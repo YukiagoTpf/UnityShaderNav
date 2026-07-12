@@ -99,6 +99,12 @@ npm run grammar:rebuild
   disk fixtures to prove candidate ordering or casing behavior. Handler and
   Electron include tests exercise the default Node filesystem adapter and its
   production wiring.
+- Include-chain interface tests use the same `FileProbe` seam to cover
+  multi-level traversal, cycles, missing intermediate indexes, Package mapping,
+  and case fallback. Published-revision tests prove multiple query capabilities
+  consume the same captured chain and that a fork cannot change an older
+  revision's visibility. Do not add cross-request memoization or a Package
+  include helper outside this boundary.
 - Document-analysis tests should prove exact-source matching, immutable shared
   blocks/structure/tokens, index-only versus full demand, and revision-owned
   live lifetimes. `FileIndex.structure` is a durable projection; disk/cache
