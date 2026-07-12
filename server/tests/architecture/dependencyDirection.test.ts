@@ -300,6 +300,40 @@ describe('server dependency direction', () => {
     expect(packages).not.toMatch(/canRestoreCachedFile|walkFiles|isIndexableFilePath/);
   });
 
+  it('keeps scope and proximity selection in one index-owned module', () => {
+    const selection = readFileSync(
+      resolve(SOURCE_ROOT, 'index/symbolSelection.ts'),
+      'utf8',
+    );
+    const resolver = readFileSync(
+      resolve(SOURCE_ROOT, 'index/symbolResolver.ts'),
+      'utf8',
+    );
+    const chain = readFileSync(
+      resolve(SOURCE_ROOT, 'index/chainLookup.ts'),
+      'utf8',
+    );
+    const receiverSelection = sourceSection(
+      chain,
+      'function inferReceiverType(',
+      'function inferReceiverTypeFromCallAssignment',
+    );
+    const suggestions = readFileSync(
+      resolve(SOURCE_ROOT, 'suggestions/projectCandidates.ts'),
+      'utf8',
+    );
+
+    expect(selection).toMatch(/selectNamedSymbolEntries/);
+    expect(selection).toMatch(/scopeRange/);
+    expect(selection).toMatch(/inRange|isBeforeOrAt/);
+    expect(resolver).toMatch(/selectNamedSymbolEntries/);
+    expect(resolver).not.toMatch(/scopeRange|inRange|isBeforeOrAt/);
+    expect(receiverSelection).toMatch(/selectNamedSymbolEntries/);
+    expect(receiverSelection).not.toMatch(/index\.symbols|scopeRange|laterThan/);
+    expect(suggestions).toMatch(/selectSymbolEntryGroups/);
+    expect(suggestions).not.toMatch(/scopeRange|inRange|isBeforeOrAt|laterThan/);
+  });
+
   it('composes shared ShaderLab document facts at one production boundary', () => {
     const analysis = readFileSync(
       resolve(SOURCE_ROOT, 'analysis/documentAnalysis.ts'),

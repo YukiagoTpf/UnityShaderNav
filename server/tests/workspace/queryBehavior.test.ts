@@ -196,6 +196,62 @@ function symbol(
 }
 
 describe('published query behavior', () => {
+  it('shares nearest scoped selection across definition, hover, and completion', async () => {
+    const uri = 'file:///project/Assets/Selection.hlsl';
+    const text = ['// 0', '// 1', '// 2', '// 3', 'value;', 'receiver.'].join('\n');
+    const scopeRange = {
+      start: { line: 0, character: 0 },
+      end: { line: 10, character: 0 },
+    };
+    const index: FileIndex = {
+      uri,
+      references: [],
+      symbols: [
+        symbol('value', 'variable', uri, 0, { declaredType: 'float4' }),
+        symbol('value', 'parameter', uri, 0, { declaredType: 'half', scopeRange }),
+        symbol('value', 'localVariable', uri, 1, { declaredType: 'float2', scopeRange }),
+        symbol('value', 'localVariable', uri, 3, { declaredType: 'float3', scopeRange }),
+        symbol('receiver', 'parameter', uri, 0, { declaredType: 'Far', scopeRange }),
+        symbol('receiver', 'localVariable', uri, 3, { declaredType: 'Near', scopeRange }),
+        symbol('nearOnly', 'structMember', uri, 0, { parentType: 'Near' }),
+        symbol('farOnly', 'structMember', uri, 0, { parentType: 'Far' }),
+      ],
+    };
+    const revision = publishIndexes('file:///project', [index]);
+    const document = snapshot(uri, text);
+
+    const definition = await revision.definitionAt({
+      document,
+      position: { line: 4, character: 1 },
+    });
+    expect(definition).toHaveLength(1);
+    expect((definition?.[0] as { targetRange: { start: { line: number } } })
+      .targetRange.start.line).toBe(3);
+
+    const hover = await revision.hoverAt({
+      document,
+      position: { line: 4, character: 1 },
+    });
+    expect((hover?.contents as { value?: string }).value).toContain('float3 value');
+
+    const completions = await revision.completionAt({
+      document,
+      position: { line: 4, character: 3 },
+    });
+    const valueCompletions = completions?.filter((item) => item.label === 'value') ?? [];
+    expect(valueCompletions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ detail: 'float3 value' }),
+      expect.objectContaining({ detail: 'float4 value' }),
+    ]));
+    expect(valueCompletions.filter((item) => item.detail === 'float3 value')).toHaveLength(1);
+
+    const members = await revision.completionAt({
+      document,
+      position: { line: 5, character: 'receiver.'.length },
+    });
+    expect(members?.map((item) => item.label)).toEqual(['nearOnly']);
+  });
+
   it('preserves include visibility, formatting, signatures, completion, and scoped highlights', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-query-behavior-'));
     const mainPath = join(root, 'Main.hlsl');

@@ -8,10 +8,11 @@ import type { IncludeContext } from '../include';
 import {
   collectVisibleUriKeys,
   inferReceiverTypeForCompletion,
+  selectGlobalSymbolEntries,
+  selectSymbolEntryGroups,
   type GlobalSymbolReader,
   type IndexStoreReader,
 } from '../index';
-import { inRange, isBeforeOrAt } from '../index/positionGeometry';
 import { uriKey } from '../uriKey';
 import {
   collectBuiltinFunctionSuggestions,
@@ -61,7 +62,7 @@ export interface SuggestionCandidateSelector {
 
 export interface SuggestionIndexReadView {
   readonly store: IndexStoreReader;
-  readonly global: GlobalSymbolReader | null | undefined;
+  readonly global: GlobalSymbolReader;
 }
 
 export function createSuggestionCandidateSelector(
@@ -113,6 +114,7 @@ class PublishedSuggestionCandidateSelector implements SuggestionCandidateSelecto
       ? collectVisibleProjectSuggestions({
         index: current,
         store: this.index.store,
+        global: this.index.global,
         visibleUriKeys: await this.visibleUriKeys(current.uri),
         position,
       }).filter((suggestion) => suggestion.name.startsWith(context.prefix.text))
@@ -156,6 +158,7 @@ class PublishedSuggestionCandidateSelector implements SuggestionCandidateSelecto
     const projectSuggestions = collectVisibleProjectFunctionSuggestions({
       index: current,
       store: this.index.store,
+      global: this.index.global,
       visibleUriKeys: await this.visibleUriKeys(current.uri),
       position,
       name,
@@ -180,31 +183,9 @@ class PublishedSuggestionCandidateSelector implements SuggestionCandidateSelecto
 interface CollectProjectSuggestionsInput {
   readonly index: FileIndex;
   readonly store: IndexStoreReader;
+  readonly global: GlobalSymbolReader;
   readonly visibleUriKeys: ReadonlySet<string>;
   readonly position: Position;
-}
-
-function isScopedVisible(symbol: SymbolEntry, position: Position): boolean {
-  return (symbol.kind === 'parameter' || symbol.kind === 'localVariable')
-    && !!symbol.scopeRange
-    && inRange(position, symbol.scopeRange)
-    && isBeforeOrAt(symbol.location.range.start, position);
-}
-
-function laterThan(a: Position, b: Position): boolean {
-  return a.line > b.line || (a.line === b.line && a.character > b.character);
-}
-
-function collectScopedSuggestions(index: FileIndex, position: Position): SymbolEntry[] {
-  const byName = new Map<string, SymbolEntry>();
-  for (const symbol of index.symbols) {
-    if (!isScopedVisible(symbol, position)) continue;
-    const previous = byName.get(symbol.name);
-    if (!previous || laterThan(symbol.location.range.start, previous.location.range.start)) {
-      byName.set(symbol.name, symbol);
-    }
-  }
-  return [...byName.values()];
 }
 
 function isGlobalSuggestion(symbol: SymbolEntry): boolean {
@@ -263,21 +244,31 @@ function symbolToSuggestion(symbol: SymbolEntry, sourceRank: number): ShaderSugg
 function collectVisibleProjectSuggestions(
   input: CollectProjectSuggestionsInput,
 ): ShaderSuggestion[] {
-  const ordered: Array<{ symbol: SymbolEntry; rank: number }> = [];
-  for (const symbol of collectScopedSuggestions(input.index, input.position)) {
-    ordered.push({ symbol, rank: 0 });
-  }
-  for (const symbol of input.index.symbols) {
-    if (isGlobalSuggestion(symbol)) ordered.push({ symbol, rank: 1 });
-  }
+  const visibleSymbols: SymbolEntry[] = [];
   for (const visibleKey of input.store.uris()) {
-    if (uriKey(input.index.uri) === visibleKey || !input.visibleUriKeys.has(visibleKey)) continue;
+    if (
+      visibleKey === uriKey(input.index.uri)
+      || !input.visibleUriKeys.has(visibleKey)
+    ) continue;
     const visibleIndex = input.store.get(visibleKey);
     if (!visibleIndex) continue;
-    for (const symbol of visibleIndex.symbols) {
-      if (isGlobalSuggestion(symbol)) ordered.push({ symbol, rank: 2 });
-    }
+    visibleSymbols.push(...visibleIndex.symbols);
   }
+  const groups = selectSymbolEntryGroups(
+    input.index,
+    input.position,
+    visibleSymbols,
+    { visibleUriKeys: input.visibleUriKeys },
+  );
+  const ordered: Array<{ symbol: SymbolEntry; rank: number }> = [
+    ...groups.scoped.map((symbol) => ({ symbol, rank: 0 })),
+    ...groups.currentGlobals
+      .filter(isGlobalSuggestion)
+      .map((symbol) => ({ symbol, rank: 1 })),
+    ...groups.visibleGlobals
+      .filter(isGlobalSuggestion)
+      .map((symbol) => ({ symbol, rank: 2 })),
+  ];
 
   const seen = new Set<string>();
   const suggestions: ShaderSuggestion[] = [];
@@ -293,22 +284,16 @@ function collectVisibleProjectSuggestions(
 function collectVisibleProjectFunctionSuggestions(
   input: CollectProjectSuggestionsInput & { readonly name: string },
 ): ShaderSuggestion[] {
-  const ordered: Array<{ symbol: FunctionSymbolEntry; rank: number }> = [];
-  for (const symbol of input.index.symbols) {
-    if (symbol.kind === 'function' && symbol.name === input.name) {
-      ordered.push({ symbol: symbol as FunctionSymbolEntry, rank: 1 });
-    }
-  }
-  for (const visibleKey of input.store.uris()) {
-    if (uriKey(input.index.uri) === visibleKey || !input.visibleUriKeys.has(visibleKey)) continue;
-    const visibleIndex = input.store.get(visibleKey);
-    if (!visibleIndex) continue;
-    for (const symbol of visibleIndex.symbols) {
-      if (symbol.kind === 'function' && symbol.name === input.name) {
-        ordered.push({ symbol: symbol as FunctionSymbolEntry, rank: 2 });
-      }
-    }
-  }
+  const ordered = selectGlobalSymbolEntries(
+    input.index,
+    input.name,
+    input.global,
+    { visibleUriKeys: input.visibleUriKeys },
+  ).filter((symbol): symbol is FunctionSymbolEntry => symbol.kind === 'function')
+    .map((symbol) => ({
+      symbol,
+      rank: uriKey(symbol.location.uri) === uriKey(input.index.uri) ? 1 : 2,
+    }));
 
   const seen = new Set<string>();
   const suggestions: ShaderSuggestion[] = [];

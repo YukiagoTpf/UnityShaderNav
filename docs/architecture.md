@@ -88,6 +88,10 @@ The index is intentionally pragmatic:
 
 - Symbols are name-based and allow multiple candidates.
 - Local variables and parameters carry scope ranges.
+- One index-owned symbol-selection module applies inclusive scope, declaration
+  order, nearest-declaration shadowing, and include-visible global filtering.
+  Definition, Hover, chain lookup, Completion, and member Completion consume
+  that module instead of rebuilding selection rules.
 - Cross-file search is constrained by include-chain visibility where possible.
 - Struct member navigation infers receiver type from declarations and narrow
   assignment facts rather than a full type system.
@@ -175,7 +179,7 @@ object even if another publication occurs.
 Each revision also constructs exactly one suggestion candidate selector over
 its immutable index view and Include context. A fork publishes a new selector;
 an already captured revision continues selecting from its old facts. Include
-visibility, scope resolution, proximity tie-breaks, property bridging, Package
+visibility, shared symbol selection, property bridging, Package
 filtering, semantic-token construction, symbol formatting, and multi-candidate
 results remain revision-owned behavior.
 

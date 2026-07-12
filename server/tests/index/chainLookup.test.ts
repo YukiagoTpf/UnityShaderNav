@@ -168,6 +168,40 @@ describe('resolveMember', () => {
     expect(links[0].targetUri).toBe('file:///t/Surface.hlsl');
   });
 
+  it('uses the nearest local receiver instead of an earlier same-name parameter', () => {
+    const idx: FileIndex = {
+      uri,
+      references: [],
+      symbols: [
+        sym({
+          name: 'surface',
+          kind: 'parameter',
+          declaredType: 'Other',
+          scopeRange: functionScope,
+          location: { uri, range: { start: { line: 5, character: 18 }, end: { line: 5, character: 25 } } },
+        }),
+        sym({
+          name: 'surface',
+          kind: 'localVariable',
+          declaredType: 'Surface',
+          scopeRange: functionScope,
+          location: { uri, range: { start: { line: 8, character: 10 }, end: { line: 8, character: 17 } } },
+        }),
+      ],
+    };
+
+    const links = resolveMember(
+      idx,
+      globalWithSurface(),
+      'surface',
+      'positionWS',
+      { line: 12, character: 19 },
+    );
+
+    expect(links).toHaveLength(1);
+    expect(links[0].targetRange).toEqual(memberRange);
+  });
+
   it('resolves a member through a file-level global receiver', () => {
     const idx: FileIndex = {
       uri,

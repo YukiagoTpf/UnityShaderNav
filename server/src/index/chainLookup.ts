@@ -1,8 +1,11 @@
 import type { FileIndex, FunctionSymbolEntry, Position, SymbolEntry } from '@unity-shader-nav/shared';
 import type { GlobalSymbolReader } from './globalIndex';
 import type { LocationLink, ResolutionOptions } from './symbolResolver';
+import {
+  selectGlobalSymbolEntries,
+  selectNamedSymbolEntries,
+} from './symbolSelection';
 import { inRange, isBeforeOrAt } from './positionGeometry';
-import { uriKey } from '../uriKey';
 
 function laterThan(a: Position, b: Position): boolean {
   return a.line > b.line || (a.line === b.line && a.character > b.character);
@@ -16,74 +19,21 @@ function inferReceiverType(
   options?: ResolutionOptions,
 ): string | null {
   const receiver = receiverTypeName;
-  const params = index.symbols.filter(
-    (symbol) =>
-      symbol.name === receiver &&
-      symbol.kind === 'parameter' &&
-      symbol.declaredType &&
-      symbol.scopeRange &&
-      inRange(refPos, symbol.scopeRange),
-  );
-  if (params.length > 0) {
+  const selected = selectNamedSymbolEntries(index, receiver, refPos, global, options);
+  const value = selected.find((symbol) => (
+    (symbol.kind === 'parameter'
+      || symbol.kind === 'localVariable'
+      || symbol.kind === 'variable')
+    && symbol.declaredType
+  ));
+  if (value?.declaredType) {
     options?.trace?.('member.receiverType', {
       receiver,
-      source: 'parameter',
-      declaredType: params[0].declaredType,
-      candidates: params.length,
+      source: value.kind,
+      declaredType: value.declaredType,
+      candidates: selected.length,
     });
-    return params[0].declaredType ?? null;
-  }
-
-  const locals = index.symbols.filter(
-    (symbol) =>
-      symbol.name === receiver &&
-      symbol.kind === 'localVariable' &&
-      symbol.declaredType &&
-      symbol.scopeRange &&
-      inRange(refPos, symbol.scopeRange) &&
-      isBeforeOrAt(symbol.location.range.start, refPos),
-  );
-  if (locals.length > 0) {
-    let best = locals[0];
-    for (const local of locals) {
-      if (laterThan(local.location.range.start, best.location.range.start)) best = local;
-    }
-    options?.trace?.('member.receiverType', {
-      receiver,
-      source: 'localVariable',
-      declaredType: best.declaredType,
-      candidates: locals.length,
-    });
-    return best.declaredType ?? null;
-  }
-
-  const fileGlobal = index.symbols.find(
-    (symbol) => symbol.name === receiver && symbol.kind === 'variable' && symbol.declaredType,
-  );
-  if (fileGlobal?.declaredType) {
-    options?.trace?.('member.receiverType', {
-      receiver,
-      source: 'fileGlobal',
-      declaredType: fileGlobal.declaredType,
-      candidates: 1,
-    });
-    return fileGlobal.declaredType;
-  }
-
-  const crossFileGlobal = (global?.lookup(receiver) ?? []).find(
-    (symbol) =>
-      symbol.kind === 'variable' &&
-      symbol.declaredType &&
-      isVisible(symbol, options),
-  );
-  if (crossFileGlobal?.declaredType) {
-    options?.trace?.('member.receiverType', {
-      receiver,
-      source: 'visibleGlobal',
-      declaredType: crossFileGlobal.declaredType,
-      candidates: 1,
-    });
-    return crossFileGlobal.declaredType;
+    return value.declaredType;
   }
 
   const inferredType = inferReceiverTypeFromCallAssignment(index, global, receiver, refPos, options);
@@ -117,18 +67,12 @@ function inferReceiverTypeFromCallAssignment(
     if (laterThan(entry.assignmentRange.start, best.assignmentRange.start)) best = entry;
   }
 
-  const functions = [
-    ...index.symbols.filter(
-      (symbol): symbol is FunctionSymbolEntry =>
-        symbol.name === best.callName &&
-        isFunctionWithReturnType(symbol),
-    ),
-    ...(global?.lookup(best.callName) ?? []).filter(
-      (symbol): symbol is FunctionSymbolEntry =>
-        isFunctionWithReturnType(symbol) &&
-        isVisible(symbol, options),
-    ),
-  ];
+  const functions = selectGlobalSymbolEntries(
+    index,
+    best.callName,
+    global,
+    options,
+  ).filter(isFunctionWithReturnType);
   const seen = new Set<string>();
   const unique = functions.filter((symbol) => {
     const key = linkKey(symbol);
@@ -208,10 +152,6 @@ function skipBalanced(text: string, start: number, open: string, close: string):
   return start;
 }
 
-function isVisible(symbol: SymbolEntry, options?: ResolutionOptions): boolean {
-  return !options?.visibleUriKeys || options.visibleUriKeys.has(uriKey(symbol.location.uri));
-}
-
 function linkKey(symbol: SymbolEntry): string {
   const range = symbol.location.range;
   return [
@@ -238,21 +178,11 @@ function structMembersFor(
   member: string,
   options?: ResolutionOptions,
 ): SymbolEntry[] {
-  return [
-    ...index.symbols.filter(
-      (symbol) =>
-        symbol.kind === 'structMember' &&
-        symbol.parentType === parentType &&
-        symbol.name === member,
-    ),
-    ...(global?.lookup(member) ?? []).filter(
-      (symbol) =>
-        symbol.kind === 'structMember' &&
-        symbol.parentType === parentType &&
-        symbol.name === member &&
-        isVisible(symbol, options),
-    ),
-  ];
+  return selectGlobalSymbolEntries(index, member, global, options)
+    .filter((symbol) => (
+      symbol.kind === 'structMember'
+      && symbol.parentType === parentType
+    ));
 }
 
 function inferReceiverExpressionType(

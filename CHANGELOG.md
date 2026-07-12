@@ -13,6 +13,9 @@ and uses semantic versioning for extension releases.
   fallback behind one immutable indexed-source-membership fact captured by each
   revision. User exclusions and resolved Package boundaries can no longer drift
   between lifecycle paths.
+- Centralized inclusive scope, declaration order, nearest-declaration
+  shadowing, and include-visible global selection in one index-owned module
+  shared by navigation, hover, chain lookup, and project suggestions.
 
 ## 0.0.8 - 2026-07-12
 

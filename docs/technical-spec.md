@@ -269,8 +269,10 @@ candidate selector captured by the published revision. The selector expands
 the transitive include chain once for each project-backed query, excludes
 unrelated files, and orders visible project candidates as in-scope
 local/parameter, current-file global, then include-visible global. Same-name
-scoped declarations resolve to the nearest preceding declaration. Locals must
-be declared at or before the cursor and inside their inclusive scope range.
+scoped declarations resolve through the same index-owned selection module used
+by Definition, Hover, and receiver chain lookup. It chooses the nearest
+preceding parameter/local inside the inclusive scope range; otherwise it keeps
+current-file globals before include-visible globals.
 Non-function display groups retain name/kind/parent-type dedupe, while concrete
 function candidates remain distinct and stable. Receiver member queries use the
 same visible set for type and chain inference.

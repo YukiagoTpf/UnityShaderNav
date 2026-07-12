@@ -219,6 +219,10 @@ describe('SuggestionCandidateSelector', () => {
         uri: mainUri,
         references: [includeReference(mainUri, 'Shared.hlsl')],
         symbols: [
+          symbol('Overload', 'localVariable', mainUri, 4, {
+            declaredType: 'ScopedType',
+            scopeRange,
+          }),
           fn('Current', mainUri, 0),
           fn('Overload', mainUri, 1, [{ type: 'float', name: 'a' }]),
           fn('normalize', mainUri, 2, [{ type: 'ProjectType', name: 'value' }]),
@@ -258,6 +262,7 @@ describe('SuggestionCandidateSelector', () => {
       const selection = await completion(selector, mainUri);
       const project = projectSuggestions(selection);
       expect(project.map((item) => item.name)).toEqual([
+        'Overload',
         'Current',
         'Overload',
         'normalize',
@@ -268,6 +273,7 @@ describe('SuggestionCandidateSelector', () => {
         'Overload',
       ]);
       expect(project.map((item) => item.sortText)).toEqual([
+        '0_Overload',
         '1_Current',
         '1_Overload',
         '1_normalize',
@@ -279,7 +285,9 @@ describe('SuggestionCandidateSelector', () => {
       ]);
       expect(project.some((item) => item.name === 'Hidden')).toBe(false);
       expect(project.filter((item) => item.name === '_Color')).toHaveLength(1);
-      expect(project.filter((item) => item.name === 'Overload')).toHaveLength(3);
+      expect(project.filter((item) => item.name === 'Overload')).toHaveLength(4);
+      expect(project.filter((item) => item.name === 'Overload').map((item) => item.kind))
+        .toEqual(['localVariable', 'function', 'function', 'function']);
       expect(selection.suggestions.filter((item) => item.name === 'normalize'))
         .toEqual([expect.objectContaining({ source: 'project' })]);
 

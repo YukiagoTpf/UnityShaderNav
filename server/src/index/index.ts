@@ -3,6 +3,13 @@ export { GlobalSymbolIndex, type GlobalSymbolReader } from './globalIndex';
 export { GlobalReferenceIndex, type GlobalReferenceReader } from './globalReferences';
 export { inferReceiverTypeForCompletion, resolveMemberSymbols } from './chainLookup';
 export { resolveDefinitionSymbols } from './symbolResolver';
+export {
+  isScopedSymbol,
+  selectGlobalSymbolEntries,
+  selectNamedSymbolEntries,
+  selectScopedSymbolEntries,
+  selectSymbolEntryGroups,
+} from './symbolSelection';
 export { resolveDefinition, findReferences, findHighlights } from './resolution';
 export type { ResolverContext, ReferenceCollectionContext, HighlightCollectionContext } from './resolution';
 export { cursorTargetAt } from './cursorTarget';

@@ -114,6 +114,11 @@ npm run grammar:rebuild
   forked publication cannot change the old selector. Extension Host coverage
   must exercise ordinary completion, receiver member completion, and a later
   argument whose first compatible overload is not candidate zero.
+- Symbol-selection interface tests own Scope range, declaration order,
+  Proximity tie-break, local shadowing, and include-visible global candidates.
+  Published query tests must prove Definition, Hover, Completion, and member
+  Completion select the same nearest parameter/local; architecture checks keep
+  those rules out of resolver, chain, and suggestion consumers.
 - Full candidate-construction tests target
   `IndexedRevisionCandidateConstructor` directly. Cover cold source scan, warm
   restore, invalid or changed cache fallback, missing cached files, compatible
