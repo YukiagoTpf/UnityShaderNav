@@ -1,13 +1,16 @@
 import * as assert from 'node:assert';
 import * as path from 'node:path';
-import { inspect } from 'node:util';
 import * as vscode from 'vscode';
 import type { IndexStatusSnapshot } from '@unity-shader-nav/shared';
+import {
+  waitForEventuallyWithObserver,
+  type EventuallyOptions,
+} from './eventually';
+
+export type { EventuallyOptions } from './eventually';
 
 const EXTENSION_ID = 'Yukiago.unity-shader-nav';
 const GET_INDEX_STATUS_COMMAND = 'unityShaderNav.getIndexStatus';
-const UPDATE_TIMEOUT_MS = 7000;
-const RETRY_MS = 100;
 
 type WorkspaceIndexStatus = IndexStatusSnapshot['workspaces'][number];
 type TerminalIndexState = 'ready' | 'failed';
@@ -15,11 +18,6 @@ type TerminalIndexState = 'ready' | 'failed';
 export interface WorkspaceFolderHandle {
   folder: vscode.WorkspaceFolder;
   added: boolean;
-}
-
-export interface EventuallyOptions {
-  timeoutMs?: number;
-  retryMs?: number;
 }
 
 export interface AddWorkspaceFolderOptions {
@@ -37,32 +35,6 @@ async function ensureExtensionActive(): Promise<void> {
 
 async function delay(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-class ObservationDeadlineError extends Error {
-  constructor(label: string) {
-    super(`${label} did not settle before the eventual-condition deadline`);
-    this.name = 'ObservationDeadlineError';
-  }
-}
-
-async function beforeDeadline<T>(
-  label: string,
-  deadline: number,
-  operation: () => T | PromiseLike<T>,
-): Promise<T> {
-  const remaining = deadline - Date.now();
-  if (remaining <= 0) throw new ObservationDeadlineError(label);
-
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => reject(new ObservationDeadlineError(label)), remaining);
-  });
-  try {
-    return await Promise.race([Promise.resolve().then(operation), timeout]);
-  } finally {
-    if (timer !== undefined) clearTimeout(timer);
-  }
 }
 
 function samePath(left: string, right: string): boolean {
@@ -98,21 +70,6 @@ export function indexStatusForFolder(
   });
 }
 
-function diagnosticValue(value: unknown): string {
-  if (value === undefined) return '<undefined>';
-  try {
-    return JSON.stringify(value, undefined, 2);
-  } catch {
-    return inspect(value, { depth: 6, breakLength: 120 });
-  }
-}
-
-function diagnosticError(error: unknown): string {
-  if (error === undefined) return '<none>';
-  if (error instanceof Error) return `${error.name}: ${error.message}`;
-  return diagnosticValue(error);
-}
-
 export async function getIndexStatus(): Promise<IndexStatusSnapshot> {
   await ensureExtensionActive();
   const snapshot = await vscode.commands.executeCommand<IndexStatusSnapshot>(GET_INDEX_STATUS_COMMAND);
@@ -126,54 +83,13 @@ export async function waitForEventually<T>(
   predicate: (result: T) => boolean,
   options: EventuallyOptions = {},
 ): Promise<T> {
-  const timeoutMs = options.timeoutMs ?? UPDATE_TIMEOUT_MS;
-  const retryMs = options.retryMs ?? RETRY_MS;
-  const deadline = Date.now() + timeoutMs;
-  let lastStatus: IndexStatusSnapshot | undefined;
-  let lastResult: T | undefined;
-  let lastStatusError: unknown;
-  let lastQueryError: unknown;
-
-  for (;;) {
-    let currentStatus: IndexStatusSnapshot | undefined;
-    try {
-      currentStatus = await beforeDeadline('Index status request', deadline, getIndexStatus);
-      lastStatus = currentStatus;
-      lastStatusError = undefined;
-    } catch (error) {
-      lastStatusError = error;
-      if (error instanceof ObservationDeadlineError) {
-        break;
-      }
-    }
-
-    try {
-      lastResult = await beforeDeadline(
-        `Query for ${description}`,
-        deadline,
-        () => query(currentStatus),
-      );
-      lastQueryError = undefined;
-      try {
-        if (predicate(lastResult)) return lastResult;
-      } catch (error) {
-        lastQueryError = error;
-      }
-    } catch (error) {
-      lastQueryError = error;
-    }
-
-    if (Date.now() >= deadline) break;
-    await delay(Math.min(retryMs, Math.max(0, deadline - Date.now())));
-  }
-
-  throw new Error([
-    `Timed out after ${timeoutMs}ms waiting for ${description}.`,
-    `Last index status: ${diagnosticValue(lastStatus)}`,
-    `Last status error: ${diagnosticError(lastStatusError)}`,
-    `Last query result: ${diagnosticValue(lastResult)}`,
-    `Last query error: ${diagnosticError(lastQueryError)}`,
-  ].join('\n'));
+  return waitForEventuallyWithObserver(
+    { now: Date.now, delay, getStatus: getIndexStatus },
+    description,
+    query,
+    predicate,
+    options,
+  );
 }
 
 export async function waitForIndexStatus(

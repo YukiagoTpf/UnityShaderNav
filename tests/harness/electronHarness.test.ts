@@ -7,6 +7,7 @@ import {
   readPinnedVsCodeVersion,
   runElectronHarness,
 } from './electronHarness';
+import { waitForEventuallyWithObserver } from '../integration/client/helpers/eventually';
 
 interface FakeRepository {
   root: string;
@@ -15,6 +16,44 @@ interface FakeRepository {
 }
 
 suite('Electron harness', () => {
+  test('preserves the last predicate error when the deadline expires before a new query starts', async () => {
+    let now = 0;
+    let statusRequests = 0;
+    let queryAttempts = 0;
+    const status = { statusSequence: 1, workspaces: [] };
+
+    await assert.rejects(
+      waitForEventuallyWithObserver(
+        {
+          now: () => now,
+          delay: async (ms) => {
+            now += ms;
+          },
+          getStatus: async () => {
+            statusRequests++;
+            if (statusRequests === 2) now = 10;
+            return status;
+          },
+        },
+        'a deterministic deadline boundary',
+        async () => {
+          queryAttempts++;
+          return { probe: 'latest-result' };
+        },
+        () => {
+          throw new Error('latest predicate failure');
+        },
+        { timeoutMs: 10, retryMs: 5 },
+      ),
+      (error: Error) => {
+        assert.match(error.message, /Last query result:[\s\S]*"probe": "latest-result"/);
+        assert.match(error.message, /Last query error: Error: latest predicate failure/);
+        return true;
+      },
+    );
+    assert.strictEqual(queryAttempts, 1);
+  });
+
   test('accepts only explicit suite selectors and an exact pinned version', async () => {
     const fake = await createFakeRepository();
     try {
