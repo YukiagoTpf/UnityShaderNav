@@ -267,8 +267,37 @@ describe('server dependency direction', () => {
 
     expect(candidate).toMatch(/class DefaultIndexedRevisionCandidateConstructor/);
     expect(candidate).toMatch(/Promise<IndexedRevisionBuilder>/);
-    expect(candidate).toMatch(/PackageContext|cacheWorkspaceMatches|walkFiles/);
+    expect(candidate).toMatch(/PackageContext|cacheWorkspaceMatches|IndexedSourceMembership/);
+    expect(candidate).not.toMatch(/walkFiles|isIndexableFilePath|Documentation~|Samples~/);
     expect(candidate).not.toMatch(/\bIndexLifecycle\b|\.publish\(|persistPublication/);
+  });
+
+  it('keeps indexed source membership policy in one revision-bound module', () => {
+    const membership = readFileSync(
+      resolve(SOURCE_ROOT, 'workspace/indexedSourceMembership.ts'),
+      'utf8',
+    );
+    const candidate = readFileSync(
+      resolve(SOURCE_ROOT, 'workspace/indexedRevisionCandidate.ts'),
+      'utf8',
+    );
+    const revision = readFileSync(
+      resolve(SOURCE_ROOT, 'workspace/indexedRevision.ts'),
+      'utf8',
+    );
+    const packages = readFileSync(
+      resolve(SOURCE_ROOT, 'packages/packageContext.ts'),
+      'utf8',
+    );
+
+    expect(membership).toMatch(/class IndexedSourceMembership/);
+    expect(membership).toMatch(/walkFiles|isIndexableFilePath/);
+    expect(candidate).toMatch(/IndexedSourceMembership\.create/);
+    expect(candidate).toMatch(/membership\.discover|membership\.containsUri/);
+    expect(revision).toMatch(/readonly membership: IndexedSourceMembership/);
+    expect(revision).toMatch(/membership\.containsUri/);
+    expect(revision).not.toMatch(/walkFiles|isIndexableFilePath|Documentation~|Samples~/);
+    expect(packages).not.toMatch(/canRestoreCachedFile|walkFiles|isIndexableFilePath/);
   });
 
   it('composes shared ShaderLab document facts at one production boundary', () => {

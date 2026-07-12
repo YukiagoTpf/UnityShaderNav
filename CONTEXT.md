@@ -57,6 +57,10 @@ _Avoid_: document cache, parse cache, global analysis cache
 **PackageContext**:
 candidate 与 published revision 中 package 相关能力的边界：组合 **PackageResolver**、include 解析上下文和 package 成员关系。完整 candidate construction 创建它，并与索引数据一起发布；与 **PackageResolver** 成对理解，另见 Flagged ambiguities 的 "Package"。
 
+**Indexed source membership**:
+一个 **Published indexed revision** 对可进入磁盘索引的源码集合所持有的不可变事实。完整 **Indexed revision candidate construction** 从 settings、Unity root 与 **PackageContext** 构造它；cold start 发现、warm restore、file watcher 准入和文档关闭后的磁盘回落必须消费同一事实。它统一文件扩展名、用户排除规则、已解析 Package roots 及 Package 的 `Documentation~` / `Samples~` 边界；**PackageContext** 仍只负责 Package 解析与成员关系，`Workspace` 仍只负责 lifecycle 与 publication。
+_Avoid_: cache restore eligibility, watcher scope helper, duplicated source filter
+
 **WorkspaceIndex**:
 revision candidate 内部的可变索引实现。它维护磁盘索引、打开文档覆盖、全局符号和全局引用之间的一致性；增量 candidate 通过 copy-on-write fork 获得独立 maps / global arrays，并复用不可变 `FileIndex` 值。发布后该实例不再变更；请求 handler 和公开 Workspace behavior 都不暴露它的 stores。
 
@@ -65,7 +69,7 @@ revision candidate 内部的可变索引实现。它维护磁盘索引、打开�
 _Avoid_: index bundle, store context, workspace index facade
 
 **Published indexed revision**:
-单个 Workspace 已发布、可被一次请求捕获的不可变查询视图。它把 settings、Unity root、Package context、cache fingerprint、live-document attempt identity 和索引数据绑定为同一代；异步查询始终使用捕获的同一个 revision，不会混读 candidate 或另一代 stores。
+单个 Workspace 已发布、可被一次请求捕获的不可变查询视图。它把 settings、Unity root、Package context、**Indexed source membership**、cache fingerprint、live-document attempt identity 和索引数据绑定为同一代；异步查询始终使用捕获的同一个 revision，不会混读 candidate 或另一代 stores。
 _Avoid_: current store, live index object, mutable workspace index
 
 **Indexed revision candidate**:

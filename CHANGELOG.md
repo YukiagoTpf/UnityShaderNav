@@ -7,6 +7,13 @@ and uses semantic versioning for extension releases.
 
 ## Unreleased
 
+### Changed
+
+- Unified cold discovery, warm cache restore, watcher admission, and close
+  fallback behind one immutable indexed-source-membership fact captured by each
+  revision. User exclusions and resolved Package boundaries can no longer drift
+  between lifecycle paths.
+
 ## 0.0.8 - 2026-07-12
 
 ### Changed

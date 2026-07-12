@@ -1,4 +1,4 @@
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 import type {
   CacheFingerprint,
   ExtensionSettings,
@@ -28,8 +28,7 @@ import {
   createSuggestionCandidateSelector,
   type SuggestionCandidateSelector,
 } from '../suggestions';
-import { containsPath } from './pathUtils';
-import { isIndexableFilePath } from './walkFiles';
+import { IndexedSourceMembership } from './indexedSourceMembership';
 import type {
   DefinitionAtInput,
   DocumentPositionInput,
@@ -73,9 +72,17 @@ export interface IndexedRevisionConfiguration {
   readonly settings: ExtensionSettings;
   readonly unityRoot: string | undefined;
   readonly packages: PackageContext;
+  readonly membership: IndexedSourceMembership;
   readonly cache: CacheManager | undefined;
   readonly fingerprint: CacheFingerprint | undefined;
 }
+
+type IndexedRevisionConfigurationInput = Omit<
+  IndexedRevisionConfiguration,
+  'membership'
+> & {
+  readonly membership?: IndexedSourceMembership;
+};
 
 /**
  * One immutable, request-capturable Workspace publication. Its index
@@ -88,6 +95,7 @@ export class PublishedIndexedRevision {
   readonly settings: ExtensionSettings;
   readonly unityRoot: string | undefined;
   readonly packages: PackageContext;
+  readonly membership: IndexedSourceMembership;
   readonly cache: CacheManager | undefined;
   readonly fingerprint: CacheFingerprint | undefined;
   readonly sourceWarningCount: number;
@@ -108,6 +116,7 @@ export class PublishedIndexedRevision {
     this.settings = configuration.settings;
     this.unityRoot = configuration.unityRoot;
     this.packages = configuration.packages;
+    this.membership = configuration.membership;
     this.cache = configuration.cache;
     this.fingerprint = configuration.fingerprint;
     this.index = index;
@@ -135,13 +144,7 @@ export class PublishedIndexedRevision {
   }
 
   containsIndexedUri(uri: string): boolean {
-    return this.index.hasDiskIndex(uri) || isUriInConfiguredScope(
-      uri,
-      this.folderUri,
-      this.settings,
-      this.unityRoot,
-      this.packages,
-    );
+    return this.index.hasDiskIndex(uri) || this.membership.containsUri(uri);
   }
 
   definitionAt(input: DefinitionAtInput): Promise<LocationLink[] | Location[] | null> {
@@ -205,12 +208,21 @@ export class PublishedIndexedRevision {
   }
 
   fork(settings: ExtensionSettings = this.settings): IndexedRevisionBuilder {
+    const membership = settings === this.settings
+      ? this.membership
+      : IndexedSourceMembership.create({
+        folderUri: this.folderUri,
+        settings,
+        unityRoot: this.unityRoot,
+        packages: this.packages,
+      });
     return new IndexedRevisionBuilder(
       {
         folderUri: this.folderUri,
         settings: immutableSettings(settings),
         unityRoot: this.unityRoot,
         packages: this.packages,
+        membership,
         cache: this.cache,
         fingerprint: this.fingerprint,
       },
@@ -281,13 +293,19 @@ export class IndexedRevisionBuilder {
   }
 
   static create(
-    configuration: IndexedRevisionConfiguration,
+    configuration: IndexedRevisionConfigurationInput,
     indexDocument?: DocumentIndexer,
     analyzeDocument?: DocumentAnalyzer,
   ): IndexedRevisionBuilder {
     const settings = immutableSettings(configuration.settings);
+    const membership = configuration.membership ?? IndexedSourceMembership.create({
+      folderUri: configuration.folderUri,
+      settings,
+      unityRoot: configuration.unityRoot,
+      packages: configuration.packages,
+    });
     return new IndexedRevisionBuilder(
-      { ...configuration, settings },
+      { ...configuration, settings, membership },
       new WorkspaceIndex(
         settings.declarationMacros,
         configuration.unityRoot === undefined,
@@ -404,13 +422,7 @@ export class IndexedRevisionBuilder {
     if (!await this.index.restoreClosedDocument(
       uri,
       shouldStore,
-      isUriInConfiguredScope(
-        uri,
-        this.configuration.folderUri,
-        this.configuration.settings,
-        this.configuration.unityRoot,
-        this.configuration.packages,
-      ),
+      this.configuration.membership.containsUri(uri),
     )) return false;
     this.committedDocuments.delete(uriKey(uri));
     return true;
@@ -454,40 +466,4 @@ function immutableSettings(settings: ExtensionSettings): ExtensionSettings {
   Object.freeze(snapshot.debug);
   Object.freeze(snapshot.dimInactiveBranches);
   return Object.freeze(snapshot);
-}
-
-function isUriInConfiguredScope(
-  uri: string,
-  folderUri: string,
-  settings: ExtensionSettings,
-  unityRoot: string | undefined,
-  packages: PackageContext,
-): boolean {
-  try {
-    const filePath = fileURLToPath(uri);
-    if (!unityRoot) {
-      return isIndexableFilePath(
-        fileURLToPath(folderUri),
-        filePath,
-        settings.excludePatterns,
-      );
-    }
-
-    const packageRoot = packages.packageRoots().find((root) => containsPath(root, filePath));
-    if (packageRoot) {
-      return isIndexableFilePath(
-        packageRoot,
-        filePath,
-        ['**/Documentation~/**', '**/Samples~/**'],
-      );
-    }
-
-    return isIndexableFilePath(
-      unityRoot,
-      filePath,
-      [...settings.excludePatterns, 'Packages/**'],
-    );
-  } catch {
-    return false;
-  }
 }

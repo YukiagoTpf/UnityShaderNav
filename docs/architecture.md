@@ -67,8 +67,12 @@ handling. Important modules:
 - `workspace/indexedRevisionCandidate`: implements the one full-construction
   path shared by cold start, warm cache restore, rebuild, and recovery. It
   resolves the root, Package context, parser runtime identity, cache
-  compatibility/restore, source discovery, and retain-or-fail policy, then
+  compatibility/restore, and retain-or-fail policy, then
   returns one complete unpublished `IndexedRevisionBuilder`.
+- `workspace/indexedSourceMembership`: captures the immutable extension,
+  exclusion, user-root, and resolved-Package admission policy for one revision.
+  Cold discovery, warm restore, watcher admission, and close fallback all
+  consume this same fact; Package context remains package-resolution state.
 - `workspace`: serializes each root's lifecycle and mutations, reconciles the
   latest open-document state, applies incremental changes, owns query behavior,
   and is the only publication and cache-persistence caller.
@@ -135,9 +139,10 @@ the last valid disk index in the candidate; a live-only file is removed.
 File-watcher changes fork each eligible owner that can accept incremental work,
 update its disk baseline
 without replacing an open overlay, and publish the complete candidate once.
-Eligibility means an existing disk baseline or the same exact user/package
-candidate rules used by scanning; excluded paths and packages absent from the
-lockfile cannot enter through a watcher. One Workspace failure does not prevent
+Eligibility means an existing disk baseline or the revision's exact indexed
+source membership fact, which is also used by scanning and close fallback;
+excluded paths and packages absent from the lockfile cannot enter through a
+watcher. One Workspace failure does not prevent
 the other baseline owners from applying the event. Initial indexing and rebuild
 build a separate candidate and replay the registry's latest snapshots before
 the single publication, including after a workspace remove/re-add with the
@@ -211,10 +216,10 @@ The constructor does not own lifecycle state, allocate a revision, publish, or
 persist. Live edits, close, watcher batches, and settings-only changes instead
 fork the current revision.
 `WorkspaceIndex.fork()` copies mutable maps and global-index arrays while
-sharing immutable per-file indexes. Settings, Package context, cache identity,
-committed document attempts, source warnings, and effective index data cross
-the publication boundary together. A one-shot builder cannot be mutated again
-after it creates a published revision.
+sharing immutable per-file indexes. Settings, Package context, indexed source
+membership, cache identity, committed document attempts, source warnings, and
+effective index data cross the publication boundary together. A one-shot
+builder cannot be mutated again after it creates a published revision.
 
 Before full publication, Workspace replays its latest open-document desired
 state into the isolated builder. Publication is one synchronous commit after all

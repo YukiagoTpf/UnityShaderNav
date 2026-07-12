@@ -22,11 +22,11 @@ import {
   IndexedRevisionBuilder,
   type PublishedIndexedRevision,
 } from './indexedRevision';
+import { IndexedSourceMembership } from './indexedSourceMembership';
 import type {
   DocumentAnalyzer,
   DocumentIndexer,
 } from './workspaceIndex';
-import { walkFiles } from './walkFiles';
 
 const INDEX_CONCURRENCY = 8;
 const CACHE_IO_CONCURRENCY = 32;
@@ -118,11 +118,18 @@ export class DefaultIndexedRevisionCandidateConstructor
       runtimeAssets,
       input.signal,
     );
+    const membership = IndexedSourceMembership.create({
+      folderUri: this.folderUri,
+      settings: input.settings,
+      unityRoot,
+      packages,
+    });
     const builder = IndexedRevisionBuilder.create({
       folderUri: this.folderUri,
       settings: input.settings,
       unityRoot,
       packages,
+      membership,
       ...cacheConfiguration,
     }, this.indexDocument, this.analyzeDocument);
     const compatiblePrevious = this.isCompatiblePrevious(
@@ -145,6 +152,7 @@ export class DefaultIndexedRevisionCandidateConstructor
         cache: cacheConfiguration.cache!,
         unityRoot,
         packages,
+        membership,
         compatiblePrevious,
       });
       this.throwIfAborted(input.signal);
@@ -157,6 +165,7 @@ export class DefaultIndexedRevisionCandidateConstructor
         builder,
         unityRoot,
         packages,
+        membership,
         compatiblePrevious,
       });
     }
@@ -237,6 +246,7 @@ export class DefaultIndexedRevisionCandidateConstructor
       readonly cache: CacheManager;
       readonly unityRoot: string | undefined;
       readonly packages: PackageContext;
+      readonly membership: IndexedSourceMembership;
       readonly compatiblePrevious: boolean;
     },
   ): Promise<void> {
@@ -249,7 +259,7 @@ export class DefaultIndexedRevisionCandidateConstructor
         CACHE_IO_CONCURRENCY,
         async (cachedFile) => {
           this.throwIfAborted(input.signal);
-          const valid = this.shouldRestoreCachedFile(cachedFile.uri, input.packages)
+          const valid = input.membership.containsUri(cachedFile.uri)
             && await input.cache.isValid(cachedFile);
           this.throwIfAborted(input.signal);
           return { cachedFile, valid };
@@ -258,7 +268,7 @@ export class DefaultIndexedRevisionCandidateConstructor
 
       for (const { cachedFile, valid } of restoreResults) {
         this.throwIfAborted(input.signal);
-        if (!this.shouldRestoreCachedFile(cachedFile.uri, input.packages)) continue;
+        if (!input.membership.containsUri(cachedFile.uri)) continue;
         if (valid) {
           input.builder.restoreFromCache(cachedFile.uri, cachedFile.index, {
             mtimeMs: cachedFile.mtimeMs,
@@ -293,14 +303,11 @@ export class DefaultIndexedRevisionCandidateConstructor
       readonly builder: IndexedRevisionBuilder;
       readonly unityRoot: string;
       readonly packages: PackageContext;
+      readonly membership: IndexedSourceMembership;
       readonly compatiblePrevious: boolean;
     },
   ): Promise<void> {
-    const userFiles = await walkFiles(
-      input.unityRoot,
-      [...input.builder.configuration.settings.excludePatterns, 'Packages/**'],
-      input.signal,
-    );
+    const { userFiles, packageFiles } = await input.membership.discover(input.signal);
     await mapWithConcurrency(userFiles, INDEX_CONCURRENCY, async (filePath) => {
       this.throwIfAborted(input.signal);
       const uri = pathToFileURL(filePath).href;
@@ -314,24 +321,17 @@ export class DefaultIndexedRevisionCandidateConstructor
       this.retainCompatibleSourceFailure(input, uri, indexed);
     });
 
-    await mapWithConcurrency(input.packages.packageRoots(), INDEX_CONCURRENCY, async (root) => {
-      const files = await walkFiles(
-        root,
-        ['**/Documentation~/**', '**/Samples~/**'],
-        input.signal,
+    await mapWithConcurrency(packageFiles, INDEX_CONCURRENCY, async (filePath) => {
+      this.throwIfAborted(input.signal);
+      const uri = pathToFileURL(filePath).href;
+      if (input.builder.file(uri)) return;
+      const indexed = await input.builder.indexAndStore(
+        filePath,
+        input.connection,
+        () => !input.signal.aborted,
       );
-      await mapWithConcurrency(files, INDEX_CONCURRENCY, async (filePath) => {
-        this.throwIfAborted(input.signal);
-        const uri = pathToFileURL(filePath).href;
-        if (input.builder.file(uri)) return;
-        const indexed = await input.builder.indexAndStore(
-          filePath,
-          input.connection,
-          () => !input.signal.aborted,
-        );
-        this.throwIfAborted(input.signal);
-        this.retainCompatibleSourceFailure(input, uri, indexed);
-      });
+      this.throwIfAborted(input.signal);
+      this.retainCompatibleSourceFailure(input, uri, indexed);
     });
   }
 
@@ -340,17 +340,14 @@ export class DefaultIndexedRevisionCandidateConstructor
       readonly builder: IndexedRevisionBuilder;
       readonly unityRoot: string;
       readonly packages: PackageContext;
+      readonly membership: IndexedSourceMembership;
       readonly compatiblePrevious: boolean;
     },
   ): Promise<void> {
     const progress = await input.connection.window.createWorkDoneProgress();
     progress.begin('UnityShaderNav', undefined, 'indexing user files...', false);
     try {
-      const userFiles = await walkFiles(
-        input.unityRoot,
-        [...input.settings.excludePatterns, 'Packages/**'],
-        input.signal,
-      );
+      const { userFiles, packageFiles } = await input.membership.discover(input.signal);
       let done = 0;
       await mapWithConcurrency(userFiles, INDEX_CONCURRENCY, async (filePath) => {
         this.throwIfAborted(input.signal);
@@ -367,23 +364,16 @@ export class DefaultIndexedRevisionCandidateConstructor
       });
 
       progress.report('indexing Packages...');
-      await mapWithConcurrency(input.packages.packageRoots(), INDEX_CONCURRENCY, async (root) => {
-        const files = await walkFiles(
-          root,
-          ['**/Documentation~/**', '**/Samples~/**'],
-          input.signal,
+      await mapWithConcurrency(packageFiles, INDEX_CONCURRENCY, async (filePath) => {
+        this.throwIfAborted(input.signal);
+        const uri = pathToFileURL(filePath).href;
+        const indexed = await input.builder.indexAndStore(
+          filePath,
+          input.connection,
+          () => !input.signal.aborted,
         );
-        await mapWithConcurrency(files, INDEX_CONCURRENCY, async (filePath) => {
-          this.throwIfAborted(input.signal);
-          const uri = pathToFileURL(filePath).href;
-          const indexed = await input.builder.indexAndStore(
-            filePath,
-            input.connection,
-            () => !input.signal.aborted,
-          );
-          this.throwIfAborted(input.signal);
-          this.retainCompatibleSourceFailure(input, uri, indexed);
-        });
+        this.throwIfAborted(input.signal);
+        this.retainCompatibleSourceFailure(input, uri, indexed);
       });
     } finally {
       progress.done();
@@ -410,10 +400,6 @@ export class DefaultIndexedRevisionCandidateConstructor
     }
     input.builder.restoreFromCache(uri, previousRecord.index, previousRecord.source);
     input.builder.recordSourceResult(uri, false);
-  }
-
-  private shouldRestoreCachedFile(uri: string, packages: PackageContext): boolean {
-    return packages.canRestoreCachedFile(uri);
   }
 
   private isCompatiblePrevious(

@@ -120,6 +120,11 @@ npm run grammar:rebuild
   source retention, incompatible-retention abort, parser and Package
   infrastructure failure, and incomplete or cancelled discovery. Assert a
   complete unpublished builder; these tests must not publish a revision.
+- Indexed-source-membership contract tests cover standalone files, Unity user
+  files, configured exclusions, resolved embedded/external packages, unlisted
+  Package paths, and `Documentation~` / `Samples~`. Discovery and direct URI
+  admission must agree; lifecycle tests additionally prove watcher and close
+  paths consume the captured revision fact.
 - Publication tests must distinguish candidate state from published state.
   Cover copy-on-write isolation, the one-shot builder, one revision increment
   per successful pointer swap, and last-known-good query/persistence behavior

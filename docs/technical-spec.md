@@ -107,8 +107,9 @@ metadata for an older index value.
 Initial indexing, rebuild, recovery, and warm cache restore use one
 `IndexedRevisionCandidateConstructor`. It resolves the Unity root, creates the
 Package context, preflights the parser and its exact runtime identity, configures
-cache compatibility, restores or scans sources, and applies the shared
-retain-or-fail policy. The constructor returns one complete unpublished builder
+cache compatibility, constructs one immutable indexed source membership from
+settings/root/Package facts, restores or scans sources through it, and applies
+the shared retain-or-fail policy. The constructor returns one complete unpublished builder
 for the disk/package baseline; it does not mutate Workspace lifecycle, allocate
 a revision, publish, or persist. Workspace serializes the transaction, replays
 the latest open-document snapshots, and performs the only synchronous
@@ -197,8 +198,10 @@ Package roots, each owner revalidates event scope against its execution-time
 base revision before indexing. A failed owner retains its published revision;
 fan-out still lets the remaining owners update, so that failure cannot leave
 their caches silently stale. A URI is eligible only when that Workspace already
-has a disk baseline or when the path passes the same extension, exclusion, and
-resolved-Package rules as scanning.
+has a disk baseline or when the path belongs to the captured revision's indexed
+source membership. That same immutable fact governs cold discovery, warm
+restore, watcher admission, and close fallback, including extension, exclusion,
+resolved-Package, and `Documentation~` / `Samples~` rules.
 
 Every index-backed LSP query consumes the Indexed Workspace behavior interface:
 Definition, References, Hover, Completion, Signature Help, Document Highlight,
