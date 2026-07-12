@@ -20,6 +20,9 @@ The extension focuses on fast code navigation:
   and `UsePass`: Definition, References, Hover, Completion, Workspace Symbols,
   and conservative Rename. `UsePass` pass segments follow Unity's uppercase
   canonical form.
+- VS Code Problems diagnostics for unresolved `#pragma vertex`, `fragment`,
+  `geometry`, `hull`, `domain`, `surface`, and `kernel` entry points, refreshed
+  from the same live published revision as navigation.
 - Hover for declarations of indexed shader symbols (functions, structs,
   members, variables, parameters, macros) and selected built-ins.
 - Conservative completion and signature help for indexed HLSL/CG code, plus a
@@ -142,6 +145,9 @@ See [Configuration](docs/configuration.md) for the full explanation and examples
 - ShaderLab name intelligence is declaration-backed and limited to `Fallback`
   and `UsePass`; external or Unity built-in names without an indexed declaration
   stay unresolved rather than being guessed from a catalog.
+- Entry-point diagnostics prove name visibility only; they do not compile
+  signatures or preprocessor variants. Any visible function, ambiguity, or
+  same-name macro suppresses the error to avoid false positives.
 
 ## Contributing
 

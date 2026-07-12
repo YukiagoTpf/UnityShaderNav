@@ -57,6 +57,22 @@ Enable package references with:
 }
 ```
 
+### Problems Diagnostics
+
+UnityShaderNav reports an error on an unresolved function name in supported
+`#pragma vertex`, `fragment`, `geometry`, `hull`, `domain`, `surface`, and
+`kernel` directives. Resolution uses the same current file, transitive include
+closure, Package mapping, and published live-document attempt as Definition.
+Fixing or closing the document clears the Problem; include, settings, Package,
+and rebuild publications refresh all open documents.
+
+This rule deliberately proves only that at least one visible function can have
+the referenced name. It does not compile stage-specific signatures or evaluate
+preprocessor variants. Multiple candidates, a branch-dependent declaration,
+or a visible same-name macro suppresses the diagnostic rather than risking a
+false error. The diagnostic source is `UnityShaderNav` and its stable code is
+`unresolved-entry-point`.
+
 ### Rename
 
 Use F2 or VS Code's `Rename Symbol` command on an indexed HLSL/CG function,

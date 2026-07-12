@@ -15,6 +15,8 @@ UnityShaderNav provides practical VS Code navigation for Unity shader projects:
 - Document Symbols for fast file outline navigation.
 - Document Highlight and semantic coloring for ShaderLab wrapper syntax and
   common HLSL symbols.
+- Versioned Problems diagnostics for unresolved Shader and Compute pragma entry
+  points.
 - Cross-file navigation through `#include` chains and resolved Unity Packages.
 
 The project optimizes for useful editor behavior over full shader compilation
@@ -22,7 +24,8 @@ semantics.
 
 ## Non-Goals
 
-- Shader compilation, preview, or diagnostics.
+- Shader compilation, preview, or general compiler diagnostics beyond the
+  explicitly documented index-backed rules.
 - Formatting or exhaustive compiler-grade completion.
 - Full C preprocessor expansion.
 - Rider-style shader context selection.
@@ -56,6 +59,7 @@ Language server
   - builds symbol/reference indexes
   - publishes only through the Workspace lifecycle boundary
   - answers LSP definition, references, symbols, highlight, and semantic-token requests
+  - publishes revision- and document-version-checked entry-point diagnostics
   - persists per-Workspace cache manifests under Library/UnityShaderNavCache
 ```
 

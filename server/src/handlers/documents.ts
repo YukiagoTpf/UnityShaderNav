@@ -190,6 +190,13 @@ export function registerDocuments(
     if (!current) return;
     openDocuments.delete(key);
 
+    observe('diagnostic clear', document.uri, () => Promise.resolve(
+      connection.sendDiagnostics({
+        uri: document.uri,
+        diagnostics: [],
+      }),
+    ));
+
     const workspace = manager.workspaceFor(document.uri);
     if (workspace) {
       observe('document close', document.uri, () => workspace.closeDocument({

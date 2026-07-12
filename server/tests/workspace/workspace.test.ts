@@ -890,6 +890,32 @@ describe('Workspace candidate publication', () => {
     }
   });
 
+  it('updates entry-point diagnostics and rejects stale or closed attempts', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-live-diagnostics-'));
+    const shaderUri = pathToFileURL(join(root, 'Live.hlsl')).href;
+    const missing = snapshot(shaderUri, '#pragma vertex LiveVertex', 1);
+    const fixed = snapshot(
+      shaderUri,
+      '#pragma vertex LiveVertex\nfloat4 LiveVertex() { return 0; }',
+      2,
+    );
+    try {
+      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      await workspace.initialize(fakeConnection);
+
+      await expect(workspace.diagnosticsAt(missing)).resolves.toEqual([
+        expect.objectContaining({ message: expect.stringContaining('LiveVertex') }),
+      ]);
+      await expect(workspace.diagnosticsAt(fixed)).resolves.toEqual([]);
+      await expect(workspace.diagnosticsAt(missing)).resolves.toBeNull();
+
+      await workspace.closeDocument({ uri: shaderUri, openId: 1 });
+      await expect(workspace.diagnosticsAt(fixed)).resolves.toBeNull();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('detects references under package roots', async () => {
     const projectRoot = projectA;
     const workspace = new Workspace(pathToFileURL(projectRoot).href, DEFAULT_SETTINGS);

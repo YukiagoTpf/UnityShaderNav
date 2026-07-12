@@ -11,8 +11,8 @@ import { uriKey } from '../uriKey';
 import { containsPath } from './pathUtils';
 import { Workspace } from './workspace';
 import type {
+  DiagnosticWorkspaceService,
   IndexedDocumentSnapshot,
-  IndexedWorkspaceService,
   OpenDocumentsProvider,
 } from './indexedWorkspace';
 import { compareWorkspaceSymbols } from './queries';
@@ -41,13 +41,14 @@ export interface WorkspaceManagerRuntimeOptions {
   ) => IndexedRevisionCandidateConstructor;
 }
 
-export class WorkspaceManager implements IndexedWorkspaceService {
+export class WorkspaceManager implements DiagnosticWorkspaceService {
   private readonly byFolder = new Map<string, WorkspaceRecord>();
   private settings: ExtensionSettings | undefined;
   private connection: Connection | undefined;
   private globalStorageDir: string | undefined;
   private settingsResolver: SettingsResolver | undefined;
   private openDocuments: OpenDocumentsProvider | undefined;
+  private diagnosticsRefresh: (() => void) | undefined;
   private readonly routingTransitions = new Map<Workspace, number>();
   private statusSequence = 0;
 
@@ -69,6 +70,10 @@ export class WorkspaceManager implements IndexedWorkspaceService {
 
   configureOpenDocumentsProvider(provider: OpenDocumentsProvider): void {
     this.openDocuments = provider;
+  }
+
+  configureDiagnosticsRefresh(refresh: () => void): void {
+    this.diagnosticsRefresh = refresh;
   }
 
   openDocumentSnapshot(uri: string): IndexedDocumentSnapshot | undefined {
@@ -131,6 +136,7 @@ export class WorkspaceManager implements IndexedWorkspaceService {
 
   private publishStatus(): void {
     this.statusSequence++;
+    this.diagnosticsRefresh?.();
     const connection = this.connection;
     if (typeof connection?.sendNotification !== 'function') return;
 

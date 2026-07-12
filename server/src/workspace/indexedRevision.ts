@@ -12,6 +12,7 @@ import {
 import type {
   CompletionItem,
   Connection,
+  Diagnostic,
   DocumentHighlight,
   DocumentSymbol,
   Hover,
@@ -58,6 +59,7 @@ import {
   prepareWorkspaceRename,
   renameWorkspaceSymbol,
 } from './rename';
+import { unresolvedEntryPointDiagnostics } from './diagnostics';
 import {
   WorkspaceIndex,
   type DocumentAnalyzer,
@@ -161,6 +163,13 @@ export class PublishedIndexedRevision {
 
   containsIndexedUri(uri: string): boolean {
     return this.index.hasDiskIndex(uri) || this.membership.containsUri(uri);
+  }
+
+  diagnostics(uri: string): Promise<Diagnostic[]> {
+    return unresolvedEntryPointDiagnostics({
+      index: this.index.read,
+      includeChain: this.includeChain,
+    }, uri);
   }
 
   definitionAt(input: DefinitionAtInput): Promise<LocationLink[] | Location[] | null> {

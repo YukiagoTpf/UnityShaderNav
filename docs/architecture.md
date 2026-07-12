@@ -191,6 +191,16 @@ visibility, shared symbol selection, property bridging, Package
 filtering, semantic-token construction, symbol formatting, and multi-candidate
 results remain revision-owned behavior.
 
+Push diagnostics are another revision-owned projection. Every lifecycle status
+transition requests one coalesced refresh over current open-document attempts.
+The publisher computes through Workspace behavior, then rechecks the refresh
+generation, Workspace owner, `openId + version`, and captured revision before
+sending versioned `textDocument/publishDiagnostics`. Close sends an explicit
+empty set, as required by LSP replacement semantics. The first rule resolves
+pragma entry names through the same transitive Include chain and symbol
+selection as navigation; visible functions, macros, and ambiguous or
+variant-dependent candidates suppress false unresolved errors.
+
 For a ShaderLab open-document attempt, the candidate builds a full
 `DocumentAnalysis` from that attempt's exact source. It becomes query-visible
 only when the same candidate publishes. File indexing projects its structure

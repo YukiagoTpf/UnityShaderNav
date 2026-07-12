@@ -14,6 +14,7 @@ import {
   navigateDefinition,
   navigateReferences,
 } from '../../src/workspace/navigation';
+import { unresolvedEntryPointDiagnostics } from '../../src/workspace/diagnostics';
 import {
   prepareWorkspaceRename,
   renameWorkspaceSymbol,
@@ -66,6 +67,10 @@ export function createIndexedWorkspaceFixture(
     },
     async closeDocument({ uri }) {
       await index.restoreClosedDocument(uri);
+    },
+    async diagnosticsAt(document) {
+      await this.updateDocument(document);
+      return unresolvedEntryPointDiagnostics(state(), document.uri);
     },
     async definitionAt(input) {
       await this.updateDocument(input.document);

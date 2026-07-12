@@ -21,11 +21,13 @@ function createConnectionHarness(): {
   change: ChangeHandler;
   close: CloseHandler;
   errors: string[];
+  diagnostics: unknown[];
 } {
   let open: OpenHandler | undefined;
   let change: ChangeHandler | undefined;
   let close: CloseHandler | undefined;
   const errors: string[] = [];
+  const diagnostics: unknown[] = [];
   const disposable = { dispose() {} };
   const connection = {
     console: {
@@ -47,6 +49,10 @@ function createConnectionHarness(): {
     onWillSaveTextDocument() { return disposable; },
     onWillSaveTextDocumentWaitUntil() { return disposable; },
     onDidSaveTextDocument() { return disposable; },
+    sendDiagnostics(params: unknown) {
+      diagnostics.push(params);
+      return Promise.resolve();
+    },
   } as unknown as Connection;
   return {
     connection,
@@ -54,6 +60,7 @@ function createConnectionHarness(): {
     change: (event) => change?.(event),
     close: (event) => close?.(event),
     errors,
+    diagnostics,
   };
 }
 
@@ -165,6 +172,10 @@ describe('registerDocuments', () => {
     await flushPromises();
     expect(workspace.closeDocument).toHaveBeenCalledWith({ uri, openId: 1 });
     expect(registered.snapshot(uri)).toBeUndefined();
+    expect(harness.diagnostics).toContainEqual({
+      uri,
+      diagnostics: [],
+    });
   });
 
   it('keeps one lazy ensure and submits only the latest edit', async () => {

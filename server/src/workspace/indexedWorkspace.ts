@@ -1,5 +1,6 @@
 import type {
   CompletionItem,
+  Diagnostic,
   DocumentHighlight,
   DocumentSymbol,
   Hover,
@@ -78,6 +79,7 @@ export interface IndexedDocumentQueryInput {
 export interface IndexedWorkspace {
   updateDocument(document: IndexedDocumentSnapshot): Promise<boolean>;
   closeDocument(input: { readonly uri: string; readonly openId: number }): Promise<void>;
+  diagnosticsAt(document: IndexedDocumentSnapshot): Promise<Diagnostic[] | null>;
   definitionAt(input: DefinitionAtInput): Promise<LocationLink[] | Location[] | null>;
   referencesAt(input: ReferencesAtInput): Promise<Location[] | null>;
   hoverAt(input: DocumentPositionInput): Promise<Hover | null>;
@@ -106,6 +108,10 @@ export interface IndexedWorkspaceService {
   releaseDocument(uri: string): Promise<void>;
   configureOpenDocumentsProvider(provider: OpenDocumentsProvider): void;
   workspaceSymbols(query: string): SymbolInformation[];
+}
+
+export interface DiagnosticWorkspaceService extends IndexedWorkspaceService {
+  configureDiagnosticsRefresh(refresh: () => void): void;
 }
 
 export type IndexedWorkspaceRequestRouter =

@@ -33,6 +33,7 @@ export const BUILTIN_REFERENCE_MACROS: BuiltinMacroPattern[] = [
   { pattern: '#pragma geometry $func', kind: 'function-reference' },
   { pattern: '#pragma hull $func', kind: 'function-reference' },
   { pattern: '#pragma domain $func', kind: 'function-reference' },
+  { pattern: '#pragma surface $func', kind: 'function-reference' },
   { pattern: '#pragma kernel $func', kind: 'function-reference' },
 ];
 

@@ -65,12 +65,16 @@ _Avoid_: cache restore eligibility, watcher scope helper, duplicated source filt
 revision candidate 内部的可变索引实现。它维护磁盘索引、打开文档覆盖、全局符号和全局引用之间的一致性；增量 candidate 通过 copy-on-write fork 获得独立 maps / global arrays，并复用不可变 `FileIndex` 值。发布后该实例不再变更；请求 handler 和公开 Workspace behavior 都不暴露它的 stores。
 
 **Indexed Workspace interface**:
-请求与文档生命周期使用的行为接口。它包含打开文档更新、关闭文档，以及 Definition、References、Hover、Completion、Signature Help、Document Highlight、Document Symbols、Semantic Tokens 和 Workspace Symbols 等 index-backed 查询；`Workspace` 在接口后组合 revision publication、include 可见性、Package 过滤与符号解析。handler 只做 LSP 参数和 neutral-result 适配。
+请求与文档生命周期使用的行为接口。它包含打开文档更新、关闭文档，以及 Diagnostics、Definition、References、Hover、Completion、Signature Help、Document Highlight、Document Symbols、Semantic Tokens 和 Workspace Symbols 等 index-backed 查询；`Workspace` 在接口后组合 revision publication、include 可见性、Package 过滤与符号解析。handler 只做 LSP 参数和 neutral-result 适配。
 _Avoid_: index bundle, store context, workspace index facade
 
 **Published indexed revision**:
 单个 Workspace 已发布、可被一次请求捕获的不可变查询视图。它把 settings、Unity root、Package context、**Indexed source membership**、cache fingerprint、live-document attempt identity 和索引数据绑定为同一代；异步查询始终使用捕获的同一个 revision，不会混读 candidate 或另一代 stores。
 _Avoid_: current store, live index object, mutable workspace index
+
+**Published diagnostics**:
+Problems 面板中的诊断是 **Published indexed revision** 对当前 open-document attempt 的派生输出，而不是独立可变真相。异步结果只有在 Workspace owner、revision、openId 与 version 仍全部匹配时才可发送；每次新 publication 都刷新其所有打开文档，关闭文档必须发送空集合清除旧诊断。首条规则 `unresolved-entry-point` 只证明 pragma 引用在保守可见性模型中存在函数候选；分支、多候选或宏展开不确定时保持中性。
+_Avoid_: diagnostic cache, best-effort stale Problems
 
 **Indexed revision candidate**:
 尚未发布的一次性可变 builder。初始化、rebuild、recovery 和 warm cache restore 通过同一个 **Indexed revision candidate construction** 显式取得完成的 disk/package baseline；live document、close 和 watcher transaction 从 published revision fork。Workspace 随后把最新 open-document desired state replay 到隔离 candidate，完成所有 parse / I/O / attempt 校验后才构造新 published revision，并通过一次同步 pointer swap 生效；失败 candidate 直接丢弃。

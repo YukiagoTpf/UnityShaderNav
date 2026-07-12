@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url';
 import type {
   CompletionItem,
   Connection,
+  Diagnostic,
   DocumentHighlight,
   DocumentSymbol,
   Hover,
@@ -159,6 +160,17 @@ export class Workspace implements IndexedWorkspace {
       return Promise.resolve();
     }
     return this.reconcileDocumentClose(input.uri, input.openId);
+  }
+
+  async diagnosticsAt(document: IndexedDocumentSnapshot): Promise<Diagnostic[] | null> {
+    const revision = await this.revisionForDocument(document);
+    if (!revision) return null;
+    const diagnostics = await revision.diagnostics(document.uri);
+    return !this.disposed
+      && this.published === revision
+      && revision.hasCommittedDocument(document)
+      ? diagnostics
+      : null;
   }
 
   async definitionAt(

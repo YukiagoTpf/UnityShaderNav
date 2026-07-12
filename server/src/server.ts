@@ -8,6 +8,7 @@ import { registerCompletionHandler } from './handlers/completion';
 import { registerDefinitionHandler } from './handlers/definition';
 import { registerDocumentHighlightHandler } from './handlers/documentHighlight';
 import { registerDocumentSymbolHandler } from './handlers/documentSymbol';
+import { registerDiagnosticsPublisher } from './handlers/diagnostics';
 import { registerDocuments } from './handlers/documents';
 import { registerHoverHandler } from './handlers/hover';
 import { registerInactiveRegionsHandler } from './handlers/inactiveRegions';
@@ -46,6 +47,7 @@ connection.onInitialize((params) => {
 
 const documentRegistry = registerDocuments(connection, manager);
 const documents = documentRegistry.documents;
+registerDiagnosticsPublisher(connection, documentRegistry, manager);
 manager.configureSettingsResolver((scopeUri) => loadSettings(connection, scopeUri));
 
 connection.onInitialized(async () => {

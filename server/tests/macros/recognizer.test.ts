@@ -60,6 +60,7 @@ describe('MacroPatternRecognizer', () => {
       '#pragma geometry geom',
       '#pragma hull hullMain',
       '#pragma domain domainMain',
+      '#pragma surface surf Standard',
       '#pragma kernel CSMain',
       '#pragma multi_compile _ FOG',
     ].join('\n');
@@ -72,6 +73,7 @@ describe('MacroPatternRecognizer', () => {
       'geom',
       'hullMain',
       'domainMain',
+      'surf',
       'CSMain',
     ]);
     for (const match of matches) {

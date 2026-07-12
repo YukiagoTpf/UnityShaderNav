@@ -10,6 +10,7 @@ UnityShaderNav 是一个用于 Unity Shader 项目的 Visual Studio Code 扩展�
 - 在已索引的用户文件中查找引用，并可选择是否包含 package 引用。
 - 为 ShaderLab 的 `Shader`、`Fallback`、Pass `Name` 与 `UsePass` 提供跨项目的定义、引用、悬浮、补全、Workspace 符号和保守重命名；`UsePass` 的 Pass 段遵循 Unity 的大写规范形式。
 - 为声明身份唯一的 HLSL/CG 符号提供保守的 Workspace Rename，并在重载、预处理或 Package 等不安全场景拒绝修改。
+- 在 VS Code Problems 中报告无法解析的 vertex、fragment、geometry、hull、domain、surface 与 compute kernel 入口，并随实时文档和项目索引更新。
 - 悬浮（Hover）显示已索引着色器符号（函数、struct、字段、变量、参数、宏）及部分内建函数的声明摘要。
 - 为已索引的 HLSL/CG 代码提供保守的补全和签名帮助，并包含精选的 Unity/HLSL/ShaderLab 内置词汇。
 - 为 ShaderLab 外层结构、Properties、Tags、render states、预处理行和

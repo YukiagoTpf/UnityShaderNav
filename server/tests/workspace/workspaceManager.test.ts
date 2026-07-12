@@ -195,6 +195,8 @@ describe('WorkspaceManager: multi-root', () => {
       return candidate;
     });
     const manager = new WorkspaceManager(construction.runtimeOptions);
+    const diagnosticsRefresh = vi.fn();
+    manager.configureDiagnosticsRefresh(diagnosticsRefresh);
     manager.configure(DEFAULT_SETTINGS, connection);
 
     const add = manager.addFolder(folderUri, DEFAULT_SETTINGS, connection);
@@ -224,6 +226,7 @@ describe('WorkspaceManager: multi-root', () => {
       return workspaces[0]?.lifecycle.state ?? 'absent';
     })).toEqual(['indexing', 'ready', 'indexing', 'ready', 'absent']);
     expect(manager.statusSnapshot()).toEqual({ statusSequence: 5, workspaces: [] });
+    expect(diagnosticsRefresh).toHaveBeenCalledTimes(5);
     await rm(root, { recursive: true, force: true });
   });
 

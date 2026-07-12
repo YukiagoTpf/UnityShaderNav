@@ -9,6 +9,13 @@ and uses semantic versioning for extension releases.
 
 ### Added
 
+- Added versioned VS Code Problems diagnostics for unresolved Shader and
+  Compute entry points declared by `#pragma vertex`, `fragment`, `geometry`,
+  `hull`, `domain`, `surface`, and `kernel`. Diagnostics share the published
+  revision and include visibility model, refresh after every index transition,
+  reject stale document/revision results, and clear deterministically on fixes
+  and close. Ambiguous, variant-dependent, and macro-backed cases stay neutral.
+
 - Added project-wide ShaderLab name semantics for `Shader`, `Fallback`, Pass
   `Name`, and `UsePass`, including Definition, References, Hover, Completion,
   Workspace Symbols, cache persistence, live-document updates, and conservative
