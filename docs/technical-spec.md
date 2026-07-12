@@ -376,7 +376,14 @@ declaration and reference patterns:
 - `#define` macro declarations.
 
 Projects can add custom declaration patterns with
-`unityShaderNav.declarationMacros`.
+`unityShaderNav.declarationMacros`. One recognizer validates and compiles those
+settings together with the built-in declaration/reference allowlist, captures
+symbol names and ranges, and filters structural sentinels. Invalid custom
+patterns are diagnosed and skipped without disabling valid entries. Compiled
+parameters and raw-pattern parsing are private implementation details; parser,
+semantic-token, and cache consumers use narrow domain projections from the
+recognizer. This remains recognition only: macro expansion, token pasting,
+conditional evaluation, and compiler-context emulation are out of scope.
 
 ## Include and Package Resolution
 

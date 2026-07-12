@@ -244,6 +244,68 @@ describe('server dependency direction', () => {
     expect(candidate).not.toMatch(/resolveWasmPath|tree-sitter-hlsl\.wasm|no-wasm/);
   });
 
+  it('keeps compiled macro patterns private to the recognizer boundary', () => {
+    const recognizer = readFileSync(
+      resolve(SOURCE_ROOT, 'macros/recognizer.ts'),
+      'utf8',
+    );
+    const publicApi = readFileSync(
+      resolve(SOURCE_ROOT, 'macros/index.ts'),
+      'utf8',
+    );
+
+    expect(recognizer).toMatch(/class MacroPatternRecognizer/);
+    expect(recognizer).toMatch(/matchDeclarationCall/);
+    expect(recognizer).toMatch(/scanReferencePatterns/);
+    expect(recognizer).toMatch(/isStructuralSentinel/);
+    expect(recognizer).toMatch(/builtinDeclarationMacroLexicalRole/);
+    const representationDetails = /Compiled(?:Call|Declaration)?Pattern|parsePattern|\bcaptureIndex\b|\bparameterCount\b/;
+    expect(publicApi).not.toMatch(representationDetails);
+    expect(publicApi).not.toMatch(/\.\/builtin/);
+
+    for (const removedModule of ['matcher.ts', 'patterns.ts', 'table.ts']) {
+      expect(existsSync(resolve(SOURCE_ROOT, 'macros', removedModule))).toBe(false);
+    }
+
+    const consumers: ReadonlyArray<{
+      readonly moduleId: string;
+      readonly required: RegExp;
+    }> = [
+      {
+        moduleId: 'parser/hlsl/collector.ts',
+        required: /recognizer\.matchDeclarationCall|recognizer\.isStructuralSentinel/,
+      },
+      {
+        moduleId: 'parser/hlsl/fileIndexer.ts',
+        required: /recognizer\.scanReferencePatterns/,
+      },
+      {
+        moduleId: 'parser/shaderlab/tokenScanner.ts',
+        required: /builtinDeclarationMacroLexicalRole/,
+      },
+      {
+        moduleId: 'cache/fingerprint.ts',
+        required: /macroPatternIdentity/,
+      },
+    ];
+    for (const consumer of consumers) {
+      const source = readFileSync(resolve(SOURCE_ROOT, consumer.moduleId), 'utf8');
+      expect(source, consumer.moduleId).toMatch(consumer.required);
+      expect(source, consumer.moduleId).not.toMatch(representationDetails);
+      expect(source, consumer.moduleId).not.toMatch(
+        /findDecl|findRef|\.pattern\.split|macros\/builtin/,
+      );
+    }
+
+    for (const sourceFile of collectTypeScriptFiles(SOURCE_ROOT)) {
+      const moduleId = relativeModuleId(SOURCE_ROOT, sourceFile);
+      if (moduleId === 'macros/recognizer.ts' || moduleId === 'macros/builtin.ts') continue;
+      const source = readFileSync(sourceFile, 'utf8');
+      expect(source, moduleId).not.toMatch(representationDetails);
+      expect(source, moduleId).not.toMatch(/from ['"].*macros\/builtin['"]/);
+    }
+  });
+
   it('keeps complete candidate construction behind the Workspace publication seam', () => {
     const workspace = readFileSync(
       resolve(SOURCE_ROOT, 'workspace/workspace.ts'),

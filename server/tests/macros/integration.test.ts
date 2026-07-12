@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { indexFile } from '../../src/parser/hlsl';
-import { MacroPatternTable } from '../../src/macros';
+import { MacroPatternRecognizer } from '../../src/macros';
 import { analyzeCursor } from '../../src/parser/lexical/cursor';
 import { resolveDefinition } from '../../src/index/symbolResolver';
 
@@ -13,7 +13,7 @@ describe('integration: macros end-to-end', () => {
     const idx = await indexFile(
       'file:///t/textures.hlsl',
       fixture('textures.hlsl'),
-      new MacroPatternTable(),
+      new MacroPatternRecognizer(),
     );
     const main = idx.symbols.find((s) => s.name === '_MainTex');
     expect(main).toBeDefined();
@@ -24,7 +24,7 @@ describe('integration: macros end-to-end', () => {
     const idx = await indexFile(
       'file:///t/pragmas.shader',
       fixture('pragmas.shader'),
-      new MacroPatternTable(),
+      new MacroPatternRecognizer(),
     );
     const vertRef = idx.references.find((r) => r.name === 'vert' && r.context === 'pragma');
     expect(vertRef).toBeDefined();
@@ -49,7 +49,7 @@ describe('integration: macros end-to-end', () => {
       '}',
     ].join('\n');
 
-    const idx = await indexFile(uri, text, new MacroPatternTable());
+    const idx = await indexFile(uri, text, new MacroPatternRecognizer());
     const pragmaRefs = idx.references.filter((r) => r.context === 'pragma');
 
     expect(pragmaRefs.map((r) => r.name)).toEqual(['vert']);
@@ -59,7 +59,7 @@ describe('integration: macros end-to-end', () => {
     const idx = await indexFile(
       'file:///t/cb.hlsl',
       fixture('cbuffer-macro.hlsl'),
-      new MacroPatternTable(),
+      new MacroPatternRecognizer(),
     );
     const cb = idx.symbols.find((s) => s.name === 'UnityPerMaterial');
     expect(cb?.kind).toBe('cbuffer');
@@ -69,7 +69,7 @@ describe('integration: macros end-to-end', () => {
     const idx = await indexFile(
       'file:///t/cb.hlsl',
       fixture('cbuffer-macro.hlsl'),
-      new MacroPatternTable(),
+      new MacroPatternRecognizer(),
     );
 
     expect(idx.symbols.find((s) => s.name === 'UnityPerMaterial')?.kind).toBe('cbuffer');
@@ -80,7 +80,7 @@ describe('integration: macros end-to-end', () => {
     const idx = await indexFile(
       'file:///t/instanced-prop.hlsl',
       fixture('instanced-prop.hlsl'),
-      new MacroPatternTable(),
+      new MacroPatternRecognizer(),
     );
 
     expect(idx.symbols.find((s) => s.name === '_BaseColor')?.kind).toBe('variable');
@@ -93,7 +93,11 @@ describe('integration: macros end-to-end', () => {
       '[numthreads(8, 8, 1)]',
       'void CSMain(uint3 id : SV_DispatchThreadID) {}',
     ].join('\n');
-    const idx = await indexFile('file:///t/main.compute', text, new MacroPatternTable());
+    const idx = await indexFile(
+      'file:///t/main.compute',
+      text,
+      new MacroPatternRecognizer(),
+    );
     const kernelRef = idx.references.find((r) => r.name === 'CSMain' && r.context === 'pragma');
     expect(kernelRef).toBeDefined();
   });
@@ -106,7 +110,7 @@ describe('integration: macros end-to-end', () => {
       'void CSMain(uint3 id : SV_DispatchThreadID) {}',
     ].join('\n');
 
-    const idx = await indexFile(uri, text, new MacroPatternTable());
+    const idx = await indexFile(uri, text, new MacroPatternRecognizer());
     const pos = { line: 0, character: 17 };
     const word = analyzeCursor(text, pos, 'hlsl', uri).word;
     expect(word?.text).toBe('CSMain');

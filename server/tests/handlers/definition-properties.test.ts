@@ -15,15 +15,15 @@ import { registerDefinitionHandler } from '../../src/handlers/definition';
 import type { IncludeContext } from '../../src/include';
 import { indexFile } from '../../src/parser/hlsl/fileIndexer';
 import { isGenericDefinitionContext } from '../../src/parser/lexical/context';
-import { MacroPatternTable } from '../../src/macros/table';
+import { MacroPatternRecognizer } from '../../src/macros';
 import { uriKey } from '../../src/uriKey';
 import {
   createDocumentRegistry,
   createIndexedWorkspaceFixture,
 } from '../helpers/indexedWorkspaceFixture';
 
-function makeTable(): MacroPatternTable {
-  return new MacroPatternTable();
+function makeTable(): MacroPatternRecognizer {
+  return new MacroPatternRecognizer();
 }
 
 interface FixtureFile {

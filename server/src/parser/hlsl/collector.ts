@@ -9,8 +9,7 @@ import type {
   TypeInferenceEntry,
 } from '@unity-shader-nav/shared';
 import { rangeOf, textOf, walk } from './nodeHelpers';
-import type { MacroPatternTable } from '../../macros';
-import { matchDeclarationCall } from '../../macros/matcher';
+import type { MacroPatternRecognizer } from '../../macros';
 
 interface CollectorState {
   uri: string;
@@ -319,10 +318,10 @@ function collectStruct(node: Parser.SyntaxNode, st: CollectorState): void {
 function collectMacroDeclaration(
   node: Parser.SyntaxNode,
   st: CollectorState,
-  table: MacroPatternTable | undefined,
+  recognizer: MacroPatternRecognizer | undefined,
 ): void {
-  if (!table || node.type !== 'call_expression') return;
-  const match = matchDeclarationCall(node, table);
+  if (!recognizer || node.type !== 'call_expression') return;
+  const match = recognizer.matchDeclarationCall(node);
   if (!match) return;
   markNamedDescendants(st, node);
   st.symbols.push({
@@ -352,15 +351,15 @@ function receiverExpression(node: Parser.SyntaxNode): string | undefined {
 
 function isSentinelIdentifier(
   node: Parser.SyntaxNode,
-  table: MacroPatternTable | undefined,
+  recognizer: MacroPatternRecognizer | undefined,
 ): boolean {
-  return table?.isSentinel(textOf(node)) === true;
+  return recognizer?.isStructuralSentinel(textOf(node)) === true;
 }
 
 function collectReferences(
   node: Parser.SyntaxNode,
   st: CollectorState,
-  table?: MacroPatternTable,
+  recognizer?: MacroPatternRecognizer,
 ): void {
   if (node.type === 'call_expression') {
     const callee = node.childForFieldName('function');
@@ -371,7 +370,7 @@ function collectReferences(
       } else if (callee.type === 'field_expression') {
         nameNode = callee.childForFieldName('field');
       }
-      if (nameNode && isSentinelIdentifier(nameNode, table)) {
+      if (nameNode && isSentinelIdentifier(nameNode, recognizer)) {
         markNamedDescendants(st, node);
         return;
       }
@@ -406,7 +405,7 @@ function collectReferences(
     }
   } else if (node.type === 'identifier') {
     if (!st.declarationSites.has(siteKey(node))) {
-      if (isSentinelIdentifier(node, table)) return;
+      if (isSentinelIdentifier(node, recognizer)) return;
       st.references.push({
         name: textOf(node),
         location: { uri: st.uri, range: offsetRange(rangeOf(node), st.lineOffset) },
@@ -421,7 +420,7 @@ export function collect(
   text: string,
   uri: string,
   lineOffset: number,
-  table?: MacroPatternTable,
+  recognizer?: MacroPatternRecognizer,
 ): FileIndex {
   const st: CollectorState = {
     uri,
@@ -446,14 +445,14 @@ export function collect(
     } else if (node.type === 'declaration') {
       collectGlobalDeclaration(node, st);
     } else if (node.type === 'call_expression') {
-      collectMacroDeclaration(node, st, table);
+      collectMacroDeclaration(node, st, recognizer);
     }
   }
 
   // Second pass — references. We re-walk so we can consult declarationSites
   // populated in pass 1.
   for (const node of walk(root)) {
-    collectReferences(node, st, table);
+    collectReferences(node, st, recognizer);
   }
 
   const result: FileIndex = { uri, symbols: st.symbols, references: st.references };

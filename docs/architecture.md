@@ -44,8 +44,11 @@ handling. Important modules:
   cache compatibility consume that same immutable fact.
 - `parser/lexical`: owns cursor analysis behind `analyzeCursor` plus the narrow
   `classifyCursor` and gate-free `memberAccessAt` derived interfaces.
-- `macros`: recognizes built-in and user-configured declaration/reference
-  patterns.
+- `macros`: is the sole compilation and recognition boundary for built-in and
+  user-configured declaration patterns, pragma reference patterns, and
+  structural sentinels. Consumers receive only captured domain facts; the same
+  module projects built-in declaration heads for lexical coloring and all
+  pattern facts for cache identity without exposing compiled representations.
 - `vocabulary.ts`: owns the neutral Unity/HLSL/ShaderLab built-in vocabulary,
   stable ShaderLab semantic roles, and narrow projections consumed by
   parsing-derived coloring, Properties, hover, completion, and signature help.
@@ -105,6 +108,11 @@ The index is intentionally pragmatic:
   calls, and dynamic imports. The same guard prevents vocabulary consumers from
   reconstructing ShaderLab keyword, Property-type, state-head, or state-value
   lists.
+- Macro consumers cannot parse raw patterns or inspect compiled parameters.
+  Declaration collection, pragma references, sentinel filtering, built-in
+  macro-head coloring, and cache identity use the macro recognizer's narrow
+  interfaces. A dependency guard keeps raw built-in pattern facts private to
+  that boundary.
 - A `.shader` indexing cycle derives ordered embedded-code blocks and structure
   from one exact source analysis, then passes the blocks to Properties scanning
   and publishes the structure through `FileIndex` for Outline. A full live

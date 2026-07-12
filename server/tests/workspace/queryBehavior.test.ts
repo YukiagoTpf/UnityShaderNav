@@ -14,7 +14,7 @@ import {
   type SemanticTokens,
 } from 'vscode-languageserver/node';
 import { describe, expect, it } from 'vitest';
-import { MacroPatternTable } from '../../src/macros';
+import { MacroPatternRecognizer } from '../../src/macros';
 import { PackageContext } from '../../src/packages';
 import { indexFile } from '../../src/parser/hlsl';
 import type { IndexedDocumentSnapshot } from '../../src/workspace/indexedWorkspace';
@@ -96,7 +96,7 @@ async function publishTextFiles(
   folderUri: string,
   files: readonly TextFile[],
 ): Promise<PublishedIndexedRevision> {
-  const table = new MacroPatternTable(DEFAULT_SETTINGS.declarationMacros);
+  const table = new MacroPatternRecognizer(DEFAULT_SETTINGS.declarationMacros);
   const indexes = await Promise.all(
     files.map(({ uri, text }) => indexFile(uri, text, table)),
   );

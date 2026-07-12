@@ -4,7 +4,7 @@ import {
 } from '@unity-shader-nav/shared';
 import type { TextDocument } from 'vscode-languageserver-textdocument';
 import type { IncludeContext } from '../../src/include';
-import { MacroPatternTable } from '../../src/macros';
+import { MacroPatternRecognizer } from '../../src/macros';
 import type {
   IndexedDocumentRegistry,
   IndexedDocumentSnapshot,
@@ -33,7 +33,7 @@ export function createIndexedWorkspaceFixture(
   options: NavigationFixtureOptions = {},
 ): IndexedWorkspace {
   const index = new WorkspaceIndex(
-    new MacroPatternTable(DEFAULT_SETTINGS.declarationMacros),
+    new MacroPatternRecognizer(DEFAULT_SETTINGS.declarationMacros),
     () => false,
   );
   for (const fileIndex of indexes) index.restoreFromCache(fileIndex.uri, fileIndex);

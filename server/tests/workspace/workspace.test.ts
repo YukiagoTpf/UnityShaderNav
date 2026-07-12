@@ -994,14 +994,18 @@ describe('Workspace.reconfigure', () => {
   it('rebuilds the macro table and updates settings together when declarationMacros change', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-reconfigure-macros-'));
     const shaderUri = pathToFileURL(join(root, 'Configured.hlsl')).href;
-    const text = 'MY_TEX(_Configured)';
+    const text = [
+      'MY_TEX(_Configured)',
+      'float4 ReadConfigured() { return _Configured; }',
+    ].join('\n');
+    const document = snapshot(shaderUri, text);
     try {
       const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
         ensureParserReady: async () => {},
         indexImplementation: null,
       });
       await workspace.initialize(fakeConnection);
-      await workspace.updateDocument(snapshot(shaderUri, text));
+      await workspace.updateDocument(document);
       expect(hasWorkspaceSymbol(workspace, '_Configured')).toBe(false);
 
       await workspace.reconfigure(fakeConnection, {
@@ -1011,6 +1015,39 @@ describe('Workspace.reconfigure', () => {
 
       expect(workspace.settings.declarationMacros).toHaveLength(1);
       expect(hasWorkspaceSymbol(workspace, '_Configured')).toBe(true);
+      const definition = await workspace.definitionAt({
+        document,
+        position: positionOf(text, '_Configured;'),
+      });
+      expect(definition).toHaveLength(1);
+      expect(definition?.[0]).toMatchObject({
+        targetUri: shaderUri,
+        targetSelectionRange: {
+          start: { line: 0, character: 7 },
+          end: { line: 0, character: 18 },
+        },
+      });
+      const references = await workspace.referencesAt({
+        document,
+        position: positionOf(text, '_Configured;'),
+        includeDeclaration: true,
+      });
+      expect(references).toEqual(expect.arrayContaining([
+        {
+          uri: shaderUri,
+          range: {
+            start: { line: 0, character: 7 },
+            end: { line: 0, character: 18 },
+          },
+        },
+        {
+          uri: shaderUri,
+          range: {
+            start: { line: 1, character: 33 },
+            end: { line: 1, character: 44 },
+          },
+        },
+      ]));
       expect(workspace.indexStatus().lifecycle).toMatchObject({ state: 'ready', revision: 3 });
     } finally {
       await rm(root, { recursive: true, force: true });

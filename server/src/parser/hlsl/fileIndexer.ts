@@ -6,10 +6,9 @@ import {
   analyzeDocument,
   type DocumentAnalysis,
 } from '../../analysis';
-import type { MacroPatternTable } from '../../macros';
+import type { MacroPatternRecognizer } from '../../macros';
 import { parseHlsl } from './parser';
 import { collect } from './collector';
-import { scanPragmaLines } from '../../macros/matcher';
 import { scanIncludes } from '../include/lineScanner';
 import { scanDefines } from '../preproc/scanDefines';
 import { scanProperties } from '../shaderlab/propertiesScanner';
@@ -27,11 +26,11 @@ function extOf(uri: string): string {
 function scanPragmas(
   blockText: string,
   lineOffset: number,
-  table: MacroPatternTable,
+  recognizer: MacroPatternRecognizer,
   uri: string,
 ): ReferenceEntry[] {
   const refs: ReferenceEntry[] = [];
-  for (const match of scanPragmaLines(blockText, table)) {
+  for (const match of recognizer.scanReferencePatterns(blockText)) {
     refs.push({
       name: match.capturedName,
       context: 'pragma',
@@ -103,7 +102,7 @@ function pushDefines(blockText: string, lineOffset: number, uri: string, dest: S
 export async function indexFile(
   uri: string,
   text: string,
-  table?: MacroPatternTable,
+  recognizer?: MacroPatternRecognizer,
   preparedAnalysis?: DocumentAnalysis,
 ): Promise<FileIndex> {
   const analysis = preparedAnalysis && analysisMatchesSource(preparedAnalysis, text)
@@ -112,10 +111,10 @@ export async function indexFile(
   const ext = extOf(uri);
   if (HLSL_EXTS.has(ext)) {
     const tree = await parseHlsl(text);
-    const idx = collect(tree.rootNode, text, uri, 0, table);
+    const idx = collect(tree.rootNode, text, uri, 0, recognizer);
     idx.references.push(...scanIncludeReferences(text, 0, uri));
     pushDefines(text, 0, uri, idx.symbols);
-    if (table) idx.references.push(...scanPragmas(text, 0, table, uri));
+    if (recognizer) idx.references.push(...scanPragmas(text, 0, recognizer, uri));
     return idx;
   }
 
@@ -130,13 +129,24 @@ export async function indexFile(
         .slice(block.contentStartLine, block.contentEndLine + 1)
         .join('\n');
       const tree = await parseHlsl(blockText);
-      const part = collect(tree.rootNode, blockText, uri, block.contentStartLine, table);
+      const part = collect(
+        tree.rootNode,
+        blockText,
+        uri,
+        block.contentStartLine,
+        recognizer,
+      );
       merged.symbols.push(...part.symbols);
       pushDefines(blockText, block.contentStartLine, uri, merged.symbols);
       merged.references.push(...part.references);
       merged.references.push(...scanIncludeReferences(blockText, block.contentStartLine, uri));
-      if (table) {
-        merged.references.push(...scanPragmas(blockText, block.contentStartLine, table, uri));
+      if (recognizer) {
+        merged.references.push(...scanPragmas(
+          blockText,
+          block.contentStartLine,
+          recognizer,
+          uri,
+        ));
       }
     }
     merged.structure = structure;

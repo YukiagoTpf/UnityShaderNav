@@ -77,6 +77,13 @@ npm run grammar:rebuild
   references, Agent entrypoints, and the vendored grammar provenance, artifact,
   and upstream license.
 - Parser and index behavior belongs in server unit tests.
+- Macro recognizer interface tests cover built-in and user declaration
+  capture, invalid settings, structural sentinels, every supported pragma
+  reference, lexical projection, and content identity. Consumers must not
+  import raw built-in patterns or compiled pattern shapes; the architecture
+  test enforces that boundary. Workspace tests cover live settings replacement,
+  navigation, references, and semantic-token behavior without inspecting the
+  recognizer's representation.
 - Shared built-in language facts belong in `vocabulary.ts` roles and narrow
   projections. Do not add caller-local ShaderLab keyword, Property-type,
   state-head, or state-value name sets. Vocabulary tests must cover the role,

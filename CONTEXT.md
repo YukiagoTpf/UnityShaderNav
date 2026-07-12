@@ -23,11 +23,11 @@ _Avoid_: degraded mode, no-project mode
 ### 符号收集
 
 **Declaration macro**:
-通过宏调用声明变量 / cbuffer / sampler 的模式（如 `TEXTURE2D(_MainTex)`、`SAMPLER(...)`、`CBUFFER_START(...)`）。索引器内置一份白名单识别这些"伪声明"，详见 ADR-0003。
+通过宏调用声明变量 / cbuffer / sampler 的模式（如 `TEXTURE2D(_MainTex)`、`SAMPLER(...)`、`CBUFFER_START(...)`）。Macro pattern recognizer 集中校验、编译并匹配内置白名单与用户配置，只向索引器返回符号种类、捕获名称和范围；编译后的 pattern 不越过该 Module 边界。详见 ADR-0003。
 _Avoid_: declarative macro, macro declaration
 
 **Reference macro pattern** / **Reference pattern**:
-形如 `#pragma vertex $func` / `#pragma kernel $func` 等需要把后续 token 当作函数引用处理的模式。与 declaration macro 共用同一张白名单表，但语义类型不同。
+形如 `#pragma vertex $func` / `#pragma kernel $func` 等需要把后续 token 当作函数引用处理的模式。与 declaration macro 由同一个 Macro pattern recognizer 解释，但只投影函数引用名称和范围；结构 sentinel 过滤、内置 declaration macro head 的 lexical role 与 cache identity 也由该 Module 从同一组事实派生。
 
 **Symbol entry**:
 索引中的一条记录。键为符号名，值为 `SymbolEntry[]`（多个候选共存——见 ADR-0001）。

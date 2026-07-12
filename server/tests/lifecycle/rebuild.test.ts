@@ -381,9 +381,10 @@ describe('rebuildWorkspaces', () => {
           ensureParserReady: async () => {},
           indexImplementation: null,
           openDocuments: () => [open],
-          async indexDocument(uri, text, table) {
+          async indexDocument(uri, text, recognizer) {
             indexingAttempt++;
-            tableStates.push(table.findDecl('QUEUED_DECL').length > 0);
+            const indexed = await indexFile(uri, text, recognizer);
+            tableStates.push(indexed.symbols.some((symbol) => symbol.name === 'Unsaved'));
             if (indexingAttempt === 1) {
               initialIndexingStarted.resolve();
               await releaseInitial.promise;
@@ -391,7 +392,7 @@ describe('rebuildWorkspaces', () => {
               finalIndexingStarted.resolve();
               await releaseFinal.promise;
             }
-            return indexFile(uri, text, table);
+            return indexed;
           },
         },
       );

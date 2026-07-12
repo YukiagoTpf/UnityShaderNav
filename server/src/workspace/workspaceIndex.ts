@@ -14,7 +14,7 @@ import {
 } from '../analysis';
 import { GlobalReferenceIndex, GlobalSymbolIndex, IndexStore } from '../index';
 import { uriKey } from '../uriKey';
-import { MacroPatternTable } from '../macros';
+import { MacroPatternRecognizer } from '../macros';
 import { indexFile } from '../parser/hlsl';
 
 export interface FileEvent {
@@ -25,7 +25,7 @@ export interface FileEvent {
 export type DocumentIndexer = (
   uri: string,
   text: string,
-  table: MacroPatternTable,
+  recognizer: MacroPatternRecognizer,
   analysis?: DocumentAnalysis,
 ) => Promise<FileIndex>;
 
@@ -85,21 +85,21 @@ export class WorkspaceIndex {
   private readonly global = new GlobalSymbolIndex();
   private readonly globalRefs = new GlobalReferenceIndex();
   private readonly diskIndexes = new Map<string, DiskIndexRecord>();
-  private readonly table: MacroPatternTable;
+  private readonly recognizer: MacroPatternRecognizer;
   private readonly standalone: boolean;
   private readonly indexDocument: DocumentIndexer;
   private readonly analyzeSource: DocumentAnalyzer;
   readonly read: WorkspaceIndexReadView;
 
   constructor(
-    declarationMacros: readonly UserDeclarationMacro[] | MacroPatternTable,
+    declarationMacros: readonly UserDeclarationMacro[] | MacroPatternRecognizer,
     standalone: boolean | (() => boolean),
     indexDocument: DocumentIndexer = indexFile,
     analyzeSource: DocumentAnalyzer = analyzeDocument,
   ) {
-    this.table = declarationMacros instanceof MacroPatternTable
+    this.recognizer = declarationMacros instanceof MacroPatternRecognizer
       ? declarationMacros
-      : new MacroPatternTable([...declarationMacros]);
+      : new MacroPatternRecognizer(declarationMacros);
     this.standalone = typeof standalone === 'function' ? standalone() : standalone;
     this.indexDocument = indexDocument;
     this.analyzeSource = analyzeSource;
@@ -121,7 +121,7 @@ export class WorkspaceIndex {
   /** Copy-on-write base for an incremental candidate. */
   fork(): WorkspaceIndex {
     const next = new WorkspaceIndex(
-      this.table,
+      this.recognizer,
       this.standalone,
       this.indexDocument,
       this.analyzeSource,
@@ -327,7 +327,12 @@ export class WorkspaceIndex {
     preparedAnalysis?: DocumentAnalysis,
   ): Promise<FileIndex> {
     const analysis = preparedAnalysis ?? this.analyzeSource(uri, text, 'index');
-    return freezeFileIndex(await this.indexDocument(uri, text, this.table, analysis));
+    return freezeFileIndex(await this.indexDocument(
+      uri,
+      text,
+      this.recognizer,
+      analysis,
+    ));
   }
 
   private setEffective(index: FileIndex): void {

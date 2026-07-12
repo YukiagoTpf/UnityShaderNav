@@ -1,5 +1,5 @@
 import type { Range, ShaderLabBlock } from '@unity-shader-nav/shared';
-import { BUILTIN_DECLARATION_MACROS } from '../../macros/builtin';
+import { builtinDeclarationMacroLexicalRole } from '../../macros';
 import {
   asShaderLabPropertyType,
   builtinLexicalRole,
@@ -21,10 +21,6 @@ export interface ShaderLabLexicalToken {
   range: Range;
   tokenType: ShaderLabLexicalTokenType;
 }
-
-const BUILTIN_DECLARATION_MACRO_NAMES = new Set(
-  BUILTIN_DECLARATION_MACROS.map((macro) => macro.pattern.split('(')[0]),
-);
 
 const WORD_RE = /[A-Za-z_][A-Za-z0-9_]*/g;
 const TERM_RE = /[A-Za-z0-9_]+/g;
@@ -200,7 +196,7 @@ export function scanShaderLabTokens(
       const tokenType: ShaderLabLexicalTokenType | undefined = lexicalRole === 'semantic'
         ? 'enumMember'
         : lexicalRole ?? (
-          BUILTIN_DECLARATION_MACRO_NAMES.has(match[0]) ? 'macro' : undefined
+          builtinDeclarationMacroLexicalRole(match[0])
         );
       if (!tokenType) continue;
       push(lineNo, match.index ?? 0, (match.index ?? 0) + match[0].length, tokenType);

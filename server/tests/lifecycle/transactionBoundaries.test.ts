@@ -173,14 +173,17 @@ describe('indexed revision transaction boundaries', () => {
       const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
         ensureParserReady: async () => {},
         indexImplementation: null,
-        async indexDocument(indexUri, source, table) {
-          tableStates.push(table.findDecl('QUEUED_DECL').length > 0);
+        async indexDocument(indexUri, source, recognizer) {
+          const indexed = await indexFile(indexUri, source, recognizer);
+          tableStates.push(indexed.symbols.some((symbol) => (
+            symbol.name === 'ConfiguredSymbol'
+          )));
           if (firstParse) {
             firstParse = false;
             firstParseStarted.resolve();
             await releaseFirstParse.promise;
           }
-          return indexFile(indexUri, source, table);
+          return indexed;
         },
       });
       await workspace.initialize(connection);

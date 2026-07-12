@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { indexFile } from '../../../src/parser/hlsl/fileIndexer';
 import { scanProperties } from '../../../src/parser/shaderlab/propertiesScanner';
-import { MacroPatternTable } from '../../../src/macros';
+import { MacroPatternRecognizer } from '../../../src/macros';
 import { analyzeDocument } from '../../../src/analysis';
 
 describe('fileIndexer: pure .hlsl', () => {
@@ -39,7 +39,7 @@ describe('fileIndexer: pure .hlsl', () => {
       '#pragma vertex vert',
       'void vert() {}',
     ].join('\n');
-    const idx = await indexFile('file:///t/pragmas.hlsl', text, new MacroPatternTable());
+    const idx = await indexFile('file:///t/pragmas.hlsl', text, new MacroPatternRecognizer());
 
     const pragmaRefs = idx.references.filter((r) => r.context === 'pragma');
     expect(pragmaRefs.map((r) => r.name)).toEqual(['vert']);
@@ -133,7 +133,7 @@ describe('fileIndexer: .shader multi-pass', () => {
       '}',
     ].join('\n');
 
-    const idx = await indexFile('file:///t/pragmas.shader', text, new MacroPatternTable());
+    const idx = await indexFile('file:///t/pragmas.shader', text, new MacroPatternRecognizer());
     const pragmaRefs = idx.references.filter((r) => r.context === 'pragma');
 
     expect(pragmaRefs.map((r) => r.name)).toEqual(['vert']);

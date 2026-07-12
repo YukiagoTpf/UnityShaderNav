@@ -1,10 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { CacheFingerprint, ExtensionSettings } from '@unity-shader-nav/shared';
-import {
-  BUILTIN_DECLARATION_MACROS,
-  BUILTIN_REFERENCE_MACROS,
-  BUILTIN_SENTINEL_MACROS,
-} from '../macros/builtin';
+import { macroPatternIdentity } from '../macros';
 import type { ParserRuntimeAssets } from '../parser/runtimeAssets';
 
 function sha1(value: string): string {
@@ -28,34 +24,7 @@ export function settingsHash(settings: ExtensionSettings): string {
 }
 
 export function macroTableHash(userMacros: ExtensionSettings['declarationMacros']): string {
-  const all = [
-    ...BUILTIN_DECLARATION_MACROS.map((macro) => ({
-      pattern: macro.pattern,
-      kind: macro.kind,
-      source: 'builtin-declaration',
-    })),
-    ...BUILTIN_REFERENCE_MACROS.map((macro) => ({
-      pattern: macro.pattern,
-      kind: macro.kind,
-      source: 'builtin-reference',
-    })),
-    ...BUILTIN_SENTINEL_MACROS.map((macro) => ({
-      pattern: macro,
-      kind: 'sentinel',
-      source: 'builtin-sentinel',
-    })),
-    ...userMacros.map((macro) => ({
-      pattern: macro.pattern,
-      kind: macro.kind,
-      source: 'user',
-    })),
-  ].sort((a, b) => (
-    a.pattern.localeCompare(b.pattern)
-    || String(a.kind).localeCompare(String(b.kind))
-    || a.source.localeCompare(b.source)
-  ));
-
-  return sha1(JSON.stringify(all));
+  return macroPatternIdentity(userMacros);
 }
 
 export function buildFingerprint(

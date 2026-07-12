@@ -20,6 +20,10 @@ and uses semantic versioning for extension releases.
   watch, VSIX verification, package-layout tests, and Electron staging. Builds
   now emit a content-addressed manifest so stale or byte-divergent server,
   grammar, and `web-tree-sitter` artifacts fail current-run packaging.
+- Centralized declaration macro and pragma reference recognition, structural
+  sentinel filtering, built-in macro-head coloring, configuration diagnostics,
+  and cache identity behind one recognizer. Compiled pattern representations
+  no longer leak into parser, semantic-token, cache, or test consumers.
 
 ## 0.0.8 - 2026-07-12
 
