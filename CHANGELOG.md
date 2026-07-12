@@ -16,6 +16,10 @@ and uses semantic versioning for extension releases.
 - Centralized inclusive scope, declaration order, nearest-declaration
   shadowing, and include-visible global selection in one index-owned module
   shared by navigation, hover, chain lookup, and project suggestions.
+- Centralized Extension runtime assembly in one artifact graph shared by build,
+  watch, VSIX verification, package-layout tests, and Electron staging. Builds
+  now emit a content-addressed manifest so stale or byte-divergent server,
+  grammar, and `web-tree-sitter` artifacts fail current-run packaging.
 
 ## 0.0.8 - 2026-07-12
 

@@ -121,6 +121,22 @@ suite('Electron harness', () => {
             assert.strictEqual(options.extensionTestsEnv?.USN_TEST_SUITE, 'integration');
 
             await assertPathExists(path.join(sandboxRoot, 'e', 'out', 'extension.js'));
+            await assertPathExists(path.join(
+              sandboxRoot,
+              'e',
+              'out',
+              'grammars',
+              'tree-sitter-hlsl.wasm',
+            ));
+            await assertPathExists(path.join(
+              sandboxRoot,
+              'e',
+              'out',
+              'server',
+              'node_modules',
+              'web-tree-sitter',
+              'tree-sitter.wasm',
+            ));
             await assertPathExists(path.join(sandboxRoot, 't', 'tests', 'out', 'client', 'suite', 'index.js'));
             await assertPathExists(path.join(sandboxRoot, 't', 'node_modules'));
             await assertPathExists(path.join(sandboxRoot, 'w', '.gitkeep'));
@@ -226,6 +242,10 @@ async function createFakeRepository(): Promise<FakeRepository> {
   const files: Array<[string, string]> = [
     ['client/package.json', '{"name":"fixture-extension","main":"./out/extension.js"}\n'],
     ['client/out/extension.js', 'module.exports = {};\n'],
+    ['client/out/runtime-artifacts.json', '{}\n'],
+    ['client/out/grammars/tree-sitter-hlsl.wasm', 'grammar'],
+    ['client/out/server/node_modules/web-tree-sitter/tree-sitter.js', 'runtime'],
+    ['client/out/server/node_modules/web-tree-sitter/tree-sitter.wasm', 'runtime wasm'],
     ['client/images/icon.png', 'fixture icon'],
     ['client/language-configuration/hlsl.json', '{}\n'],
     ['tests/out/client/suite/index.js', 'exports.run = async () => {};\n'],

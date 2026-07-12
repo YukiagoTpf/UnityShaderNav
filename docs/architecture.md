@@ -267,6 +267,15 @@ remain bound to those exact captured bytes even if a watch build later replaces
 the file on disk. Cache persistence begins only after Workspace publishes and
 remains best effort.
 
+Build-time runtime assembly is owned by one canonical artifact graph under the
+repository's `scripts/` Module. The root build materializes copied-server and
+bundled-server layouts once, copies the complete grammar and `web-tree-sitter`
+runtime trees, and records content hashes for every build input and executable
+artifact. Watch, current-run VSIX packaging, package-layout tests, and Electron
+short-path staging derive their paths from that graph. Packaging rejects stale
+inputs, changed local outputs, missing VSIX entries, or packaged bytes that do
+not match the build manifest; an older valid VSIX cannot satisfy the check.
+
 Lifecycle state is observable through the same LSP connection used by editor
 features. The server exposes both an index-status pull request and a changed
 notification carrying the complete, folder-URI-sorted snapshot. Root add or

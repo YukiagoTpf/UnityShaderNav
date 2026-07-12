@@ -120,7 +120,7 @@
     }
   },
   "scripts": {
-    "build": "tsc -p . && node ../scripts/copy-server.mjs && node ../scripts/build.mjs",
+    "build": "tsc -p . && node ../scripts/build.mjs",
     "watch": "tsc -p . -w",
     "vscode:prepublish": "node ../scripts/package-vsix.mjs --prepare-extension-root"
   },

@@ -92,6 +92,10 @@ _Avoid_: temporary index, unsaved cache
 一次成功的 parser readiness attempt 所解析并加载的不可变运行时事实。它明确区分 source、tsc-out、copied-server 和 bundled-server 四种布局，把 vendored HLSL grammar 读成进程稳定的 bytes 与 content identity；Parser 执行和 cache compatibility 必须消费同一个事实。未知布局、缺失或无法加载的 grammar 是可观察的 parser initialization failure，不能猜路径、写 sentinel fingerprint 或恢复缓存。失败 attempt 可在同一进程修复后重试；一旦成功，该进程不再从磁盘重新解释 grammar。
 _Avoid_: grammar path guess, wasm fallback, parser asset cache
 
+**Runtime artifact graph**:
+canonical repository root 下 Extension runtime 产物的唯一装配事实。它声明 extension/server bundles、copied server、grammar/provenance/license、完整 `web-tree-sitter` runtime、watch inputs、package required entries、Electron staging roots 与四种 **Parser runtime assets** 布局。标准 build 通过它完成一次装配并写入内容寻址 manifest；current-run packaging 同时验证构建输入、磁盘输出与 VSIX 内字节。npm scripts 仍是唯一命令 Interface。
+_Avoid_: packaging file list, watch asset list, Electron runtime copy list
+
 **Index implementation identity**:
 实际生成 `FileIndex` 的 server、resolved shared/runtime packages 与成功加载的 exact grammar bytes 的内容身份。它是 cache fingerprint 的一部分；identity 不同或无法确定时只能从源码重建，不能恢复可能由另一套索引语义产生的记录。
 _Avoid_: cache version, release version, Git revision

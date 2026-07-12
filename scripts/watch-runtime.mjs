@@ -9,8 +9,10 @@ import { spawn, spawnSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import chokidar from 'chokidar';
+import runtimeArtifacts from './runtime-artifacts.cjs';
 
 const monorepoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const artifactGraph = runtimeArtifacts.createRuntimeArtifactGraph(monorepoRoot);
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 // Module-scope handles so the SIGINT/SIGTERM shutdown handler can terminate
@@ -99,23 +101,8 @@ async function runOnce() {
 // Source and runtime-asset inputs that should trigger a rebuild. Generated
 // output directories (client/out, server/out, shared/out, tests/out) are
 // intentionally excluded so rebuild output does not retrigger a rebuild.
-const watchTargets = [
-  'shared/src',
-  'server/src',
-  'client/src',
-  'server/grammars',
-  'node_modules/web-tree-sitter/tree-sitter.js',
-  'node_modules/web-tree-sitter/tree-sitter.wasm',
-  'tsconfig.base.json',
-  'shared/tsconfig.json',
-  'server/tsconfig.json',
-  'client/tsconfig.json',
-  'shared/package.json',
-  'server/package.json',
-  'client/package.json',
-  'scripts/copy-server.mjs',
-  'scripts/build.mjs',
-].map((relative) => resolve(monorepoRoot, relative));
+const watchTargets = artifactGraph.watchInputs
+  .map((relativePath) => resolve(monorepoRoot, relativePath));
 
 async function watch() {
   log('starting initial runtime build');

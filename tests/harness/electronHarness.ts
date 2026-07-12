@@ -26,12 +26,14 @@ const FIXTURE_ROOTS = [
   'server/tests/workspace/fixtures',
 ] as const;
 
-const EXTENSION_RUNTIME_PATHS = [
-  'package.json',
-  'out',
-  'images',
-  'language-configuration',
-] as const;
+const runtimeArtifacts = require(path.resolve(
+  __dirname,
+  '../../../scripts/runtime-artifacts.cjs',
+)) as {
+  createRuntimeArtifactGraph(root: string): {
+    readonly extensionStagingPaths: readonly string[];
+  };
+};
 
 interface SandboxLayout {
   root: string;
@@ -135,7 +137,8 @@ async function stageSandbox(
   const tempDir = path.join(root, 'm');
 
   const fixtureSource = resolveFixtureSource(repositoryRoot, fixtureRelativePath);
-  for (const relativePath of EXTENSION_RUNTIME_PATHS) {
+  const artifactGraph = runtimeArtifacts.createRuntimeArtifactGraph(repositoryRoot);
+  for (const relativePath of artifactGraph.extensionStagingPaths) {
     await copyWithoutLibrary(
       path.join(repositoryRoot, 'client', relativePath),
       path.join(extensionDevelopmentPath, relativePath),

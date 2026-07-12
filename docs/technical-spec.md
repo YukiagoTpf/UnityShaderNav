@@ -432,6 +432,16 @@ indexing; it never changes source files. Restored Package files must still belon
 from the current `Packages/packages-lock.json`. A cached file outside the Unity
 root is eligible only while it belongs to a currently resolved external package.
 
+The Extension runtime is assembled from one artifact graph at the canonical
+repository root. It drives the extension/server bundles, copied server modules,
+grammar provenance/license, complete `web-tree-sitter` runtime, watch inputs,
+VSIX requirements, package-layout assertions, and Electron staging. A standard
+build writes a content-addressed manifest over build inputs and executable
+outputs. Current-run packaging verifies that manifest against the working tree
+and then verifies every packaged artifact byte against the manifest embedded in
+the VSIX. Source, tsc-out, copied-server, and bundled-server parser layouts
+remain distinct runtime interpretations of this one assembled graph.
+
 Persistence contains only an immutable published revision's disk indexes and
 the source identities captured with them. It excludes live overlays, document
 analysis, lifecycle state, warning state, and document attempts. `CacheManager`

@@ -1,67 +1,17 @@
-import { copyFile, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { dirname, relative, resolve, sep } from 'node:path';
+import { dirname, relative, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { inflateRawSync } from 'node:zlib';
+import runtimeArtifacts from './runtime-artifacts.cjs';
 
 const defaultRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = parseArgs(process.argv.slice(2));
 const monorepoRoot = resolve(args.monorepoRoot ?? defaultRoot);
 const clientRoot = resolve(monorepoRoot, 'client');
-
-const freshnessChecks = [
-  {
-    output: 'client/out/extension.js',
-    inputs: [
-      'client/src',
-      'client/package.json',
-      'shared/src',
-      'tsconfig.base.json',
-      'client/tsconfig.json',
-      'scripts/build.mjs',
-    ],
-  },
-  {
-    output: 'client/out/server/server.js',
-    inputs: [
-      'server/src',
-      'server/package.json',
-      'shared/src',
-      'shared/package.json',
-      'tsconfig.base.json',
-      'server/tsconfig.json',
-      'scripts/build.mjs',
-      'scripts/copy-server.mjs',
-    ],
-  },
-  {
-    output: 'client/out/grammars/tree-sitter-hlsl.wasm',
-    inputs: ['server/grammars'],
-  },
-  {
-    output: 'client/out/server/node_modules/web-tree-sitter/tree-sitter.js',
-    inputs: ['node_modules/web-tree-sitter/tree-sitter.js'],
-  },
-  {
-    output: 'client/out/server/node_modules/web-tree-sitter/tree-sitter.wasm',
-    inputs: ['node_modules/web-tree-sitter/tree-sitter.wasm'],
-  },
-];
-
-const requiredVsixEntries = [
-  'extension/package.json',
-  'extension/README.md',
-  'extension/LICENSE.txt',
-  'extension/out/extension.js',
-  'extension/out/server/server.js',
-  'extension/out/grammars/tree-sitter-hlsl.wasm',
-  'extension/out/grammars/tree-sitter-hlsl.provenance.json',
-  'extension/out/grammars/tree-sitter-hlsl.LICENSE',
-  'extension/out/server/node_modules/web-tree-sitter/package.json',
-  'extension/out/server/node_modules/web-tree-sitter/tree-sitter.js',
-  'extension/out/server/node_modules/web-tree-sitter/tree-sitter.wasm',
-];
+const artifactGraph = runtimeArtifacts.createRuntimeArtifactGraph(monorepoRoot);
+const requiredVsixEntries = artifactGraph.requiredVsixEntries;
 const forbiddenVsixEntryPatterns = [
   /^extension\/.*\.tsbuildinfo$/,
 ];
@@ -78,7 +28,7 @@ try {
     await runNpmScript('build');
   }
 
-  await assertFreshBuildOutputs(monorepoRoot);
+  const trustedManifest = await runtimeArtifacts.assertFreshRuntimeArtifacts(artifactGraph);
   if (args.prepareExtensionRoot) {
     await stageExtensionRootFiles();
     console.log('[package-vsix] staged README.md and LICENSE for VSCE packaging');
@@ -87,10 +37,7 @@ try {
   if (args.checkOutput) process.exit(0);
 
   const vsixPath = await packageVsix();
-  await assertVsixContents(
-    vsixPath,
-    resolve(monorepoRoot, 'client/out/grammars/tree-sitter-hlsl.wasm'),
-  );
+  await assertVsixContents(vsixPath, trustedManifest);
 
   console.log(`[package-vsix] verified ${relative(monorepoRoot, vsixPath)}`);
   for (const entry of requiredVsixEntries) console.log(`[package-vsix] contains ${entry}`);
@@ -99,18 +46,7 @@ try {
   process.exit(1);
 }
 
-async function assertFreshBuildOutputs(root) {
-  for (const check of freshnessChecks) {
-    const outputPath = resolve(root, check.output);
-    const outputStat = await statOrThrow(outputPath, `${check.output} is missing; run npm run build before packaging`);
-    const newest = await newestInput(root, check.inputs);
-    if (outputStat.mtimeMs < newest.mtimeMs) {
-      throw new Error(`${check.output} is stale; newest input ${newest.relativePath} is newer`);
-    }
-  }
-}
-
-async function assertVsixContents(vsixPath, expectedGrammarPath) {
+async function assertVsixContents(vsixPath, trustedManifest) {
   const entries = await listZipEntries(vsixPath);
   for (const entry of requiredVsixEntries) {
     if (!entries.has(entry)) {
@@ -122,56 +58,37 @@ async function assertVsixContents(vsixPath, expectedGrammarPath) {
       throw new Error(`VSIX must not include generated file ${entry}`);
     }
   }
-  if (expectedGrammarPath) {
-    const expectedGrammar = await readFile(expectedGrammarPath);
-    const packagedGrammar = await readZipEntry(
-      vsixPath,
-      'extension/out/grammars/tree-sitter-hlsl.wasm',
+  const embeddedManifest = runtimeArtifacts.parseRuntimeArtifactManifest(
+    (await readZipEntry(vsixPath, 'extension/out/runtime-artifacts.json')).toString('utf8'),
+  );
+  if (trustedManifest) {
+    runtimeArtifacts.assertRuntimeArtifactManifestsEqual(
+      trustedManifest,
+      embeddedManifest,
     );
-    if (!packagedGrammar.equals(expectedGrammar)) {
-      throw new Error('VSIX grammar bytes do not match the parser runtime asset');
-    }
   }
-}
-
-async function newestInput(root, inputRels) {
-  let newest = { mtimeMs: 0, relativePath: '' };
-  for (const inputRel of inputRels) {
-    const inputPath = resolve(root, inputRel);
-    if (!existsSync(inputPath)) continue;
-    for (const file of await listFiles(inputPath)) {
-      const fileStat = await stat(file);
-      if (fileStat.mtimeMs > newest.mtimeMs) {
-        newest = { mtimeMs: fileStat.mtimeMs, relativePath: toPosix(relative(root, file)) };
-      }
-    }
-  }
-  if (!newest.relativePath) {
-    throw new Error(`No freshness inputs found for ${inputRels.join(', ')}`);
-  }
-  return newest;
-}
-
-async function listFiles(pathToInspect) {
-  const pathStat = await stat(pathToInspect);
-  if (pathStat.isFile()) return [pathToInspect];
-  if (!pathStat.isDirectory()) return [];
-
-  const files = [];
-  const entries = await readdir(pathToInspect, { withFileTypes: true });
+  const expectedManifest = trustedManifest ?? embeddedManifest;
+  const expectedOutEntries = new Set([
+    'extension/out/runtime-artifacts.json',
+    ...Object.keys(expectedManifest.packagedArtifacts)
+      .map(runtimeArtifacts.vsixEntryForOutput),
+  ]);
   for (const entry of entries) {
-    const entryPath = resolve(pathToInspect, entry.name);
-    if (entry.isDirectory()) files.push(...await listFiles(entryPath));
-    else if (entry.isFile()) files.push(entryPath);
+    if (
+      entry.startsWith('extension/out/')
+      && !entry.endsWith('/')
+      && !expectedOutEntries.has(entry)
+    ) throw new Error(`VSIX contains runtime file outside the artifact graph: ${entry}`);
   }
-  return files;
-}
-
-async function statOrThrow(file, message) {
-  try {
-    return await stat(file);
-  } catch {
-    throw new Error(message);
+  for (const [output, expectedHash] of Object.entries(expectedManifest.packagedArtifacts)) {
+    const entry = runtimeArtifacts.vsixEntryForOutput(output);
+    if (!entries.has(entry)) throw new Error(`VSIX is missing assembled runtime file ${entry}`);
+    const actualHash = runtimeArtifacts.sha256RuntimeArtifact(
+      await readZipEntry(vsixPath, entry),
+    );
+    if (actualHash !== expectedHash) {
+      throw new Error(`VSIX runtime bytes differ from the build manifest: ${entry}`);
+    }
   }
 }
 
@@ -288,6 +205,7 @@ async function listZipEntries(zipPath) {
     const commentLength = buffer.readUInt16LE(offset + 32);
     const nameStart = offset + 46;
     const name = buffer.toString('utf8', nameStart, nameStart + nameLength);
+    if (entries.has(name)) throw new Error(`VSIX contains duplicate entry ${name}`);
     entries.add(name);
     offset = nameStart + nameLength + extraLength + commentLength;
   }
@@ -376,8 +294,4 @@ function parseArgs(rawArgs) {
     }
   }
   return parsed;
-}
-
-function toPosix(value) {
-  return value.split(sep).join('/');
 }

@@ -5,19 +5,24 @@ import { createRequire } from 'node:module';
 import * as os from 'node:os';
 import { spawnSync } from 'node:child_process';
 
-const REQUIRED_VSIX_ENTRIES = [
-  'extension/package.json',
-  'extension/README.md',
-  'extension/LICENSE.txt',
-  'extension/out/extension.js',
-  'extension/out/server/server.js',
-  'extension/out/grammars/tree-sitter-hlsl.wasm',
-  'extension/out/grammars/tree-sitter-hlsl.provenance.json',
-  'extension/out/grammars/tree-sitter-hlsl.LICENSE',
-  'extension/out/server/node_modules/web-tree-sitter/package.json',
-  'extension/out/server/node_modules/web-tree-sitter/tree-sitter.js',
-  'extension/out/server/node_modules/web-tree-sitter/tree-sitter.wasm',
-] as const;
+interface RuntimeArtifactGraph {
+  readonly freshnessChecks: ReadonlyArray<{
+    readonly output: string;
+    readonly inputs: readonly string[];
+  }>;
+  readonly parserRuntimeLayouts: ReadonlyArray<readonly [string, string]>;
+  readonly requiredOutputFiles: readonly string[];
+  readonly requiredVsixEntries: readonly string[];
+}
+
+const runtimeArtifacts = require(path.resolve(
+  __dirname,
+  '../../../scripts/runtime-artifacts.cjs',
+)) as {
+  createRuntimeArtifactGraph(root: string): RuntimeArtifactGraph;
+};
+const ARTIFACT_GRAPH = runtimeArtifacts.createRuntimeArtifactGraph(monorepoRoot());
+const REQUIRED_VSIX_ENTRIES = ARTIFACT_GRAPH.requiredVsixEntries;
 
 interface ParserRuntimeAssets {
   readonly layout: 'source' | 'tsc-out' | 'copied-server' | 'bundled-server';
@@ -91,12 +96,9 @@ suite('packaged server layout', () => {
         runtimeAssets: ParserRuntimeAssets,
       ): string | undefined;
     };
-    const layouts = [
-      ['source', path.join(root, 'server/src/parser/runtimeAssets.ts')],
-      ['tsc-out', path.join(root, 'server/out/parser/runtimeAssets.js')],
-      ['copied-server', path.join(serverRoot, 'parser/runtimeAssets.js')],
-      ['bundled-server', serverEntry],
-    ] as const;
+    const layouts = ARTIFACT_GRAPH.parserRuntimeLayouts.map(([layout, moduleFile]) => (
+      [layout, path.join(root, moduleFile)] as const
+    ));
 
     for (const [layout, moduleFile] of layouts) {
       const assets = resolveParserRuntimeAssets(moduleFile);
@@ -259,18 +261,10 @@ suite('packaged server layout', () => {
     try {
       const oldTime = new Date('2024-01-01T00:00:01.000Z');
       const newTime = new Date('2024-01-01T00:00:01.500Z');
-      const files = [
-        'client/out/extension.js',
-        'client/out/server/server.js',
-        'client/out/grammars/tree-sitter-hlsl.wasm',
-        'client/out/server/node_modules/web-tree-sitter/tree-sitter.js',
-        'client/out/server/node_modules/web-tree-sitter/tree-sitter.wasm',
-        'client/src/extension.ts',
-        'server/src/server.ts',
-        'server/grammars/tree-sitter-hlsl.wasm',
-        'node_modules/web-tree-sitter/tree-sitter.js',
-        'node_modules/web-tree-sitter/tree-sitter.wasm',
-      ];
+      const tempGraph = runtimeArtifacts.createRuntimeArtifactGraph(tempRoot);
+      const files = [...new Set(tempGraph.freshnessChecks.flatMap((check) => (
+        [check.output, ...check.inputs]
+      )))];
 
       for (const file of files) {
         const absolute = path.join(tempRoot, file);
@@ -278,7 +272,11 @@ suite('packaged server layout', () => {
         fs.writeFileSync(absolute, file);
         fs.utimesSync(absolute, oldTime, oldTime);
       }
-      fs.utimesSync(path.join(tempRoot, 'server/src/server.ts'), newTime, newTime);
+      const serverInput = path.join(tempRoot, 'server/src');
+      fs.rmSync(serverInput, { force: true });
+      fs.mkdirSync(serverInput, { recursive: true });
+      fs.writeFileSync(path.join(serverInput, 'server.ts'), 'new server input');
+      fs.utimesSync(path.join(serverInput, 'server.ts'), newTime, newTime);
 
       const result = spawnSync(
         process.execPath,
@@ -352,6 +350,30 @@ suite('packaged server layout', () => {
 
       assert.notStrictEqual(result.status, 0);
       assert.match(result.stderr, /VSIX must not include generated file extension\/tsconfig\.tsbuildinfo/);
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('VSIX verifier rejects duplicate central-directory entries', () => {
+    const root = monorepoRoot();
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'unity-shader-nav-vsix-duplicate-'));
+    try {
+      const duplicate = REQUIRED_VSIX_ENTRIES[0];
+      const vsixPath = path.join(tempRoot, 'extension.vsix');
+      fs.writeFileSync(vsixPath, zipWithCentralDirectoryEntries([
+        ...REQUIRED_VSIX_ENTRIES,
+        duplicate,
+      ]));
+
+      const result = spawnSync(
+        process.execPath,
+        [path.resolve(root, 'scripts/package-vsix.mjs'), '--verify-vsix', vsixPath],
+        { encoding: 'utf8' },
+      );
+
+      assert.notStrictEqual(result.status, 0);
+      assert.match(result.stderr, new RegExp(`duplicate entry ${duplicate}`));
     } finally {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }
@@ -452,15 +474,7 @@ suite('runtime watch workflow', () => {
       result.error?.message || result.stderr || result.stdout,
     );
 
-    for (const relative of [
-      'client/out/extension.js',
-      'client/out/server/server.js',
-      'client/out/grammars/tree-sitter-hlsl.wasm',
-      'client/out/grammars/tree-sitter-hlsl.provenance.json',
-      'client/out/grammars/tree-sitter-hlsl.LICENSE',
-      'client/out/server/node_modules/web-tree-sitter/tree-sitter.js',
-      'client/out/server/node_modules/web-tree-sitter/tree-sitter.wasm',
-    ]) {
+    for (const relative of ARTIFACT_GRAPH.requiredOutputFiles) {
       assert.ok(
         fs.existsSync(path.resolve(root, relative)),
         `expected runtime layout file ${relative} to exist after --once build`,

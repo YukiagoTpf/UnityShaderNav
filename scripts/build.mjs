@@ -1,12 +1,13 @@
-import { access, cp, rm } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
+import runtimeArtifacts from './runtime-artifacts.cjs';
 
 const monorepoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const serverOut = resolve(monorepoRoot, 'client/out/server');
-const treeSitterRuntimeFrom = resolve(monorepoRoot, 'node_modules/web-tree-sitter');
-const treeSitterRuntimeTo = resolve(serverOut, 'node_modules/web-tree-sitter');
+const graph = runtimeArtifacts.createRuntimeArtifactGraph(monorepoRoot);
+const extensionBundle = graph.bundles.find((bundle) => bundle.id === 'extension');
+const serverBundle = graph.bundles.find((bundle) => bundle.id === 'server');
+if (!extensionBundle || !serverBundle) throw new Error('runtime artifact graph is missing bundles');
 
 const common = {
   bundle: true,
@@ -19,24 +20,15 @@ const common = {
 
 await build({
   ...common,
-  entryPoints: [resolve(monorepoRoot, 'client/src/extension.ts')],
-  outfile: resolve(monorepoRoot, 'client/out/extension.js'),
+  entryPoints: [resolve(monorepoRoot, extensionBundle.entry)],
+  outfile: resolve(monorepoRoot, extensionBundle.output),
 });
+await runtimeArtifacts.assembleCopiedServerRuntime(graph);
 await build({
   ...common,
-  entryPoints: [resolve(monorepoRoot, 'server/src/server.ts')],
-  outfile: resolve(serverOut, 'server.js'),
+  entryPoints: [resolve(monorepoRoot, serverBundle.entry)],
+  outfile: resolve(monorepoRoot, serverBundle.output),
 });
-await cp(
-  resolve(monorepoRoot, 'server/grammars'),
-  resolve(monorepoRoot, 'client/out/grammars'),
-  { recursive: true, force: true },
-);
-try { await access(resolve(treeSitterRuntimeFrom, 'tree-sitter.js')); }
-catch { throw new Error(`build: missing ${treeSitterRuntimeFrom}/tree-sitter.js - did npm install run?`); }
-try { await access(resolve(treeSitterRuntimeFrom, 'tree-sitter.wasm')); }
-catch { throw new Error(`build: missing ${treeSitterRuntimeFrom}/tree-sitter.wasm - did npm install run?`); }
-await rm(treeSitterRuntimeTo, { recursive: true, force: true });
-await cp(treeSitterRuntimeFrom, treeSitterRuntimeTo, { recursive: true, force: true });
+await runtimeArtifacts.writeRuntimeArtifactManifest(graph);
 
-console.log('bundle done');
+console.log('[runtime-artifacts] bundle and runtime assembly complete');

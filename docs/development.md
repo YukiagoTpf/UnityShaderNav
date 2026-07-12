@@ -35,7 +35,9 @@ npm run build
 
 `npm run watch` maintains the Extension Development Host runtime layout under
 `client/out/`, including the bundled client entry, copied server output,
-grammar wasm, and `web-tree-sitter` runtime files.
+grammar wasm, and complete `web-tree-sitter` runtime. Build, watch, packaging,
+package-layout tests, and Electron staging derive these paths from the same
+runtime artifact graph; do not add parallel asset lists to their callers.
 
 Use `npm run watch:typecheck` only when you want TypeScript watch mode without
 refreshing the Extension Development Host runtime layout.
@@ -49,6 +51,7 @@ Run from the repository root:
 ```powershell
 npm run check:fast
 npm run check:knowledge
+npm run check:artifacts
 npm run build
 npm run watch
 npm run test -w @unity-shader-nav/server
@@ -65,7 +68,8 @@ npm run grammar:rebuild
 ## Testing Strategy
 
 - `npm run check:fast` is the authoritative local and CI feedback path. It
-  first verifies workspace/lock identity and the public knowledge surface, then
+  first verifies workspace/lock identity, the public knowledge surface, and the
+  runtime artifact graph, then
   removes generated output, rebuilds current TypeScript source, and runs the
   complete language-server test suite without starting or downloading VS Code.
 - `npm run check:knowledge` is an offline integrity check for public local
@@ -94,7 +98,8 @@ npm run grammar:rebuild
   records must remain free of the analysis container, source, and lexical facts.
 - `npm run test:package` is the authoritative package check. One invocation
   removes generated output, rebuilds current source, creates the versioned VSIX,
-  verifies its manifest and runtime files, then runs package-layout tests. The
+  verifies its content-addressed input/output manifest and every packaged
+  server/grammar/runtime byte, then runs package-layout tests. The
   package-layout gate resolves the shipped grammar through the same runtime
   adapter as the bundled server, loads it, and verifies its bytes and identity.
 - Thin LSP adapter behavior belongs in server handler tests. Every index-backed
