@@ -97,7 +97,7 @@ describe('built-in vocabulary', () => {
     expect(builtinLexicalRole('UsePass', 'hlsl')).toBeUndefined();
     expect(findBuiltinEntries('usepass')).toEqual([]);
 
-    for (const name of ['2DArray', 'CubeArray']) {
+    for (const name of ['2DArray', 'CubeArray', 'Integer']) {
       expect(findBuiltinEntries(name)[0]).toMatchObject({
         kind: 'type',
         category: 'shaderlab',

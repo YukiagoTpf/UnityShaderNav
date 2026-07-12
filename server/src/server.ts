@@ -5,6 +5,7 @@ import {
 } from '@unity-shader-nav/shared';
 import { loadSettings, onSettingsChanged } from './config';
 import { registerCompletionHandler } from './handlers/completion';
+import { registerCodeActionHandler } from './handlers/codeActions';
 import { registerDefinitionHandler } from './handlers/definition';
 import { registerDocumentHighlightHandler } from './handlers/documentHighlight';
 import { registerDocumentSymbolHandler } from './handlers/documentSymbol';
@@ -85,6 +86,7 @@ onSettingsChanged(connection, async (settings) => {
 });
 
 registerDefinitionHandler(connection, documentRegistry, manager, suspender);
+registerCodeActionHandler(connection, documentRegistry, manager, suspender);
 registerHoverHandler(connection, documentRegistry, manager, suspender);
 registerCompletionHandler(connection, documentRegistry, manager, suspender);
 registerSignatureHelpHandler(connection, documentRegistry, manager, suspender);

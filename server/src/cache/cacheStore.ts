@@ -34,6 +34,13 @@ const referenceContexts = new Set<ReferenceContext>([
   'include',
 ]);
 
+const shaderLabBlockKinds = new Set([
+  'HLSLPROGRAM',
+  'CGPROGRAM',
+  'HLSLINCLUDE',
+  'CGINCLUDE',
+]);
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -175,6 +182,51 @@ function isShaderLabNameFacts(value: unknown): boolean {
   ));
 }
 
+function isShaderLabMaterialFacts(value: unknown): boolean {
+  if (
+    !isRecord(value)
+    || typeof value.srpEvidence !== 'boolean'
+    || !isFiniteNumber(value.subShaderCount)
+    || typeof value.hasIncludes !== 'boolean'
+    || (value.lineEnding !== '\n' && value.lineEnding !== '\r\n')
+  ) return false;
+  if (!Array.isArray(value.cbuffers) || !Array.isArray(value.programBlocks)) return false;
+  return value.cbuffers.every((entry) => (
+    isRecord(entry)
+    && typeof entry.name === 'string'
+    && isRange(entry.nameRange)
+    && isRange(entry.declarationRange)
+    && Array.isArray(entry.fields)
+    && entry.fields.every((field) => (
+      isRecord(field)
+      && typeof field.name === 'string'
+      && typeof field.type === 'string'
+      && optionalString(field.packOffset)
+      && isRange(field.nameRange)
+      && isRange(field.declarationRange)
+      && typeof field.conditional === 'boolean'
+    ))
+    && isFiniteNumber(entry.blockIndex)
+    && typeof entry.blockKind === 'string'
+    && shaderLabBlockKinds.has(entry.blockKind)
+    && isPosition(entry.insertionPosition)
+    && typeof entry.fieldIndent === 'string'
+    && typeof entry.conditional === 'boolean'
+    && typeof entry.opaque === 'boolean'
+    && typeof entry.complete === 'boolean'
+  )) && value.programBlocks.every((entry) => (
+    isRecord(entry)
+    && isFiniteNumber(entry.blockIndex)
+    && typeof entry.kind === 'string'
+    && shaderLabBlockKinds.has(entry.kind)
+    && isFiniteNumber(entry.startLine)
+    && isFiniteNumber(entry.endLine)
+    && isPosition(entry.insertionPosition)
+    && typeof entry.indent === 'string'
+    && typeof entry.unterminated === 'boolean'
+  ));
+}
+
 function isFileIndex(value: unknown, expectedUri: string): value is FileIndex {
   return isRecord(value)
     && value.uri === expectedUri
@@ -190,7 +242,11 @@ function isFileIndex(value: unknown, expectedUri: string): value is FileIndex {
       )
     )
     && (value.structure === undefined || isStructureResult(value.structure))
-    && (value.shaderLabNames === undefined || isShaderLabNameFacts(value.shaderLabNames));
+    && (value.shaderLabNames === undefined || isShaderLabNameFacts(value.shaderLabNames))
+    && (
+      value.shaderLabMaterial === undefined
+      || isShaderLabMaterialFacts(value.shaderLabMaterial)
+    );
 }
 
 function isCachedFile(value: unknown): value is CachedFile {

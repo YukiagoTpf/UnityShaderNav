@@ -9,6 +9,13 @@ and uses semantic versioning for extension releases.
 
 ### Added
 
+- Added conservative SRP Batcher material-contract diagnostics for supported
+  scalar/vector ShaderLab Properties missing from `UnityPerMaterial`,
+  incompatible field types, and deterministic cross-Pass layout differences.
+  Safe single-target insertions are exposed as preferred Quick Fixes; texture,
+  conditional, macro-generated, explicitly packed, incomplete, duplicate, and
+  ambiguous layouts remain manual or neutral.
+
 - Added versioned VS Code Problems diagnostics for unresolved Shader and
   Compute entry points declared by `#pragma vertex`, `fragment`, `geometry`,
   `hull`, `domain`, `surface`, and `kernel`. Diagnostics share the published

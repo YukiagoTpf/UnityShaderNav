@@ -1,4 +1,8 @@
-import type { ShaderLabNameFacts, StructureResult } from './structure';
+import type {
+  ShaderLabMaterialFacts,
+  ShaderLabNameFacts,
+  StructureResult,
+} from './structure';
 
 export type SymbolKind =
   | 'function'
@@ -54,7 +58,7 @@ export interface TypeInferenceEntry {
 
 export type ShaderLabPropertyType =
   | '2D' | '2DArray' | '3D' | 'Cube' | 'CubeArray'
-  | 'Color' | 'Vector' | 'Float' | 'Range' | 'Int';
+  | 'Color' | 'Vector' | 'Float' | 'Range' | 'Int' | 'Integer';
 
 export interface ShaderLabPropertyEntry {
   /** Identifier as written, e.g. "_MainTex". Case-sensitive. */
@@ -78,4 +82,6 @@ export interface FileIndex {
   properties?: ShaderLabPropertyEntry[];
   /** Shader/Pass declarations and Fallback/UsePass references for `.shader`. */
   shaderLabNames?: ShaderLabNameFacts;
+  /** SRP evidence and exact UnityPerMaterial layouts for `.shader`. */
+  shaderLabMaterial?: ShaderLabMaterialFacts;
 }

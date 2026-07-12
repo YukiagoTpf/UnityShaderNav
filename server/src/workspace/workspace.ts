@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import type {
+  CodeAction,
   CompletionItem,
   Connection,
   Diagnostic,
@@ -21,6 +22,7 @@ import {
 import { uriKey } from '../uriKey';
 import type {
   DefinitionAtInput,
+  CodeActionsAtInput,
   DocumentPositionInput,
   IndexedDocumentSnapshot,
   IndexedDocumentQueryInput,
@@ -171,6 +173,13 @@ export class Workspace implements IndexedWorkspace {
       && revision.hasCommittedDocument(document)
       ? diagnostics
       : null;
+  }
+
+  async codeActionsAt(input: CodeActionsAtInput): Promise<CodeAction[]> {
+    const revision = await this.revisionForDocument(input.document);
+    if (!revision) return [];
+    const actions = revision.codeActions(input);
+    return !this.disposed && this.published === revision ? actions : [];
   }
 
   async definitionAt(

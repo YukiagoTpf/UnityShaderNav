@@ -40,7 +40,7 @@ _Avoid_: symbol record, symbol info
 同函数内多个同名局部变量声明（如不同 block scope 里重复用 `temp`）的候选消歧策略——返回引用位置之前最近的可见声明。Definition、Hover、Chain lookup 与 Project-index suggestion 必须通过同一个 index-owned Symbol entry selection Module 解释 **Scope range**、声明顺序、Include chain 可见性和局部遮蔽；全局歧义继续保留全部候选。
 
 **Document analysis**:
-`DocumentAnalysis` 是从一份完全匹配的 ShaderLab 源码快照派生出的不可变事实：按源码顺序排列的 HLSL/CG blocks、同一份多行 comment/string/brace policy 下的 ShaderLab structure、Shader/Pass 声明及 Fallback/UsePass 引用事实，以及 full analysis 才包含的可选 ShaderLab lexical tokens。`FileIndex` 持久投影 structure 与 ShaderLab name facts，分别供 Outline 和项目级名称查询使用，但不持有 analysis 容器或 source text。磁盘和其他 index-only 路径只临时构造并立即丢弃 analysis；只有当前 open-document attempt 的 full analysis 与对应 **Published indexed revision** 同寿命，供 Semantic Tokens 复用。文档关闭或 attempt 被替换时，下一 revision 不再持有它；已捕获的旧 revision 仍保持自洽，直到其 reader 释放。Analysis 容器本身不进入磁盘索引记录、manifest、持久化缓存或进程级缓存。
+`DocumentAnalysis` 是从一份完全匹配的 ShaderLab 源码快照派生出的不可变事实：按源码顺序排列的 HLSL/CG blocks、同一份多行 comment/string/brace policy 下的 ShaderLab structure、Shader/Pass 声明及 Fallback/UsePass 引用事实、SRP 证据及 `UnityPerMaterial` 布局事实，以及 full analysis 才包含的可选 ShaderLab lexical tokens。`FileIndex` 持久投影 structure、ShaderLab name facts 与 material-contract facts，分别供 Outline、项目级名称查询、Diagnostics 和 Code Actions 使用，但不持有 analysis 容器或 source text。磁盘和其他 index-only 路径只临时构造并立即丢弃 analysis；只有当前 open-document attempt 的 full analysis 与对应 **Published indexed revision** 同寿命，供 Semantic Tokens 复用。文档关闭或 attempt 被替换时，下一 revision 不再持有它；已捕获的旧 revision 仍保持自洽，直到其 reader 释放。Analysis 容器本身不进入磁盘索引记录、manifest、持久化缓存或进程级缓存。
 _Avoid_: document cache, parse cache, global analysis cache
 
 ### 索引生命周期
@@ -65,7 +65,7 @@ _Avoid_: cache restore eligibility, watcher scope helper, duplicated source filt
 revision candidate 内部的可变索引实现。它维护磁盘索引、打开文档覆盖、全局符号和全局引用之间的一致性；增量 candidate 通过 copy-on-write fork 获得独立 maps / global arrays，并复用不可变 `FileIndex` 值。发布后该实例不再变更；请求 handler 和公开 Workspace behavior 都不暴露它的 stores。
 
 **Indexed Workspace interface**:
-请求与文档生命周期使用的行为接口。它包含打开文档更新、关闭文档，以及 Diagnostics、Definition、References、Hover、Completion、Signature Help、Document Highlight、Document Symbols、Semantic Tokens 和 Workspace Symbols 等 index-backed 查询；`Workspace` 在接口后组合 revision publication、include 可见性、Package 过滤与符号解析。handler 只做 LSP 参数和 neutral-result 适配。
+请求与文档生命周期使用的行为接口。它包含打开文档更新、关闭文档，以及 Diagnostics、Code Actions、Definition、References、Hover、Completion、Signature Help、Document Highlight、Document Symbols、Semantic Tokens 和 Workspace Symbols 等 index-backed 查询；`Workspace` 在接口后组合 revision publication、include 可见性、Package 过滤与符号解析。handler 只做 LSP 参数和 neutral-result 适配。
 _Avoid_: index bundle, store context, workspace index facade
 
 **Published indexed revision**:
@@ -73,7 +73,7 @@ _Avoid_: index bundle, store context, workspace index facade
 _Avoid_: current store, live index object, mutable workspace index
 
 **Published diagnostics**:
-Problems 面板中的诊断是 **Published indexed revision** 对当前 open-document attempt 的派生输出，而不是独立可变真相。异步结果只有在 Workspace owner、revision、openId 与 version 仍全部匹配时才可发送；每次新 publication 都刷新其所有打开文档，关闭文档必须发送空集合清除旧诊断。首条规则 `unresolved-entry-point` 只证明 pragma 引用在保守可见性模型中存在函数候选；分支、多候选或宏展开不确定时保持中性。
+Problems 面板中的诊断是 **Published indexed revision** 对当前 open-document attempt 的派生输出，而不是独立可变真相。异步结果只有在 Workspace owner、revision、openId 与 version 仍全部匹配时才可发送；每次新 publication 都刷新其所有打开文档，关闭文档必须发送空集合清除旧诊断。`unresolved-entry-point` 只证明 pragma 引用在保守可见性模型中存在函数候选；`srp-batcher-property`、`srp-batcher-property-type` 与 `srp-batcher-layout` 只在 SRP 证据和精确 material-cbuffer facts 足够时报告。分支、多候选或宏展开不确定时保持中性。
 _Avoid_: diagnostic cache, best-effort stale Problems
 
 **Indexed revision candidate**:

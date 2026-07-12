@@ -107,6 +107,7 @@ const SHADERLAB_PROPERTY_TYPE_NAMES = {
   Float: true,
   Range: true,
   Int: true,
+  Integer: true,
 } satisfies Record<ShaderLabPropertyType, true>;
 
 function shaderLabPropertyTypes(): BuiltinEntry[] {

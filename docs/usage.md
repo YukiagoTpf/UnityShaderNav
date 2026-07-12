@@ -73,6 +73,33 @@ or a visible same-name macro suppresses the diagnostic rather than risking a
 false error. The diagnostic source is `UnityShaderNav` and its stable code is
 `unresolved-entry-point`.
 
+#### SRP Batcher material contracts
+
+When a `.shader` file contains explicit SRP evidence—an SRP render-pipeline tag,
+an SRP package include, or an existing `UnityPerMaterial` block—UnityShaderNav
+checks supported ShaderLab Properties against that material cbuffer. It reports:
+
+- `srp-batcher-property` when a `Color`, `Vector`, `Float`, `Range`, legacy
+  float-backed `Int`, or `Integer` Property is missing from an existing, exact
+  `UnityPerMaterial` field inventory;
+- `srp-batcher-property-type` when the corresponding field type is incompatible;
+- `srp-batcher-layout` when multiple complete, unconditional, exact blocks have
+  different ordered field names or types.
+
+Use VS Code's Quick Fix command on a missing Property. The extension inserts a
+field only when the file has one complete, unconditional, exactly scanned
+`UnityPerMaterial`, one program block, and no includes. It refuses edits when a
+declaration already exists outside the cbuffer, multiple material blocks or
+Pass-local targets must be coordinated, any include could contribute an unseen
+declaration, or conditional, macro-generated, or incomplete content prevents a
+safe proof. Explicit `packoffset` participates in layout comparison but also
+blocks automatic insertion. An include-free file with one complete local program
+can report a wholly absent material block, but does not invent one; cases where
+an include or shared block may own the contract stay neutral. Texture resources
+are not cbuffer fields and are intentionally out of scope. Files with multiple
+SubShaders also stay neutral because an untagged Built-in fallback must not be
+mixed with an SRP-specific contract before per-SubShader ownership is known.
+
 ### Rename
 
 Use F2 or VS Code's `Rename Symbol` command on an indexed HLSL/CG function,

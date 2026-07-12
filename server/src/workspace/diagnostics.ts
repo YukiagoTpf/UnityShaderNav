@@ -8,9 +8,13 @@ import {
   type GlobalSymbolReader,
   type IndexStoreReader,
 } from '../index';
+import { srpBatcherDiagnostics } from './materialContracts';
+import {
+  DIAGNOSTIC_SOURCE,
+  UNRESOLVED_ENTRY_POINT_CODE,
+} from './diagnosticCodes';
 
-export const UNRESOLVED_ENTRY_POINT_CODE = 'unresolved-entry-point';
-export const DIAGNOSTIC_SOURCE = 'UnityShaderNav';
+export { DIAGNOSTIC_SOURCE, UNRESOLVED_ENTRY_POINT_CODE } from './diagnosticCodes';
 
 export interface WorkspaceDiagnosticState {
   readonly index: {
@@ -56,4 +60,13 @@ export async function unresolvedEntryPointDiagnostics(
     });
   }
   return diagnostics;
+}
+
+export async function workspaceDiagnostics(
+  state: WorkspaceDiagnosticState,
+  uri: string,
+): Promise<Diagnostic[]> {
+  const index = state.index.store.get(uri);
+  const entryPoints = await unresolvedEntryPointDiagnostics(state, uri);
+  return index ? [...entryPoints, ...srpBatcherDiagnostics(index)] : entryPoints;
 }

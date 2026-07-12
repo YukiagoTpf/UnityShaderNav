@@ -72,6 +72,7 @@ export function createIndexedWorkspaceFixture(
       await this.updateDocument(document);
       return unresolvedEntryPointDiagnostics(state(), document.uri);
     },
+    async codeActionsAt() { return []; },
     async definitionAt(input) {
       await this.updateDocument(input.document);
       return navigateDefinition(state(), input);

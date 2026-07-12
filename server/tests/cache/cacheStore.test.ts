@@ -131,7 +131,7 @@ describe('CacheStore', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it('round-trips ShaderLab name facts', async () => {
+  it('round-trips ShaderLab name and material facts', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'usn-cache-shaderlab-names-'));
     const store = new CacheStore(dir);
     const uri = 'file:///x/Named.shader';
@@ -156,6 +156,40 @@ describe('CacheStore', () => {
           directiveRange: range,
         }],
       },
+      shaderLabMaterial: {
+        srpEvidence: true,
+        subShaderCount: 1,
+        hasIncludes: false,
+        lineEnding: '\n',
+        cbuffers: [{
+          name: 'UnityPerMaterial',
+          nameRange: range,
+          declarationRange: range,
+          fields: [{
+            name: '_Color',
+            type: 'float4',
+            nameRange: range,
+            declarationRange: range,
+            conditional: false,
+          }],
+          blockIndex: 0,
+          blockKind: 'HLSLPROGRAM',
+          insertionPosition: range.start,
+          fieldIndent: '    ',
+          conditional: false,
+          opaque: false,
+          complete: true,
+        }],
+        programBlocks: [{
+          blockIndex: 0,
+          kind: 'HLSLPROGRAM',
+          startLine: 0,
+          endLine: 2,
+          insertionPosition: range.start,
+          indent: '',
+          unterminated: false,
+        }],
+      },
     };
 
     await store.save(validManifest({
@@ -164,6 +198,9 @@ describe('CacheStore', () => {
 
     expect((await store.load(fingerprint))?.files[0].index.shaderLabNames).toEqual(
       index.shaderLabNames,
+    );
+    expect((await store.load(fingerprint))?.files[0].index.shaderLabMaterial).toEqual(
+      index.shaderLabMaterial,
     );
     await rm(dir, { recursive: true, force: true });
   });

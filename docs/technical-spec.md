@@ -16,7 +16,7 @@ UnityShaderNav provides practical VS Code navigation for Unity shader projects:
 - Document Highlight and semantic coloring for ShaderLab wrapper syntax and
   common HLSL symbols.
 - Versioned Problems diagnostics for unresolved Shader and Compute pragma entry
-  points.
+  points and conservative SRP Batcher material contracts.
 - Cross-file navigation through `#include` chains and resolved Unity Packages.
 
 The project optimizes for useful editor behavior over full shader compilation
@@ -166,21 +166,24 @@ rejections.
 For an exact ShaderLab open-document attempt, preparation produces one
 immutable `DocumentAnalysis`: ordered HLSL/CG block ranges, multiline-aware
 ShaderLab structure, Shader/Pass declaration and Fallback/UsePass reference
-facts, and ShaderLab lexical tokens. The same block ranges feed file indexing
-and Properties scanning; `FileIndex.structure` and `FileIndex.shaderLabNames`
-are the durable projections consumed by Document Symbols and project-wide name
-queries. A successful publication keeps the
+facts, SRP evidence and `UnityPerMaterial` layout/exactness facts, and ShaderLab
+lexical tokens. The same block ranges feed file indexing and Properties
+scanning; `FileIndex.structure`, `FileIndex.shaderLabNames`, and
+`FileIndex.shaderLabMaterial` are the durable projections consumed by Document
+Symbols, project-wide name queries, diagnostics, and Code Actions. A successful
+publication keeps the
 full analysis beside that live overlay in the `PublishedIndexedRevision`, so
 Outline and Semantic Tokens read facts from the same committed source and
 attempt as the index. Close or replacement by a
 newer attempt removes it from the next publication; a request that already
 captured the prior revision keeps a self-consistent immutable result. Disk and
 other index-only paths use a temporary analysis only while creating the
-`FileIndex`; only the structure and name-fact projections persist. The analysis
+`FileIndex`; only the structure, name, and material-contract projections
+persist. The analysis
 container, source text, and lexical tokens are not fields of `FileIndex`,
 `DiskIndexRecord`, cache manifests, persisted cache records, or a process-wide
-cache. Cache restoration therefore restores Outline and ShaderLab name
-behavior without reconstructing source analysis.
+cache. Cache restoration therefore restores Outline, ShaderLab name, and
+material-contract behavior without reconstructing source analysis.
 
 Workspace routing changes also form an ownership boundary. Adding a nested root
 removes its open-document overlays from the former parent before the nested
@@ -326,14 +329,14 @@ narrow neutral projection; no consumer reads a raw catalog or reinterprets
 category/kind with a private name list. Parser modules must not import
 suggestion modules, including through transitive imports.
 
-The curated Property-type contract includes `2DArray` and `CubeArray`, and
+The curated Property-type contract includes `2DArray`, `CubeArray`, and the
+modern integer-backed `Integer` alongside legacy float-backed `Int`, and
 ShaderLab lexical coloring classifies `UsePass` as a keyword. These facts follow
 the Unity 6 [UsePass directive reference](https://docs.unity3d.com/6000.0/Documentation/Manual/SL-UsePass.html)
 and [Properties block reference](https://docs.unity3d.com/6000.0/Documentation/Manual/SL-Properties.html).
-The catalog intentionally retains its existing `Int` scope instead of claiming
-every current or package-specific language term. When adding a shared term,
-assign its vocabulary role and update direct API tests plus every affected
-consumer projection; do not add a caller-local term set.
+The catalog remains curated rather than claiming every package-specific language
+term. When adding a shared term, assign its vocabulary role and update direct API
+tests plus every affected consumer projection; do not add a caller-local term set.
 
 Cursor-sensitive features consume the lexical cursor module through three
 runtime entry points: full `analyzeCursor`, completion-oriented

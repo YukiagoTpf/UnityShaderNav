@@ -38,6 +38,11 @@ describe('LSP handshake', () => {
     expect(result.capabilities.documentHighlightProvider).toBe(true);
   });
 
+  it('advertises codeActionProvider', () => {
+    const result = createInitializeResult();
+    expect(result.capabilities.codeActionProvider).toBe(true);
+  });
+
   it('advertises completionProvider', () => {
     const result = createInitializeResult();
     expect(result.capabilities.completionProvider).toMatchObject({

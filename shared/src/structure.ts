@@ -71,3 +71,46 @@ export interface ShaderLabNameFacts {
   passes: ShaderLabPassNameEntry[];
   references: Array<ShaderLabFallbackReference | ShaderLabUsePassReference>;
 }
+
+export interface ShaderLabMaterialFieldEntry {
+  name: string;
+  type: string;
+  packOffset?: string;
+  nameRange: import('./symbols').Range;
+  declarationRange: import('./symbols').Range;
+  conditional: boolean;
+}
+
+export interface ShaderLabMaterialCbufferEntry {
+  name: string;
+  nameRange: import('./symbols').Range;
+  declarationRange: import('./symbols').Range;
+  fields: ShaderLabMaterialFieldEntry[];
+  blockIndex: number;
+  blockKind: BlockKind;
+  insertionPosition: import('./symbols').Position;
+  fieldIndent: string;
+  conditional: boolean;
+  /** True when non-declaration content prevents an exact field inventory. */
+  opaque: boolean;
+  complete: boolean;
+}
+
+export interface ShaderLabProgramBlockEntry {
+  blockIndex: number;
+  kind: BlockKind;
+  startLine: number;
+  endLine: number;
+  insertionPosition: import('./symbols').Position;
+  indent: string;
+  unterminated: boolean;
+}
+
+export interface ShaderLabMaterialFacts {
+  srpEvidence: boolean;
+  subShaderCount: number;
+  hasIncludes: boolean;
+  lineEnding: '\n' | '\r\n';
+  cbuffers: ShaderLabMaterialCbufferEntry[];
+  programBlocks: ShaderLabProgramBlockEntry[];
+}

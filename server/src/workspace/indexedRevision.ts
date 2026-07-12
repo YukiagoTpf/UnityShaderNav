@@ -10,6 +10,7 @@ import {
   type DocumentAnalysis,
 } from '../analysis';
 import type {
+  CodeAction,
   CompletionItem,
   Connection,
   Diagnostic,
@@ -34,6 +35,7 @@ import { IndexedSourceMembership } from './indexedSourceMembership';
 import type {
   DefinitionAtInput,
   DocumentPositionInput,
+  CodeActionsAtInput,
   IndexedDocumentSnapshot,
   IndexedDocumentQueryInput,
   ReferencesAtInput,
@@ -59,7 +61,8 @@ import {
   prepareWorkspaceRename,
   renameWorkspaceSymbol,
 } from './rename';
-import { unresolvedEntryPointDiagnostics } from './diagnostics';
+import { workspaceDiagnostics } from './diagnostics';
+import { srpBatcherCodeActions } from './materialContracts';
 import {
   WorkspaceIndex,
   type DocumentAnalyzer,
@@ -166,10 +169,23 @@ export class PublishedIndexedRevision {
   }
 
   diagnostics(uri: string): Promise<Diagnostic[]> {
-    return unresolvedEntryPointDiagnostics({
+    return workspaceDiagnostics({
       index: this.index.read,
       includeChain: this.includeChain,
     }, uri);
+  }
+
+  codeActions(input: CodeActionsAtInput): CodeAction[] {
+    const index = this.index.read.store.get(input.document.uri);
+    return index
+      ? srpBatcherCodeActions(
+        index,
+        input.document.uri,
+        input.document.version,
+        input.range,
+        input.context,
+      )
+      : [];
   }
 
   definitionAt(input: DefinitionAtInput): Promise<LocationLink[] | Location[] | null> {

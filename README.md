@@ -23,6 +23,10 @@ The extension focuses on fast code navigation:
 - VS Code Problems diagnostics for unresolved `#pragma vertex`, `fragment`,
   `geometry`, `hull`, `domain`, `surface`, and `kernel` entry points, refreshed
   from the same live published revision as navigation.
+- Conservative SRP Batcher contract diagnostics for scalar/vector ShaderLab
+  Properties missing from `UnityPerMaterial`, incompatible field types, and
+  deterministic cross-Pass layout drift. A Quick Fix is offered only when one
+  exact insertion target is safe.
 - Hover for declarations of indexed shader symbols (functions, structs,
   members, variables, parameters, macros) and selected built-ins.
 - Conservative completion and signature help for indexed HLSL/CG code, plus a
@@ -148,6 +152,11 @@ See [Configuration](docs/configuration.md) for the full explanation and examples
 - Entry-point diagnostics prove name visibility only; they do not compile
   signatures or preprocessor variants. Any visible function, ambiguity, or
   same-name macro suppresses the error to avoid false positives.
+- SRP Batcher checks require explicit SRP evidence and cover `Color`, `Vector`,
+  `Float`, `Range`, legacy float-backed `Int`, and `Integer` Properties. Texture
+  resources, conditional or macro-generated cbuffer layouts, and ambiguous
+  multi-block edits stay neutral or require manual repair. Multi-SubShader files
+  stay neutral until per-SubShader pipeline ownership can be proven.
 
 ## Contributing
 

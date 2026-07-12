@@ -47,6 +47,7 @@ describe('Document analysis', () => {
     expect(indexAnalysis!.blocks).toEqual(fullAnalysis!.blocks);
     expect(indexAnalysis!.structure).toEqual(fullAnalysis!.structure);
     expect(indexAnalysis!.shaderLabNames).toEqual(fullAnalysis!.shaderLabNames);
+    expect(indexAnalysis!.shaderLabMaterial).toEqual(fullAnalysis!.shaderLabMaterial);
     expect(indexAnalysis!.blocks).toMatchObject([{
       kind: 'HLSLPROGRAM',
       contentStartLine: 8,
@@ -78,6 +79,7 @@ describe('Document analysis', () => {
     ]));
     expect(index.structure).toBe(indexAnalysis!.structure);
     expect(index.shaderLabNames).toBe(indexAnalysis!.shaderLabNames);
+    expect(index.shaderLabMaterial).toBe(indexAnalysis!.shaderLabMaterial);
   });
 
   it('matches only the exact source text and regenerates stale prepared facts', async () => {
@@ -132,6 +134,8 @@ describe('Document analysis', () => {
     expect(Object.isFrozen(token.range.end)).toBe(true);
     expect(Object.isFrozen(analysis.shaderLabNames)).toBe(true);
     expect(Object.isFrozen(analysis.shaderLabNames.shaders)).toBe(true);
+    expect(Object.isFrozen(analysis.shaderLabMaterial)).toBe(true);
+    expect(Object.isFrozen(analysis.shaderLabMaterial.programBlocks)).toBe(true);
   });
 
   it.each([

@@ -11,6 +11,7 @@ UnityShaderNav は、Unity Shader プロジェクト向けの Visual Studio Code
 - ShaderLab の `Shader`、`Fallback`、Pass `Name`、`UsePass` に対するプロジェクト横断の Definition、References、Hover、Completion、Workspace Symbols、および保守的な Rename。`UsePass` の Pass 部分は Unity の大文字の正規形に従います。
 - 宣言が一意な HLSL/CG シンボル向けの保守的な Workspace Rename。オーバーロード、プリプロセッサ、Package など安全性を証明できない場合は変更を拒否します。
 - 解決できない vertex、fragment、geometry、hull、domain、surface、compute kernel エントリポイントを VS Code Problems に表示し、ライブドキュメントとプロジェクトインデックスに追従して更新します。
+- SRP Batcher の material contract を保守的に検査し、`UnityPerMaterial` にないスカラー/ベクター Property、互換性のない型、確定可能な Pass 間 layout 差異を報告します。Quick Fix は安全な挿入先が一意の場合だけ提供します。
 - インデックス済みシェーダーシンボル（関数、struct、メンバー、変数、引数、マクロ）と一部の組み込み関数の宣言サマリーをホバーで表示します。
 - インデックス済み HLSL/CG コードの保守的な補完とシグネチャヘルプ、および厳選された Unity/HLSL/ShaderLab 組み込み語彙。
 - ShaderLab ラッパー、Properties、Tags、render states、プリプロセッサ行、
@@ -117,6 +118,7 @@ npm run package:vsix
 - Surface Shader の暗黙パラメータや ShaderGraph 生成コードは、特別なソースとしてインデックスしません。
 - 組み込み補完とシグネチャヘルプは厳選された非網羅的な語彙です。プロジェクトシンボルと組み込み名が衝突する場合は、プロジェクトシンボルを優先します。
 - Chain lookup は、複数行 receiver、マクロ展開 receiver、分岐依存の型、overload-specific return type inference などに対して保守的に動作します。
+- SRP Batcher 検査は明示的な SRP 根拠を必要とし、`Color`、`Vector`、`Float`、`Range`、従来の float-backed `Int`、`Integer` Property のみを対象にします。texture resource、条件付きまたはマクロ生成の cbuffer layout、曖昧な複数 block の編集は自動修正しません。SubShader ごとの pipeline 所有権を証明できるまでは、複数 SubShader のファイルを診断しません。
 
 ## コントリビュート
 

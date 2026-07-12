@@ -1,5 +1,7 @@
 import type {
   CompletionItem,
+  CodeAction,
+  CodeActionContext,
   Diagnostic,
   DocumentHighlight,
   DocumentSymbol,
@@ -50,6 +52,12 @@ export interface DocumentPositionInput {
   readonly position: Position;
 }
 
+export interface CodeActionsAtInput {
+  readonly document: IndexedDocumentSnapshot;
+  readonly range: import('vscode-languageserver/node').Range;
+  readonly context: CodeActionContext;
+}
+
 export interface RenamePreparation {
   readonly kind: 'ready';
   readonly range: import('vscode-languageserver/node').Range;
@@ -80,6 +88,7 @@ export interface IndexedWorkspace {
   updateDocument(document: IndexedDocumentSnapshot): Promise<boolean>;
   closeDocument(input: { readonly uri: string; readonly openId: number }): Promise<void>;
   diagnosticsAt(document: IndexedDocumentSnapshot): Promise<Diagnostic[] | null>;
+  codeActionsAt(input: CodeActionsAtInput): Promise<CodeAction[]>;
   definitionAt(input: DefinitionAtInput): Promise<LocationLink[] | Location[] | null>;
   referencesAt(input: ReferencesAtInput): Promise<Location[] | null>;
   hoverAt(input: DocumentPositionInput): Promise<Hover | null>;
