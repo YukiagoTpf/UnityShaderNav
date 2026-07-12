@@ -7,6 +7,8 @@ and uses semantic versioning for extension releases.
 
 ## Unreleased
 
+## 0.0.8 - 2026-07-12
+
 ### Changed
 
 - Removed completed execution plans, handoff records, duplicated Agent status,
@@ -61,7 +63,8 @@ and uses semantic versioning for extension releases.
 - Unified cold start, warm cache restore, rebuild, and recovery behind one
   explicit indexed-revision candidate constructor. It now returns a complete
   unpublished disk/package builder after root detection, package resolution,
-  parser readiness, cache restore or source discovery, and compatible source retention.
+  parser readiness, cache restore or source discovery, and compatible source
+  retention.
   Workspace alone replays current open documents, publishes with one synchronous
   pointer swap, advances revision/status, and starts best-effort persistence.
   The hidden staged-candidate/take protocol, public phase-only bootstrap, and
