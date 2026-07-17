@@ -31,7 +31,7 @@ try {
   const trustedManifest = await runtimeArtifacts.assertFreshRuntimeArtifacts(artifactGraph);
   if (args.prepareExtensionRoot) {
     await stageExtensionRootFiles();
-    console.log('[package-vsix] staged README.md and LICENSE for VSCE packaging');
+    console.log('[package-vsix] staged README.md, CHANGELOG.md, and LICENSE for VSCE packaging');
     process.exit(0);
   }
   if (args.checkOutput) process.exit(0);
@@ -137,10 +137,15 @@ async function runNpmScript(script) {
 
 async function stageExtensionRootFiles() {
   const restoreReadme = await stageFile(repoFile('README.md'), resolve(clientRoot, 'README.md'));
+  const restoreChangelog = await stageFile(
+    repoFile('CHANGELOG.md'),
+    resolve(clientRoot, 'CHANGELOG.md'),
+  );
   const restoreLicense = await stageFile(repoFile('LICENSE'), resolve(clientRoot, 'LICENSE'));
 
   return async () => {
     await restoreReadme();
+    await restoreChangelog();
     await restoreLicense();
   };
 }

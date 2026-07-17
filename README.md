@@ -50,8 +50,10 @@ The extension focuses on fast code navigation:
 
 ## Status
 
-This project is in public preview. Published builds and release notes are on
-[GitHub Releases](https://github.com/YukiagoTpf/UnityShaderNav/releases); current
+This project is in public preview. Install the latest build from the
+[Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=Yukiago.unity-shader-nav),
+or download it with its release notes from
+[GitHub Releases](https://github.com/YukiagoTpf/UnityShaderNav/releases). Current
 work is tracked in [GitHub Issues](https://github.com/YukiagoTpf/UnityShaderNav/issues).
 
 ## Supported Files
@@ -69,7 +71,12 @@ requires a Unity project root containing `Assets/` and `ProjectSettings/`.
 
 ## Install
 
-### Option 1: Download the VSIX from Releases
+### Option 1: Install from the Visual Studio Marketplace
+
+1. Open [UnityShaderNav on the Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=Yukiago.unity-shader-nav).
+2. Select **Install** and let VS Code complete the installation.
+
+### Option 2: Download the VSIX from Releases
 
 1. Open the [latest release](https://github.com/YukiagoTpf/UnityShaderNav/releases/latest).
 2. Download `unity-shader-nav-*.vsix` from the release assets.
@@ -80,7 +87,7 @@ requires a Unity project root containing `Assets/` and `ProjectSettings/`.
 After installation, open a Unity project and then open a `.shader`, `.hlsl`,
 `.cginc`, `.hlslinc`, or `.compute` file.
 
-### Option 2: Build from Source
+### Option 3: Build from Source
 
 Use this path if you want to develop the extension or package a local build.
 

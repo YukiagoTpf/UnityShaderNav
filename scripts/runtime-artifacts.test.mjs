@@ -42,6 +42,7 @@ test('one graph assembles the complete grammar and web-tree-sitter runtime', asy
       );
     }
     assert(fixture.graph.requiredOutputFiles.includes('client/out/runtime-artifacts.json'));
+    assert(fixture.graph.requiredVsixEntries.includes('extension/CHANGELOG.md'));
     assert(fixture.graph.requiredVsixEntries.includes('extension/out/runtime-artifacts.json'));
   } finally {
     await fixture.cleanup();

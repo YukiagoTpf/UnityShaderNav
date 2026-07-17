@@ -28,7 +28,9 @@ UnityShaderNav は、Unity Shader プロジェクト向けの Visual Studio Code
 
 ## ステータス
 
-このプロジェクトは public preview 段階です。公開済みビルドとリリースノートは
+このプロジェクトは public preview 段階です。最新版は
+[Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=Yukiago.unity-shader-nav)
+からインストールできます。ビルドとリリースノートは
 [GitHub Releases](https://github.com/YukiagoTpf/UnityShaderNav/releases)、現在の作業は
 [GitHub Issues](https://github.com/YukiagoTpf/UnityShaderNav/issues) で確認できます。
 
@@ -46,7 +48,12 @@ UnityShaderNav は次のファイルで有効になります。
 
 ## インストール
 
-### 方法 1: Releases から VSIX をダウンロードする
+### 方法 1: Visual Studio Marketplace からインストールする
+
+1. Visual Studio Marketplace の [UnityShaderNav](https://marketplace.visualstudio.com/items?itemName=Yukiago.unity-shader-nav) を開きます。
+2. **Install** を選択し、VS Code でインストールを完了します。
+
+### 方法 2: Releases から VSIX をダウンロードする
 
 1. [latest release](https://github.com/YukiagoTpf/UnityShaderNav/releases/latest) を開きます。
 2. release assets から `unity-shader-nav-*.vsix` をダウンロードします。
@@ -56,7 +63,7 @@ UnityShaderNav は次のファイルで有効になります。
 
 インストール後、Unity プロジェクトを開き、`.shader`、`.hlsl`、`.cginc`、`.hlslinc`、または `.compute` ファイルを開いてください。
 
-### 方法 2: ソースからビルドする
+### 方法 3: ソースからビルドする
 
 拡張機能を開発する場合や、ローカルで VSIX をパッケージする場合はこちらを使います。
 

@@ -81,6 +81,7 @@ function createRuntimeArtifactGraph(repositoryRoot) {
   const requiredVsixEntries = [
     'extension/package.json',
     'extension/README.md',
+    'extension/CHANGELOG.md',
     'extension/LICENSE.txt',
     ...requiredOutputFiles.map(vsixEntryForOutput),
   ];

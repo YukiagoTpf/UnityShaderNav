@@ -65,6 +65,7 @@ web_modules/
 
 # Staged temporarily by VSCE prepublish from the repository root.
 client/README.md
+client/CHANGELOG.md
 client/LICENSE
 
 # Yarn Integrity file

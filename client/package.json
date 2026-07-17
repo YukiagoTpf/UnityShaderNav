@@ -1,14 +1,21 @@
 {
   "name": "unity-shader-nav",
   "displayName": "UnityShaderNav",
-  "description": "Code navigation for Unity Shader files (ShaderLab + HLSL).",
-  "version": "0.0.9",
+  "description": "Code navigation and authoring support for Unity ShaderLab and HLSL.",
+  "version": "0.1.0",
   "publisher": "Yukiago",
   "private": true,
+  "license": "MIT",
   "icon": "images/icon.png",
+  "preview": true,
+  "pricing": "Free",
+  "homepage": "https://github.com/YukiagoTpf/UnityShaderNav#readme",
+  "bugs": {
+    "url": "https://github.com/YukiagoTpf/UnityShaderNav/issues"
+  },
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@github.com/YukiagoTpf/UnityShaderNav.git",
+    "url": "https://github.com/YukiagoTpf/UnityShaderNav.git",
     "directory": "client"
   },
   "engines": {
@@ -16,6 +23,18 @@
   },
   "categories": [
     "Programming Languages"
+  ],
+  "keywords": [
+    "unity",
+    "shader",
+    "shaderlab",
+    "hlsl",
+    "cg",
+    "urp",
+    "hdrp",
+    "navigation",
+    "intellisense",
+    "language-server"
   ],
   "main": "./out/extension.js",
   "activationEvents": [

@@ -26,8 +26,11 @@ UnityShaderNav 是一个用于 Unity Shader 项目的 Visual Studio Code 扩展�
 
 ## 状态
 
-项目目前处于 public preview 阶段。已发布构建和发布说明见
-[GitHub Releases](https://github.com/YukiagoTpf/UnityShaderNav/releases)，当前工作见
+项目目前处于 public preview 阶段。可以从
+[Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=Yukiago.unity-shader-nav)
+安装最新版本，也可以从
+[GitHub Releases](https://github.com/YukiagoTpf/UnityShaderNav/releases)
+下载构建和查看发布说明。当前工作见
 [GitHub Issues](https://github.com/YukiagoTpf/UnityShaderNav/issues)。
 
 ## 支持的文件
@@ -44,7 +47,12 @@ UnityShaderNav 会在这些文件中激活：
 
 ## 安装
 
-### 方法一：从 Releases 下载 VSIX
+### 方法一：从 Visual Studio Marketplace 安装
+
+1. 打开 Visual Studio Marketplace 上的 [UnityShaderNav](https://marketplace.visualstudio.com/items?itemName=Yukiago.unity-shader-nav)。
+2. 点击 **Install**，让 VS Code 完成安装。
+
+### 方法二：从 Releases 下载 VSIX
 
 1. 打开 [latest release](https://github.com/YukiagoTpf/UnityShaderNav/releases/latest)。
 2. 在 release assets 中下载 `unity-shader-nav-*.vsix`。
@@ -54,7 +62,7 @@ UnityShaderNav 会在这些文件中激活：
 
 安装后，打开一个 Unity 项目，然后打开 `.shader`、`.hlsl`、`.cginc`、`.hlslinc` 或 `.compute` 文件即可使用。
 
-### 方法二：从源码构建
+### 方法三：从源码构建
 
 如果你想开发扩展，或本地打包一个 VSIX，请使用这种方式。
 
