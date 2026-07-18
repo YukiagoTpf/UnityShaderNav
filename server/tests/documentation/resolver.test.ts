@@ -172,6 +172,19 @@ describe('DocumentationResolver', () => {
     ]);
   });
 
+  it('does not use URP, SRP Core, or HDRP categories as curated fallback gates', () => {
+    const resolver = new DocumentationResolver(
+      PackageContext.standalone(DEFAULT_SETTINGS),
+      UnityProjectFacts.unknown(),
+    );
+
+    for (const name of ['SAMPLE_TEXTURE2D', 'TransformObjectToWorld', 'GetShadowFade']) {
+      const resolution = resolver.resolve(requestAt(`${name}(0);`, name, 'hlsl'));
+      expect(candidateNames(resolution)).toContain(name);
+      expect(resolution?.candidates[0]).toMatchObject({ source: 'builtin' });
+    }
+  });
+
   it('stays neutral for unknown, invisible, incompatible, local, forked, and custom facts', async () => {
     const compatible = await context();
     const unknown = await context({ version: 'unknown-version', includeManifest: false });
@@ -203,20 +216,30 @@ describe('DocumentationResolver', () => {
     }
   });
 
-  it('gates Unity fallback by the captured editor major/minor version', () => {
+  it('shows Unity fallback outside the verified editor range with an explicit note', () => {
     const packages = PackageContext.standalone(DEFAULT_SETTINGS);
     const request = requestAt('Shader "X" { SubShader { Cull Back } }', 'Cull', 'shaderlab');
     const supported = UnityProjectFacts.fromProjectVersionText(
       'm_EditorVersion: 2022.3.53f1\n',
     );
     const incompatible = UnityProjectFacts.fromProjectVersionText(
-      'm_EditorVersion: 2021.3.45f1\n',
+      'm_EditorVersion: 6000.0.42f1\n',
     );
 
-    expect(new DocumentationResolver(packages, supported).resolve(request)).toBeDefined();
-    expect(new DocumentationResolver(packages, incompatible).resolve(request)).toBeUndefined();
-    expect(new DocumentationResolver(packages, UnityProjectFacts.unknown()).resolve(request))
-      .toBeUndefined();
+    expect(new DocumentationResolver(packages, supported).resolve(request)?.candidates[0])
+      .not.toHaveProperty('verificationNote');
+    expect(new DocumentationResolver(packages, incompatible).resolve(request)?.candidates[0])
+      .toMatchObject({
+        source: 'builtin',
+        verificationNote: expect.stringContaining('verified against Unity 2022.3'),
+      });
+    expect(new DocumentationResolver(
+      packages,
+      UnityProjectFacts.unknown(),
+    ).resolve(request)?.candidates[0]).toMatchObject({
+      source: 'builtin',
+      verificationNote: expect.stringContaining('editor version is unknown'),
+    });
   });
 });
 

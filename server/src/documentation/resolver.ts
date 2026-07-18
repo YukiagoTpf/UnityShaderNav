@@ -36,6 +36,7 @@ export type ResolvedDocumentationCandidate =
     readonly source: 'builtin';
     readonly entry: BuiltinEntry;
     readonly package: PackageProvenance | undefined;
+    readonly verificationNote?: string;
   };
 
 export interface DocumentationResolution {
@@ -114,13 +115,18 @@ export class DocumentationResolver {
     const resolved: ResolvedDocumentationCandidate[] = [];
     for (const entry of entriesForDocumentationTarget(target)) {
       const scope = entry.quickDocumentation?.scope;
-      if (
-        scope === undefined
-        && (entry.category === 'srp-core' || entry.category === 'urp' || entry.category === 'hdrp')
-      ) continue;
       if (scope?.kind === 'unity') {
-        if (!scope.supportedEditorVersions.includes(this.project.majorMinor() ?? '')) continue;
-        resolved.push({ source: 'builtin', entry, package: undefined });
+        const editorVersion = this.project.majorMinor();
+        const verified = editorVersion !== undefined
+          && scope.supportedEditorVersions.includes(editorVersion);
+        resolved.push({
+          source: 'builtin',
+          entry,
+          package: undefined,
+          ...(verified
+            ? {}
+            : { verificationNote: unityVerificationNote(scope.supportedEditorVersions, editorVersion) }),
+        });
         continue;
       }
       if (scope?.kind !== 'package') {
@@ -179,4 +185,14 @@ function entriesForDocumentationTarget(target: DocumentationTarget): readonly Bu
 function majorOf(version: string): number {
   const match = /^(\d+)\./.exec(version);
   return match ? Number(match[1]) : Number.NaN;
+}
+
+function unityVerificationNote(
+  verifiedVersions: readonly string[],
+  projectVersion: string | undefined,
+): string {
+  const verified = verifiedVersions.map((version) => `Unity ${version}`).join(', ');
+  return projectVersion
+    ? `Documentation verified against ${verified}; current project editor is Unity ${projectVersion}.`
+    : `Documentation verified against ${verified}; current project editor version is unknown.`;
 }

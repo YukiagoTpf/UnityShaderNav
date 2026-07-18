@@ -17,6 +17,7 @@ export interface BuiltinHoverInput {
   source: 'builtin';
   entry: BuiltinEntry;
   package?: PackageProvenance;
+  verificationNote?: string;
 }
 
 export type HoverInput = ProjectHoverInput | BuiltinHoverInput;
@@ -192,6 +193,9 @@ function formatBuiltinValue(input: BuiltinHoverInput): string {
     const { source, scope } = entry.quickDocumentation;
     lines.push(`[${source.label}](${source.url})`);
     lines.push(`_Curated fallback · ${scope.label}_`);
+    if (input.verificationNote) {
+      lines.push(`_${input.verificationNote}_`);
+    }
     if (input.package) {
       const identity = `${input.package.name}@${input.package.version ?? 'unknown'}`;
       lines.push(`_Project Package_ ${safeInlineCode(identity)} (${safeInlineCode(input.package.source ?? 'unknown source')})`);

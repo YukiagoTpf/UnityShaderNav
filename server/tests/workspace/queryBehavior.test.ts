@@ -272,15 +272,27 @@ describe('published query behavior', () => {
     });
     expect(unknown).toBeNull();
 
-    const incompatible = await publishOpenDocument(
+    const unity6 = await publishOpenDocument(
       'file:///project',
       document,
-      UnityProjectFacts.fromProjectVersionText('m_EditorVersion: 2021.3.45f1\n'),
+      UnityProjectFacts.fromProjectVersionText('m_EditorVersion: 6000.0.42f1\n'),
     );
-    await expect(incompatible.hoverAt({
+    const unity6Hover = await unity6.hoverAt({
       document,
       position: positionOf(text, 'Cull Back', 0, 1),
-    })).resolves.toBeNull();
+    });
+    expect((unity6Hover?.contents as { value?: string }).value).toContain(
+      'verified against Unity 2022.3',
+    );
+
+    const standalone = await publishOpenDocument('file:///project', document);
+    const standaloneHover = await standalone.hoverAt({
+      document,
+      position: positionOf(text, 'SV_Target', 0, 1),
+    });
+    expect((standaloneHover?.contents as { value?: string }).value).toContain(
+      'editor version is unknown',
+    );
     const retained = await revision.hoverAt({
       document,
       position: positionOf(text, 'Cull Back', 0, 1),

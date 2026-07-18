@@ -156,8 +156,9 @@ See [Configuration](docs/configuration.md) for the full explanation and examples
 - Quick Documentation is curated and non-exhaustive. Package-specific fallback
   appears only for a compatible, include-visible built-in or default-registry
   Unity Package. Unity-scoped prose is currently verified for Editor 2022.3;
-  other, unknown, scoped-registry, forked, local, and incompatible facts remain
-  neutral unless an actual indexed declaration is available.
+  other and unknown Editor versions keep the fallback with an explicit
+  verification note. Scoped-registry, forked, local, and incompatible Package
+  facts remain neutral unless an actual indexed declaration is available.
 - Color presentations exclude HDR, Vector, expressions, and out-of-range
   components. Formatting changes only leading ShaderLab indentation, preserves
   complete embedded program/include blocks byte-for-byte, and refuses malformed

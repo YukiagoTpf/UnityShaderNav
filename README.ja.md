@@ -125,7 +125,7 @@ npm run package:vsix
 - マクロ本体は展開しません。組み込みおよびユーザー設定の declaration patterns により、一般的な Unity マクロ宣言を扱います。
 - Surface Shader の暗黙パラメータや ShaderGraph 生成コードは、特別なソースとしてインデックスしません。
 - 組み込み補完とシグネチャヘルプは厳選された非網羅的な語彙です。プロジェクトシンボルと組み込み名が衝突する場合は、プロジェクトシンボルを優先します。
-- Quick Documentation も非網羅的です。Package 固有のフォールバックは、互換バージョンで include から可視な Unity built-in または既定 registry Package にだけ適用されます。Unity 向け文書は現在 Editor 2022.3 で検証済みです。それ以外、不明なバージョン、scoped registry、fork、ローカル由来、非互換の Package は、実際のインデックス済み宣言がない限り中立のままです。
+- Quick Documentation も非網羅的です。Package 固有のフォールバックは、互換バージョンで include から可視な Unity built-in または既定 registry Package にだけ適用されます。Unity 向け文書は現在 Editor 2022.3 で検証済みで、それ以外または不明な Editor バージョンでも検証範囲の注記付きで表示されます。scoped registry、fork、ローカル由来、非互換の Package 情報は、実際のインデックス済み宣言がない限り中立のままです。
 - Color presentation は HDR、Vector、式、範囲外の成分を扱いません。整形は ShaderLab の行頭インデントだけを変更し、埋め込み program/include block 全体のバイトを保持します。構造が不正な場合は拒否し、HLSL 整形は対象外です。
 - Chain lookup は、複数行 receiver、マクロ展開 receiver、分岐依存の型、overload-specific return type inference などに対して保守的に動作します。
 - SRP Batcher 検査は明示的な SRP 根拠を必要とし、`Color`、`Vector`、`Float`、`Range`、従来の float-backed `Int`、`Integer` Property のみを対象にします。texture resource、条件付きまたはマクロ生成の cbuffer layout、曖昧な複数 block の編集は自動修正しません。SubShader ごとの pipeline 所有権を証明できるまでは、複数 SubShader のファイルを診断しません。

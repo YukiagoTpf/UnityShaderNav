@@ -261,6 +261,19 @@ describe('formatHoverCandidate — built-in entries', () => {
     expect(md.value).toContain('Curated fallback');
   });
 
+  it('renders an editor-version verification note for a curated fallback', () => {
+    const entry = findEntry('Cull');
+    const md = formatHoverCandidate({
+      source: 'builtin',
+      entry,
+      verificationNote: 'Documentation verified against Unity 2022.3; current project editor is Unity 6000.0.',
+    });
+
+    expect(md.value).toContain(
+      'Documentation verified against Unity 2022.3; current project editor is Unity 6000.0.',
+    );
+  });
+
   it('formats a built-in function with documentation and HLSL built-in label', () => {
     const entry: BuiltinEntry = {
       name: 'lerp',

@@ -43,9 +43,10 @@ Package declaration always wins. Package-specific curated text appears only
 when the owning built-in or default-registry Unity Package is include-visible
 and its resolved manifest version is supported. Unity-scoped entries are
 currently verified for Editor 2022.3, read from
-`ProjectSettings/ProjectVersion.txt`. Other, unknown, scoped-registry,
-local/forked, or incompatible facts stay neutral. The catalog is intentionally
-useful rather than exhaustive.
+`ProjectSettings/ProjectVersion.txt`. Other and unknown Editor versions keep
+the fallback with an explicit verification note. Scoped-registry, local,
+forked, or incompatible Package facts stay neutral. The catalog is
+intentionally useful rather than exhaustive.
 
 Ambiguous symbols are listed without ranking, matching Go to Definition
 behavior; very large candidate sets are truncated with a `… and N more

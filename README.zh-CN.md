@@ -124,7 +124,7 @@ npm run package:vsix
 - 不展开宏体。内置和用户配置的 declaration patterns 会覆盖常见 Unity 宏声明。
 - 不把 Surface Shader 隐式参数和 ShaderGraph 生成代码作为特殊来源索引。
 - 内置补全和签名帮助是精选词表，不保证穷尽；当项目符号与内置名称冲突时，优先使用项目符号。
-- Quick Documentation 是精选内容，不保证穷尽。Package 专属兜底只会用于版本兼容、include 可见的 Unity built-in 或默认 registry Package；Unity 范围文档目前只验证 Editor 2022.3。其他版本、未知版本、scoped registry、fork、本地来源或版本不兼容时保持中性，除非存在已索引的真实声明。
+- Quick Documentation 是精选内容，不保证穷尽。Package 专属兜底只会用于版本兼容、include 可见的 Unity built-in 或默认 registry Package；Unity 范围文档目前以 Editor 2022.3 验证，其他或未知 Editor 版本仍会显示并附带验证范围提示。scoped registry、fork、本地来源或版本不兼容的 Package 事实保持中性，除非存在已索引的真实声明。
 - Color presentation 不处理 HDR、Vector、表达式或越界分量。格式化只修改 ShaderLab 行首缩进，完整保留嵌入 program/include block 的原始字节；结构畸形时拒绝格式化。HLSL 格式化不在范围内。
 - Chain lookup 对跨行 receiver、宏展开 receiver、分支相关类型、overload-specific return type inference 等情况保持保守。
 - Rename 要求索引中存在唯一声明；ShaderLab Property、内建符号、Package 声明以及存在歧义的 Shader、Pass 或 HLSL 候选都会被拒绝。
