@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { CancellationTokenSource } from 'vscode-jsonrpc/node';
 import type {
   CompletionItem,
   CompletionParams,
@@ -13,7 +14,10 @@ import type {
   IndexedWorkspaceRequestRouter,
 } from '../../src/workspace/indexedWorkspace';
 
-type CompletionHandler = (params: CompletionParams) => Promise<CompletionItem[] | null>;
+type CompletionHandler = (
+  params: CompletionParams,
+  cancellation?: import('vscode-languageserver/node').CancellationToken,
+) => Promise<CompletionItem[] | null>;
 
 const uri = 'file:///project/Assets/Main.hlsl';
 const position = { line: 2, character: 12 };
@@ -46,6 +50,26 @@ function captureHandler(
 }
 
 describe('registerCompletionHandler', () => {
+  it('forwards the LSP cancellation token to workspace completion behavior', async () => {
+    const document = documentSnapshot();
+    const completionAt = vi.fn(async () => []);
+    const workspace = { completionAt } as unknown as IndexedWorkspace;
+    const cancellation = new CancellationTokenSource();
+    const handler = captureHandler(
+      { snapshot: () => document },
+      { servingWorkspaceFor: () => workspace },
+    );
+
+    await handler({ textDocument: { uri }, position }, cancellation.token);
+
+    expect(completionAt).toHaveBeenCalledWith({
+      document,
+      position,
+      cancellation: cancellation.token,
+    });
+    cancellation.dispose();
+  });
+
   it('forwards the captured document snapshot and position to the serving workspace', async () => {
     const document = documentSnapshot();
     const expected: CompletionItem[] = [{ label: 'Helper' }, { label: 'half' }];

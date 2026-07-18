@@ -2,6 +2,7 @@ import type {
   Connection,
   SymbolInformation,
   WorkspaceSymbolParams,
+  CancellationToken,
 } from 'vscode-languageserver/node';
 import type { RequestSuspender } from '../lifecycle/requestSuspender';
 import type { IndexedWorkspaceService } from '../workspace/indexedWorkspace';
@@ -11,11 +12,19 @@ export function registerWorkspaceSymbolHandler(
   manager: Pick<IndexedWorkspaceService, 'workspaceSymbols'>,
   suspender?: Pick<RequestSuspender, 'run'>,
 ): void {
-  connection.onWorkspaceSymbol(async (params: WorkspaceSymbolParams): Promise<SymbolInformation[] | null> => {
-    const resolveRequest = async (): Promise<SymbolInformation[]> => (
-      manager.workspaceSymbols(params.query)
-    );
+  connection.onWorkspaceSymbol(async (
+    params: WorkspaceSymbolParams,
+    cancellation: CancellationToken,
+  ): Promise<SymbolInformation[] | null> => {
+    const resolveRequest = async (): Promise<SymbolInformation[]> => {
+      return cancellation
+        ? manager.workspaceSymbols(params.query, cancellation)
+        : manager.workspaceSymbols(params.query);
+    };
 
-    return suspender ? suspender.run(resolveRequest) : resolveRequest();
+    const result = suspender
+      ? await suspender.run(resolveRequest, cancellation)
+      : await resolveRequest();
+    return result;
   });
 }

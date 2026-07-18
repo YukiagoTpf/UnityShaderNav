@@ -1,8 +1,10 @@
 import type { BlockKind, ScanResult, ShaderLabBlock } from '@unity-shader-nav/shared';
 import {
   interpretShaderLabSource,
+  interpretShaderLabSourceLines,
   type ShaderLabSourceInterpretation,
 } from './sourceInterpretation';
+import type { ExactSource } from '../../sourceLocation';
 
 const START_DIRECTIVES: Record<string, BlockKind> = {
   HLSLPROGRAM: 'HLSLPROGRAM',
@@ -20,6 +22,13 @@ const END_DIRECTIVES_FOR: Record<BlockKind, string> = {
 
 export function scanBlocks(text: string): ScanResult {
   return scanBlocksFromSource(interpretShaderLabSource(text));
+}
+
+export function scanBlocksFromExactSource(source: ExactSource): ScanResult {
+  return scanBlocksFromSource(interpretShaderLabSourceLines(
+    source.sourceText,
+    source.sourceLines,
+  ));
 }
 
 export function scanBlocksFromSource(source: ShaderLabSourceInterpretation): ScanResult {

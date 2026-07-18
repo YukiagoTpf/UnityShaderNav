@@ -9,6 +9,11 @@ import type {
 } from 'vscode-languageserver/node';
 import type { IncludeChain } from '../include';
 import {
+  awaitWithRequestCancellation,
+  cooperativeRequestCheckpoint,
+  throwIfRequestCancelled,
+} from '../lifecycle/requestCancellation';
+import {
   cursorTargetAt,
   findPropertyCandidatesForName,
   findReferences,
@@ -18,13 +23,17 @@ import {
   type CursorTarget,
   type ResolverContext,
 } from '../index';
-import { isGenericDefinitionContext } from '../parser/lexical/context';
+import {
+  isGenericDefinitionContext,
+  isGenericDefinitionCursor,
+} from '../parser/lexical/context';
 import { symbolToLocationLink } from '../sourceLocation';
 import type {
   DefinitionAtInput,
   ReferencesAtInput,
 } from './indexedWorkspace';
 import type { WorkspaceIndexReadView } from './workspaceIndex';
+import type { CursorRequestFacts } from './requestFacts';
 import {
   shaderLabNameDefinitions,
   shaderLabNameReferences,
@@ -48,8 +57,9 @@ type DefinitionWord = Extract<CursorTarget, { readonly kind: 'symbol' }>['word']
 /** Include jumps need only the immutable request text and include context. */
 export function canNavigateDefinitionWithoutDocumentIndex(
   input: DefinitionAtInput,
+  facts?: CursorRequestFacts,
 ): boolean {
-  return cursorTargetAt(input.document.text, input.position).kind === 'include';
+  return (facts?.target() ?? cursorTargetAt(input.document.text, input.position)).kind === 'include';
 }
 
 /**
@@ -59,7 +69,9 @@ export function canNavigateDefinitionWithoutDocumentIndex(
 export async function navigateDefinition(
   state: WorkspaceNavigationState,
   input: DefinitionAtInput,
+  facts?: CursorRequestFacts,
 ): Promise<LocationLink[] | null> {
+  throwIfRequestCancelled(input.cancellation);
   const { document, position, observer } = input;
   const trace = (event: string, data: Record<string, unknown>): void => {
     if (state.definitionTrace) observer?.trace?.(event, data);
@@ -70,7 +82,7 @@ export async function navigateDefinition(
     languageId: document.languageId,
   });
 
-  const target = cursorTargetAt(document.text, position);
+  const target = facts?.target() ?? cursorTargetAt(document.text, position);
   if (target.kind === 'include') {
     return navigateIncludeDefinition(state, input, target, trace);
   }
@@ -97,7 +109,7 @@ export async function navigateDefinition(
     return navigatePropertyDefinition(state, input, index, propertyHit, trace);
   }
 
-  return navigateCodeDefinition(state, input, index, target, trace);
+  return navigateCodeDefinition(state, input, index, target, trace, facts);
 }
 
 async function navigateIncludeDefinition(
@@ -107,7 +119,10 @@ async function navigateIncludeDefinition(
   trace: DefinitionTrace,
 ): Promise<LocationLink[] | null> {
   const { include } = target;
-  const resolved = await state.includeChain.resolve(include.path, input.document.uri);
+  const resolved = await awaitWithRequestCancellation(
+    state.includeChain.resolve(include.path, input.document.uri),
+    input.cancellation,
+  );
   if (!resolved) return null;
   if (resolved.caseInsensitive) {
     input.observer?.caseInsensitiveInclude?.(include.path, resolved.absolutePath);
@@ -158,7 +173,10 @@ async function navigatePropertyDefinition(
   trace: DefinitionTrace,
 ): Promise<LocationLink[] | null> {
   trace('property.hit', { name: property.name });
-  const visibleUriKeys = await state.includeChain.visibleUriKeys(input.document.uri);
+  const visibleUriKeys = await awaitWithRequestCancellation(
+    state.includeChain.visibleUriKeys(input.document.uri),
+    input.cancellation,
+  );
   const symbols = resolveDefinition(
     {
       kind: 'symbol',
@@ -183,20 +201,27 @@ async function navigateCodeDefinition(
   index: FileIndex,
   target: Exclude<CursorTarget, IncludeTarget>,
   trace: DefinitionTrace,
+  facts?: CursorRequestFacts,
 ): Promise<LocationLink[] | null> {
   const { document, position } = input;
 
-  if (!isGenericDefinitionContext(
-    document.text,
-    position,
-    document.languageId,
-    document.uri,
-  )) {
+  const genericContext = facts
+    ? isGenericDefinitionCursor(facts.cursor)
+    : isGenericDefinitionContext(
+      document.text,
+      position,
+      document.languageId,
+      document.uri,
+    );
+  if (!genericContext) {
     trace('context.rejected', {});
     return null;
   }
 
-  const visibleUriKeys = await state.includeChain.visibleUriKeys(document.uri);
+  const visibleUriKeys = await awaitWithRequestCancellation(
+    state.includeChain.visibleUriKeys(document.uri),
+    input.cancellation,
+  );
   const resolverContext: ResolverContext = {
     index,
     global: state.index.global,
@@ -273,26 +298,39 @@ function navigateSymbolDefinition(
 export async function navigateReferences(
   state: WorkspaceNavigationState,
   input: ReferencesAtInput,
+  facts?: CursorRequestFacts,
 ): Promise<Location[] | null> {
+  throwIfRequestCancelled(input.cancellation);
   const { document, position } = input;
-  const target = cursorTargetAt(document.text, position);
+  const target = facts?.target() ?? cursorTargetAt(document.text, position);
   if (target.kind === 'include') {
-    const resolved = await state.includeChain.resolve(target.include.path, document.uri);
+    const resolved = await awaitWithRequestCancellation(
+      state.includeChain.resolve(target.include.path, document.uri),
+      input.cancellation,
+    );
     if (!resolved) return null;
 
     const targetUri = pathToFileURL(resolved.absolutePath).href;
     const locations: Location[] = [];
+    let processed = 0;
     for (const uri of state.index.store.uris()) {
+      const uriCheckpoint = cooperativeRequestCheckpoint(++processed, input.cancellation);
+      if (uriCheckpoint) await uriCheckpoint;
       const index = state.index.store.get(uri);
       if (!index) continue;
 
       for (const reference of index.references) {
+        const checkpoint = cooperativeRequestCheckpoint(++processed, input.cancellation);
+        if (checkpoint) await checkpoint;
         if (reference.context !== 'include') continue;
         if (!state.includePackages && state.isInPackages(reference.location.uri)) continue;
 
-        const candidate = await state.includeChain.resolve(
-          reference.name,
-          reference.location.uri,
+        const candidate = await awaitWithRequestCancellation(
+          state.includeChain.resolve(
+            reference.name,
+            reference.location.uri,
+          ),
+          input.cancellation,
         );
         if (!candidate) continue;
         if (pathToFileURL(candidate.absolutePath).href !== targetUri) continue;
@@ -302,6 +340,7 @@ export async function navigateReferences(
         });
       }
     }
+    throwIfRequestCancelled(input.cancellation);
     return uniqueLocations(locations);
   }
 
@@ -309,12 +348,14 @@ export async function navigateReferences(
   if (index) {
     const shaderLabNameTarget = shaderLabNameTargetAt(index, position);
     if (shaderLabNameTarget) {
+      throwIfRequestCancelled(input.cancellation);
       if (shaderLabNameDefinitions(state, shaderLabNameTarget).length === 0) return null;
       const locations = shaderLabNameReferences(
         state,
         shaderLabNameTarget,
         input.includeDeclaration,
       );
+      throwIfRequestCancelled(input.cancellation);
       return locations.length > 0 ? uniqueLocations(locations) : null;
     }
   }
@@ -330,5 +371,6 @@ export async function navigateReferences(
     isInPackages: state.isInPackages,
     includePackages: state.includePackages,
     includeDeclaration: input.includeDeclaration,
+    cancellation: input.cancellation,
   });
 }

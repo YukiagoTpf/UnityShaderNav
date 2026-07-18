@@ -7,9 +7,14 @@ import type {
   IndexedRevisionBuilder,
 } from './indexedRevision';
 import type { LiveDocumentTreeSession } from '../parser/hlsl/liveDocumentTreeSession';
+import type { ExactSource } from '../sourceLocation';
 
 export type DesiredDocumentState =
-  | { readonly kind: 'open'; readonly document: IndexedDocumentSnapshot }
+  | {
+    readonly kind: 'open';
+    readonly document: IndexedDocumentSnapshot;
+    readonly source?: ExactSource;
+  }
   | {
     readonly kind: 'closed';
     readonly uri: string;
@@ -48,8 +53,9 @@ export class OpenDocumentReconciler {
   private readonly publishedCloses = new Map<string, ClosedDocumentState>();
   private readonly closedDocumentOpenIds = new Map<string, number>();
 
-  acceptDocument(document: IndexedDocumentSnapshot): boolean {
+  acceptDocument(document: IndexedDocumentSnapshot, source?: ExactSource): boolean {
     const key = uriKey(document.uri);
+    const exact = source?.sourceText === document.text ? source : undefined;
     const closedOpenId = this.closedDocumentOpenIds.get(key);
     if (closedOpenId !== undefined && document.openId <= closedOpenId) return false;
     const current = this.desiredDocuments.get(key);
@@ -59,8 +65,14 @@ export class OpenDocumentReconciler {
       if (document.openId === previous.openId) {
         if (document.version < previous.version) return false;
         if (document.version === previous.version) {
-          return document.languageId === previous.languageId
-            && document.text === previous.text;
+          if (
+            document.languageId !== previous.languageId
+            || document.text !== previous.text
+          ) return false;
+          if (exact && !current.source) {
+            this.desiredDocuments.set(key, { kind: 'open', document, source: exact });
+          }
+          return true;
         }
       }
     } else if (current?.kind === 'closed') {
@@ -68,7 +80,9 @@ export class OpenDocumentReconciler {
       if (document.openId === current.openId && current.tombstone) return false;
     }
     this.publishedCloses.delete(key);
-    this.desiredDocuments.set(key, { kind: 'open', document });
+    this.desiredDocuments.set(key, exact
+      ? { kind: 'open', document, source: exact }
+      : { kind: 'open', document });
     return true;
   }
 
@@ -196,6 +210,7 @@ export class OpenDocumentReconciler {
         desired.document,
         isCurrent,
         getLiveSession?.(),
+        desired.source,
       );
       if (!candidate || !builder.commitDocument(desired.document, candidate, isCurrent)) {
         return { kind: 'superseded' };
@@ -240,7 +255,7 @@ export class OpenDocumentReconciler {
     if (desired.kind === 'closed') {
       return this.desiredDocuments.get(uriKey(desired.uri)) === desired;
     }
-    return this.isCurrentDocument(desired.document);
+    return this.desiredDocuments.get(uriKey(desired.document.uri)) === desired;
   }
 }
 

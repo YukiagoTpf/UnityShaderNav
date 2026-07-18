@@ -5,7 +5,7 @@ import {
 } from 'vscode-languageserver/node';
 import type { Position } from '@unity-shader-nav/shared';
 import type { DocumentAnalysis } from '../analysis';
-import { analyzeCursor } from '../parser/lexical/cursor';
+import { analyzeCursor, type CursorContext } from '../parser/lexical/cursor';
 
 interface SnippetDefinition {
   readonly label: string;
@@ -93,13 +93,14 @@ export function shaderLabSnippetCompletions(
   position: Position,
   languageId: string,
   uri: string,
+  cursorFacts?: CursorContext,
 ): CompletionItem[] {
   if (
     !analysis?.layout.safe
     || analysis.sourceText !== text
     || languageId !== 'shaderlab'
   ) return [];
-  const cursor = analyzeCursor(text, position, languageId, uri);
+  const cursor = cursorFacts ?? analyzeCursor(text, position, languageId, uri);
   if (cursor.lexical !== 'code' || cursor.classification !== 'shaderLabCode') return [];
   const line = analysis.sourceLines[position.line];
   if (line === undefined || position.character > line.length) return [];

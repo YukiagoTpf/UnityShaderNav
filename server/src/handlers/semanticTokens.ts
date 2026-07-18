@@ -26,8 +26,8 @@ export function registerSemanticTokensHandler(
     uri: (params) => params.textDocument.uri,
     neutral: () => ({ data: [] }),
     allowClosedDocument: true,
-    resolve: (_params, { uri, document, workspace }) => (
-      workspace.semanticTokens({ uri, document })
+    resolve: (_params, { uri, document, workspace }, cancellation) => (
+      workspace.semanticTokens({ uri, document, ...(cancellation ? { cancellation } : {}) })
     ),
   }));
 }

@@ -2,10 +2,12 @@ import type { Position, Range, SymbolEntry } from '@unity-shader-nav/shared';
 import { describe, expect, it } from 'vitest';
 import {
   containsPosition,
+  exactSource,
   isBeforeOrAt,
   locationKey,
   rangeKey,
   symbolToLocationLink,
+  textInRange,
   uriBasename,
 } from '../src/sourceLocation';
 
@@ -15,6 +17,19 @@ const range: Range = {
 };
 
 describe('source location', () => {
+  it('reuses prepared line facts only for the exact source text', () => {
+    const prepared = exactSource('first\nsecond');
+
+    expect(exactSource('first\nsecond', prepared)).toBe(prepared);
+    const changed = exactSource('first\nchanged', prepared);
+    expect(changed).not.toBe(prepared);
+    expect(changed.sourceLines).toEqual(['first', 'changed']);
+    expect(textInRange(changed, {
+      start: { line: 1, character: 0 },
+      end: { line: 1, character: 7 },
+    })).toBe('changed');
+  });
+
   it.each([
     [{ line: 2, character: 3 }, true],
     [{ line: 2, character: 8 }, true],

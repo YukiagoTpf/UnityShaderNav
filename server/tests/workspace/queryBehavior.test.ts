@@ -10,9 +10,11 @@ import {
 } from '@unity-shader-nav/shared';
 import {
   DocumentHighlightKind,
+  LSPErrorCodes,
   SymbolKind as LspSymbolKind,
   type SemanticTokens,
 } from 'vscode-languageserver/node';
+import { CancellationTokenSource } from 'vscode-jsonrpc/node';
 import { describe, expect, it } from 'vitest';
 import { MacroPatternRecognizer } from '../../src/macros';
 import { PackageContext } from '../../src/packages';
@@ -845,12 +847,20 @@ describe('published query behavior', () => {
       { uri: includeUri, text: includeText },
     ]);
 
-    const tokens = decodeTokens(revision.semanticTokens({
+    const tokens = decodeTokens(await revision.semanticTokens({
       uri,
       document: snapshot(uri, text),
     }));
+    const cancellation = new CancellationTokenSource();
+    const cancellableTokens = decodeTokens(await revision.semanticTokens({
+      uri,
+      document: snapshot(uri, text),
+      cancellation: cancellation.token,
+    }));
+    cancellation.dispose();
 
     expectSortedAndNonOverlapping(tokens);
+    expect(cancellableTokens).toEqual(tokens);
     expect(tokens).toEqual(expect.arrayContaining([
       { line: 0, character: 8, length: 'SAMPLE_TEXTURE2D'.length, type: 'macro' },
       { line: 1, character: 7, length: 'InputData'.length, type: 'type' },
@@ -866,6 +876,36 @@ describe('published query behavior', () => {
       { line: 9, character: 12, length: 'inputData'.length, type: 'variable' },
       { line: 10, character: 26, length: 'positionWS'.length, type: 'property' },
     ]));
+  });
+
+  it('observes in-flight cancellation during a large semantic token scan', async () => {
+    const uri = 'file:///project/Assets/LongSemanticTokens.hlsl';
+    let scanned = 0;
+    const symbols = Array.from({ length: 4096 }, (_, index) => {
+      const entry = symbol(`Value${index}`, 'variable', uri, index);
+      Object.defineProperty(entry, 'kind', {
+        enumerable: true,
+        get() {
+          scanned++;
+          return 'variable';
+        },
+      });
+      return entry;
+    });
+    const revision = publishIndexes('file:///project', [{ uri, references: [], symbols }]);
+    scanned = 0;
+    const cancellation = new CancellationTokenSource();
+    const cancellationTask = setImmediate(() => cancellation.cancel());
+
+    try {
+      await expect(revision.semanticTokens({ uri, cancellation: cancellation.token }))
+        .rejects.toMatchObject({ code: LSPErrorCodes.RequestCancelled });
+      expect(scanned).toBeGreaterThan(0);
+      expect(scanned).toBeLessThan(symbols.length);
+    } finally {
+      clearImmediate(cancellationTask);
+      cancellation.dispose();
+    }
   });
 
   it('preserves mixed ShaderLab lexical and indexed semantic tokens', async () => {
@@ -909,7 +949,7 @@ describe('published query behavior', () => {
     const document = snapshot(uri, text);
     const revision = await publishOpenDocument('file:///project', document);
 
-    const tokens = decodeTokens(revision.semanticTokens({
+    const tokens = decodeTokens(await revision.semanticTokens({
       uri,
       document,
     }));
@@ -977,7 +1017,7 @@ describe('published query behavior', () => {
     const document = snapshot(uri, text);
     const revision = await publishOpenDocument('file:///project', document);
 
-    const tokens = decodeTokens(revision.semanticTokens({
+    const tokens = decodeTokens(await revision.semanticTokens({
       uri,
       document,
     }));
@@ -1052,6 +1092,10 @@ describe('published query behavior', () => {
       });
 
       const ordered = revision.workspaceSymbols('a');
+      const cancellation = new CancellationTokenSource();
+      const cancellable = await revision.workspaceSymbols('a', cancellation.token);
+      cancellation.dispose();
+      expect(cancellable).toEqual(ordered);
       expect(ordered.map((entry) => (
         `${entry.name}@${entry.location.range.start.line}`
       ))).toEqual(['Alpha@2', 'Alpha@10', 'Bravo@0']);
@@ -1085,6 +1129,77 @@ describe('published query behavior', () => {
       expect(packageRevision.workspaceSymbols('PackageAlpha')).toHaveLength(1);
     } finally {
       await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('observes in-flight cancellation during a large Workspace Symbol scan', async () => {
+    const uri = 'file:///project/Assets/LongWorkspaceSymbols.hlsl';
+    let scanned = 0;
+    const symbols = Array.from({ length: 4096 }, (_, index) => {
+      const name = `Needle${index.toString().padStart(4, '0')}`;
+      const entry = symbol(name, 'function', uri, index);
+      Object.defineProperty(entry, 'name', {
+        enumerable: true,
+        get() {
+          scanned++;
+          return name;
+        },
+      });
+      return entry;
+    });
+    const revision = publishIndexes('file:///project', [{ uri, references: [], symbols }]);
+    scanned = 0;
+    const cancellation = new CancellationTokenSource();
+    const cancellationTask = setImmediate(() => cancellation.cancel());
+
+    try {
+      await expect(revision.workspaceSymbols('Needle', cancellation.token))
+        .rejects.toMatchObject({ code: LSPErrorCodes.RequestCancelled });
+      expect(scanned).toBeGreaterThan(0);
+      expect(scanned).toBeLessThan(symbols.length);
+    } finally {
+      clearImmediate(cancellationTask);
+      cancellation.dispose();
+    }
+  });
+
+  it('observes in-flight cancellation during a large ShaderLab Workspace Symbol scan', async () => {
+    const uri = 'file:///project/Assets/LongShaderLabNames.shader';
+    let scanned = 0;
+    const shaders = Array.from({ length: 4096 }, (_, index) => {
+      const name = `Shader/Needle${index.toString().padStart(4, '0')}`;
+      const range = {
+        start: { line: index, character: 8 },
+        end: { line: index, character: 8 + name.length },
+      };
+      const entry = { name, nameRange: range, declarationRange: range };
+      Object.defineProperty(entry, 'name', {
+        enumerable: true,
+        get() {
+          scanned++;
+          return name;
+        },
+      });
+      return entry;
+    });
+    const revision = publishIndexes('file:///project', [{
+      uri,
+      references: [],
+      symbols: [],
+      shaderLabNames: { shaders, passes: [], references: [] },
+    }]);
+    scanned = 0;
+    const cancellation = new CancellationTokenSource();
+    const cancellationTask = setImmediate(() => cancellation.cancel());
+
+    try {
+      await expect(revision.workspaceSymbols('Needle', cancellation.token))
+        .rejects.toMatchObject({ code: LSPErrorCodes.RequestCancelled });
+      expect(scanned).toBeGreaterThan(0);
+      expect(scanned).toBeLessThan(shaders.length);
+    } finally {
+      clearImmediate(cancellationTask);
+      cancellation.dispose();
     }
   });
 

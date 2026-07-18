@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { analyzeCursor } from '../../../src/parser/lexical/cursor';
+import { describe, expect, it, vi } from 'vitest';
+import { analyzeDocument } from '../../../src/analysis';
+import {
+  analyzeCursor,
+  type CursorSource,
+} from '../../../src/parser/lexical/cursor';
 
 type ExpectedSlice = {
   word?: string | null;
@@ -272,6 +276,65 @@ const cases: Case[] = [
 ];
 
 describe('analyzeCursor', () => {
+  it('uses exact prepared lexical facts without rescanning preceding lines', () => {
+    const text = [
+      'Shader "T/Prepared" {',
+      '  /*',
+      ...Array.from({ length: 300 }, (_, index) => `  comment line ${index}`),
+      '  target comment',
+      '  */',
+      '}',
+    ].join('\n');
+    const analysis = analyzeDocument(SHADER, text, 'full')!;
+    const targetLine = 302;
+    let precedingLineReads = 0;
+    const sourceLines = new Proxy(analysis.sourceLines, {
+      get(target, property, receiver) {
+        if (/^\d+$/.test(String(property)) && Number(property) < targetLine) {
+          precedingLineReads++;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const source: CursorSource = { ...analysis, sourceLines };
+
+    const result = analyzeCursor(
+      source,
+      { line: targetLine, character: 8 },
+      'shaderlab',
+      SHADER,
+    );
+
+    expect(result.lexical).toBe('comment');
+    expect(precedingLineReads).toBe(0);
+  });
+
+  it('splits a ShaderLab source only once while classifying an HLSL block cursor', () => {
+    const originalSplit = String.prototype.split;
+    let sourceSplitCount = 0;
+    const split = vi.spyOn(String.prototype, 'split').mockImplementation(function (
+      this: string,
+      separator?: string | RegExp,
+      limit?: number,
+    ) {
+      if (String(this) === SHADER_DOC && String(separator) === '/\\r?\\n/') {
+        sourceSplitCount++;
+      }
+      return originalSplit.call(this, separator, limit);
+    });
+    try {
+      analyzeCursor(
+        SHADER_DOC,
+        { line: 4, character: 12 },
+        'shaderlab',
+        SHADER,
+      );
+      expect(sourceSplitCount).toBe(1);
+    } finally {
+      split.mockRestore();
+    }
+  });
+
   for (const c of cases) {
     it(c.name, () => {
       const result = analyzeCursor(c.text, { line: c.line, character: c.character }, c.languageId, c.uri);

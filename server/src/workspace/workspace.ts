@@ -15,6 +15,7 @@ import type {
   SignatureHelp,
   SymbolInformation,
   TextEdit,
+  CancellationToken,
 } from 'vscode-languageserver/node';
 import {
   normalizeSettings,
@@ -23,6 +24,12 @@ import {
   type WorkspaceIndexStatus,
 } from '@unity-shader-nav/shared';
 import { uriKey } from '../uriKey';
+import type { ExactSource } from '../sourceLocation';
+import {
+  awaitWithRequestCancellation,
+  isRequestCancelledError,
+  throwIfRequestCancelled,
+} from '../lifecycle/requestCancellation';
 import type {
   DefinitionAtInput,
   CodeActionsAtInput,
@@ -58,6 +65,7 @@ import {
   completionWithoutIndex,
   signatureHelpNeedsIndex,
 } from './queries';
+import { createCursorRequestFacts } from './requestFacts';
 import type { FileEvent } from './workspaceIndex';
 import {
   LiveDocumentTreeSessions,
@@ -162,11 +170,14 @@ export class Workspace implements IndexedWorkspace {
     return !this.disposed && this.published !== undefined && this.lifecycle.canServe();
   }
 
-  updateDocument(document: IndexedDocumentSnapshot): Promise<boolean> {
+  updateDocument(
+    document: IndexedDocumentSnapshot,
+    source?: ExactSource,
+  ): Promise<boolean> {
     if (
       this.disposed
       || !this.ownsProvidedDocument(document)
-      || !this.documentReconciler.acceptDocument(document)
+      || !this.documentReconciler.acceptDocument(document, source)
     ) return Promise.resolve(false);
     if (this.published?.hasCommittedDocument(document)) return Promise.resolve(true);
     return this.reconcileDocumentAttempt(document);
@@ -185,6 +196,8 @@ export class Workspace implements IndexedWorkspace {
       document,
       null,
       (revision) => revision.diagnostics(document.uri),
+      undefined,
+      undefined,
       (revision) => (
         !this.disposed
         && this.published === revision
@@ -194,10 +207,13 @@ export class Workspace implements IndexedWorkspace {
   }
 
   async codeActionsAt(input: CodeActionsAtInput): Promise<CodeAction[]> {
+    throwIfRequestCancelled(input.cancellation);
     return this.queryRevision<CodeAction[]>(
       input.document,
       [],
       (revision) => revision.codeActions(input),
+      input.cancellation,
+      undefined,
       (revision) => !this.disposed && this.published === revision,
     );
   }
@@ -205,124 +221,215 @@ export class Workspace implements IndexedWorkspace {
   async definitionAt(
     input: DefinitionAtInput,
   ): Promise<LocationLink[] | Location[] | null> {
-    if (canNavigateDefinitionWithoutDocumentIndex(input)) {
+    throwIfRequestCancelled(input.cancellation);
+    const facts = createCursorRequestFacts(
+      input.document,
+      input.position,
+      this.captureServingRevision()?.requestAnalysis(input.document),
+    );
+    if (canNavigateDefinitionWithoutDocumentIndex(input, facts)) {
       return this.queryRevision(
         undefined,
         null,
-        (revision) => revision.definitionAt(input),
+        (revision) => revision.definitionAt(input, facts),
+        input.cancellation,
+        facts.source,
       );
     }
     return this.queryRevision(
       input.document,
       null,
-      (revision) => revision.definitionAt(input),
+      (revision) => revision.definitionAt(input, facts),
+      input.cancellation,
+      facts.source,
     );
   }
 
   async referencesAt(input: ReferencesAtInput): Promise<Location[] | null> {
+    throwIfRequestCancelled(input.cancellation);
+    const facts = createCursorRequestFacts(
+      input.document,
+      input.position,
+      this.captureServingRevision()?.requestAnalysis(input.document),
+    );
     return this.queryRevision(
       input.document,
       null,
-      (revision) => revision.referencesAt(input),
+      (revision) => revision.referencesAt(input, facts),
+      input.cancellation,
+      facts.source,
     );
   }
 
   async hoverAt(input: DocumentPositionInput): Promise<Hover | null> {
+    throwIfRequestCancelled(input.cancellation);
+    const facts = createCursorRequestFacts(
+      input.document,
+      input.position,
+      this.captureServingRevision()?.requestAnalysis(input.document),
+    );
     return this.queryRevision(
       input.document,
       null,
-      (revision) => revision.hoverAt(input),
+      (revision) => revision.hoverAt(input, facts),
+      input.cancellation,
+      facts.source,
     );
   }
 
   async completionAt(input: DocumentPositionInput): Promise<CompletionItem[] | null> {
-    const withoutIndex = completionWithoutIndex(input);
+    throwIfRequestCancelled(input.cancellation);
+    const facts = createCursorRequestFacts(
+      input.document,
+      input.position,
+      this.captureServingRevision()?.requestAnalysis(input.document),
+    );
+    const withoutIndex = completionWithoutIndex(input, facts);
     if (withoutIndex !== undefined) return withoutIndex;
     return this.queryRevision(
       input.document,
       null,
-      (revision) => revision.completionAt(input),
+      (revision) => revision.completionAt(input, facts),
+      input.cancellation,
+      facts.source,
     );
   }
 
   async documentColors(input: IndexedDocumentQueryInput): Promise<ColorInformation[]> {
+    throwIfRequestCancelled(input.cancellation);
     if (!input.document) return [];
     return this.queryRevision<ColorInformation[]>(
       input.document,
       [],
       (revision) => revision.documentColors(input),
+      input.cancellation,
     );
   }
 
   async colorPresentations(input: ColorPresentationAtInput): Promise<ColorPresentation[]> {
+    throwIfRequestCancelled(input.cancellation);
     return this.queryRevision<ColorPresentation[]>(
       input.document,
       [],
       (revision) => revision.colorPresentations(input),
+      input.cancellation,
     );
   }
 
   async formatDocument(input: DocumentFormattingAtInput): Promise<TextEdit[] | null> {
+    throwIfRequestCancelled(input.cancellation);
     return this.queryRevision(
       input.document,
       null,
       (revision) => revision.formatDocument(input),
+      input.cancellation,
     );
   }
 
   async signatureHelpAt(input: DocumentPositionInput): Promise<SignatureHelp | null> {
-    if (!signatureHelpNeedsIndex(input)) return null;
+    throwIfRequestCancelled(input.cancellation);
+    const facts = createCursorRequestFacts(
+      input.document,
+      input.position,
+      this.captureServingRevision()?.requestAnalysis(input.document),
+    );
+    if (!signatureHelpNeedsIndex(input, facts)) return null;
     return this.queryRevision(
       input.document,
       null,
-      (revision) => revision.signatureHelpAt(input),
+      (revision) => revision.signatureHelpAt(input, facts),
+      input.cancellation,
+      facts.source,
     );
   }
 
   async highlightsAt(input: DocumentPositionInput): Promise<DocumentHighlight[] | null> {
+    throwIfRequestCancelled(input.cancellation);
+    const facts = createCursorRequestFacts(
+      input.document,
+      input.position,
+      this.captureServingRevision()?.requestAnalysis(input.document),
+    );
     return this.queryRevision(
       input.document,
       null,
-      (revision) => revision.highlightsAt(input),
+      (revision) => revision.highlightsAt(input, facts),
+      input.cancellation,
+      facts.source,
     );
   }
 
   async prepareRenameAt(input: DocumentPositionInput): Promise<RenamePreparationOutcome> {
+    throwIfRequestCancelled(input.cancellation);
+    const facts = createCursorRequestFacts(
+      input.document,
+      input.position,
+      this.captureServingRevision()?.requestAnalysis(input.document),
+    );
     return this.queryRevision(
       input.document,
       null,
-      (revision) => revision.prepareRenameAt(input),
+      (revision) => revision.prepareRenameAt(input, facts),
+      input.cancellation,
+      facts.source,
     );
   }
 
   async renameAt(
     input: DocumentPositionInput & { readonly newName: string },
   ): Promise<RenameEditOutcome> {
+    throwIfRequestCancelled(input.cancellation);
+    const facts = createCursorRequestFacts(
+      input.document,
+      input.position,
+      this.captureServingRevision()?.requestAnalysis(input.document),
+    );
     return this.queryRevision(
       input.document,
       null,
-      (revision) => revision.renameAt(input),
+      (revision) => revision.renameAt(input, facts),
+      input.cancellation,
+      facts.source,
     );
   }
 
   async documentSymbols(input: IndexedDocumentQueryInput): Promise<DocumentSymbol[] | null> {
+    throwIfRequestCancelled(input.cancellation);
     return this.queryRevision(
       input.document,
       null,
       (revision) => revision.documentSymbols(input),
+      input.cancellation,
     );
   }
 
   async semanticTokens(input: IndexedDocumentQueryInput): Promise<SemanticTokens> {
+    throwIfRequestCancelled(input.cancellation);
     return this.queryRevision(
       input.document,
       { data: [] },
       (revision) => revision.semanticTokens(input),
+      input.cancellation,
     );
   }
 
-  workspaceSymbols(query: string): SymbolInformation[] {
-    return this.captureServingRevision()?.workspaceSymbols(query) ?? [];
+  workspaceSymbols(
+    query: string,
+  ): SymbolInformation[];
+  workspaceSymbols(
+    query: string,
+    cancellation: CancellationToken,
+  ): Promise<SymbolInformation[]>;
+  workspaceSymbols(
+    query: string,
+    cancellation?: CancellationToken,
+  ): SymbolInformation[] | Promise<SymbolInformation[]> {
+    throwIfRequestCancelled(cancellation);
+    const revision = this.captureServingRevision();
+    if (!revision) return cancellation ? Promise.resolve([]) : [];
+    return cancellation
+      ? revision.workspaceSymbols(query, cancellation)
+      : revision.workspaceSymbols(query);
   }
 
   /**
@@ -335,16 +442,21 @@ export class Workspace implements IndexedWorkspace {
     document: IndexedDocumentSnapshot | undefined,
     neutral: TResult,
     query: (revision: PublishedIndexedRevision) => TResult | PromiseLike<TResult>,
+    cancellation?: CancellationToken,
+    source?: ExactSource,
     guard: (revision: PublishedIndexedRevision) => boolean = () => !this.disposed,
   ): Promise<TResult> {
+    throwIfRequestCancelled(cancellation);
     const revision = document
-      ? await this.revisionForDocument(document)
+      ? await this.revisionForDocument(document, cancellation, source)
       : this.captureServingRevision();
+    throwIfRequestCancelled(cancellation);
     if (!revision) return neutral;
 
     const result = query(revision);
     if (isPromiseLike(result)) {
-      const resolved = await result;
+      const resolved = await awaitWithRequestCancellation(result, cancellation);
+      throwIfRequestCancelled(cancellation);
       return guard(revision) ? resolved : neutral;
     }
     return guard(revision) ? result : neutral;
@@ -352,12 +464,19 @@ export class Workspace implements IndexedWorkspace {
 
   private async revisionForDocument(
     document: IndexedDocumentSnapshot,
+    cancellation?: CancellationToken,
+    source?: ExactSource,
   ): Promise<PublishedIndexedRevision | undefined> {
     try {
-      if (!await this.updateDocument(document)) return undefined;
-    } catch {
+      if (!await awaitWithRequestCancellation(
+        this.updateDocument(document, source),
+        cancellation,
+      )) return undefined;
+    } catch (error) {
+      if (isRequestCancelledError(error)) throw error;
       return undefined;
     }
+    throwIfRequestCancelled(cancellation);
     const revision = this.captureServingRevision();
     return revision?.hasCommittedDocument(document) ? revision : undefined;
   }

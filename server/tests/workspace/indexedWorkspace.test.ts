@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DEFAULT_SETTINGS } from '@unity-shader-nav/shared';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { indexFile } from '../../src/parser/hlsl';
 import type { IndexedDocumentSnapshot } from '../../src/workspace/indexedWorkspace';
 import { Workspace } from '../../src/workspace/workspace';
@@ -49,7 +49,309 @@ function deferred() {
   return { promise, resolve };
 }
 
+async function withSourceSplitCount<T>(
+  text: string,
+  work: () => Promise<T>,
+): Promise<{ readonly result: T; readonly sourceSplitCount: number }> {
+  const originalSplit = String.prototype.split;
+  let sourceSplitCount = 0;
+  const split = vi.spyOn(String.prototype, 'split').mockImplementation(function (
+    this: string,
+    separator?: string | RegExp,
+    limit?: number,
+  ) {
+    if (String(this) === text && String(separator) === '/\\r?\\n/') {
+      sourceSplitCount++;
+    }
+    return originalSplit.call(this, separator, limit);
+  });
+  try {
+    return { result: await work(), sourceSplitCount };
+  } finally {
+    split.mockRestore();
+  }
+}
+
 describe('Indexed Workspace live-document behavior', () => {
+  it('splits an unpublished HLSL source at most once while completion publishes it', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-first-request-source-facts-'));
+    const uri = pathToFileURL(join(root, 'FirstCompletion.hlsl')).href;
+    const text = [
+      'float4 Helper() { return 0; }',
+      'float4 Main() { return Hel; }',
+    ].join('\n');
+    const document = snapshot(uri, text, 1, 1);
+    const position = positionOf(text, 'Hel;', 0, 3);
+    const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
+      ensureParserReady: async () => {},
+    });
+
+    try {
+      await workspace.initialize(fakeConnection);
+      const { result, sourceSplitCount } = await withSourceSplitCount(
+        text,
+        () => workspace.completionAt({ document, position }),
+      );
+      expect(result?.map((item) => item.label)).toContain('Helper');
+      expect(sourceSplitCount).toBe(1);
+    } finally {
+      workspace.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('splits the exact HLSL source at most once across completion preflight and query', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-request-source-facts-'));
+    const uri = pathToFileURL(join(root, 'Completion.hlsl')).href;
+    const text = [
+      'float4 Helper() { return 0; }',
+      'float4 Main() { return Hel; }',
+    ].join('\n');
+    const document = snapshot(uri, text, 1, 1);
+    const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
+      ensureParserReady: async () => {},
+    });
+
+    try {
+      await workspace.initialize(fakeConnection);
+      await workspace.updateDocument(document);
+      const { sourceSplitCount } = await withSourceSplitCount(text, async () => {
+        await workspace.completionAt({
+          document,
+          position: positionOf(text, 'Hel;', 0, 3),
+        });
+      });
+      expect(sourceSplitCount).toBe(1);
+    } finally {
+      workspace.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('shares one exact HLSL source across definition preflight and query', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-definition-request-facts-'));
+    const uri = pathToFileURL(join(root, 'Definition.hlsl')).href;
+    const text = [
+      'float4 Helper() { return 0; }',
+      'float4 Main() { return Helper(); }',
+    ].join('\n');
+    const document = snapshot(uri, text, 1, 1);
+    const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
+      ensureParserReady: async () => {},
+    });
+
+    try {
+      await workspace.initialize(fakeConnection);
+      await workspace.updateDocument(document);
+      const { result, sourceSplitCount } = await withSourceSplitCount(
+        text,
+        () => workspace.definitionAt({
+          document,
+          position: positionOf(text, 'Helper', 1, 1),
+        }),
+      );
+      expect(result).toHaveLength(1);
+      expect(sourceSplitCount).toBe(1);
+    } finally {
+      workspace.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('shares one exact HLSL source across hover target analysis', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-hover-request-facts-'));
+    const uri = pathToFileURL(join(root, 'Hover.hlsl')).href;
+    const text = [
+      'float4 Helper() { return 0; }',
+      'float4 Main() { return Helper(); }',
+    ].join('\n');
+    const document = snapshot(uri, text, 1, 1);
+    const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
+      ensureParserReady: async () => {},
+    });
+
+    try {
+      await workspace.initialize(fakeConnection);
+      await workspace.updateDocument(document);
+      const { result, sourceSplitCount } = await withSourceSplitCount(
+        text,
+        () => workspace.hoverAt({
+          document,
+          position: positionOf(text, 'Helper', 1, 1),
+        }),
+      );
+      expect((result?.contents as { value?: string }).value).toContain('float4 Helper()');
+      expect(sourceSplitCount).toBe(1);
+    } finally {
+      workspace.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('shares one exact HLSL source across signature preflight and query', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-signature-request-facts-'));
+    const uri = pathToFileURL(join(root, 'Signature.hlsl')).href;
+    const text = [
+      'float4 Lighting(float3 normalWS, half roughness) { return 0; }',
+      'float4 Main() { return Lighting(0, 0.5); }',
+    ].join('\n');
+    const document = snapshot(uri, text, 1, 1);
+    const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
+      ensureParserReady: async () => {},
+    });
+
+    try {
+      await workspace.initialize(fakeConnection);
+      await workspace.updateDocument(document);
+      const { result, sourceSplitCount } = await withSourceSplitCount(
+        text,
+        () => workspace.signatureHelpAt({
+          document,
+          position: positionOf(text, '0.5', 0, 3),
+        }),
+      );
+      expect(result?.activeParameter).toBe(1);
+      expect(result?.signatures).toHaveLength(1);
+      expect(sourceSplitCount).toBe(1);
+    } finally {
+      workspace.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('shares one exact HLSL source across document highlight analysis', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-highlight-request-facts-'));
+    const uri = pathToFileURL(join(root, 'Highlight.hlsl')).href;
+    const text = [
+      'float4 Helper() { return 0; }',
+      'float4 Main() { return Helper(); }',
+    ].join('\n');
+    const document = snapshot(uri, text, 1, 1);
+    const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
+      ensureParserReady: async () => {},
+    });
+
+    try {
+      await workspace.initialize(fakeConnection);
+      await workspace.updateDocument(document);
+      const { result, sourceSplitCount } = await withSourceSplitCount(
+        text,
+        () => workspace.highlightsAt({
+          document,
+          position: positionOf(text, 'Helper', 1, 1),
+        }),
+      );
+      expect(result).toHaveLength(2);
+      expect(sourceSplitCount).toBe(1);
+    } finally {
+      workspace.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('shares one exact HLSL source across rename target analysis', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-rename-request-facts-'));
+    const uri = pathToFileURL(join(root, 'Rename.hlsl')).href;
+    const text = [
+      'float4 Helper() { return 0; }',
+      'float4 Main() { return Helper(); }',
+    ].join('\n');
+    const document = snapshot(uri, text, 1, 1);
+    const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
+      ensureParserReady: async () => {},
+    });
+
+    try {
+      await workspace.initialize(fakeConnection);
+      await workspace.updateDocument(document);
+      const { result, sourceSplitCount } = await withSourceSplitCount(
+        text,
+        () => workspace.prepareRenameAt({
+          document,
+          position: positionOf(text, 'Helper', 1, 1),
+        }),
+      );
+      expect(result).toMatchObject({ kind: 'ready', placeholder: 'Helper' });
+      expect(sourceSplitCount).toBe(1);
+    } finally {
+      workspace.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('reuses exact live ShaderLab analysis for references without a fallback split', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-shaderlab-request-reuse-'));
+    const uri = pathToFileURL(join(root, 'References.shader')).href;
+    const text = [
+      'Shader "Test/References" {',
+      '  SubShader { Pass {',
+      '    HLSLPROGRAM',
+      '    float4 Helper() { return 0; }',
+      '    float4 Main() { return Helper(); }',
+      '    ENDHLSL',
+      '  } }',
+      '}',
+    ].join('\n');
+    const document = snapshot(uri, text, 1, 1, 'shaderlab');
+    const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
+      ensureParserReady: async () => {},
+    });
+
+    try {
+      await workspace.initialize(fakeConnection);
+      await workspace.updateDocument(document);
+      const { result, sourceSplitCount } = await withSourceSplitCount(
+        text,
+        () => workspace.referencesAt({
+          document,
+          position: positionOf(text, 'Helper', 1, 1),
+          includeDeclaration: true,
+        }),
+      );
+      expect(result).toHaveLength(2);
+      expect(sourceSplitCount).toBe(0);
+    } finally {
+      workspace.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('uses one fallback split for an unpublished ShaderLab lexical completion', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-shaderlab-request-fallback-'));
+    const uri = pathToFileURL(join(root, 'Lexical.shader')).href;
+    const text = [
+      'Shader "Test/Lexical" {',
+      '  // comment completion',
+      '}',
+    ].join('\n');
+    const document = snapshot(uri, text, 1, 1, 'shaderlab');
+    let parseCalls = 0;
+    const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
+      ensureParserReady: async () => {},
+      async indexDocument() {
+        parseCalls++;
+        throw new Error('lexical early exit must not index');
+      },
+    });
+
+    try {
+      await workspace.initialize(fakeConnection);
+      const { result, sourceSplitCount } = await withSourceSplitCount(
+        text,
+        () => workspace.completionAt({
+          document,
+          position: { line: 1, character: text.split('\n')[1].length },
+        }),
+      );
+      expect(result).toEqual([]);
+      expect(sourceSplitCount).toBe(1);
+      expect(parseCalls).toBe(0);
+    } finally {
+      workspace.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('preserves lexical completion and signature early exits without indexing', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-indexed-workspace-lexical-exit-'));
     const uri = pathToFileURL(join(root, 'Lexical.hlsl')).href;

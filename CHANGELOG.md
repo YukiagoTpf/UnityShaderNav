@@ -15,6 +15,11 @@ and uses semantic versioning for extension releases.
 
 ### Changed
 
+- Reused exact-source lines, lexical roles, and cursor facts across each live
+  document request; pushed Completion prefix filtering into
+  current/include-visible symbol iteration; and made LSP cancellation
+  observable during routing, shared Include waits, and long candidate/reference
+  scans without cancelling revision-owned work.
 - Coalesced rapid live edits into a 75 ms publication window and let
   per-document reconciles publish from the serving revision while rebuild or
   recovery constructs its candidate. Concurrent document publications now use

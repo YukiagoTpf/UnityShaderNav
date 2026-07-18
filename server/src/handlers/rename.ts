@@ -29,10 +29,11 @@ export function registerRenameHandler(
   >(documents, manager, suspender, {
     uri: (params) => params.textDocument.uri,
     neutral: () => null,
-    resolve: async (params, { document, workspace }) => {
+    resolve: async (params, { document, workspace }, cancellation) => {
       const outcome = await workspace.prepareRenameAt({
         document,
         position: params.position,
+        ...(cancellation ? { cancellation } : {}),
       });
       if (isRenameFailure(outcome)) {
         throw new ResponseError(LSPErrorCodes.RequestFailed, outcome.message);
@@ -49,11 +50,12 @@ export function registerRenameHandler(
   >(documents, manager, suspender, {
     uri: (params) => params.textDocument.uri,
     neutral: () => null,
-    resolve: async (params, { document, workspace }) => {
+    resolve: async (params, { document, workspace }, cancellation) => {
       const outcome = await workspace.renameAt({
         document,
         position: params.position,
         newName: params.newName,
+        ...(cancellation ? { cancellation } : {}),
       });
       if (isRenameFailure(outcome)) {
         throw new ResponseError(LSPErrorCodes.RequestFailed, outcome.message);

@@ -1,4 +1,5 @@
 import type { Position, Range } from '@unity-shader-nav/shared';
+import { exactSource, type ExactSource } from '../sourceLocation';
 
 const ID_CHAR_RE = /[A-Za-z0-9_]/;
 const ID_START_RE = /[A-Za-z_]/;
@@ -10,9 +11,12 @@ export interface CallContext {
   activeParameter: number;
 }
 
-export function callContextAt(text: string, position: Position): CallContext | null {
-  const lines = text.split(/\r?\n/);
-  const line = lines[position.line];
+export function callContextAt(text: string | ExactSource, position: Position): CallContext | null {
+  const source = exactSource(
+    typeof text === 'string' ? text : text.sourceText,
+    typeof text === 'string' ? undefined : text,
+  );
+  const line = source.sourceLines[position.line];
   if (line === undefined || position.character < 0 || position.character > line.length) return null;
 
   const openParen = findCallOpenParen(line, position.character);

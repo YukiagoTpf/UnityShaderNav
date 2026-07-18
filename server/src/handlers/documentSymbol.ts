@@ -24,8 +24,8 @@ export function registerDocumentSymbolHandler(
     uri: (params) => params.textDocument.uri,
     neutral: () => null,
     allowClosedDocument: true,
-    resolve: (_params, { uri, document, workspace }) => (
-      workspace.documentSymbols({ uri, document })
+    resolve: (_params, { uri, document, workspace }, cancellation) => (
+      workspace.documentSymbols({ uri, document, ...(cancellation ? { cancellation } : {}) })
     ),
   }));
 }

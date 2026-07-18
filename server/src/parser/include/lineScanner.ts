@@ -1,4 +1,5 @@
 import type { Range } from '@unity-shader-nav/shared';
+import { exactSource, type ExactSource } from '../../sourceLocation';
 import { maskCommentsLine } from '../masking';
 
 export interface IncludeDirective {
@@ -35,8 +36,12 @@ export function scanIncludeLine(code: string, line: number): IncludeDirective | 
   };
 }
 
-export function scanIncludes(text: string): IncludeDirective[] {
-  const lines = text.split(/\r?\n/);
+export function scanIncludes(text: string | ExactSource): IncludeDirective[] {
+  const source = exactSource(
+    typeof text === 'string' ? text : text.sourceText,
+    typeof text === 'string' ? undefined : text,
+  );
+  const lines = source.sourceLines;
   const directives: IncludeDirective[] = [];
   let inBlockComment = false;
 

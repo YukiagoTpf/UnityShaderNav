@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -10,6 +10,8 @@ import type {
 } from '@unity-shader-nav/shared';
 import { createIncludeChain } from '../../src/include';
 import { describe, expect, it } from 'vitest';
+import { LSPErrorCodes } from 'vscode-languageserver/node';
+import { CancellationTokenSource } from 'vscode-jsonrpc/node';
 import { GlobalSymbolIndex, IndexStore } from '../../src/index';
 import {
   createSuggestionCandidateSelector,
@@ -18,6 +20,7 @@ import {
   type SuggestionCandidateSelector,
   type SuggestionContext,
 } from '../../src/suggestions';
+import type { FileProbe } from '../../src/include';
 
 const scopeRange = {
   start: { line: 1, character: 0 },
@@ -127,7 +130,209 @@ function projectSuggestions(
   return selection.suggestions.filter((suggestion) => suggestion.source === 'project');
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 describe('SuggestionCandidateSelector', () => {
+  it('observes in-flight cancellation while scanning mostly nonmatching symbols', async () => {
+    const uri = 'file:///project/LongPrefixScan.hlsl';
+    let scanned = 0;
+    const symbols = Array.from({ length: 4097 }, (_, index) => {
+      const name = index === 4096 ? 'MatchOne' : `Noise${index}`;
+      const entry = symbol(name, 'variable', uri, index);
+      Object.defineProperty(entry, 'name', {
+        enumerable: true,
+        get() {
+          scanned++;
+          return name;
+        },
+      });
+      return entry;
+    });
+    const selector = selectorFor([{ uri, references: [], symbols }]);
+    scanned = 0;
+    const cancellation = new CancellationTokenSource();
+    const cancellationTask = setImmediate(() => cancellation.cancel());
+
+    try {
+      await expect(selector.select({
+        uri,
+        position: { line: 5000, character: 0 },
+        query: { kind: 'completion', context: context('Match') },
+        cancellation: cancellation.token,
+      })).rejects.toMatchObject({ code: LSPErrorCodes.RequestCancelled });
+      expect(scanned).toBeGreaterThan(0);
+      expect(scanned).toBeLessThan(symbols.length);
+    } finally {
+      clearImmediate(cancellationTask);
+      cancellation.dispose();
+    }
+  });
+
+  it('observes in-flight cancellation during a long completion candidate loop', async () => {
+    const uri = 'file:///project/LongCompletion.hlsl';
+    const cancellation = new CancellationTokenSource();
+    let cancellationTask: ReturnType<typeof setImmediate> | undefined;
+    let materialized = 0;
+    const symbols = Array.from({ length: 4096 }, (_, index) => {
+      const entry = symbol(`Match${index}`, 'variable', uri, index);
+      Object.defineProperty(entry, 'declaredType', {
+        enumerable: true,
+        get() {
+          materialized++;
+          if (materialized === 1) {
+            cancellationTask = setImmediate(() => cancellation.cancel());
+          }
+          return 'float';
+        },
+      });
+      return entry;
+    });
+    const selector = selectorFor([{ uri, references: [], symbols }]);
+
+    try {
+      await expect(selector.select({
+        uri,
+        position: { line: 5000, character: 0 },
+        query: { kind: 'completion', context: context('Match') },
+        cancellation: cancellation.token,
+      })).rejects.toMatchObject({ code: LSPErrorCodes.RequestCancelled });
+      expect(materialized).toBeGreaterThan(0);
+      expect(materialized).toBeLessThan(symbols.length);
+    } finally {
+      if (cancellationTask) clearImmediate(cancellationTask);
+      cancellation.dispose();
+    }
+  });
+
+  it('cancels only one waiter while retaining revision-owned include visibility work', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-cancel-visible-chain-'));
+    const mainPath = join(root, 'Main.hlsl');
+    const visiblePath = join(root, 'Visible.hlsl');
+    await Promise.all([
+      writeFile(mainPath, '#include "Visible.hlsl"'),
+      writeFile(visiblePath, ''),
+    ]);
+
+    try {
+      const mainUri = pathToFileURL(mainPath).href;
+      const visibleUri = pathToFileURL(visiblePath).href;
+      const main: FileIndex = {
+        uri: mainUri,
+        references: [includeReference(mainUri, 'Visible.hlsl')],
+        symbols: [],
+      };
+      const visible: FileIndex = {
+        uri: visibleUri,
+        references: [],
+        symbols: [symbol('VisibleMatch', 'variable', visibleUri, 0)],
+      };
+      const store = new IndexStore();
+      const global = new GlobalSymbolIndex();
+      for (const index of [main, visible]) {
+        store.set(index.uri, index);
+        global.upsert(index);
+      }
+      const probeStarted = deferred<void>();
+      const releaseProbe = deferred<void>();
+      let existsCalls = 0;
+      const probe: FileProbe = {
+        async exists(path) {
+          existsCalls++;
+          probeStarted.resolve();
+          await releaseProbe.promise;
+          return path === visiblePath;
+        },
+        listDir: (path) => readdir(path),
+      };
+      const selector = createSuggestionCandidateSelector(
+        { store, global },
+        createIncludeChain(store, {
+          unityProjectRoot: undefined,
+          includeDirectories: [],
+        }, probe),
+      );
+      const cancellation = new CancellationTokenSource();
+      const first = selector.select({
+        uri: mainUri,
+        position: { line: 1, character: 0 },
+        query: { kind: 'completion', context: context('Visible') },
+        cancellation: cancellation.token,
+      });
+      await probeStarted.promise;
+      cancellation.cancel();
+      await expect(first).rejects.toMatchObject({ code: LSPErrorCodes.RequestCancelled });
+      expect(existsCalls).toBe(1);
+
+      releaseProbe.resolve();
+      const second = await completion(selector, mainUri, 'Visible');
+      expect(projectSuggestions(second).map((item) => item.name)).toEqual(['VisibleMatch']);
+      expect(existsCalls).toBe(1);
+      cancellation.dispose();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('materializes completion candidates only for matching current and visible names', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-prefix-allocation-'));
+    const mainPath = join(root, 'Main.hlsl');
+    const visiblePath = join(root, 'Visible.hlsl');
+    await Promise.all([
+      writeFile(mainPath, '#include "Visible.hlsl"'),
+      writeFile(visiblePath, ''),
+    ]);
+
+    try {
+      const mainUri = pathToFileURL(mainPath).href;
+      const visibleUri = pathToFileURL(visiblePath).href;
+      let materialized = 0;
+      const tracked = (name: string, uri: string, line: number): SymbolEntry => {
+        const entry = symbol(name, 'variable', uri, line);
+        Object.defineProperty(entry, 'declaredType', {
+          enumerable: true,
+          get() {
+            materialized++;
+            return 'float';
+          },
+        });
+        return entry;
+      };
+      const main: FileIndex = {
+        uri: mainUri,
+        references: [includeReference(mainUri, 'Visible.hlsl')],
+        symbols: [
+          ...Array.from({ length: 500 }, (_, index) => (
+            tracked(`CurrentNoise${index}`, mainUri, index)
+          )),
+          tracked('MatchCurrent', mainUri, 501),
+        ],
+      };
+      const visible: FileIndex = {
+        uri: visibleUri,
+        references: [],
+        symbols: [
+          ...Array.from({ length: 500 }, (_, index) => (
+            tracked(`VisibleNoise${index}`, visibleUri, index)
+          )),
+          tracked('MatchVisible', visibleUri, 501),
+        ],
+      };
+      const selection = await completion(selectorFor([main, visible]), mainUri, 'Match', 600);
+
+      expect(projectSuggestions(selection).map((item) => item.name))
+        .toEqual(['MatchCurrent', 'MatchVisible']);
+      expect(materialized).toBe(2);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('owns prefix, scope, declaration order, proximity, rank, and display dedupe', async () => {
     const uri = 'file:///project/Main.hlsl';
     const index: FileIndex = {

@@ -4,6 +4,38 @@ import type {
   SymbolEntry,
 } from '@unity-shader-nav/shared';
 
+/** Line facts that are valid only for the exact retained source text. */
+export type ExactSourceColumnRole = 'code' | 'comment' | 'stringQuote' | 'stringBody';
+
+export interface ExactSourceLexicalLine {
+  readonly commentRoles: readonly ExactSourceColumnRole[];
+  readonly lineComment: boolean;
+}
+
+export interface ExactSource {
+  readonly sourceText: string;
+  readonly sourceLines: readonly string[];
+  readonly sourceLexicalLines?: readonly ExactSourceLexicalLine[];
+}
+
+/** Reuse prepared line facts only when they describe this exact text snapshot. */
+export function exactSource(
+  text: string,
+  prepared?: ExactSource,
+): ExactSource {
+  if (prepared?.sourceText === text) return prepared;
+  return Object.freeze({
+    sourceText: text,
+    sourceLines: text.split(/\r?\n/),
+  });
+}
+
+export function textInRange(source: ExactSource, range: Range): string {
+  if (range.start.line !== range.end.line) return '';
+  return (source.sourceLines[range.start.line] ?? '')
+    .slice(range.start.character, range.end.character);
+}
+
 export interface LocationLink {
   readonly targetUri: string;
   readonly targetRange: Range;

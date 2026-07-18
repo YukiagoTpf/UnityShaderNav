@@ -3,6 +3,7 @@ import {
   SemanticTokensBuilder,
   SymbolKind as LspSymbolKind,
   type CompletionItem,
+  type CancellationToken,
   type DocumentHighlight,
   type DocumentSymbol,
   type Hover,
@@ -21,6 +22,11 @@ import type { DocumentAnalysis, DocumentLexicalToken } from '../analysis';
 import { shaderLabSnippetCompletions } from '../authoring';
 import type { DocumentationResolver } from '../documentation';
 import type { IncludeChain } from '../include';
+import {
+  awaitWithRequestCancellation,
+  cooperativeRequestCheckpoint,
+  throwIfRequestCancelled,
+} from '../lifecycle/requestCancellation';
 import { formatHoverCandidates, type HoverInput } from '../hover';
 import {
   cursorTargetAt,
@@ -30,10 +36,14 @@ import {
 } from '../index';
 import { buildDocumentSymbols } from '../index/documentSymbols';
 import { HIDDEN_SYMBOL_KINDS, SYMBOL_KIND_MAP } from '../index/symbolKindMap';
-import { isGenericDefinitionContext } from '../parser/lexical/context';
+import {
+  isGenericDefinitionContext,
+  isGenericDefinitionCursor,
+} from '../parser/lexical/context';
 import {
   callContextAt,
   suggestionContextAt,
+  suggestionContextFromCursor,
   toCompletionItem,
   toSignatureInformation,
   type SuggestionCandidateSelector,
@@ -44,6 +54,7 @@ import type {
   DocumentPositionInput,
   IndexedDocumentQueryInput,
 } from './indexedWorkspace';
+import type { CursorRequestFacts } from './requestFacts';
 import type { WorkspaceIndexReadView } from './workspaceIndex';
 import { SEMANTIC_TOKEN_TYPES } from './semanticTokenLegend';
 import {
@@ -54,6 +65,7 @@ import {
   shaderLabNameHover,
   shaderLabNameTargetAt,
   shaderLabWorkspaceSymbols,
+  shaderLabWorkspaceSymbolsCooperatively,
 } from './shaderLabNames';
 
 export { SEMANTIC_TOKEN_TYPES } from './semanticTokenLegend';
@@ -86,38 +98,38 @@ function shaderLabNameState(state: WorkspaceQueryState): ShaderLabNameState {
 /** Preserve completion's lexical early exit without publishing a document index. */
 export function completionWithoutIndex(
   input: DocumentPositionInput,
+  facts?: CursorRequestFacts,
 ): CompletionItem[] | undefined {
   const { document, position } = input;
-  const context = suggestionContextAt(
-    document.text,
-    position,
-    document.languageId,
-    document.uri,
-  );
-  if (shaderLabNameCompletionContext(document.text, position)) return undefined;
+  const context = facts
+    ? suggestionContextFromCursor(facts.cursor)
+    : suggestionContextAt(document.text, position, document.languageId, document.uri);
+  if (shaderLabNameCompletionContext(facts?.source ?? document.text, position)) return undefined;
   return context.kind === 'comment' || context.kind === 'string' ? [] : undefined;
 }
 
 /** Signature Help needs an index only for a syntactically eligible call site. */
-export function signatureHelpNeedsIndex(input: DocumentPositionInput): boolean {
+export function signatureHelpNeedsIndex(
+  input: DocumentPositionInput,
+  facts?: CursorRequestFacts,
+): boolean {
   const { document, position } = input;
-  const context = suggestionContextAt(
-    document.text,
-    position,
-    document.languageId,
-    document.uri,
-  );
+  const context = facts
+    ? suggestionContextFromCursor(facts.cursor)
+    : suggestionContextAt(document.text, position, document.languageId, document.uri);
   return context.kind !== 'comment'
     && context.kind !== 'string'
     && context.kind !== 'shaderLabCode'
-    && callContextAt(document.text, position) !== null;
+    && (facts?.call() ?? callContextAt(document.text, position)) !== null;
 }
 
 export async function queryHover(
   state: WorkspaceQueryState,
   input: DocumentPositionInput,
   lexicalTokens?: readonly DocumentLexicalToken[],
+  facts?: CursorRequestFacts,
 ): Promise<Hover | null> {
+  throwIfRequestCancelled(input.cancellation);
   const { document, position } = input;
   const index = state.index.store.get(document.uri);
   if (!index) return null;
@@ -132,15 +144,22 @@ export async function queryHover(
   }
   let declarations: SymbolEntry[] = [];
   let visibleUriKeys = NO_VISIBLE_URIS;
-  if (isGenericDefinitionContext(
-    document.text,
-    position,
-    document.languageId,
-    document.uri,
-  )) {
-    const target = cursorTargetAt(document.text, position, { detectIncludes: false });
+  const genericContext = facts
+    ? isGenericDefinitionCursor(facts.cursor)
+    : isGenericDefinitionContext(
+      document.text,
+      position,
+      document.languageId,
+      document.uri,
+    );
+  if (genericContext) {
+    const target = facts?.target({ detectIncludes: false })
+      ?? cursorTargetAt(document.text, position, { detectIncludes: false });
     if (target.kind === 'member' || target.kind === 'symbol') {
-      visibleUriKeys = await state.includeChain.visibleUriKeys(document.uri);
+      visibleUriKeys = await awaitWithRequestCancellation(
+        state.includeChain.visibleUriKeys(document.uri),
+        input.cancellation,
+      );
       const options = { visibleUriKeys };
       if (target.kind === 'member') {
         declarations = resolveMemberSymbols(
@@ -167,6 +186,8 @@ export async function queryHover(
 
   const resolution = state.documentation.resolve({
     text: document.text,
+    source: facts?.source,
+    cursor: facts?.cursor,
     position,
     languageId: document.languageId,
     uri: document.uri,
@@ -174,6 +195,7 @@ export async function queryHover(
     declarations,
     visibleUriKeys,
   });
+  throwIfRequestCancelled(input.cancellation);
   if (!resolution) return null;
   const contents = formatHoverCandidates(resolution.candidates.map((candidate): HoverInput => (
     candidate.source === 'project'
@@ -192,20 +214,19 @@ export async function queryCompletion(
   state: WorkspaceQueryState,
   input: DocumentPositionInput,
   analysis?: DocumentAnalysis,
+  facts?: CursorRequestFacts,
 ): Promise<CompletionItem[] | null> {
+  throwIfRequestCancelled(input.cancellation);
   const { document, position } = input;
   const shaderLabNames = completeShaderLabName(
     shaderLabNameState(state),
-    document.text,
+    facts?.source ?? document.text,
     position,
   );
   if (shaderLabNames !== null) return shaderLabNames;
-  const context = suggestionContextAt(
-    document.text,
-    position,
-    document.languageId,
-    document.uri,
-  );
+  const context = facts
+    ? suggestionContextFromCursor(facts.cursor)
+    : suggestionContextAt(document.text, position, document.languageId, document.uri);
   if (context.kind === 'comment' || context.kind === 'string') return [];
   const snippets = shaderLabSnippetCompletions(
     analysis,
@@ -213,10 +234,12 @@ export async function queryCompletion(
     position,
     document.languageId,
     document.uri,
+    facts?.cursor,
   );
   const selection = await state.suggestionCandidates.select({
     uri: document.uri,
     position,
+    cancellation: input.cancellation,
     query: context.member
       ? {
         kind: 'member',
@@ -226,28 +249,35 @@ export async function queryCompletion(
       : { kind: 'completion', context },
   });
   if (!selection) return snippets.length > 0 ? snippets : null;
-  return [...selection.suggestions.map(toCompletionItem), ...snippets];
+  const items: CompletionItem[] = [];
+  let processed = 0;
+  for (const suggestion of selection.suggestions) {
+    items.push(toCompletionItem(suggestion));
+    const checkpoint = cooperativeRequestCheckpoint(++processed, input.cancellation);
+    if (checkpoint) await checkpoint;
+  }
+  return [...items, ...snippets];
 }
 
 export async function querySignatureHelp(
   state: SuggestionWorkspaceQueryState,
   input: DocumentPositionInput,
+  facts?: CursorRequestFacts,
 ): Promise<SignatureHelp | null> {
+  throwIfRequestCancelled(input.cancellation);
   const { document, position } = input;
-  const context = suggestionContextAt(
-    document.text,
-    position,
-    document.languageId,
-    document.uri,
-  );
+  const context = facts
+    ? suggestionContextFromCursor(facts.cursor)
+    : suggestionContextAt(document.text, position, document.languageId, document.uri);
   if (context.kind === 'comment' || context.kind === 'string' || context.kind === 'shaderLabCode') {
     return null;
   }
-  const call = callContextAt(document.text, position);
+  const call = facts?.call() ?? callContextAt(document.text, position);
   if (!call) return null;
   const selection = await state.suggestionCandidates.select({
     uri: document.uri,
     position,
+    cancellation: input.cancellation,
     query: {
       kind: 'signature',
       context,
@@ -256,9 +286,14 @@ export async function querySignatureHelp(
     },
   });
   if (!selection) return null;
-  const signatures = selection.suggestions
-    .map(toSignatureInformation)
-    .filter((signature): signature is NonNullable<typeof signature> => signature !== null);
+  const signatures: NonNullable<ReturnType<typeof toSignatureInformation>>[] = [];
+  let processed = 0;
+  for (const suggestion of selection.suggestions) {
+    const signature = toSignatureInformation(suggestion);
+    if (signature) signatures.push(signature);
+    const checkpoint = cooperativeRequestCheckpoint(++processed, input.cancellation);
+    if (checkpoint) await checkpoint;
+  }
   if (signatures.length === 0) return null;
   const activeSignature = Math.min(
     selection.activeSuggestion ?? 0,
@@ -278,21 +313,31 @@ export async function querySignatureHelp(
 export async function queryHighlights(
   state: WorkspaceQueryState,
   input: DocumentPositionInput,
+  facts?: CursorRequestFacts,
 ): Promise<DocumentHighlight[] | null> {
+  throwIfRequestCancelled(input.cancellation);
   const { document, position } = input;
   const index = state.index.store.get(document.uri);
   if (!index) return null;
-  if (!isGenericDefinitionContext(document.text, position, document.languageId, document.uri)) {
+  const genericContext = facts
+    ? isGenericDefinitionCursor(facts.cursor)
+    : isGenericDefinitionContext(document.text, position, document.languageId, document.uri);
+  if (!genericContext) {
     return null;
   }
-  const target = cursorTargetAt(document.text, position, { detectIncludes: false });
+  const target = facts?.target({ detectIncludes: false })
+    ?? cursorTargetAt(document.text, position, { detectIncludes: false });
   if (target.kind === 'none') return null;
-  const visibleUriKeys = await state.includeChain.visibleUriKeys(document.uri);
+  const visibleUriKeys = await awaitWithRequestCancellation(
+    state.includeChain.visibleUriKeys(document.uri),
+    input.cancellation,
+  );
   const highlights = findHighlights(target, {
     index,
     position,
     global: state.index.global,
     options: { visibleUriKeys },
+    cancellation: input.cancellation,
   }).map((location): DocumentHighlight => ({
     range: location.range,
     kind: DocumentHighlightKind.Text,
@@ -304,22 +349,45 @@ export function queryDocumentSymbols(
   state: WorkspaceQueryState,
   input: IndexedDocumentQueryInput,
 ): DocumentSymbol[] | null {
+  throwIfRequestCancelled(input.cancellation);
   const index = state.index.store.get(input.uri);
-  return index ? buildDocumentSymbols(index) : null;
+  const result = index ? buildDocumentSymbols(index) : null;
+  throwIfRequestCancelled(input.cancellation);
+  return result;
 }
 
-export function querySemanticTokens(
+export async function querySemanticTokens(
   state: WorkspaceQueryState,
   input: IndexedDocumentQueryInput,
   lexicalTokens?: readonly DocumentLexicalToken[],
-): SemanticTokens {
+): Promise<SemanticTokens> {
+  throwIfRequestCancelled(input.cancellation);
   const index = state.index.store.get(input.uri);
   return index
-    ? semanticTokensForIndex(index, state.index.global, lexicalTokens)
+    ? await semanticTokensForIndex(index, state.index.global, lexicalTokens, input.cancellation)
     : { data: [] };
 }
 
 export function queryWorkspaceSymbols(
+  state: WorkspaceQueryState,
+  query: string,
+): SymbolInformation[];
+export function queryWorkspaceSymbols(
+  state: WorkspaceQueryState,
+  query: string,
+  cancellation: CancellationToken,
+): Promise<SymbolInformation[]>;
+export function queryWorkspaceSymbols(
+  state: WorkspaceQueryState,
+  query: string,
+  cancellation?: CancellationToken,
+): SymbolInformation[] | Promise<SymbolInformation[]> {
+  return cancellation
+    ? queryWorkspaceSymbolsCooperatively(state, query, cancellation)
+    : queryWorkspaceSymbolsSynchronously(state, query);
+}
+
+function queryWorkspaceSymbolsSynchronously(
   state: WorkspaceQueryState,
   query: string,
 ): SymbolInformation[] {
@@ -327,14 +395,72 @@ export function queryWorkspaceSymbols(
   if (!needle) return [];
   const matches: SymbolEntry[] = [];
   for (const entry of state.index.global.entries()) {
-    if (HIDDEN_SYMBOL_KINDS.has(entry.kind)) continue;
-    if (!entry.name.trim()) continue;
-    if (!state.includePackages && state.packages.isInPackages(entry.location.uri)) continue;
-    if (entry.name.toLowerCase().includes(needle)) matches.push(entry);
+    if (matchesWorkspaceSymbolQuery(state, entry, needle)) matches.push(entry);
   }
+  return workspaceSymbolResults(state, query, matches);
+}
+
+async function queryWorkspaceSymbolsCooperatively(
+  state: WorkspaceQueryState,
+  query: string,
+  cancellation: CancellationToken,
+): Promise<SymbolInformation[]> {
+  throwIfRequestCancelled(cancellation);
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [];
+  const matches: SymbolEntry[] = [];
+  let processed = 0;
+  for (const entry of state.index.global.entries()) {
+    const checkpoint = cooperativeRequestCheckpoint(++processed, cancellation);
+    if (checkpoint) await checkpoint;
+    if (matchesWorkspaceSymbolQuery(state, entry, needle)) matches.push(entry);
+  }
+  const shaderLabMatches = await shaderLabWorkspaceSymbolsCooperatively(
+    shaderLabNameState(state),
+    query,
+    () => cooperativeRequestCheckpoint(++processed, cancellation),
+  );
+  const hlslMatches: SymbolInformation[] = [];
+  for (const match of matches) {
+    const checkpoint = cooperativeRequestCheckpoint(++processed, cancellation);
+    if (checkpoint) await checkpoint;
+    hlslMatches.push(toSymbolInformation(match));
+  }
+  throwIfRequestCancelled(cancellation);
+  const result = [...hlslMatches, ...shaderLabMatches].sort(compareWorkspaceSymbols);
+  throwIfRequestCancelled(cancellation);
+  return result;
+}
+
+function matchesWorkspaceSymbolQuery(
+  state: WorkspaceQueryState,
+  entry: SymbolEntry,
+  needle: string,
+): boolean {
+  if (HIDDEN_SYMBOL_KINDS.has(entry.kind)) return false;
+  if (!entry.name.trim()) return false;
+  if (!state.includePackages && state.packages.isInPackages(entry.location.uri)) return false;
+  return entry.name.toLowerCase().includes(needle);
+}
+
+function workspaceSymbolResults(
+  state: WorkspaceQueryState,
+  query: string,
+  matches: SymbolEntry[],
+): SymbolInformation[] {
+  return sortWorkspaceSymbolResults(
+    matches,
+    shaderLabWorkspaceSymbols(shaderLabNameState(state), query),
+  );
+}
+
+function sortWorkspaceSymbolResults(
+  matches: SymbolEntry[],
+  shaderLabMatches: SymbolInformation[],
+): SymbolInformation[] {
   return [
     ...matches.sort(compareEntries).map(toSymbolInformation),
-    ...shaderLabWorkspaceSymbols(shaderLabNameState(state), query),
+    ...shaderLabMatches,
   ].sort(compareWorkspaceSymbols);
 }
 
@@ -422,32 +548,50 @@ function referenceTokenType(
   }
 }
 
-function semanticTokensForIndex(
+async function semanticTokensForIndex(
   index: FileIndex,
   global?: SymbolLookup,
   lexicalTokens?: readonly DocumentLexicalToken[],
-): SemanticTokens {
-  const macroNames = new Set(index.symbols
-    .filter((symbol) => symbol.kind === 'macro')
-    .map((symbol) => symbol.name));
+  cancellation?: CancellationToken,
+): Promise<SemanticTokens> {
+  const macroNames = new Set<string>();
+  const progress = { processed: 0 };
+  for (const symbol of index.symbols) {
+    const checkpoint = semanticTokenCheckpoint(progress, cancellation);
+    if (checkpoint) await checkpoint;
+    if (symbol.kind === 'macro') macroNames.add(symbol.name);
+  }
   for (const reference of index.references) {
+    const checkpoint = semanticTokenCheckpoint(progress, cancellation);
+    if (checkpoint) await checkpoint;
     if (reference.context !== 'call' && reference.context !== 'pragma') continue;
-    if (!macroNames.has(reference.name)
-      && global?.lookup(reference.name).some((symbol) => symbol.kind === 'macro')) {
-      macroNames.add(reference.name);
+    if (!macroNames.has(reference.name)) {
+      const lookup = containsMacroSymbol(
+        global?.lookup(reference.name),
+        progress,
+        cancellation,
+      );
+      const hasMacro = typeof lookup === 'boolean' ? lookup : await lookup;
+      if (hasMacro) macroNames.add(reference.name);
     }
   }
 
   const tokens: TokenRange[] = [];
   for (const symbol of index.symbols) {
+    const checkpoint = semanticTokenCheckpoint(progress, cancellation);
+    if (checkpoint) await checkpoint;
     tokens.push({ range: symbol.location.range, tokenType: symbolTokenType(symbol.kind) });
   }
   for (const reference of index.references) {
+    const checkpoint = semanticTokenCheckpoint(progress, cancellation);
+    if (checkpoint) await checkpoint;
     const tokenType = referenceTokenType(reference, macroNames);
     if (tokenType) tokens.push({ range: reference.location.range, tokenType });
   }
   if (lexicalTokens) {
     for (const token of lexicalTokens) {
+      const checkpoint = semanticTokenCheckpoint(progress, cancellation);
+      if (checkpoint) await checkpoint;
       tokens.push({ range: token.range, tokenType: token.tokenType });
     }
   }
@@ -455,11 +599,17 @@ function semanticTokensForIndex(
   const builder = new SemanticTokensBuilder();
   const seen = new Set<string>();
   const accepted: TokenRange[] = [];
-  for (const token of tokens.sort(compareTokens)) {
+  throwIfRequestCancelled(cancellation);
+  tokens.sort(compareTokens);
+  throwIfRequestCancelled(cancellation);
+  for (const token of tokens) {
+    const checkpoint = semanticTokenCheckpoint(progress, cancellation);
+    if (checkpoint) await checkpoint;
     if (token.range.start.line !== token.range.end.line) continue;
     const key = rangeKey(token.range);
     if (seen.has(key)) continue;
-    if (accepted.some((existing) => rangesOverlap(existing.range, token.range))) continue;
+    const previous = accepted.at(-1);
+    if (previous && rangesOverlap(previous.range, token.range)) continue;
     const tokenType = TOKEN_TYPE_INDEX.get(token.tokenType);
     if (tokenType === undefined) continue;
     seen.add(key);
@@ -473,6 +623,56 @@ function semanticTokensForIndex(
     );
   }
   return builder.build();
+}
+
+interface SemanticTokenProgress {
+  processed: number;
+}
+
+function semanticTokenCheckpoint(
+  progress: SemanticTokenProgress,
+  cancellation?: CancellationToken,
+): Promise<void> | undefined {
+  return cooperativeRequestCheckpoint(++progress.processed, cancellation);
+}
+
+function containsMacroSymbol(
+  symbols: readonly SymbolEntry[] | undefined,
+  progress: SemanticTokenProgress,
+  cancellation?: CancellationToken,
+): boolean | Promise<boolean> {
+  const candidates = symbols ?? [];
+  for (let index = 0; index < candidates.length; index++) {
+    const checkpoint = semanticTokenCheckpoint(progress, cancellation);
+    if (checkpoint) {
+      return continueContainsMacroSymbol(
+        candidates,
+        index,
+        progress,
+        cancellation,
+        checkpoint,
+      );
+    }
+    if (candidates[index].kind === 'macro') return true;
+  }
+  return false;
+}
+
+async function continueContainsMacroSymbol(
+  symbols: readonly SymbolEntry[],
+  index: number,
+  progress: SemanticTokenProgress,
+  cancellation: CancellationToken | undefined,
+  initialCheckpoint: Promise<void>,
+): Promise<boolean> {
+  await initialCheckpoint;
+  if (symbols[index].kind === 'macro') return true;
+  for (let current = index + 1; current < symbols.length; current++) {
+    const checkpoint = semanticTokenCheckpoint(progress, cancellation);
+    if (checkpoint) await checkpoint;
+    if (symbols[current].kind === 'macro') return true;
+  }
+  return false;
 }
 
 function compareTokens(left: TokenRange, right: TokenRange): number {

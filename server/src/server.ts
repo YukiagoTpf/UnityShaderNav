@@ -25,6 +25,8 @@ import { applyScopedSettingsAndRebuild } from './lifecycle/rebuild';
 import { RequestSuspender } from './lifecycle/requestSuspender';
 import { initializeWorkspaceFolders } from './lifecycle/workspaceFolderCoordinator';
 import { WorkspaceManager } from './workspace';
+import type { CancellationToken } from 'vscode-languageserver/node';
+import { throwIfRequestCancelled } from './lifecycle/requestCancellation';
 
 const connection = getConnection();
 const manager = new WorkspaceManager();
@@ -34,7 +36,10 @@ let globalStorageDir: string | undefined;
 // Status remains queryable during the bounded cold-start request gate.
 connection.onRequest(
   INDEX_STATUS_REQUEST,
-  (): IndexStatusSnapshot => manager.statusSnapshot(),
+  (_params, cancellation: CancellationToken): IndexStatusSnapshot => {
+    throwIfRequestCancelled(cancellation);
+    return manager.statusSnapshot();
+  },
 );
 
 connection.onInitialize((params) => {

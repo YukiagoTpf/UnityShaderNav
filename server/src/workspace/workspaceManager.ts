@@ -1,6 +1,10 @@
 import { dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import type { Connection, SymbolInformation } from 'vscode-languageserver/node';
+import type {
+  CancellationToken,
+  Connection,
+  SymbolInformation,
+} from 'vscode-languageserver/node';
 import {
   INDEX_STATUS_NOTIFICATION,
   type ExtensionSettings,
@@ -17,8 +21,19 @@ import type {
 } from './indexedWorkspace';
 import { compareWorkspaceSymbols } from './queries';
 import type { IndexedRevisionCandidateConstructor } from './indexedRevisionCandidate';
+import {
+  cooperativeRequestCheckpoint,
+  throwIfRequestCancelled,
+} from '../lifecycle/requestCancellation';
 
 const MAX_WORKSPACE_SYMBOLS = 1000;
+
+function capWorkspaceSymbols(matches: SymbolInformation[]): SymbolInformation[] {
+  matches.sort(compareWorkspaceSymbols);
+  return matches.length > MAX_WORKSPACE_SYMBOLS
+    ? matches.slice(0, MAX_WORKSPACE_SYMBOLS)
+    : matches;
+}
 
 type SettingsResolver = (scopeUri: string) => ExtensionSettings | Promise<ExtensionSettings>;
 
@@ -99,13 +114,47 @@ export class WorkspaceManager implements DiagnosticWorkspaceService {
     );
   }
 
-  workspaceSymbols(query: string): SymbolInformation[] {
+  workspaceSymbols(
+    query: string,
+  ): SymbolInformation[];
+  workspaceSymbols(
+    query: string,
+    cancellation: CancellationToken,
+  ): Promise<SymbolInformation[]>;
+  workspaceSymbols(
+    query: string,
+    cancellation?: CancellationToken,
+  ): SymbolInformation[] | Promise<SymbolInformation[]> {
+    return cancellation
+      ? this.workspaceSymbolsCooperatively(query, cancellation)
+      : this.workspaceSymbolsSynchronously(query);
+  }
+
+  private workspaceSymbolsSynchronously(query: string): SymbolInformation[] {
+    const matches: SymbolInformation[] = [];
+    for (const workspace of this.servingList()) {
+      matches.push(...workspace.workspaceSymbols(query));
+    }
+    return capWorkspaceSymbols(matches);
+  }
+
+  private async workspaceSymbolsCooperatively(
+    query: string,
+    cancellation: CancellationToken,
+  ): Promise<SymbolInformation[]> {
+    throwIfRequestCancelled(cancellation);
     const tuple = this.servingList();
-    const matches = tuple.flatMap((workspace) => workspace.workspaceSymbols(query));
-    matches.sort(compareWorkspaceSymbols);
-    return matches.length > MAX_WORKSPACE_SYMBOLS
-      ? matches.slice(0, MAX_WORKSPACE_SYMBOLS)
-      : matches;
+    const matches: SymbolInformation[] = [];
+    let processed = 0;
+    for (const workspace of tuple) {
+      matches.push(...await workspace.workspaceSymbols(query, cancellation));
+      const checkpoint = cooperativeRequestCheckpoint(++processed, cancellation);
+      if (checkpoint) await checkpoint;
+    }
+    throwIfRequestCancelled(cancellation);
+    const result = capWorkspaceSymbols(matches);
+    throwIfRequestCancelled(cancellation);
+    return result;
   }
 
   // Rebuild/recovery must not wait for an unrelated root still in its initial

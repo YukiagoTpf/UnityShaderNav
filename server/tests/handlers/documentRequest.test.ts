@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import { LSPErrorCodes } from 'vscode-languageserver/node';
+import { CancellationTokenSource } from 'vscode-jsonrpc/node';
 import type {
   IndexedDocumentSnapshot,
   IndexedWorkspace,
@@ -15,7 +17,104 @@ const document: IndexedDocumentSnapshot = {
 
 const workspace = {} as IndexedWorkspace;
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+function nextMacrotask(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
 describe('createDocumentRequestHandler', () => {
+  it('reports RequestCancelled before snapshot routing for a pre-cancelled request', async () => {
+    const cancellation = new CancellationTokenSource();
+    cancellation.cancel();
+    const documents = { snapshot: vi.fn(() => document) };
+    const manager = { servingWorkspaceFor: vi.fn(() => workspace) };
+    const resolve = vi.fn(async () => 'unexpected');
+    const handler = createDocumentRequestHandler(documents, manager, undefined, {
+      uri: (params: { uri: string }) => params.uri,
+      neutral: () => 'neutral',
+      resolve,
+    });
+
+    await expect(handler({ uri: document.uri }, cancellation.token))
+      .rejects.toMatchObject({ code: LSPErrorCodes.RequestCancelled });
+    expect(documents.snapshot).not.toHaveBeenCalled();
+    expect(manager.servingWorkspaceFor).not.toHaveBeenCalled();
+    expect(resolve).not.toHaveBeenCalled();
+    cancellation.dispose();
+  });
+
+  it('detaches a cancelled waiter while lazy workspace routing continues', async () => {
+    const route = deferred<IndexedWorkspace | undefined>();
+    const cancellation = new CancellationTokenSource();
+    const handler = createDocumentRequestHandler(
+      { snapshot: () => document },
+      {
+        servingWorkspaceFor: () => undefined,
+        workspaceFor: () => undefined,
+        workspaceForOrCreateFile: () => route.promise,
+      },
+      undefined,
+      {
+        uri: (params: { uri: string }) => params.uri,
+        neutral: () => 'neutral',
+        resolve: async () => 'unexpected',
+      },
+    );
+    let outcome: unknown;
+    const request = handler({ uri: document.uri }, cancellation.token)
+      .then((value) => { outcome = value; }, (error: unknown) => { outcome = error; });
+
+    cancellation.cancel();
+    await nextMacrotask();
+
+    const outcomeBeforeRouteCompletes = outcome;
+    route.resolve(workspace);
+    await Promise.all([request, route.promise]);
+    expect(outcomeBeforeRouteCompletes)
+      .toMatchObject({ code: LSPErrorCodes.RequestCancelled });
+    cancellation.dispose();
+  });
+
+  it('detaches a cancelled waiter while an async workspace query continues', async () => {
+    const query = deferred<string>();
+    const queryStarted = deferred<void>();
+    const cancellation = new CancellationTokenSource();
+    const handler = createDocumentRequestHandler(
+      { snapshot: () => document },
+      { servingWorkspaceFor: () => workspace },
+      undefined,
+      {
+        uri: (params: { uri: string }) => params.uri,
+        neutral: () => 'neutral',
+        resolve: () => {
+          queryStarted.resolve();
+          return query.promise;
+        },
+      },
+    );
+    let outcome: unknown;
+    const request = handler({ uri: document.uri }, cancellation.token)
+      .then((value) => { outcome = value; }, (error: unknown) => { outcome = error; });
+
+    await queryStarted.promise;
+    cancellation.cancel();
+    await nextMacrotask();
+
+    const outcomeBeforeQueryCompletes = outcome;
+    query.resolve('late result');
+    await Promise.all([request, query.promise]);
+    expect(outcomeBeforeQueryCompletes)
+      .toMatchObject({ code: LSPErrorCodes.RequestCancelled });
+    cancellation.dispose();
+  });
+
   it('captures an open snapshot, routes it, and resolves the request', async () => {
     const documents = { snapshot: vi.fn(() => document) };
     const manager = { servingWorkspaceFor: vi.fn(() => workspace) };

@@ -2,6 +2,7 @@ import type Parser from 'web-tree-sitter';
 import type { FileIndex } from '@unity-shader-nav/shared';
 import type { DocumentAnalysis } from '../../analysis';
 import type { MacroPatternRecognizer } from '../../macros';
+import type { ExactSource } from '../../sourceLocation';
 import { indexFileWithTreeProvider } from './fileIndexer';
 import {
   createHlslParser,
@@ -35,6 +36,7 @@ export class LiveDocumentTreeSession {
     text: string,
     recognizer?: MacroPatternRecognizer,
     analysis?: DocumentAnalysis,
+    source?: ExactSource,
   ): Promise<FileIndex> {
     const generation = this.generation;
     const result = this.tail.then(() => this.performIndex(
@@ -43,6 +45,7 @@ export class LiveDocumentTreeSession {
       text,
       recognizer,
       analysis,
+      source,
     ));
     this.tail = result.then(
       () => undefined,
@@ -64,6 +67,7 @@ export class LiveDocumentTreeSession {
     text: string,
     recognizer: MacroPatternRecognizer | undefined,
     analysis: DocumentAnalysis | undefined,
+    source: ExactSource | undefined,
   ): Promise<FileIndex> {
     this.assertCurrent(generation);
     const parser = await this.acquireParser(generation);
@@ -94,6 +98,7 @@ export class LiveDocumentTreeSession {
           next[blockIndex] = { stabilizedText, tree };
           return tree;
         },
+        source,
       );
       this.assertCurrent(generation);
       deleteTrees(previous.filter((entry) => !next.includes(entry)));

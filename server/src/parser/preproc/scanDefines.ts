@@ -1,4 +1,5 @@
 import type { Range } from '@unity-shader-nav/shared';
+import { exactSource, type ExactSource } from '../../sourceLocation';
 import { stripComments } from './stripComments';
 
 export interface DefineDirective {
@@ -9,8 +10,12 @@ export interface DefineDirective {
 
 const DEFINE_RE = /^\s*#\s*define\s+([A-Za-z_][A-Za-z0-9_]*)/;
 
-export function scanDefines(text: string): DefineDirective[] {
-  const lines = text.split(/\r?\n/);
+export function scanDefines(text: string | ExactSource): DefineDirective[] {
+  const source = exactSource(
+    typeof text === 'string' ? text : text.sourceText,
+    typeof text === 'string' ? undefined : text,
+  );
+  const lines = source.sourceLines;
   const out: DefineDirective[] = [];
   let inBlockComment = false;
 

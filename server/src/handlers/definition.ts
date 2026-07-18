@@ -23,10 +23,11 @@ export function registerDefinitionHandler(
   >(documents, manager, suspender, {
     uri: (params) => params.textDocument.uri,
     neutral: () => null,
-    resolve: (params, { document, workspace }) => (
+    resolve: (params, { document, workspace }, cancellation) => (
       workspace.definitionAt({
         document,
         position: params.position,
+        ...(cancellation ? { cancellation } : {}),
         observer: {
           trace(event, data) {
             connection.console.log(

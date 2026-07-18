@@ -22,10 +22,11 @@ export function registerCompletionHandler(
   >(documents, manager, suspender, {
     uri: (params) => params.textDocument.uri,
     neutral: () => null,
-    resolve: (params, { document, workspace }) => (
+    resolve: (params, { document, workspace }, cancellation) => (
       workspace.completionAt({
         document,
         position: params.position,
+        ...(cancellation ? { cancellation } : {}),
       })
     ),
   }));

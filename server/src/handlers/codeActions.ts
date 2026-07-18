@@ -23,10 +23,11 @@ export function registerCodeActionHandler(
     {
       uri: (params) => params.textDocument.uri,
       neutral: () => [],
-      resolve: (params, { document, workspace }) => workspace.codeActionsAt({
+      resolve: (params, { document, workspace }, cancellation) => workspace.codeActionsAt({
         document,
         range: params.range,
         context: params.context,
+        ...(cancellation ? { cancellation } : {}),
       }),
     },
   ));

@@ -8,6 +8,7 @@ import {
   type DocumentAnalysis,
 } from '../../analysis';
 import type { MacroPatternRecognizer } from '../../macros';
+import { exactSource, type ExactSource } from '../../sourceLocation';
 import {
   createHlslParser,
   stabilizeHlslSource,
@@ -29,13 +30,13 @@ function extOf(uri: string): string {
 }
 
 function scanPragmas(
-  blockText: string,
+  source: string | ExactSource,
   lineOffset: number,
   recognizer: MacroPatternRecognizer,
   uri: string,
 ): ReferenceEntry[] {
   const refs: ReferenceEntry[] = [];
-  for (const match of recognizer.scanReferencePatterns(blockText)) {
+  for (const match of recognizer.scanReferencePatterns(source)) {
     refs.push({
       name: match.capturedName,
       context: 'pragma',
@@ -58,11 +59,11 @@ function scanPragmas(
 }
 
 function scanIncludeReferences(
-  blockText: string,
+  source: string | ExactSource,
   lineOffset: number,
   uri: string,
 ): ReferenceEntry[] {
-  return scanIncludes(blockText).map((include) => ({
+  return scanIncludes(source).map((include) => ({
     name: include.path,
     context: 'include',
     location: {
@@ -81,8 +82,13 @@ function scanIncludeReferences(
   }));
 }
 
-function pushDefines(blockText: string, lineOffset: number, uri: string, dest: SymbolEntry[]): void {
-  const defines = scanDefines(blockText);
+function pushDefines(
+  source: string | ExactSource,
+  lineOffset: number,
+  uri: string,
+  dest: SymbolEntry[],
+): void {
+  const defines = scanDefines(source);
   for (const define of defines) {
     dest.push({
       name: define.name,
@@ -110,9 +116,19 @@ export async function indexFile(
   recognizer?: MacroPatternRecognizer,
   preparedAnalysis?: DocumentAnalysis,
   liveSession?: LiveDocumentTreeSession,
+  preparedSource?: ExactSource,
 ): Promise<FileIndex> {
-  if (liveSession) return liveSession.indexFile(uri, text, recognizer, preparedAnalysis);
-  return indexFileWithTemporaryTrees(uri, text, recognizer, preparedAnalysis);
+  if (liveSession) {
+    return liveSession.indexFile(uri, text, recognizer, preparedAnalysis, preparedSource);
+  }
+  return indexFileWithTemporaryTrees(
+    uri,
+    text,
+    recognizer,
+    preparedAnalysis,
+    createHlslParser,
+    preparedSource,
+  );
 }
 
 export async function indexFileWithTemporaryTrees(
@@ -121,6 +137,7 @@ export async function indexFileWithTemporaryTrees(
   recognizer?: MacroPatternRecognizer,
   preparedAnalysis?: DocumentAnalysis,
   createParser: HlslParserFactory = createHlslParser,
+  preparedSource?: ExactSource,
 ): Promise<FileIndex> {
   let parser: Awaited<ReturnType<HlslParserFactory>> | undefined;
   const temporaryTrees: Parser.Tree[] = [];
@@ -136,6 +153,7 @@ export async function indexFileWithTemporaryTrees(
         temporaryTrees.push(tree);
         return tree;
       },
+      preparedSource,
     );
   } finally {
     for (const tree of temporaryTrees) tree.delete();
@@ -149,31 +167,36 @@ export async function indexFileWithTreeProvider(
   recognizer: MacroPatternRecognizer | undefined,
   preparedAnalysis: DocumentAnalysis | undefined,
   treeForBlock: (blockText: string, blockIndex: number) => Promise<Parser.Tree>,
+  preparedSource?: ExactSource,
 ): Promise<FileIndex> {
   const analysis = preparedAnalysis && analysisMatchesSource(preparedAnalysis, text)
     ? preparedAnalysis
     : analyzeDocument(uri, text, 'index');
+  const source = exactSource(
+    text,
+    preparedSource?.sourceText === text ? preparedSource : analysis,
+  );
   const ext = extOf(uri);
   if (HLSL_EXTS.has(ext)) {
     const tree = await treeForBlock(text, 0);
     const idx = collect(tree.rootNode, text, uri, 0, recognizer);
-    idx.references.push(...scanIncludeReferences(text, 0, uri));
-    pushDefines(text, 0, uri, idx.symbols);
-    if (recognizer) idx.references.push(...scanPragmas(text, 0, recognizer, uri));
+    idx.references.push(...scanIncludeReferences(source, 0, uri));
+    pushDefines(source, 0, uri, idx.symbols);
+    if (recognizer) idx.references.push(...scanPragmas(source, 0, recognizer, uri));
     return idx;
   }
 
   if (ext === '.shader') {
     if (!analysis) throw new Error(`missing ShaderLab analysis for ${uri}`);
     const { blocks, structure } = analysis;
-    const lines = text.split(/\r?\n/);
+    const lines = source.sourceLines;
 
     const merged: FileIndex = { uri, symbols: [], references: [] };
     for (let blockIndex = 0; blockIndex < blocks.length; blockIndex++) {
       const block = blocks[blockIndex];
-      const blockText = lines
-        .slice(block.contentStartLine, block.contentEndLine + 1)
-        .join('\n');
+      const blockLines = lines.slice(block.contentStartLine, block.contentEndLine + 1);
+      const blockText = blockLines.join('\n');
+      const blockSource: ExactSource = { sourceText: blockText, sourceLines: blockLines };
       const tree = await treeForBlock(blockText, blockIndex);
       const part = collect(
         tree.rootNode,
@@ -183,12 +206,12 @@ export async function indexFileWithTreeProvider(
         recognizer,
       );
       merged.symbols.push(...part.symbols);
-      pushDefines(blockText, block.contentStartLine, uri, merged.symbols);
+      pushDefines(blockSource, block.contentStartLine, uri, merged.symbols);
       merged.references.push(...part.references);
-      merged.references.push(...scanIncludeReferences(blockText, block.contentStartLine, uri));
+      merged.references.push(...scanIncludeReferences(blockSource, block.contentStartLine, uri));
       if (recognizer) {
         merged.references.push(...scanPragmas(
-          blockText,
+          blockSource,
           block.contentStartLine,
           recognizer,
           uri,

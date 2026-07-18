@@ -18,7 +18,12 @@ import type {
   SymbolInformation,
   TextEdit,
   WorkspaceEdit,
+  CancellationToken,
 } from 'vscode-languageserver/node';
+
+export interface RequestCancellationInput {
+  readonly cancellation?: CancellationToken;
+}
 
 export interface IndexedDocumentSnapshot {
   readonly uri: string;
@@ -40,36 +45,36 @@ export interface NavigationObserver {
   caseInsensitiveInclude?(includePath: string, absolutePath: string): void;
 }
 
-export interface DefinitionAtInput {
+export interface DefinitionAtInput extends RequestCancellationInput {
   readonly document: IndexedDocumentSnapshot;
   readonly position: Position;
   readonly observer?: NavigationObserver;
 }
 
-export interface ReferencesAtInput {
+export interface ReferencesAtInput extends RequestCancellationInput {
   readonly document: IndexedDocumentSnapshot;
   readonly position: Position;
   readonly includeDeclaration: boolean;
 }
 
-export interface DocumentPositionInput {
+export interface DocumentPositionInput extends RequestCancellationInput {
   readonly document: IndexedDocumentSnapshot;
   readonly position: Position;
 }
 
-export interface CodeActionsAtInput {
+export interface CodeActionsAtInput extends RequestCancellationInput {
   readonly document: IndexedDocumentSnapshot;
   readonly range: import('vscode-languageserver/node').Range;
   readonly context: CodeActionContext;
 }
 
-export interface ColorPresentationAtInput {
+export interface ColorPresentationAtInput extends RequestCancellationInput {
   readonly document: IndexedDocumentSnapshot;
   readonly range: import('vscode-languageserver/node').Range;
   readonly color: Color;
 }
 
-export interface DocumentFormattingAtInput {
+export interface DocumentFormattingAtInput extends RequestCancellationInput {
   readonly document: IndexedDocumentSnapshot;
   readonly options: FormattingOptions;
 }
@@ -94,7 +99,7 @@ export function isRenameFailure(
   return !!outcome && 'kind' in outcome && outcome.kind === 'failure';
 }
 
-export interface IndexedDocumentQueryInput {
+export interface IndexedDocumentQueryInput extends RequestCancellationInput {
   readonly uri: string;
   readonly document?: IndexedDocumentSnapshot;
 }
@@ -121,6 +126,7 @@ export interface IndexedWorkspace {
   documentSymbols(input: IndexedDocumentQueryInput): Promise<DocumentSymbol[] | null>;
   semanticTokens(input: IndexedDocumentQueryInput): Promise<SemanticTokens>;
   workspaceSymbols(query: string): SymbolInformation[];
+  workspaceSymbols(query: string, cancellation: CancellationToken): Promise<SymbolInformation[]>;
 }
 
 export type OpenDocumentsProvider = () => Iterable<IndexedDocumentSnapshot>;
@@ -136,6 +142,7 @@ export interface IndexedWorkspaceService {
   releaseDocument(uri: string): Promise<void>;
   configureOpenDocumentsProvider(provider: OpenDocumentsProvider): void;
   workspaceSymbols(query: string): SymbolInformation[];
+  workspaceSymbols(query: string, cancellation: CancellationToken): Promise<SymbolInformation[]>;
 }
 
 export interface DiagnosticWorkspaceService extends IndexedWorkspaceService {

@@ -1,3 +1,10 @@
+import type { CancellationToken, Disposable } from 'vscode-languageserver/node';
+import {
+  isRequestCancelledError,
+  requestCancelledError,
+  throwIfRequestCancelled,
+} from './requestCancellation';
+
 export class RequestSuspender {
   private suspendDepth = 0;
   private readonly waiters = new Set<() => void>();
@@ -18,26 +25,54 @@ export class RequestSuspender {
     for (const waiter of waiters) waiter();
   }
 
-  async run<T>(work: () => Promise<T>): Promise<T | null> {
+  async run<T>(
+    work: () => Promise<T>,
+    cancellation?: CancellationToken,
+  ): Promise<T | null> {
+    throwIfRequestCancelled(cancellation);
     if (this.suspendDepth === 0) return work();
 
-    return new Promise<T | null>((resolve) => {
+    return new Promise<T | null>((resolve, reject) => {
       let settled = false;
       let timer: ReturnType<typeof setTimeout>;
+      let cancellationSubscription: Disposable | undefined;
+      const cleanup = (): void => {
+        clearTimeout(timer);
+        this.waiters.delete(resume);
+        cancellationSubscription?.dispose();
+      };
       const settle = (value: T | null): void => {
         if (settled) return;
         settled = true;
-        clearTimeout(timer);
-        this.waiters.delete(resume);
+        cleanup();
         resolve(value);
+      };
+      const cancel = (): void => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(requestCancelledError());
       };
       const resume = (): void => {
         if (settled) return;
-        void work().then(settle, () => settle(null));
+        void work().then(settle, (error: unknown) => {
+          if (isRequestCancelledError(error)) {
+            cancel();
+            return;
+          }
+          settle(null);
+        });
       };
 
       timer = setTimeout(() => settle(null), this.options.timeoutMs);
       this.waiters.add(resume);
+      const subscription = cancellation?.onCancellationRequested(cancel);
+      if (settled) {
+        subscription?.dispose();
+      } else {
+        cancellationSubscription = subscription;
+        if (cancellation?.isCancellationRequested) cancel();
+      }
     });
   }
 }

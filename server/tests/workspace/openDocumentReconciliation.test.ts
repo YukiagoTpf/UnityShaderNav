@@ -4,7 +4,10 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DEFAULT_SETTINGS } from '@unity-shader-nav/shared';
 import { describe, expect, it } from 'vitest';
+import { exactSource } from '../../src/sourceLocation';
+import { uriKey } from '../../src/uriKey';
 import type { IndexedDocumentSnapshot } from '../../src/workspace/indexedWorkspace';
+import { OpenDocumentReconciler } from '../../src/workspace/openDocumentReconciler';
 import { Workspace } from '../../src/workspace/workspace';
 
 const connection = {
@@ -128,6 +131,80 @@ describe('open-document reconciliation contract matrix', () => {
       expect(fullReplay).toEqual(incremental);
     });
   }
+});
+
+describe('prepared source ownership', () => {
+  it('keeps an exact source across a provider refresh and releases it on close', () => {
+    const reconciler = new OpenDocumentReconciler();
+    const document = snapshot(
+      'file:///workspace/Prepared.hlsl',
+      { openId: 1, version: 1, text: 'float4 Prepared() { return 0; }' },
+    );
+    const source = exactSource(document.text);
+
+    expect(reconciler.acceptDocument(document, source)).toBe(true);
+    const desired = reconciler.desired(uriKey(document.uri));
+    reconciler.captureProvider(() => [{ ...document }], () => true, true);
+
+    expect(reconciler.desired(uriKey(document.uri))).toBe(desired);
+    expect(desired).toEqual({
+      kind: 'open',
+      document,
+      source,
+    });
+
+    expect(reconciler.acceptClose(document.uri, document.openId)).toBe(true);
+    expect(reconciler.desired(uriKey(document.uri))).toEqual({
+      kind: 'closed',
+      uri: document.uri,
+      openId: document.openId,
+      tombstone: true,
+    });
+  });
+
+  it('rejects divergent text for the same open attempt without replacing its source', () => {
+    const reconciler = new OpenDocumentReconciler();
+    const document = snapshot(
+      'file:///workspace/Prepared.hlsl',
+      { openId: 1, version: 1, text: 'float4 Original() { return 0; }' },
+    );
+    const source = exactSource(document.text);
+
+    expect(reconciler.acceptDocument(document, source)).toBe(true);
+    const desired = reconciler.desired(uriKey(document.uri));
+    expect(reconciler.acceptDocument({
+      ...document,
+      text: 'float4 Divergent() { return 0; }',
+    })).toBe(false);
+    expect(reconciler.desired(uriKey(document.uri))).toBe(desired);
+    expect(desired).toEqual({
+      kind: 'open',
+      document,
+      source,
+    });
+  });
+
+  it('keeps the original exact source when the same attempt supplies an equivalent source', () => {
+    const reconciler = new OpenDocumentReconciler();
+    const document = snapshot(
+      'file:///workspace/Prepared.hlsl',
+      { openId: 1, version: 1, text: 'float4 Prepared() { return 0; }' },
+    );
+    const source = exactSource(document.text);
+
+    expect(reconciler.acceptDocument(document, source)).toBe(true);
+    const desired = reconciler.desired(uriKey(document.uri));
+    const equivalentSource = exactSource(document.text);
+    expect(equivalentSource).not.toBe(source);
+
+    expect(reconciler.acceptDocument({ ...document }, equivalentSource)).toBe(true);
+    expect(reconciler.desired(uriKey(document.uri))).toBe(desired);
+    expect(desired).toEqual({
+      kind: 'open',
+      document,
+      source,
+    });
+  });
 });
 
 async function runScenario(

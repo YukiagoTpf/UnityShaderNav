@@ -1,5 +1,10 @@
 import type { RequestSuspender } from '../lifecycle/requestSuspender';
 import {
+  awaitWithRequestCancellation,
+  throwIfRequestCancelled,
+} from '../lifecycle/requestCancellation';
+import type { CancellationToken } from 'vscode-languageserver/node';
+import {
   workspaceForDocumentRequest,
   type IndexedDocumentRegistry,
   type IndexedDocumentSnapshot,
@@ -24,6 +29,7 @@ export interface DocumentRequestOptions<Params, Result, AllowClosed extends bool
   readonly resolve: (
     params: Params,
     context: DocumentRequestContext<AllowClosed>,
+    cancellation: CancellationToken | undefined,
   ) => Result | Promise<Result>;
 }
 
@@ -42,26 +48,37 @@ export function createDocumentRequestHandler<
   manager: IndexedWorkspaceRequestRouter,
   suspender: Pick<RequestSuspender, 'run'> | undefined,
   options: DocumentRequestOptions<Params, Result, AllowClosed>,
-): (params: Params) => Promise<Result> {
-  return async (params: Params): Promise<Result> => {
+): (params: Params, cancellation?: CancellationToken) => Promise<Result> {
+  return async (params: Params, cancellation?: CancellationToken): Promise<Result> => {
+    throwIfRequestCancelled(cancellation);
     const resolveRequest = async (): Promise<Result> => {
+      throwIfRequestCancelled(cancellation);
       const uri = options.uri(params);
       const document = documents.snapshot(uri);
       if (!document && !options.allowClosedDocument) return options.neutral();
 
       const workspace = document
-        ? await workspaceForDocumentRequest(document, documents, manager)
+        ? await awaitWithRequestCancellation(
+          workspaceForDocumentRequest(document, documents, manager),
+          cancellation,
+        )
         : manager.servingWorkspaceFor(uri);
+      throwIfRequestCancelled(cancellation);
       if (!workspace) return options.neutral();
 
-      return options.resolve(params, {
-        uri,
-        document,
-        workspace,
-      } as DocumentRequestContext<AllowClosed>);
+      const result = await awaitWithRequestCancellation(
+        Promise.resolve(options.resolve(params, {
+          uri,
+          document,
+          workspace,
+        } as DocumentRequestContext<AllowClosed>, cancellation)),
+        cancellation,
+      );
+      throwIfRequestCancelled(cancellation);
+      return result;
     };
 
     if (!suspender) return resolveRequest();
-    return await suspender.run(resolveRequest) ?? options.neutral();
+    return await suspender.run(resolveRequest, cancellation) ?? options.neutral();
   };
 }

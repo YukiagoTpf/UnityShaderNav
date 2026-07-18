@@ -22,8 +22,12 @@ export function registerDocumentFormattingHandler(
   >(documents, manager, suspender, {
     uri: (params) => params.textDocument.uri,
     neutral: () => null,
-    resolve: (params, { document, workspace }) => (
-      workspace.formatDocument({ document, options: params.options })
+    resolve: (params, { document, workspace }, cancellation) => (
+      workspace.formatDocument({
+        document,
+        options: params.options,
+        ...(cancellation ? { cancellation } : {}),
+      })
     ),
   }));
 }

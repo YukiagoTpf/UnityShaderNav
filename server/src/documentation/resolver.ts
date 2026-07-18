@@ -1,5 +1,6 @@
 import type { Position, Range, SymbolEntry } from '@unity-shader-nav/shared';
 import type { DocumentLexicalToken } from '../analysis';
+import type { CursorContext, CursorSource } from '../parser/lexical/cursor';
 import type { PackageContext } from '../packages';
 import type { UnityProjectFacts } from '../project';
 import { uriKey } from '../uriKey';
@@ -17,6 +18,8 @@ export interface PackageProvenance {
 
 export interface DocumentationResolutionRequest {
   readonly text: string;
+  readonly source?: CursorSource;
+  readonly cursor?: CursorContext;
   readonly position: Position;
   readonly languageId: string;
   readonly uri: string;
@@ -57,11 +60,12 @@ export class DocumentationResolver {
 
   resolve(request: DocumentationResolutionRequest): DocumentationResolution | undefined {
     const target = documentationTargetAt(
-      request.text,
+      request.source ?? request.text,
       request.position,
       request.languageId,
       request.uri,
       request.lexicalTokens,
+      request.cursor,
     );
     if (!target) return undefined;
 

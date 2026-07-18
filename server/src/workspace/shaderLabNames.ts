@@ -21,7 +21,11 @@ import type {
   RenamePreparationOutcome,
 } from './indexedWorkspace';
 import type { IndexStoreReader } from '../index';
-import { containsPosition } from '../sourceLocation';
+import {
+  containsPosition,
+  exactSource,
+  type ExactSource,
+} from '../sourceLocation';
 import { uriKey } from '../uriKey';
 
 export type ShaderLabNameTarget =
@@ -179,10 +183,14 @@ interface NameCompletionContext {
 }
 
 export function shaderLabNameCompletionContext(
-  text: string,
+  text: string | ExactSource,
   position: Position,
 ): NameCompletionContext | null {
-  const line = text.split(/\r?\n/)[position.line] ?? '';
+  const source = exactSource(
+    typeof text === 'string' ? text : text.sourceText,
+    typeof text === 'string' ? undefined : text,
+  );
+  const line = source.sourceLines[position.line] ?? '';
   const before = line.slice(0, position.character);
   const fallback = /^\s*Fallback\s+"([^"]*)$/.exec(before);
   if (fallback) {
@@ -223,7 +231,7 @@ export function shaderLabNameCompletionContext(
 
 export function completeShaderLabName(
   state: ShaderLabNameState,
-  text: string,
+  text: string | ExactSource,
   position: Position,
 ): CompletionItem[] | null {
   const context = shaderLabNameCompletionContext(text, position);
@@ -285,6 +293,43 @@ export function shaderLabWorkspaceSymbols(
       });
     }
     for (const pass of index.shaderLabNames?.passes ?? []) {
+      if (pass.name.toLowerCase().includes(needle)) results.push({
+        name: pass.name,
+        kind: SymbolKind.Method,
+        location: { uri: index.uri, range: pass.nameRange },
+        containerName: pass.shaderName,
+      });
+    }
+  }
+  return results;
+}
+
+/** Cooperative variant used only by cancellable request paths. */
+export async function shaderLabWorkspaceSymbolsCooperatively(
+  state: ShaderLabNameState,
+  query: string,
+  checkpoint: () => Promise<void> | undefined,
+): Promise<SymbolInformation[]> {
+  const needle = query.toLowerCase();
+  const results: SymbolInformation[] = [];
+  for (const uri of state.index.store.uris()) {
+    const uriPending = checkpoint();
+    if (uriPending) await uriPending;
+    const index = state.index.store.get(uri);
+    if (!index || (!state.includePackages && state.isInPackages(index.uri))) continue;
+    for (const shader of index.shaderLabNames?.shaders ?? []) {
+      const pending = checkpoint();
+      if (pending) await pending;
+      if (shader.name.toLowerCase().includes(needle)) results.push({
+        name: shader.name,
+        kind: SymbolKind.Class,
+        location: { uri: index.uri, range: shader.nameRange },
+        containerName: 'ShaderLab Shader',
+      });
+    }
+    for (const pass of index.shaderLabNames?.passes ?? []) {
+      const pending = checkpoint();
+      if (pending) await pending;
       if (pass.name.toLowerCase().includes(needle)) results.push({
         name: pass.name,
         kind: SymbolKind.Method,

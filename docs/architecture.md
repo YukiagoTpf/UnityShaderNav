@@ -95,6 +95,9 @@ handling. Important modules:
   receives raw index stores.
 - `lifecycle/requestSuspender.ts`: exposes `RequestSuspender`, the bounded
   initial request gate; rebuild and watcher paths do not use it.
+- `lifecycle/requestCancellation.ts`: centralizes the LSP `RequestCancelled`
+  error, caller-only Promise waiting, and cooperative checkpoints for
+  request-owned CPU loops.
 - `cache`: `CacheFingerprint` is the release compatibility fact,
   `CacheWorkspaceIdentity` selects a Workspace bucket, `CacheManager`
   coordinates process-local saves, and `CacheStore` owns manifest I/O.
@@ -276,6 +279,29 @@ visibility, shared symbol selection, property bridging, Package
 filtering, semantic-token construction, symbol formatting, and multi-candidate
 results remain revision-owned behavior.
 
+Each document-position request constructs one `CursorRequestFacts` from the
+immutable request snapshot. If the captured revision owns a `DocumentAnalysis`
+for that exact `openId + version + sourceText`, the facts reuse its source lines
+and precomputed per-line lexical roles plus ShaderLab blocks; otherwise they
+split the request text once and derive lexical state on demand. Lexical
+preflight and the eventual revision query consume the same cursor, target, and
+call facts, so an unpublished HLSL or ShaderLab request has at most one
+request-side full-text split and cannot mix facts from another source.
+
+Completion applies its prefix while iterating current and Include-visible
+symbols, retains only matching entries, and then applies the existing scope,
+rank, and dedupe policy. Both the matching scan and result materialization use
+cooperative request checkpoints; large nonmatching sets therefore do not need
+to allocate suggestion objects before being rejected.
+
+LSP request adapters carry their `CancellationToken` through Workspace
+behavior. The document adapter races lazy routing and asynchronous query waits
+against cancellation, while leaving their underlying reconcile or revision
+work running. Suspended requests remove only their own waiter. Request-owned
+candidate and reference loops check every item and yield a macrotask every 256
+items so an in-flight cancellation can surface as `RequestCancelled` rather
+than a neutral result.
+
 Push diagnostics are another revision-owned projection. Every lifecycle status
 transition requests one coalesced refresh over current open-document attempts.
 The publisher computes through Workspace behavior, then rechecks the refresh
@@ -440,8 +466,9 @@ directory-read failures remain conservative misses for that revision. The
 cached visibility Set is never returned directly; each caller receives an
 isolated copy. A new publication starts with an empty chain, so filesystem state
 is not promoted to a cross-revision or process-lifetime cache. Shared work has
-no per-request cancellation owner: a cancellation-aware caller may stop waiting
-in the future, but must not cancel the revision's cached computation.
+no per-request cancellation owner: a cancellation-aware caller stops only its
+own wait and must not cancel the revision's cached computation. Another request
+can join the same in-flight Promise and reuse its eventual result.
 
 The include resolver owns candidate generation, ordering, exact-case
 verification, and case-insensitive fallback above a narrow `FileProbe` with

@@ -24,8 +24,8 @@ export function registerColorHandlers(
   >(documents, manager, suspender, {
     uri: (params) => params.textDocument.uri,
     neutral: () => [],
-    resolve: (_params, { uri, document, workspace }) => (
-      workspace.documentColors({ uri, document })
+    resolve: (_params, { uri, document, workspace }, cancellation) => (
+      workspace.documentColors({ uri, document, ...(cancellation ? { cancellation } : {}) })
     ),
   }));
 
@@ -35,11 +35,12 @@ export function registerColorHandlers(
   >(documents, manager, suspender, {
     uri: (params) => params.textDocument.uri,
     neutral: () => [],
-    resolve: (params, { document, workspace }) => (
+    resolve: (params, { document, workspace }, cancellation) => (
       workspace.colorPresentations({
         document,
         range: params.range,
         color: params.color,
+        ...(cancellation ? { cancellation } : {}),
       })
     ),
   }));

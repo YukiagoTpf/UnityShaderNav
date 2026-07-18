@@ -1,6 +1,7 @@
 import type { Position, Range } from '@unity-shader-nav/shared';
+import { exactSource, type ExactSource } from '../../sourceLocation';
 import { isShaderLabStateValueContext } from '../../vocabulary';
-import { scanBlocks } from '../shaderlab/blockScanner';
+import { scanBlocksFromExactSource } from '../shaderlab/blockScanner';
 import { scanCommentRoles } from '../masking';
 
 const ID_CHAR_RE = /[A-Za-z0-9_]/;
@@ -45,11 +46,21 @@ export interface CursorContext {
   memberPrefix?: CursorMember;
 }
 
-function wordAt(text: string, pos: Position): WordAt | null {
-  const lines = text.split(/\r?\n/);
-  if (pos.line < 0 || pos.line >= lines.length) return null;
+export type CursorSource = ExactSource & {
+  readonly blocks?: readonly import('@unity-shader-nav/shared').ShaderLabBlock[];
+};
 
-  const line = lines[pos.line];
+function toCursorSource(text: string | CursorSource): CursorSource {
+  return exactSource(
+    typeof text === 'string' ? text : text.sourceText,
+    typeof text === 'string' ? undefined : text,
+  ) as CursorSource;
+}
+
+function wordAt(source: CursorSource, pos: Position): WordAt | null {
+  if (pos.line < 0 || pos.line >= source.sourceLines.length) return null;
+
+  const line = source.sourceLines[pos.line];
   let ch = pos.character;
   if (ch < 0 || ch > line.length) return null;
   if (!ID_CHAR_RE.test(line[ch] ?? '')) {
@@ -82,12 +93,12 @@ function wordAt(text: string, pos: Position): WordAt | null {
   };
 }
 
-export function memberAccessAt(text: string, pos: Position): MemberAccess | null {
-  const member = wordAt(text, pos);
+export function memberAccessAt(text: string | CursorSource, pos: Position): MemberAccess | null {
+  const source = toCursorSource(text);
+  const member = wordAt(source, pos);
   if (!member) return null;
 
-  const lines = text.split(/\r?\n/);
-  const line = lines[pos.line];
+  const line = source.sourceLines[pos.line];
   if (!line) return { member, receiver: null };
 
   let cursor = member.range.start.character - 1;
@@ -168,27 +179,36 @@ function receiverExpressionStart(line: string, end: number): number {
   return cursor + 1;
 }
 
-function lexicalContextAt(text: string, pos: Position): LexicalContext {
+function lexicalContextAt(source: CursorSource, pos: Position): LexicalContext {
   if (pos.line < 0 || pos.character < 0) return 'code';
-  const lines = text.split(/\r?\n/);
-  if (pos.line >= lines.length) return 'code';
+  if (pos.line >= source.sourceLines.length) return 'code';
 
-  // Thread block-comment state through the preceding lines via the shared masker.
-  let inBlockComment = false;
-  for (let line = 0; line < pos.line; line++) {
-    inBlockComment = scanCommentRoles(lines[line], inBlockComment).inBlockComment;
+  const lineText = source.sourceLines[pos.line];
+  const prepared = source.sourceLexicalLines?.[pos.line];
+  let roles = prepared?.commentRoles;
+  let lineComment = prepared?.lineComment;
+  if (!prepared) {
+    // Fallback sources retain the historical whole-prefix state scan. Exact
+    // live ShaderLab analysis supplies the already-threaded per-line roles.
+    let inBlockComment = false;
+    for (let line = 0; line < pos.line; line++) {
+      inBlockComment = scanCommentRoles(
+        source.sourceLines[line],
+        inBlockComment,
+      ).inBlockComment;
+    }
+    const scan = scanCommentRoles(lineText, inBlockComment);
+    roles = scan.roles;
+    lineComment = scan.lineComment;
   }
-
-  const lineText = lines[pos.line];
-  const scan = scanCommentRoles(lineText, inBlockComment);
   // Out of range past EOL: the old loop returned 'comment' only when a `//` had
   // run past the cursor (its early return), otherwise it fell through to 'code'.
   if (pos.character > lineText.length) {
-    return scan.lineComment ? 'comment' : 'code';
+    return lineComment ? 'comment' : 'code';
   }
   // roles has a trailing entry at [length] carrying the EOL state, so a cursor
   // at end-of-line inside an unterminated string still reports 'string'.
-  const role = scan.roles[pos.character];
+  const role = roles?.[pos.character];
   if (role === 'comment') return 'comment';
   if (role === 'stringQuote' || role === 'stringBody') return 'string';
   return 'code';
@@ -198,8 +218,9 @@ function isShaderLabDocument(languageId: string | undefined, uri: string): boole
   return languageId === 'shaderlab' || /\.shader(?:$|[?#])/i.test(uri);
 }
 
-function isInsideShaderLabHlslBlock(text: string, pos: Position): boolean {
-  return scanBlocks(text).blocks.some((block) =>
+function isInsideShaderLabHlslBlock(source: CursorSource, pos: Position): boolean {
+  const blocks = source.blocks ?? scanBlocksFromExactSource(source).blocks;
+  return blocks.some((block) =>
     pos.line >= block.contentStartLine && pos.line <= block.contentEndLine,
   );
 }
@@ -279,21 +300,21 @@ export interface CursorClassification {
 }
 
 export function classifyCursor(
-  text: string,
+  text: string | CursorSource,
   pos: Position,
   languageId: string | undefined,
   uri: string,
 ): CursorClassification {
-  const lines = text.split(/\r?\n/);
-  const lineText = lines[pos.line] ?? '';
+  const source = toCursorSource(text);
+  const lineText = source.sourceLines[pos.line] ?? '';
   const prefix = prefixAtLine(lineText, pos);
-  const lexical = lexicalContextAt(text, pos);
+  const lexical = lexicalContextAt(source, pos);
   if (lexical !== 'code') {
     return { classification: lexical, lexical, prefix, member: undefined };
   }
 
   const baseKind: SuggestionContextKind = isShaderLabDocument(languageId, uri)
-    && !isInsideShaderLabHlslBlock(text, pos)
+    && !isInsideShaderLabHlslBlock(source, pos)
     ? 'shaderLabCode'
     : 'hlslCode';
   const classification: SuggestionContextKind = baseKind === 'hlslCode' && isSemanticPosition(lineText, prefix)
@@ -311,15 +332,16 @@ export function classifyCursor(
 }
 
 export function analyzeCursor(
-  text: string,
+  text: string | CursorSource,
   pos: Position,
   languageId: string | undefined,
   uri: string,
 ): CursorContext {
-  const c = classifyCursor(text, pos, languageId, uri);
+  const source = toCursorSource(text);
+  const c = classifyCursor(source, pos, languageId, uri);
   return {
-    word: wordAt(text, pos),
-    member: memberAccessAt(text, pos),
+    word: wordAt(source, pos),
+    member: memberAccessAt(source, pos),
     lexical: c.lexical,
     classification: c.classification,
     prefix: c.prefix,

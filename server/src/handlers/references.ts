@@ -22,11 +22,12 @@ export function registerReferencesHandler(
   >(documents, manager, suspender, {
     uri: (params) => params.textDocument.uri,
     neutral: () => null,
-    resolve: (params, { document, workspace }) => (
+    resolve: (params, { document, workspace }, cancellation) => (
       workspace.referencesAt({
         document,
         position: params.position,
         includeDeclaration: params.context.includeDeclaration,
+        ...(cancellation ? { cancellation } : {}),
       })
     ),
   }));

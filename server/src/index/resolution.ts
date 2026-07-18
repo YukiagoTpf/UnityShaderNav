@@ -1,4 +1,4 @@
-import type { Location } from 'vscode-languageserver/node';
+import type { CancellationToken, Location } from 'vscode-languageserver/node';
 import type { FileIndex, Position, SymbolEntry } from '@unity-shader-nav/shared';
 import type { GlobalSymbolReader } from './globalIndex';
 import type { GlobalReferenceReader } from './globalReferences';
@@ -24,6 +24,11 @@ import {
   uniqueLocations,
 } from './referenceMatching';
 import { uriKey } from '../uriKey';
+import {
+  awaitWithRequestCancellation,
+  cooperativeRequestCheckpoint,
+  throwIfRequestCancelled,
+} from '../lifecycle/requestCancellation';
 
 export interface ResolverContext {
   index: FileIndex;
@@ -60,6 +65,7 @@ export interface ReferenceCollectionContext {
   isInPackages: (uri: string) => boolean;
   includePackages: boolean;
   includeDeclaration: boolean;
+  cancellation?: CancellationToken;
 }
 
 export interface ActiveReferenceTargetSelection {
@@ -117,6 +123,7 @@ export async function findReferences(
   target: CursorTarget,
   ctx: ReferenceCollectionContext,
 ): Promise<Location[]> {
+  throwIfRequestCancelled(ctx.cancellation);
   const idx = ctx.index;
   const word = target.kind === 'member'
     ? target.member
@@ -153,6 +160,7 @@ export async function findReferencesForTarget(
   target: ReferenceTarget,
   ctx: ReferenceCollectionContext,
 ): Promise<Location[]> {
+  throwIfRequestCancelled(ctx.cancellation);
   return collectReferencesForTargets(
     target.name,
     [target],
@@ -166,10 +174,9 @@ function createVisibleUriLookup(ctx: ReferenceCollectionContext): VisibleUriLook
   return (uri: string): Promise<ReadonlySet<string>> => {
     const key = uriKey(uri);
     const existing = visibleByUri.get(key);
-    if (existing) return existing;
-    const next = ctx.includeChain.visibleUriKeys(uri);
-    visibleByUri.set(key, next);
-    return next;
+    const operation = existing ?? ctx.includeChain.visibleUriKeys(uri);
+    if (!existing) visibleByUri.set(key, operation);
+    return awaitWithRequestCancellation(operation, ctx.cancellation);
   };
 }
 
@@ -181,21 +188,28 @@ async function collectReferencesForTargets(
 ): Promise<Location[]> {
   const globalKindAwareTargets = activeTargets.filter(isGlobalKindAwareTarget);
   const includePackages = ctx.includePackages;
-  const symbolsAsReferences = ctx.includeDeclaration
-    ? ctx.global
-      .lookup(queryName)
-      .filter((symbol) => includePackages || !ctx.isInPackages(symbol.location.uri))
-      .filter((symbol) =>
-        activeTargets.length === 0 ||
-        activeTargets.some((target) => sameTarget(target, symbolToTarget(symbol))))
-      .map((symbol) => ({
+  const symbolsAsReferences: Location[] = [];
+  let processed = 0;
+  if (ctx.includeDeclaration) {
+    for (const symbol of ctx.global.lookup(queryName)) {
+      const checkpoint = cooperativeRequestCheckpoint(++processed, ctx.cancellation);
+      if (checkpoint) await checkpoint;
+      if (!includePackages && ctx.isInPackages(symbol.location.uri)) continue;
+      if (
+        activeTargets.length > 0
+        && !activeTargets.some((target) => sameTarget(target, symbolToTarget(symbol)))
+      ) continue;
+      symbolsAsReferences.push({
         uri: symbol.location.uri,
         range: symbol.location.range,
-      }))
-    : [];
+      });
+    }
+  }
 
   const references: Location[] = [];
   for (const reference of ctx.globalRefs.lookup(queryName)) {
+    const checkpoint = cooperativeRequestCheckpoint(++processed, ctx.cancellation);
+    if (checkpoint) await checkpoint;
     if (!includePackages && ctx.isInPackages(reference.location.uri)) continue;
 
     if (activeTargets.length === 0) {
@@ -243,6 +257,7 @@ async function collectReferencesForTargets(
     }
   }
 
+  throwIfRequestCancelled(ctx.cancellation);
   return uniqueLocations([...symbolsAsReferences, ...references]);
 }
 
@@ -251,6 +266,7 @@ export interface HighlightCollectionContext {
   position: Position;
   global: GlobalSymbolReader;
   options?: ResolutionOptions;
+  cancellation?: CancellationToken;
 }
 
 function isSimpleIdentifier(value: string): boolean {
@@ -284,12 +300,14 @@ function sameReceiverMemberLocations(
   receiverPosition: Position,
   global: GlobalSymbolReader | null,
   options: ResolutionOptions | undefined,
+  cancellation?: CancellationToken,
 ): Location[] {
   const activeReceiverTargets = receiverTargets(index, receiverName, receiverPosition, global, options);
   if (activeReceiverTargets.length === 0) return [];
 
   const locations: Location[] = [];
   for (const reference of index.references) {
+    throwIfRequestCancelled(cancellation);
     if (
       reference.name !== memberName ||
       reference.context !== 'member' ||
@@ -326,6 +344,7 @@ function sameReceiverMemberLocations(
  * handler projects them to `DocumentHighlight` at the edge.
  */
 export function findHighlights(target: CursorTarget, ctx: HighlightCollectionContext): Location[] {
+  throwIfRequestCancelled(ctx.cancellation);
   const { index, position, global, options } = ctx;
 
   let targets: ReferenceTarget[];
@@ -348,6 +367,7 @@ export function findHighlights(target: CursorTarget, ctx: HighlightCollectionCon
         target.receiver.range.start,
         global,
         options,
+        ctx.cancellation,
       );
     }
   } else if (target.kind === 'symbol') {
@@ -384,6 +404,7 @@ export function findHighlights(target: CursorTarget, ctx: HighlightCollectionCon
 
   const references: Location[] = [];
   for (const reference of index.references) {
+    throwIfRequestCancelled(ctx.cancellation);
     if (reference.name !== queryName) continue;
     if (reference.context === 'include') continue;
 
@@ -420,5 +441,6 @@ export function findHighlights(target: CursorTarget, ctx: HighlightCollectionCon
     }
   }
 
+  throwIfRequestCancelled(ctx.cancellation);
   return uniqueLocations([...declarations, ...references]);
 }

@@ -4,6 +4,7 @@ import type {
   Position,
   SymbolEntry,
 } from '@unity-shader-nav/shared';
+import type { CancellationToken } from 'vscode-languageserver/node';
 import type { IncludeChain } from '../include';
 import {
   inferReceiverTypeForCompletion,
@@ -14,6 +15,11 @@ import {
 } from '../index';
 import { locationKey } from '../sourceLocation';
 import { uriKey } from '../uriKey';
+import {
+  awaitWithRequestCancellation,
+  cooperativeRequestCheckpoint,
+  throwIfRequestCancelled,
+} from '../lifecycle/requestCancellation';
 import {
   collectBuiltinFunctionSuggestions,
   collectBuiltinSuggestions,
@@ -42,6 +48,7 @@ export interface SuggestionCandidateInput {
   readonly uri: string;
   readonly position: Position;
   readonly query: SuggestionCandidateQuery;
+  readonly cancellation?: CancellationToken;
 }
 
 export interface SuggestionCandidateSelection {
@@ -81,18 +88,25 @@ class PublishedSuggestionCandidateSelector implements SuggestionCandidateSelecto
   async select(
     input: SuggestionCandidateInput,
   ): Promise<SuggestionCandidateSelection | undefined> {
+    throwIfRequestCancelled(input.cancellation);
     const current = this.index.store.get(input.uri);
     if (!current) return undefined;
 
     switch (input.query.kind) {
       case 'completion':
-        return this.selectCompletion(current, input.position, input.query.context);
+        return this.selectCompletion(
+          current,
+          input.position,
+          input.query.context,
+          input.cancellation,
+        );
       case 'member':
         return this.selectMembers(
           current,
           input.position,
           input.query.receiver,
           input.query.prefix,
+          input.cancellation,
         );
       case 'signature':
         return this.selectSignatures(
@@ -101,6 +115,7 @@ class PublishedSuggestionCandidateSelector implements SuggestionCandidateSelecto
           input.query.context,
           input.query.name,
           input.query.activeParameter,
+          input.cancellation,
         );
     }
   }
@@ -109,15 +124,16 @@ class PublishedSuggestionCandidateSelector implements SuggestionCandidateSelecto
     current: FileIndex,
     position: Position,
     context: SuggestionContext,
+    cancellation?: CancellationToken,
   ): Promise<SuggestionCandidateSelection> {
     const projectSuggestions = context.kind === 'hlslCode'
-      ? collectVisibleProjectSuggestions({
+      ? await collectVisibleProjectSuggestions({
         index: current,
         store: this.index.store,
         global: this.index.global,
-        visibleUriKeys: await this.visibleUriKeys(current.uri),
+        visibleUriKeys: await this.visibleUriKeys(current.uri, cancellation),
         position,
-      }).filter((suggestion) => suggestion.name.startsWith(context.prefix.text))
+      }, context.prefix.text, cancellation)
       : [];
 
     return {
@@ -133,10 +149,11 @@ class PublishedSuggestionCandidateSelector implements SuggestionCandidateSelecto
     position: Position,
     receiver: string,
     prefix: string,
+    cancellation?: CancellationToken,
   ): Promise<SuggestionCandidateSelection> {
-    const visibleUriKeys = await this.visibleUriKeys(current.uri);
+    const visibleUriKeys = await this.visibleUriKeys(current.uri, cancellation);
     return {
-      suggestions: collectMemberSuggestions(
+      suggestions: await collectMemberSuggestions(
         current,
         this.index.store,
         this.index.global,
@@ -144,6 +161,7 @@ class PublishedSuggestionCandidateSelector implements SuggestionCandidateSelecto
         receiver,
         prefix,
         position,
+        cancellation,
       ),
     };
   }
@@ -154,15 +172,16 @@ class PublishedSuggestionCandidateSelector implements SuggestionCandidateSelecto
     context: SuggestionContext,
     name: string,
     activeParameter: number,
+    cancellation?: CancellationToken,
   ): Promise<SuggestionCandidateSelection> {
-    const projectSuggestions = collectVisibleProjectFunctionSuggestions({
+    const projectSuggestions = await collectVisibleProjectFunctionSuggestions({
       index: current,
       store: this.index.store,
       global: this.index.global,
-      visibleUriKeys: await this.visibleUriKeys(current.uri),
+      visibleUriKeys: await this.visibleUriKeys(current.uri, cancellation),
       position,
       name,
-    });
+    }, cancellation);
     const suggestions = projectSuggestions.length > 0
       ? projectSuggestions
       : collectBuiltinFunctionSuggestions(name, context);
@@ -175,8 +194,14 @@ class PublishedSuggestionCandidateSelector implements SuggestionCandidateSelecto
     };
   }
 
-  private visibleUriKeys(uri: string): Promise<ReadonlySet<string>> {
-    return this.includeChain.visibleUriKeys(uri);
+  private visibleUriKeys(
+    uri: string,
+    cancellation?: CancellationToken,
+  ): Promise<ReadonlySet<string>> {
+    return awaitWithRequestCancellation(
+      this.includeChain.visibleUriKeys(uri),
+      cancellation,
+    );
   }
 }
 
@@ -234,24 +259,20 @@ function symbolToSuggestion(symbol: SymbolEntry, sourceRank: number): ShaderSugg
   return suggestion;
 }
 
-function collectVisibleProjectSuggestions(
+async function collectVisibleProjectSuggestions(
   input: CollectProjectSuggestionsInput,
-): ShaderSuggestion[] {
-  const visibleSymbols: SymbolEntry[] = [];
-  for (const visibleUri of input.store.uris()) {
-    const visibleKey = uriKey(visibleUri);
-    if (
-      visibleKey === uriKey(input.index.uri)
-      || !input.visibleUriKeys.has(visibleKey)
-    ) continue;
-    const visibleIndex = input.store.get(visibleUri);
-    if (!visibleIndex) continue;
-    visibleSymbols.push(...visibleIndex.symbols);
-  }
+  prefix: string,
+  cancellation?: CancellationToken,
+): Promise<ShaderSuggestion[]> {
+  const matching = await collectMatchingCompletionSymbols(
+    input,
+    prefix,
+    cancellation,
+  );
   const groups = selectSymbolEntryGroups(
-    input.index,
+    matching.index,
     input.position,
-    visibleSymbols,
+    matching.visible,
     { visibleUriKeys: input.visibleUriKeys },
   );
   const ordered: Array<{ symbol: SymbolEntry; rank: number }> = [
@@ -266,18 +287,68 @@ function collectVisibleProjectSuggestions(
 
   const seen = new Set<string>();
   const suggestions: ShaderSuggestion[] = [];
+  let materialized = 0;
   for (const candidate of ordered) {
+    const checkpoint = cooperativeRequestCheckpoint(++materialized, cancellation);
+    if (checkpoint) await checkpoint;
     const key = dedupeKey(candidate.symbol);
     if (seen.has(key)) continue;
     seen.add(key);
     suggestions.push(symbolToSuggestion(candidate.symbol, candidate.rank));
   }
+  throwIfRequestCancelled(cancellation);
   return suggestions;
 }
 
-function collectVisibleProjectFunctionSuggestions(
+async function collectMatchingCompletionSymbols(
+  input: CollectProjectSuggestionsInput,
+  prefix: string,
+  cancellation?: CancellationToken,
+): Promise<{
+  readonly index: FileIndex;
+  readonly visible: readonly SymbolEntry[];
+}> {
+  const current: SymbolEntry[] = [];
+  const visible: SymbolEntry[] = [];
+  let scanned = 0;
+
+  for (const symbol of input.index.symbols) {
+    if (symbol.name.startsWith(prefix)) current.push(symbol);
+    const checkpoint = cooperativeRequestCheckpoint(++scanned, cancellation);
+    if (checkpoint) await checkpoint;
+  }
+  for (const symbol of visibleProjectSymbols(input)) {
+    if (symbol.name.startsWith(prefix)) visible.push(symbol);
+    const checkpoint = cooperativeRequestCheckpoint(++scanned, cancellation);
+    if (checkpoint) await checkpoint;
+  }
+  throwIfRequestCancelled(cancellation);
+
+  return {
+    index: { ...input.index, symbols: current },
+    visible,
+  };
+}
+
+function* visibleProjectSymbols(
+  input: CollectProjectSuggestionsInput,
+): IterableIterator<SymbolEntry> {
+  for (const visibleUri of input.store.uris()) {
+    const visibleKey = uriKey(visibleUri);
+    if (
+      visibleKey === uriKey(input.index.uri)
+      || !input.visibleUriKeys.has(visibleKey)
+    ) continue;
+    const visibleIndex = input.store.get(visibleUri);
+    if (!visibleIndex) continue;
+    yield* visibleIndex.symbols;
+  }
+}
+
+async function collectVisibleProjectFunctionSuggestions(
   input: CollectProjectSuggestionsInput & { readonly name: string },
-): ShaderSuggestion[] {
+  cancellation?: CancellationToken,
+): Promise<ShaderSuggestion[]> {
   const ordered = selectGlobalSymbolEntries(
     input.index,
     input.name,
@@ -291,7 +362,10 @@ function collectVisibleProjectFunctionSuggestions(
 
   const seen = new Set<string>();
   const suggestions: ShaderSuggestion[] = [];
+  let processed = 0;
   for (const candidate of ordered) {
+    const checkpoint = cooperativeRequestCheckpoint(++processed, cancellation);
+    if (checkpoint) await checkpoint;
     const key = symbolLocationKey(candidate.symbol);
     if (seen.has(key)) continue;
     seen.add(key);
@@ -300,7 +374,7 @@ function collectVisibleProjectFunctionSuggestions(
   return suggestions;
 }
 
-function collectMemberSuggestions(
+async function collectMemberSuggestions(
   index: FileIndex,
   store: IndexStoreReader,
   global: GlobalSymbolReader | null | undefined,
@@ -308,7 +382,8 @@ function collectMemberSuggestions(
   receiver: string,
   memberPrefix: string,
   position: Position,
-): ShaderSuggestion[] {
+  cancellation?: CancellationToken,
+): Promise<ShaderSuggestion[]> {
   const receiverType = inferReceiverTypeForCompletion(
     index,
     global,
@@ -328,9 +403,12 @@ function collectMemberSuggestions(
 
   const seen = new Set<string>();
   const suggestions: ShaderSuggestion[] = [];
+  let processed = 0;
   for (const candidateIndex of indexes) {
     const rank = uriKey(candidateIndex.uri) === uriKey(index.uri) ? 1 : 2;
     for (const symbol of candidateIndex.symbols) {
+      const checkpoint = cooperativeRequestCheckpoint(++processed, cancellation);
+      if (checkpoint) await checkpoint;
       if (
         symbol.kind !== 'structMember'
         || symbol.parentType !== receiverType

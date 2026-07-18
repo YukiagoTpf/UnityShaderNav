@@ -1,7 +1,47 @@
 import { describe, expect, it, vi } from 'vitest';
+import { LSPErrorCodes, type CancellationToken } from 'vscode-languageserver/node';
+import { CancellationTokenSource } from 'vscode-jsonrpc/node';
 import { RequestSuspender } from '../../src/lifecycle/requestSuspender';
 
 describe('RequestSuspender', () => {
+  it('detaches a cancelled waiter and reports RequestCancelled without running work', async () => {
+    const suspender = new RequestSuspender({ timeoutMs: 1000 });
+    suspender.suspend();
+    const cancellation = new CancellationTokenSource();
+    const work = vi.fn(async () => 'never');
+
+    const promise = suspender.run(work, cancellation.token);
+    cancellation.cancel();
+    const waiters = Reflect.get(suspender, 'waiters') as Set<() => void>;
+    expect(waiters.size).toBe(0);
+    suspender.release();
+
+    await expect(promise).rejects.toMatchObject({ code: LSPErrorCodes.RequestCancelled });
+    expect(work).not.toHaveBeenCalled();
+    cancellation.dispose();
+  });
+
+  it('disposes a subscription that synchronously cancels before subscribe returns', async () => {
+    const suspender = new RequestSuspender({ timeoutMs: 1000 });
+    suspender.suspend();
+    const work = vi.fn(async () => 'never');
+    const dispose = vi.fn();
+    const cancellation = {
+      isCancellationRequested: false,
+      onCancellationRequested(listener: () => void) {
+        listener();
+        return { dispose };
+      },
+    } as CancellationToken;
+
+    const promise = suspender.run(work, cancellation);
+
+    await expect(promise).rejects.toMatchObject({ code: LSPErrorCodes.RequestCancelled });
+    expect(dispose).toHaveBeenCalledOnce();
+    expect((Reflect.get(suspender, 'waiters') as Set<() => void>).size).toBe(0);
+    expect(work).not.toHaveBeenCalled();
+  });
+
   it('runs work immediately when not suspended', async () => {
     const suspender = new RequestSuspender({ timeoutMs: 1000 });
 

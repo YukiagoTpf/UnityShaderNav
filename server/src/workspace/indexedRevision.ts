@@ -37,6 +37,7 @@ import { createIncludeChain, type IncludeChain } from '../include';
 import { DocumentationResolver } from '../documentation';
 import { UnityProjectFacts } from '../project';
 import { uriKey } from '../uriKey';
+import type { ExactSource } from '../sourceLocation';
 import type { PackageContext } from '../packages';
 import {
   createSuggestionCandidateSelector,
@@ -55,6 +56,7 @@ import type {
   RenameEditOutcome,
   RenamePreparationOutcome,
 } from './indexedWorkspace';
+import type { CursorRequestFacts } from './requestFacts';
 import {
   navigateDefinition,
   navigateReferences,
@@ -207,28 +209,46 @@ export class PublishedIndexedRevision {
       : [];
   }
 
-  definitionAt(input: DefinitionAtInput): Promise<LocationLink[] | Location[] | null> {
-    return navigateDefinition(this.navigationState(), input);
+  definitionAt(
+    input: DefinitionAtInput,
+    facts?: CursorRequestFacts,
+  ): Promise<LocationLink[] | Location[] | null> {
+    return navigateDefinition(this.navigationState(), input, facts);
   }
 
-  referencesAt(input: ReferencesAtInput): Promise<Location[] | null> {
-    return navigateReferences(this.navigationState(), input);
+  referencesAt(
+    input: ReferencesAtInput,
+    facts?: CursorRequestFacts,
+  ): Promise<Location[] | null> {
+    return navigateReferences(this.navigationState(), input, facts);
   }
 
-  hoverAt(input: DocumentPositionInput): Promise<Hover | null> {
+  hoverAt(
+    input: DocumentPositionInput,
+    facts?: CursorRequestFacts,
+  ): Promise<Hover | null> {
     return queryHover(
       this.queryState(),
       input,
       this.documentAnalysis({ uri: input.document.uri, document: input.document })?.lexicalTokens,
+      facts,
     );
   }
 
-  completionAt(input: DocumentPositionInput): Promise<CompletionItem[] | null> {
+  completionAt(
+    input: DocumentPositionInput,
+    facts?: CursorRequestFacts,
+  ): Promise<CompletionItem[] | null> {
     return queryCompletion(
       this.queryState(),
       input,
       this.documentAnalysis({ uri: input.document.uri, document: input.document }),
+      facts,
     );
+  }
+
+  requestAnalysis(document: IndexedDocumentSnapshot): DocumentAnalysis | undefined {
+    return this.documentAnalysis({ uri: document.uri, document });
   }
 
   documentColors(input: IndexedDocumentQueryInput): ColorInformation[] {
@@ -251,29 +271,39 @@ export class PublishedIndexedRevision {
     );
   }
 
-  signatureHelpAt(input: DocumentPositionInput): Promise<SignatureHelp | null> {
-    return querySignatureHelp(this.queryState(), input);
+  signatureHelpAt(
+    input: DocumentPositionInput,
+    facts?: CursorRequestFacts,
+  ): Promise<SignatureHelp | null> {
+    return querySignatureHelp(this.queryState(), input, facts);
   }
 
-  highlightsAt(input: DocumentPositionInput): Promise<DocumentHighlight[] | null> {
-    return queryHighlights(this.queryState(), input);
+  highlightsAt(
+    input: DocumentPositionInput,
+    facts?: CursorRequestFacts,
+  ): Promise<DocumentHighlight[] | null> {
+    return queryHighlights(this.queryState(), input, facts);
   }
 
-  prepareRenameAt(input: DocumentPositionInput): Promise<RenamePreparationOutcome> {
-    return prepareWorkspaceRename(this.navigationState(), input);
+  prepareRenameAt(
+    input: DocumentPositionInput,
+    facts?: CursorRequestFacts,
+  ): Promise<RenamePreparationOutcome> {
+    return prepareWorkspaceRename(this.navigationState(), input, facts);
   }
 
   renameAt(
     input: DocumentPositionInput & { readonly newName: string },
+    facts?: CursorRequestFacts,
   ): Promise<RenameEditOutcome> {
-    return renameWorkspaceSymbol(this.navigationState(), input);
+    return renameWorkspaceSymbol(this.navigationState(), input, facts);
   }
 
   documentSymbols(input: IndexedDocumentQueryInput): DocumentSymbol[] | null {
     return queryDocumentSymbols(this.queryState(), input);
   }
 
-  semanticTokens(input: IndexedDocumentQueryInput): SemanticTokens {
+  semanticTokens(input: IndexedDocumentQueryInput): Promise<SemanticTokens> {
     return querySemanticTokens(
       this.queryState(),
       input,
@@ -281,8 +311,20 @@ export class PublishedIndexedRevision {
     );
   }
 
-  workspaceSymbols(query: string): SymbolInformation[] {
-    return queryWorkspaceSymbols(this.queryState(), query);
+  workspaceSymbols(
+    query: string,
+  ): SymbolInformation[];
+  workspaceSymbols(
+    query: string,
+    cancellation: import('vscode-languageserver/node').CancellationToken,
+  ): Promise<SymbolInformation[]>;
+  workspaceSymbols(
+    query: string,
+    cancellation?: import('vscode-languageserver/node').CancellationToken,
+  ): SymbolInformation[] | Promise<SymbolInformation[]> {
+    return cancellation
+      ? queryWorkspaceSymbols(this.queryState(), query, cancellation)
+      : queryWorkspaceSymbols(this.queryState(), query);
   }
 
   diskIndexEntries(): Array<[string, FileIndex]> {
@@ -498,6 +540,7 @@ export class IndexedRevisionBuilder {
     document: IndexedDocumentSnapshot,
     shouldContinue: () => boolean,
     liveSession?: LiveDocumentTreeSession,
+    source?: ExactSource,
   ): Promise<PreparedDocumentIndex | undefined> {
     this.assertMutable();
     return this.index.prepareDocument(
@@ -505,6 +548,7 @@ export class IndexedRevisionBuilder {
       document.text,
       shouldContinue,
       liveSession,
+      source,
     );
   }
 

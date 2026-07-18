@@ -22,10 +22,11 @@ export function registerSignatureHelpHandler(
   >(documents, manager, suspender, {
     uri: (params) => params.textDocument.uri,
     neutral: () => null,
-    resolve: (params, { document, workspace }) => (
+    resolve: (params, { document, workspace }, cancellation) => (
       workspace.signatureHelpAt({
         document,
         position: params.position,
+        ...(cancellation ? { cancellation } : {}),
       })
     ),
   }));

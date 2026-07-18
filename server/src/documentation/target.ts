@@ -1,7 +1,15 @@
 import type { Position, Range } from '@unity-shader-nav/shared';
 import type { DocumentLexicalToken } from '../analysis';
-import { analyzeCursor } from '../parser/lexical/cursor';
-import { containsPosition } from '../sourceLocation';
+import {
+  analyzeCursor,
+  type CursorContext,
+  type CursorSource,
+} from '../parser/lexical/cursor';
+import {
+  containsPosition,
+  exactSource,
+  textInRange,
+} from '../sourceLocation';
 
 export type DocumentationTargetRole =
   | 'shaderLabTerm'
@@ -18,17 +26,22 @@ export interface DocumentationTarget {
 }
 
 export function documentationTargetAt(
-  text: string,
+  text: string | CursorSource,
   position: Position,
   languageId: string,
   uri: string,
   lexicalTokens: readonly DocumentLexicalToken[] | undefined,
+  cursorFacts?: CursorContext,
 ): DocumentationTarget | undefined {
-  const cursor = analyzeCursor(text, position, languageId, uri);
+  const source = exactSource(
+    typeof text === 'string' ? text : text.sourceText,
+    typeof text === 'string' ? undefined : text,
+  ) as CursorSource;
+  const cursor = cursorFacts ?? analyzeCursor(source, position, languageId, uri);
   if (cursor.lexical !== 'code') return undefined;
   const token = lexicalTokens?.find((candidate) => containsPosition(candidate.range, position));
   if (token) {
-    const name = textInRange(text, token.range);
+    const name = textInRange(source, token.range);
     if (!name) return undefined;
     if (token.tokenType === 'decorator') {
       return { role: 'propertyAttribute', name, range: token.range };
@@ -54,10 +67,4 @@ export function documentationTargetAt(
     return { role: 'hlslIdentifier', name: cursor.word.text, range: cursor.word.range };
   }
   return undefined;
-}
-
-function textInRange(text: string, range: Range): string {
-  if (range.start.line !== range.end.line) return '';
-  return (text.split(/\r?\n/)[range.start.line] ?? '')
-    .slice(range.start.character, range.end.character);
 }

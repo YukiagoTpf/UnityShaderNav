@@ -9,6 +9,7 @@ export interface ShaderLabSourceLine {
   readonly raw: string;
   /** Per-column lexical roles for the exact raw line, including its EOL sentinel. */
   readonly commentRoles: readonly CommentRole[];
+  readonly lineComment: boolean;
   /** Comments blanked; string contents preserved. */
   readonly code: string;
   /** Comments and complete string literals blanked. */
@@ -32,7 +33,14 @@ export interface ShaderLabSourceInterpretation {
  * these width-preserving line facts instead of splitting and lexing the source again.
  */
 export function interpretShaderLabSource(text: string): ShaderLabSourceInterpretation {
-  const rawLines = text.split(/\r?\n/);
+  return interpretShaderLabSourceLines(text, text.split(/\r?\n/));
+}
+
+/** Interpret already-split lines that are proven to belong to `text`. */
+export function interpretShaderLabSourceLines(
+  text: string,
+  rawLines: readonly string[],
+): ShaderLabSourceInterpretation {
   const lines: ShaderLabSourceLine[] = [];
   let inBlockComment = false;
 
@@ -44,6 +52,7 @@ export function interpretShaderLabSource(text: string): ShaderLabSourceInterpret
       line,
       raw,
       commentRoles: scan.roles,
+      lineComment: scan.lineComment,
       code: maskCommentScan(raw, scan),
       codeWithoutStrings: maskCommentScan(raw, scan, { strings: 'blank-all' }),
       stringBodyMaskedCode: maskCommentScan(raw, scan, { strings: 'blank-body' }),

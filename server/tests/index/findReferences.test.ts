@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { Location } from 'vscode-languageserver/node';
+import {
+  LSPErrorCodes,
+  type CancellationToken,
+  type Location,
+} from 'vscode-languageserver/node';
+import { CancellationTokenSource } from 'vscode-jsonrpc/node';
 import type { Position } from '@unity-shader-nav/shared';
 import { createIncludeChain } from '../../src/include';
 import {
@@ -29,6 +34,7 @@ function referencesAt(
   position: Position,
   includeDeclaration: boolean,
   text: string,
+  cancellation?: CancellationToken,
 ): Promise<Location[]> {
   const target = cursorTargetAt(text, position, { detectIncludes: false });
   return findReferences(target, {
@@ -41,6 +47,7 @@ function referencesAt(
     isInPackages: () => false,
     includePackages: true,
     includeDeclaration,
+    cancellation,
   });
 }
 
@@ -57,6 +64,32 @@ function tokenPosition(text: string, line: number, token: string, occurrence = 0
 }
 
 describe('findReferences', () => {
+  it('observes cancellation during a large reference scan', async () => {
+    const uri = 'file:///t/LongRefs.hlsl';
+    const text = [
+      'float4 Helper() { return 1; }',
+      'float4 Main() {',
+      ...Array.from({ length: 4096 }, () => '  Helper();'),
+      '}',
+    ].join('\n');
+    const base = await setup(uri, text);
+    const cancellation = new CancellationTokenSource();
+    const cancellationTask = setImmediate(() => cancellation.cancel());
+
+    try {
+      await expect(referencesAt(
+        base,
+        tokenPosition(text, 0, 'Helper'),
+        true,
+        text,
+        cancellation.token,
+      )).rejects.toMatchObject({ code: LSPErrorCodes.RequestCancelled });
+    } finally {
+      clearImmediate(cancellationTask);
+      cancellation.dispose();
+    }
+  });
+
   it('collects same-file function calls, gated by includeDeclaration', async () => {
     const uri = 'file:///t/Refs.hlsl';
     const text = [

@@ -21,6 +21,7 @@ import {
   scanShaderLabTokensFromSource,
   type ShaderLabLexicalToken,
 } from '../parser/shaderlab/tokenScanner';
+import type { ExactSourceLexicalLine } from '../sourceLocation';
 
 export type DocumentLexicalToken = ShaderLabLexicalToken;
 
@@ -34,6 +35,7 @@ export type DocumentLexicalToken = ShaderLabLexicalToken;
 export interface DocumentAnalysis {
   readonly sourceText: string;
   readonly sourceLines: readonly string[];
+  readonly sourceLexicalLines: readonly ExactSourceLexicalLine[];
   readonly blocks: readonly ShaderLabBlock[];
   readonly layout: ShaderLabLayoutAnalysis;
   readonly structure: StructureResult;
@@ -70,6 +72,10 @@ export function analyzeDocument(
   return Object.freeze({
     sourceText: text,
     sourceLines: source.lines.map((line) => line.raw),
+    sourceLexicalLines: source.lines.map((line) => ({
+      commentRoles: line.commentRoles,
+      lineComment: line.lineComment,
+    })),
     blocks,
     layout,
     structure,

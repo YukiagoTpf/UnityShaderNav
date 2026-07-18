@@ -1,4 +1,5 @@
 import type {
+  Location,
   Range,
   WorkspaceEdit,
 } from 'vscode-languageserver/node';
@@ -11,7 +12,10 @@ import {
   selectActiveReferenceTargets,
   type ActiveReferenceTargetSelection,
 } from '../index';
-import { isGenericDefinitionContext } from '../parser/lexical/context';
+import {
+  isGenericDefinitionContext,
+  isGenericDefinitionCursor,
+} from '../parser/lexical/context';
 import { findBuiltinEntries } from '../vocabulary';
 import type {
   DocumentPositionInput,
@@ -26,6 +30,12 @@ import {
   shaderLabNameTargetAt,
 } from './shaderLabNames';
 import { uriKey } from '../uriKey';
+import type { CursorRequestFacts } from './requestFacts';
+import {
+  awaitWithRequestCancellation,
+  cooperativeRequestCheckpoint,
+  throwIfRequestCancelled,
+} from '../lifecycle/requestCancellation';
 
 type RenameTarget = ActiveReferenceTargetSelection['targets'][number];
 
@@ -63,7 +73,9 @@ function rangesOverlap(left: Range, right: Range): boolean {
 async function resolveRenameSubject(
   state: WorkspaceNavigationState,
   input: DocumentPositionInput,
+  facts?: CursorRequestFacts,
 ): Promise<RenameSubject | RenameFailure | null> {
+  throwIfRequestCancelled(input.cancellation);
   const { document, position } = input;
   const index = state.index.store.get(document.uri);
   if (!index) return null;
@@ -72,22 +84,28 @@ async function resolveRenameSubject(
     return rejected('ShaderLab Property rename is not supported yet.');
   }
 
-  const cursorTarget = cursorTargetAt(document.text, position);
+  const cursorTarget = facts?.target() ?? cursorTargetAt(document.text, position);
   if (cursorTarget.kind === 'include') {
     return rejected('Include paths cannot be renamed as HLSL symbols.');
   }
   if (cursorTarget.kind === 'none') return null;
-  if (!isGenericDefinitionContext(
-    document.text,
-    position,
-    document.languageId,
-    document.uri,
-  )) return null;
+  const genericContext = facts
+    ? isGenericDefinitionCursor(facts.cursor)
+    : isGenericDefinitionContext(
+      document.text,
+      position,
+      document.languageId,
+      document.uri,
+    );
+  if (!genericContext) return null;
 
   const token = cursorTarget.kind === 'member'
     ? cursorTarget.member
     : cursorTarget.word;
-  const visibleUriKeys = await state.includeChain.visibleUriKeys(document.uri);
+  const visibleUriKeys = await awaitWithRequestCancellation(
+    state.includeChain.visibleUriKeys(document.uri),
+    input.cancellation,
+  );
   const selection = selectActiveReferenceTargets(
     cursorTarget,
     index,
@@ -186,13 +204,15 @@ function collisionReason(
 export async function prepareWorkspaceRename(
   state: WorkspaceNavigationState,
   input: DocumentPositionInput,
+  facts?: CursorRequestFacts,
 ): Promise<RenamePreparationOutcome> {
+  throwIfRequestCancelled(input.cancellation);
   const index = state.index.store.get(input.document.uri);
   const shaderLabNameTarget = index
     ? shaderLabNameTargetAt(index, input.position)
     : null;
   if (shaderLabNameTarget) return prepareShaderLabNameRename(state, shaderLabNameTarget);
-  const subject = await resolveRenameSubject(state, input);
+  const subject = await resolveRenameSubject(state, input, facts);
   if (!isRenameSubject(subject)) return subject;
   return {
     kind: 'ready',
@@ -204,7 +224,9 @@ export async function prepareWorkspaceRename(
 export async function renameWorkspaceSymbol(
   state: WorkspaceNavigationState,
   input: DocumentPositionInput & { readonly newName: string },
+  facts?: CursorRequestFacts,
 ): Promise<RenameEditOutcome> {
+  throwIfRequestCancelled(input.cancellation);
   const shaderLabIndex = state.index.store.get(input.document.uri);
   const shaderLabNameTarget = shaderLabIndex
     ? shaderLabNameTargetAt(shaderLabIndex, input.position)
@@ -212,7 +234,7 @@ export async function renameWorkspaceSymbol(
   if (shaderLabNameTarget) {
     return renameShaderLabName(state, shaderLabNameTarget, input.newName);
   }
-  const subject = await resolveRenameSubject(state, input);
+  const subject = await resolveRenameSubject(state, input, facts);
   if (!isRenameSubject(subject)) return subject;
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(input.newName)) {
     return rejected(`'${input.newName}' is not a valid HLSL identifier.`);
@@ -234,8 +256,15 @@ export async function renameWorkspaceSymbol(
     isInPackages: state.isInPackages,
     includePackages: false,
     includeDeclaration: true,
+    cancellation: input.cancellation,
   });
-  const editable = locations.filter((location) => !state.isInPackages(location.uri));
+  const editable: Location[] = [];
+  let processed = 0;
+  for (const location of locations) {
+    if (!state.isInPackages(location.uri)) editable.push(location);
+    const checkpoint = cooperativeRequestCheckpoint(++processed, input.cancellation);
+    if (checkpoint) await checkpoint;
+  }
   if (editable.length === 0) {
     return rejected(`No editable occurrences were found for '${subject.declaration.name}'.`);
   }
@@ -247,12 +276,15 @@ export async function renameWorkspaceSymbol(
     || left.range.end.line - right.range.end.line
     || left.range.end.character - right.range.end.character
   ));
+  throwIfRequestCancelled(input.cancellation);
   const changes: NonNullable<WorkspaceEdit['changes']> = {};
   for (const location of editable) {
     (changes[location.uri] ??= []).push({
       range: location.range,
       newText: input.newName,
     });
+    const checkpoint = cooperativeRequestCheckpoint(++processed, input.cancellation);
+    if (checkpoint) await checkpoint;
   }
   return { changes };
 }

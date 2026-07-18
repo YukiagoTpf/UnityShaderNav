@@ -5,6 +5,7 @@ import type {
   Range,
   UserDeclarationMacro,
 } from '@unity-shader-nav/shared';
+import { exactSource, type ExactSource } from '../sourceLocation';
 import { maskCommentsLine } from '../parser/masking';
 import { rangeOf, textOf } from '../parser/hlsl/nodeHelpers';
 import {
@@ -93,9 +94,13 @@ export class MacroPatternRecognizer {
     return null;
   }
 
-  scanReferencePatterns(text: string): ReferencePatternMatch[] {
+  scanReferencePatterns(text: string | ExactSource): ReferencePatternMatch[] {
     const matches: ReferencePatternMatch[] = [];
-    const lines = text.split(/\r?\n/);
+    const source = exactSource(
+      typeof text === 'string' ? text : text.sourceText,
+      typeof text === 'string' ? undefined : text,
+    );
+    const lines = source.sourceLines;
     let inBlockComment = false;
     for (let lineNumber = 0; lineNumber < lines.length; lineNumber++) {
       const stripped = maskCommentsLine(

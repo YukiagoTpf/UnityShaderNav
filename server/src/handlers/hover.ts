@@ -23,9 +23,10 @@ export function registerHoverHandler(
     {
       uri: (params) => params.textDocument.uri,
       neutral: () => null,
-      resolve: (params, { document, workspace }) => workspace.hoverAt({
+      resolve: (params, { document, workspace }, cancellation) => workspace.hoverAt({
         document,
         position: params.position,
+        ...(cancellation ? { cancellation } : {}),
       }),
     },
   ));
