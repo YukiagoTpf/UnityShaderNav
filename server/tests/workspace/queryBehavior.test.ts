@@ -271,6 +271,21 @@ describe('published query behavior', () => {
       position: positionOf(text, '_Color', 0, 1),
     });
     expect(unknown).toBeNull();
+
+    const incompatible = await publishOpenDocument(
+      'file:///project',
+      document,
+      UnityProjectFacts.fromProjectVersionText('m_EditorVersion: 2021.3.45f1\n'),
+    );
+    await expect(incompatible.hoverAt({
+      document,
+      position: positionOf(text, 'Cull Back', 0, 1),
+    })).resolves.toBeNull();
+    const retained = await revision.hoverAt({
+      document,
+      position: positionOf(text, 'Cull Back', 0, 1),
+    });
+    expect((retained?.contents as { value?: string }).value).toContain('SL-Cull.html');
   });
 
   it('keeps a project declaration authoritative over a same-name curated helper', async () => {
@@ -289,6 +304,104 @@ describe('published query behavior', () => {
 
     expect(value).toContain('float4 GetVertexPositionInputs(float3 custom)');
     expect(value).not.toContain('Curated fallback');
+  });
+
+  it('keeps Package fallback bound to captured include visibility and Package facts', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-package-fallback-hover-'));
+    const packageName = 'com.unity.render-pipelines.universal';
+    const packageRoot = join(root, 'Library', 'PackageCache', `${packageName}@hash`);
+    const mainPath = join(root, 'Assets', 'Main.hlsl');
+    const helperPath = join(packageRoot, 'ShaderLibrary', 'Core.hlsl');
+    const withInclude = [
+      `#include "Packages/${packageName}/ShaderLibrary/Core.hlsl"`,
+      'float4 Main() { return GetVertexPositionInputs(0).positionCS; }',
+    ].join('\n');
+    const withoutInclude = 'float4 Main() { return GetVertexPositionInputs(0).positionCS; }';
+    await Promise.all([
+      mkdir(join(root, 'Packages'), { recursive: true }),
+      mkdir(join(root, 'Assets'), { recursive: true }),
+      mkdir(join(packageRoot, 'ShaderLibrary'), { recursive: true }),
+    ]);
+    await Promise.all([
+      writeFile(join(root, 'Packages', 'packages-lock.json'), JSON.stringify({
+        dependencies: {
+          [packageName]: { version: '17.0.3', source: 'registry', hash: 'hash' },
+        },
+      })),
+      writeFile(join(root, 'Packages', 'manifest.json'), JSON.stringify({
+        dependencies: { [packageName]: '17.0.3' },
+        scopedRegistries: [],
+      })),
+      writeFile(join(packageRoot, 'package.json'), JSON.stringify({
+        name: packageName,
+        version: '17.0.3',
+      })),
+      writeFile(mainPath, withInclude),
+      writeFile(helperPath, '// Visible package source without an indexed declaration.'),
+    ]);
+
+    try {
+      const packages = await PackageContext.load(root, DEFAULT_SETTINGS);
+      const mainUri = pathToFileURL(mainPath).href;
+      const [withIncludeIndex, withoutIncludeIndex] = await Promise.all([
+        indexFile(mainUri, withInclude),
+        indexFile(mainUri, withoutInclude),
+      ]);
+      const first = publishIndexes(pathToFileURL(root).href, [withIncludeIndex], {
+        unityRoot: root,
+        packages,
+      });
+      const nextBuilder = first.fork();
+      nextBuilder.restoreFromCache(mainUri, withoutIncludeIndex);
+      const second = nextBuilder.publish(2);
+      const firstDocument = snapshot(mainUri, withInclude);
+      const secondDocument = snapshot(mainUri, withoutInclude);
+
+      const firstHover = await first.hoverAt({
+        document: firstDocument,
+        position: positionOf(withInclude, 'GetVertexPositionInputs', 0, 1),
+      });
+      const firstValue = (firstHover?.contents as { value?: string }).value ?? '';
+      expect(firstValue).toContain('Curated fallback');
+      expect(firstValue).toContain(`${packageName}@17.0.3`);
+      expect(firstValue).toContain('registry');
+
+      await expect(second.hoverAt({
+        document: secondDocument,
+        position: positionOf(withoutInclude, 'GetVertexPositionInputs', 0, 1),
+      })).resolves.toBeNull();
+
+      await Promise.all([
+        writeFile(join(root, 'Packages', 'packages-lock.json'), JSON.stringify({
+          dependencies: {
+            [packageName]: { version: '16.0.6', source: 'registry', hash: 'hash' },
+          },
+        })),
+        writeFile(join(packageRoot, 'package.json'), JSON.stringify({
+          name: packageName,
+          version: '16.0.6',
+        })),
+      ]);
+      const incompatiblePackages = await PackageContext.load(root, DEFAULT_SETTINGS);
+      const incompatible = publishIndexes(pathToFileURL(root).href, [withIncludeIndex], {
+        unityRoot: root,
+        packages: incompatiblePackages,
+      });
+      await expect(incompatible.hoverAt({
+        document: firstDocument,
+        position: positionOf(withInclude, 'GetVertexPositionInputs', 0, 1),
+      })).resolves.toBeNull();
+
+      const retained = await first.hoverAt({
+        document: firstDocument,
+        position: positionOf(withInclude, 'GetVertexPositionInputs', 0, 1),
+      });
+      const retainedValue = (retained?.contents as { value?: string }).value ?? '';
+      expect(retainedValue).toContain('Curated fallback');
+      expect(retainedValue).toContain(`${packageName}@17.0.3`);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it('shows exact Package provenance when a visible HDRP declaration wins', async () => {

@@ -207,7 +207,7 @@ describe('server dependency direction', () => {
         forbidden: /entry\.name|entry\.kind|entry\.parameters/,
       },
       {
-        moduleId: 'workspace/queries.ts',
+        moduleId: 'documentation/resolver.ts',
         required: /findBuiltinEntries/,
         forbidden: /BUILTIN_ENTRIES\.filter/,
       },
@@ -353,6 +353,30 @@ describe('server dependency direction', () => {
     expect(reconciler).toMatch(/closedDocumentOpenIds/);
     expect(reconciler).toMatch(/openId[\s\S]*version|version[\s\S]*openId/);
     expect(reconciler).toMatch(/tombstone/);
+  });
+
+  it('keeps Quick Documentation policy in the revision-owned resolver', () => {
+    const resolver = readFileSync(
+      resolve(SOURCE_ROOT, 'documentation/resolver.ts'),
+      'utf8',
+    );
+    const queries = readFileSync(
+      resolve(SOURCE_ROOT, 'workspace/queries.ts'),
+      'utf8',
+    );
+
+    expect(resolver).toMatch(/documentationTargetAt\s*\(/);
+    expect(resolver).toMatch(/findBuiltinEntries\s*\(/);
+    expect(resolver).toMatch(/switch \(target\.role\)/);
+    expect(resolver).toMatch(/declarations\.length > 0[\s\S]*resolveCurated/);
+    expect(resolver).toMatch(/pkg\.official/);
+    expect(resolver).toMatch(/supportedEditorVersions|supportedMajorVersions/);
+    expect(resolver).toMatch(/visibleUriKeys\.has\(uriKey\(symbol\.location\.uri\)\)/);
+
+    expect(queries).toMatch(/state\.documentation\.resolve\s*\(/);
+    expect(queries).not.toMatch(
+      /findBuiltinEntries|\bBuiltinEntry\b|quickDocumentation|\.roles|projectProvenance|\.curated\s*\(/,
+    );
   });
 
   it('keeps indexed source membership policy in one revision-bound module', () => {

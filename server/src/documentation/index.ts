@@ -1,7 +1,9 @@
 export {
   DocumentationResolver,
+  type DocumentationResolution,
+  type DocumentationResolutionRequest,
   type PackageProvenance,
-  type ResolvedCuratedEntry,
+  type ResolvedDocumentationCandidate,
 } from './resolver';
 export {
   documentationTargetAt,
