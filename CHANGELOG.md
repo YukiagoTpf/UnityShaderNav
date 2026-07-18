@@ -7,6 +7,13 @@ and uses semantic versioning for extension releases.
 
 ## Unreleased
 
+## 0.1.1 - 2026-07-18
+
+### Changed
+
+- Replaced the Marketplace extension icon with a balanced square composition
+  that preserves the intended cube proportions at 128×128.
+
 ## 0.1.0 - 2026-07-17
 
 ### Added
