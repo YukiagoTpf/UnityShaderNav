@@ -7,6 +7,9 @@ import { describe, expect, it } from 'vitest';
 import { PackageContext } from '../../src/packages';
 import { indexFile } from '../../src/parser/hlsl';
 import { IndexedRevisionBuilder } from '../../src/workspace/indexedRevision';
+import { createTestWorkspaceLocation } from '../helpers/testWorkspaceLocation';
+
+const workspaceLocation = createTestWorkspaceLocation('usn-indexed-revision');
 
 const fakeConnection = {
   console: { log() {}, warn() {} },
@@ -57,7 +60,7 @@ describe('PublishedIndexedRevision', () => {
       findReferences: { includePackages: true },
     };
     const revision = IndexedRevisionBuilder.create({
-      folderUri: 'file:///workspace',
+      folderUri: workspaceLocation.folderUri,
       settings: mutable,
       unityRoot: undefined,
       packages: PackageContext.standalone(mutable),
@@ -75,10 +78,10 @@ describe('PublishedIndexedRevision', () => {
   });
 
   it('freezes the FileIndex shell before candidate forks share readonly facts', async () => {
-    const uri = 'file:///workspace/Frozen.hlsl';
+    const uri = workspaceLocation.fileUri('Frozen.hlsl');
     const index = await indexFile(uri, 'float4 FrozenSymbol() { return 0; }');
     const builder = IndexedRevisionBuilder.create({
-      folderUri: 'file:///workspace',
+      folderUri: workspaceLocation.folderUri,
       settings: DEFAULT_SETTINGS,
       unityRoot: undefined,
       packages: PackageContext.standalone(DEFAULT_SETTINGS),

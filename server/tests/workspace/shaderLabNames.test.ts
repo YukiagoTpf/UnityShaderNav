@@ -15,6 +15,9 @@ import {
   type PublishedIndexedRevision,
 } from '../../src/workspace/indexedRevision';
 import { createIndexedWorkspaceFixture } from '../helpers/indexedWorkspaceFixture';
+import { createTestWorkspaceLocation } from '../helpers/testWorkspaceLocation';
+
+const workspaceLocation = createTestWorkspaceLocation('usn-shaderlab-names');
 
 function snapshot(uri: string, text: string): IndexedDocumentSnapshot {
   return { uri, text, languageId: 'shaderlab', openId: 1, version: 1 };
@@ -42,7 +45,7 @@ async function publish(files: ReadonlyArray<{ uri: string; text: string }>) {
 
 function publishIndexes(indexes: readonly FileIndex[]): PublishedIndexedRevision {
   const builder = IndexedRevisionBuilder.create({
-    folderUri: 'file:///project',
+    folderUri: workspaceLocation.folderUri,
     settings: DEFAULT_SETTINGS,
     unityRoot: undefined,
     packages: PackageContext.standalone(DEFAULT_SETTINGS),
@@ -59,8 +62,8 @@ function failureMessage(value: unknown): string {
 
 describe('ShaderLab name semantics', () => {
   it('connects Shader declarations with Fallback and UsePass shader paths', async () => {
-    const libraryUri = 'file:///project/Assets/Library.shader';
-    const consumerUri = 'file:///project/Assets/Consumer.shader';
+    const libraryUri = workspaceLocation.fileUri('Assets', 'Library.shader');
+    const consumerUri = workspaceLocation.fileUri('Assets', 'Consumer.shader');
     const library = [
       'Shader "Library/Lit" {',
       '  SubShader { Pass { Name "FORWARD" } }',
@@ -120,8 +123,8 @@ describe('ShaderLab name semantics', () => {
   });
 
   it('connects Pass Name with UsePass and canonicalizes renamed references', async () => {
-    const libraryUri = 'file:///project/Assets/Library.shader';
-    const consumerUri = 'file:///project/Assets/Consumer.shader';
+    const libraryUri = workspaceLocation.fileUri('Assets', 'Library.shader');
+    const consumerUri = workspaceLocation.fileUri('Assets', 'Consumer.shader');
     const library = [
       'Shader "Library/Lit" {',
       '  SubShader {',
@@ -185,9 +188,9 @@ describe('ShaderLab name semantics', () => {
   });
 
   it('returns every duplicate declaration but refuses an unsafe Rename', async () => {
-    const firstUri = 'file:///project/Assets/First.shader';
-    const secondUri = 'file:///project/Assets/Second.shader';
-    const consumerUri = 'file:///project/Assets/Consumer.shader';
+    const firstUri = workspaceLocation.fileUri('Assets', 'First.shader');
+    const secondUri = workspaceLocation.fileUri('Assets', 'Second.shader');
+    const consumerUri = workspaceLocation.fileUri('Assets', 'Consumer.shader');
     const duplicate = ['Shader "Duplicate/Name" {', '  SubShader {}', '}'].join('\n');
     const consumer = [
       'Shader "Consumer" {',
@@ -209,7 +212,7 @@ describe('ShaderLab name semantics', () => {
   });
 
   it('uses the latest open-document name facts', async () => {
-    const uri = 'file:///project/Assets/Live.shader';
+    const uri = workspaceLocation.fileUri('Assets', 'Live.shader');
     const text = [
       'Shader "Live/Edited" {',
       '  SubShader {',
@@ -221,7 +224,7 @@ describe('ShaderLab name semantics', () => {
     ].join('\n');
     const document = snapshot(uri, text);
     const builder = IndexedRevisionBuilder.create({
-      folderUri: 'file:///project',
+      folderUri: workspaceLocation.folderUri,
       settings: DEFAULT_SETTINGS,
       unityRoot: undefined,
       packages: PackageContext.standalone(DEFAULT_SETTINGS),
@@ -240,8 +243,12 @@ describe('ShaderLab name semantics', () => {
   });
 
   it('keeps Package declarations navigable but read-only', async () => {
-    const packageUri = 'file:///project/Packages/com.example/Library.shader';
-    const consumerUri = 'file:///project/Assets/Consumer.shader';
+    const packageUri = workspaceLocation.fileUri(
+      'Packages',
+      'com.example',
+      'Library.shader',
+    );
+    const consumerUri = workspaceLocation.fileUri('Assets', 'Consumer.shader');
     const packageText = [
       'Shader "Package/Library" {',
       '  SubShader {}',
@@ -272,7 +279,7 @@ describe('ShaderLab name semantics', () => {
   });
 
   it('keeps unresolved external names neutral', async () => {
-    const uri = 'file:///project/Assets/External.shader';
+    const uri = workspaceLocation.fileUri('Assets', 'External.shader');
     const text = [
       'Shader "Consumer" {',
       '  Fallback "Hidden/ExternalShader"',

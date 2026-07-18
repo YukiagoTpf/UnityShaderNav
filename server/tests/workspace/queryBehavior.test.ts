@@ -28,6 +28,9 @@ import {
 import { SEMANTIC_TOKEN_TYPES } from '../../src/workspace/semanticTokenLegend';
 import { WorkspaceManager } from '../../src/workspace/workspaceManager';
 import { createCursorRequestFacts } from '../../src/workspace/requestFacts';
+import { createTestWorkspaceLocation } from '../helpers/testWorkspaceLocation';
+
+const workspaceLocation = createTestWorkspaceLocation('usn-query-behavior');
 
 const connection = {
   console: { log() {}, warn() {}, error() {} },
@@ -203,7 +206,7 @@ function symbol(
 
 describe('published query behavior', () => {
   it('serves authoring facts only for the exact committed document attempt', async () => {
-    const uri = 'file:///project/Assets/Authoring.shader';
+    const uri = workspaceLocation.fileUri('Assets', 'Authoring.shader');
     const text = [
       'Shader "Authoring/Test" {',
       '  Properties {',
@@ -213,7 +216,7 @@ describe('published query behavior', () => {
       '}',
     ].join('\n');
     const document = snapshot(uri, text);
-    const revision = await publishOpenDocument('file:///project', document);
+    const revision = await publishOpenDocument(workspaceLocation.folderUri, document);
 
     expect(revision.documentColors({ uri, document })).toHaveLength(1);
     expect(revision.formatDocument({
@@ -230,7 +233,7 @@ describe('published query behavior', () => {
   });
 
   it('serves context-bound ShaderLab and semantic Quick Documentation', async () => {
-    const uri = 'file:///project/Assets/Documentation.shader';
+    const uri = workspaceLocation.fileUri('Assets', 'Documentation.shader');
     const text = [
       'Shader "Docs/Test" {',
       '  Properties {',
@@ -249,7 +252,7 @@ describe('published query behavior', () => {
     ].join('\n');
     const document = snapshot(uri, text);
     const revision = await publishOpenDocument(
-      'file:///project',
+      workspaceLocation.folderUri,
       document,
       UnityProjectFacts.fromProjectVersionText('m_EditorVersion: 2022.3.53f1\n'),
     );
@@ -276,7 +279,7 @@ describe('published query behavior', () => {
     expect(unknown).toBeNull();
 
     const unity6 = await publishOpenDocument(
-      'file:///project',
+      workspaceLocation.folderUri,
       document,
       UnityProjectFacts.fromProjectVersionText('m_EditorVersion: 6000.0.42f1\n'),
     );
@@ -288,7 +291,7 @@ describe('published query behavior', () => {
       'verified against Unity 2022.3',
     );
 
-    const standalone = await publishOpenDocument('file:///project', document);
+    const standalone = await publishOpenDocument(workspaceLocation.folderUri, document);
     const standaloneHover = await standalone.hoverAt({
       document,
       position: positionOf(text, 'SV_Target', 0, 1),
@@ -304,12 +307,12 @@ describe('published query behavior', () => {
   });
 
   it('keeps a project declaration authoritative over a same-name curated helper', async () => {
-    const uri = 'file:///project/Assets/ProjectHelper.hlsl';
+    const uri = workspaceLocation.fileUri('Assets', 'ProjectHelper.hlsl');
     const text = [
       'float4 GetVertexPositionInputs(float3 custom) { return 1; }',
       'float4 Main() { return GetVertexPositionInputs(0); }',
     ].join('\n');
-    const revision = await publishTextFiles('file:///project', [{ uri, text }]);
+    const revision = await publishTextFiles(workspaceLocation.folderUri, [{ uri, text }]);
     const document = snapshot(uri, text);
     const hover = await revision.hoverAt({
       document,
@@ -478,7 +481,7 @@ describe('published query behavior', () => {
   });
 
   it('shares nearest scoped selection across definition, hover, and completion', async () => {
-    const uri = 'file:///project/Assets/Selection.hlsl';
+    const uri = workspaceLocation.fileUri('Assets', 'Selection.hlsl');
     const text = ['// 0', '// 1', '// 2', '// 3', 'value;', 'receiver.'].join('\n');
     const scopeRange = {
       start: { line: 0, character: 0 },
@@ -498,7 +501,7 @@ describe('published query behavior', () => {
         symbol('farOnly', 'structMember', uri, 0, { parentType: 'Far' }),
       ],
     };
-    const revision = publishIndexes('file:///project', [index]);
+    const revision = publishIndexes(workspaceLocation.folderUri, [index]);
     const document = snapshot(uri, text);
 
     const definition = await revision.definitionAt({
@@ -888,7 +891,7 @@ describe('published query behavior', () => {
   });
 
   it('publishes generic texture member completion and multiline overload signatures', async () => {
-    const uri = 'file:///project/Assets/TextureMembers.hlsl';
+    const uri = workspaceLocation.fileUri('Assets', 'TextureMembers.hlsl');
     const text = [
       'float4 Use(Texture2D<float4> texture, SamplerState samplerState) {',
       '  texture.Sam',
@@ -900,7 +903,7 @@ describe('published query behavior', () => {
       '}',
     ].join('\n');
     const document = snapshot(uri, text);
-    const revision = await publishOpenDocument('file:///project', document);
+    const revision = await publishOpenDocument(workspaceLocation.folderUri, document);
 
     const completion = await revision.completionAt({
       document,
@@ -921,7 +924,7 @@ describe('published query behavior', () => {
   });
 
   it('publishes typed texture macro members without guessing TEXTURE2D_X ownership', async () => {
-    const uri = 'file:///project/Assets/TextureMacros.hlsl';
+    const uri = workspaceLocation.fileUri('Assets', 'TextureMacros.hlsl');
     const text = [
       'TYPED_TEXTURE2D(float4, _TypedTexture);',
       'TEXTURE2D_X(_PlatformTexture);',
@@ -936,7 +939,7 @@ describe('published query behavior', () => {
       '}',
     ].join('\n');
     const document = snapshot(uri, text);
-    const revision = await publishOpenDocument('file:///project', document);
+    const revision = await publishOpenDocument(workspaceLocation.folderUri, document);
 
     const typedMembers = await revision.completionAt({
       document,
@@ -963,7 +966,7 @@ describe('published query behavior', () => {
   });
 
   it('publishes vector swizzles and bounded non-square matrix members', async () => {
-    const uri = 'file:///project/Assets/NumericMembers.hlsl';
+    const uri = workspaceLocation.fileUri('Assets', 'NumericMembers.hlsl');
     const text = [
       'float Use(float4 color, float3x4 transform) {',
       '  float2 pair = color.xy;',
@@ -971,7 +974,7 @@ describe('published query behavior', () => {
       '}',
     ].join('\n');
     const document = snapshot(uri, text);
-    const revision = await publishOpenDocument('file:///project', document);
+    const revision = await publishOpenDocument(workspaceLocation.folderUri, document);
 
     const swizzles = await revision.completionAt({
       document,
@@ -994,7 +997,7 @@ describe('published query behavior', () => {
   });
 
   it('reuses published HLSL lexical facts for a high-line multiline call', async () => {
-    const uri = 'file:///project/HighLine.hlsl';
+    const uri = workspaceLocation.fileUri('HighLine.hlsl');
     const text = [
       'float Lighting(float x, float y) { return x + y; }',
       ...Array.from({ length: 300 }, (_, index) => `float filler${index};`),
@@ -1007,7 +1010,7 @@ describe('published query behavior', () => {
     ].join('\n');
     const document = snapshot(uri, text);
     const position = positionOf(text, '    2', 0, 5);
-    const revision = await publishOpenDocument('file:///project', document);
+    const revision = await publishOpenDocument(workspaceLocation.folderUri, document);
     const facts = createCursorRequestFacts(
       document,
       position,
@@ -1023,8 +1026,8 @@ describe('published query behavior', () => {
   });
 
   it('keeps each published revision bound to its own suggestion selector', async () => {
-    const uri = 'file:///project/Assets/Revision.hlsl';
-    const first = publishIndexes('file:///project', [{
+    const uri = workspaceLocation.fileUri('Assets', 'Revision.hlsl');
+    const first = publishIndexes(workspaceLocation.folderUri, [{
       uri,
       references: [],
       symbols: [symbol('FirstRevision', 'variable', uri, 0)],
@@ -1054,8 +1057,8 @@ describe('published query behavior', () => {
   });
 
   it('preserves HLSL semantic tokens, including macros resolved from another index', async () => {
-    const uri = 'file:///project/Assets/Semantic.hlsl';
-    const includeUri = 'file:///project/Assets/Includes/Macros.hlsl';
+    const uri = workspaceLocation.fileUri('Assets', 'Semantic.hlsl');
+    const includeUri = workspaceLocation.fileUri('Assets', 'Includes', 'Macros.hlsl');
     const text = [
       '#define SAMPLE_TEXTURE2D(tex, sampler, uv) tex.Sample(sampler, uv)',
       'struct InputData { float3 positionWS; };',
@@ -1071,7 +1074,7 @@ describe('published query behavior', () => {
       '}',
     ].join('\n');
     const includeText = '#define INCLUDED_MACRO(v) v';
-    const revision = await publishTextFiles('file:///project', [
+    const revision = await publishTextFiles(workspaceLocation.folderUri, [
       { uri, text },
       { uri: includeUri, text: includeText },
     ]);
@@ -1108,7 +1111,7 @@ describe('published query behavior', () => {
   });
 
   it('observes in-flight cancellation during a large semantic token scan', async () => {
-    const uri = 'file:///project/Assets/LongSemanticTokens.hlsl';
+    const uri = workspaceLocation.fileUri('Assets', 'LongSemanticTokens.hlsl');
     let scanned = 0;
     const symbols = Array.from({ length: 4096 }, (_, index) => {
       const entry = symbol(`Value${index}`, 'variable', uri, index);
@@ -1121,7 +1124,10 @@ describe('published query behavior', () => {
       });
       return entry;
     });
-    const revision = publishIndexes('file:///project', [{ uri, references: [], symbols }]);
+    const revision = publishIndexes(
+      workspaceLocation.folderUri,
+      [{ uri, references: [], symbols }],
+    );
     scanned = 0;
     const cancellation = new CancellationTokenSource();
     const cancellationTask = setImmediate(() => cancellation.cancel());
@@ -1138,7 +1144,7 @@ describe('published query behavior', () => {
   });
 
   it('preserves mixed ShaderLab lexical and indexed semantic tokens', async () => {
-    const uri = 'file:///project/Assets/Mixed.shader';
+    const uri = workspaceLocation.fileUri('Assets', 'Mixed.shader');
     const text = [
       'Shader "Custom/Mixed" {',
       '  Properties {',
@@ -1179,7 +1185,7 @@ describe('published query behavior', () => {
       '}',
     ].join('\n');
     const document = snapshot(uri, text);
-    const revision = await publishOpenDocument('file:///project', document);
+    const revision = await publishOpenDocument(workspaceLocation.folderUri, document);
 
     const tokens = decodeTokens(await revision.semanticTokens({
       uri,
@@ -1237,7 +1243,7 @@ describe('published query behavior', () => {
   });
 
   it('lets indexed HLSL symbols win ShaderLab keyword collisions', async () => {
-    const uri = 'file:///project/Assets/KeywordCollision.shader';
+    const uri = workspaceLocation.fileUri('Assets', 'KeywordCollision.shader');
     const text = [
       'Shader "Custom/KeywordCollision" {',
       '  SubShader {',
@@ -1252,7 +1258,7 @@ describe('published query behavior', () => {
       '}',
     ].join('\n');
     const document = snapshot(uri, text);
-    const revision = await publishOpenDocument('file:///project', document);
+    const revision = await publishOpenDocument(workspaceLocation.folderUri, document);
 
     const tokens = decodeTokens(await revision.semanticTokens({
       uri,
@@ -1370,7 +1376,7 @@ describe('published query behavior', () => {
   });
 
   it('observes in-flight cancellation during a large Workspace Symbol scan', async () => {
-    const uri = 'file:///project/Assets/LongWorkspaceSymbols.hlsl';
+    const uri = workspaceLocation.fileUri('Assets', 'LongWorkspaceSymbols.hlsl');
     let scanned = 0;
     const symbols = Array.from({ length: 4096 }, (_, index) => {
       const name = `Needle${index.toString().padStart(4, '0')}`;
@@ -1384,7 +1390,10 @@ describe('published query behavior', () => {
       });
       return entry;
     });
-    const revision = publishIndexes('file:///project', [{ uri, references: [], symbols }]);
+    const revision = publishIndexes(
+      workspaceLocation.folderUri,
+      [{ uri, references: [], symbols }],
+    );
     scanned = 0;
     const cancellation = new CancellationTokenSource();
     const cancellationTask = setImmediate(() => cancellation.cancel());
@@ -1401,7 +1410,7 @@ describe('published query behavior', () => {
   });
 
   it('observes in-flight cancellation during a large ShaderLab Workspace Symbol scan', async () => {
-    const uri = 'file:///project/Assets/LongShaderLabNames.shader';
+    const uri = workspaceLocation.fileUri('Assets', 'LongShaderLabNames.shader');
     let scanned = 0;
     const shaders = Array.from({ length: 4096 }, (_, index) => {
       const name = `Shader/Needle${index.toString().padStart(4, '0')}`;
@@ -1419,7 +1428,7 @@ describe('published query behavior', () => {
       });
       return entry;
     });
-    const revision = publishIndexes('file:///project', [{
+    const revision = publishIndexes(workspaceLocation.folderUri, [{
       uri,
       references: [],
       symbols: [],

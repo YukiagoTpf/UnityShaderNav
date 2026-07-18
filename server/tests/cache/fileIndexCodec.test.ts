@@ -16,6 +16,9 @@ import { CacheStore } from '../../src/cache/cacheStore';
 import type { IndexedDocumentSnapshot } from '../../src/workspace/indexedWorkspace';
 import { IndexedRevisionBuilder } from '../../src/workspace/indexedRevision';
 import { SRP_BATCHER_PROPERTY_CODE } from '../../src/workspace/materialContracts';
+import { createTestWorkspaceLocation } from '../helpers/testWorkspaceLocation';
+
+const workspaceLocation = createTestWorkspaceLocation('usn-file-index-codec');
 
 const fingerprint: CacheFingerprint = {
   releaseVersion: '0.1.1',
@@ -29,7 +32,9 @@ const range = {
   end: { line: 1, character: 8 },
 };
 
-function completeIndex(uri = 'file:///project/Assets/Complete.shader'): FileIndex {
+function completeIndex(
+  uri = workspaceLocation.fileUri('Assets', 'Complete.shader'),
+): FileIndex {
   const functionSymbol: FunctionSymbolEntry = {
     name: 'Shade',
     kind: 'function',
@@ -174,8 +179,8 @@ describe('persisted FileIndex codec', () => {
     try {
       await store.save({
         version: CACHE_VERSION,
-        workspaceFolderUri: 'file:///project',
-        unityProjectRoot: '/project',
+        workspaceFolderUri: workspaceLocation.folderUri,
+        unityProjectRoot: workspaceLocation.rootPath,
         createdAt: 1,
         fingerprint,
         files: [{ uri: index.uri, mtimeMs: 1, size: 2, index }],
@@ -190,7 +195,7 @@ describe('persisted FileIndex codec', () => {
   it('serves cached Property facts after restore and publication', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'usn-property-publication-'));
     const store = new CacheStore(dir);
-    const uri = 'file:///project/Assets/Material.shader';
+    const uri = workspaceLocation.fileUri('Assets', 'Material.shader');
     const text = [
       'Shader "Cache/Material" {',
       '  Properties {',
@@ -219,8 +224,8 @@ describe('persisted FileIndex codec', () => {
     try {
       await store.save({
         version: CACHE_VERSION,
-        workspaceFolderUri: 'file:///project',
-        unityProjectRoot: '/project',
+        workspaceFolderUri: workspaceLocation.folderUri,
+        unityProjectRoot: workspaceLocation.rootPath,
         createdAt: 1,
         fingerprint,
         files: [{ uri, mtimeMs: 1, size: text.length, index }],
@@ -230,7 +235,7 @@ describe('persisted FileIndex codec', () => {
 
       const settings = DEFAULT_SETTINGS;
       const builder = IndexedRevisionBuilder.create({
-        folderUri: 'file:///project',
+        folderUri: workspaceLocation.folderUri,
         settings,
         unityRoot: undefined,
         packages: PackageContext.standalone(settings),
