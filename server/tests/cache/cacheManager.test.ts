@@ -1,6 +1,6 @@
 import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, win32 } from 'node:path';
+import { join, posix, win32 } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CACHE_VERSION, type CacheFingerprint } from '@unity-shader-nav/shared';
 import { describe, expect, it } from 'vitest';
@@ -162,16 +162,17 @@ describe('chooseCacheDir', () => {
   });
 
   it('uses one cache bucket for macOS case and Unicode URI variants', () => {
-    const nfc = pathToFileURL('/project/Café/Workspace').href;
-    const nfd = pathToFileURL('/PROJECT/CAFÉ/workspace').href;
+    const nfc = 'file:///project/Caf%C3%A9/Workspace';
+    const nfd = 'file:///PROJECT/CAFE%CC%81/workspace';
+    const macos = { path: posix, platform: 'darwin' as const };
 
-    expect(workspaceCacheIdentity(nfc, { platform: 'darwin' })).toBe(
-      workspaceCacheIdentity(nfd, { platform: 'darwin' }),
+    expect(workspaceCacheIdentity(nfc, macos)).toBe(
+      workspaceCacheIdentity(nfd, macos),
     );
     expect(cacheWorkspaceMatches(
       { workspaceFolderUri: nfc, unityProjectRoot: '/project/Café/Workspace' },
       { workspaceFolderUri: nfd, unityProjectRoot: '/PROJECT/CAFÉ/workspace' },
-      { platform: 'darwin' },
+      macos,
     )).toBe(true);
   });
 

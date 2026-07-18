@@ -706,7 +706,9 @@ describe('server dependency direction', () => {
     expect(server).toMatch(
       /applyScopedSettingsAndRebuild\(\s*connection,\s*manager,\s*\(folderUri\) => loadSettings\(connection, folderUri\),\s*\)/,
     );
-    const statusRegistration = server.indexOf(`connection.onRequest(\n  INDEX_STATUS_REQUEST`);
+    const statusRegistration = server.search(
+      /connection\.onRequest\(\s*INDEX_STATUS_REQUEST/,
+    );
     const coldStart = server.indexOf('connection.onInitialized');
     expect(statusRegistration).toBeGreaterThanOrEqual(0);
     expect(statusRegistration).toBeLessThan(coldStart);

@@ -33,7 +33,11 @@ describe('parser runtime assets', () => {
 
       const assets = resolveParserRuntimeAssets(fixture.modulePath);
       expect(assets.layout).toBe(layout);
-      expect(assets.hlslGrammar.path).toBe(await realpath(fixture.grammarPath));
+      const [resolvedAssetPath, resolvedFixturePath] = await Promise.all([
+        realpath(assets.hlslGrammar.path),
+        realpath(fixture.grammarPath),
+      ]);
+      expect(resolvedAssetPath).toBe(resolvedFixturePath);
       expect(assets.hlslGrammar.byteLength).toBe(Buffer.byteLength('grammar A\n'));
       expect(assets.hlslGrammar.contentHash).toBe(
         createHash('sha256').update('grammar A\n').digest('hex'),
