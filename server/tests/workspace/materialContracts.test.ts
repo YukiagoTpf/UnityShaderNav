@@ -226,6 +226,60 @@ describe('SRP Batcher material contracts', () => {
     ]);
   });
 
+  it('uses declarator lists and inline native blocks for deterministic verdicts', async () => {
+    const declarators = [
+      'Shader "Contracts/Declarators" {',
+      '  Properties {',
+      '    _Tint ("Tint", Color) = (1,1,1,1)',
+      '    _SpecColor ("Specular", Color) = (1,1,1,1)',
+      '  }',
+      '  SubShader { Pass {',
+      '    HLSLPROGRAM',
+      '    CBUFFER_START(UnityPerMaterial)',
+      '    float4 _Tint, _SpecColor;',
+      '    CBUFFER_END',
+      '    ENDHLSL',
+      '  } }',
+      '}',
+    ].join('\n');
+    expect(srpBatcherDiagnostics(await indexed(declarators))).toEqual([]);
+
+    const inlineDrift = [
+      'Shader "Contracts/InlineDrift" {',
+      '  Properties {',
+      '    _Tint ("Tint", Color) = (1,1,1,1)',
+      '    _Smoothness ("Smoothness", Float) = 0.5',
+      '  }',
+      '  SubShader {',
+      '    Pass {',
+      '      HLSLPROGRAM',
+      '      cbuffer UnityPerMaterial { float4 _Tint; };',
+      '      ENDHLSL',
+      '    }',
+      '    Pass {',
+      '      HLSLPROGRAM',
+      '      cbuffer UnityPerMaterial { float4 _Tint; float _Other; };',
+      '      ENDHLSL',
+      '    }',
+      '  }',
+      '}',
+    ].join('\n');
+    const inlineIndex = await indexed(inlineDrift);
+    const diagnostics = srpBatcherDiagnostics(inlineIndex);
+
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
+      SRP_BATCHER_PROPERTY_CODE,
+      SRP_BATCHER_LAYOUT_CODE,
+    ]);
+    expect(srpBatcherCodeActions(
+      inlineIndex,
+      uri,
+      1,
+      inlineIndex.properties![1].nameRange,
+      { diagnostics },
+    )).toEqual([]);
+  });
+
   it('stays neutral without SRP evidence and for conditional layout comparisons', async () => {
     const legacy = [
       'Shader "Contracts/Legacy" {',

@@ -227,6 +227,10 @@ function safeInsertion(
   if (cbuffers.length === 1) {
     const cbuffer = cbuffers[0];
     if (!cbuffer.complete || cbuffer.conditional || cbuffer.opaque) return undefined;
+    // A single-line native cbuffer has no line boundary where a field can be
+    // inserted without rewriting its declaration. Keep diagnostics precise,
+    // but do not offer a line-oriented edit that would land outside the block.
+    if (cbuffer.insertionPosition.line === cbuffer.declarationRange.start.line) return undefined;
     if (cbuffer.fields.some((field) => field.packOffset !== undefined)) return undefined;
     if (cbuffer.fields.some((field) => field.name === property.name)) return undefined;
     if (facts.programBlocks.length !== 1) return undefined;

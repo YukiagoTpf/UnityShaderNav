@@ -111,7 +111,41 @@ describe('scanShaderLabMaterialFacts', () => {
     });
   });
 
-  it('keeps inline native blocks and directive-line block comments opaque', () => {
+  it('collects every declarator with exact ranges', () => {
+    const text = [
+      'Shader "Material/Declarators" {',
+      '  HLSLPROGRAM',
+      '  CBUFFER_START(UnityPerMaterial)',
+      '    float4 _Color, _SpecColor;',
+      '    StructuredBuffer<Foo> Foo;',
+      '  CBUFFER_END',
+      '  ENDHLSL',
+      '}',
+    ].join('\n');
+
+    const cbuffer = scan(text).cbuffers[0];
+
+    expect(cbuffer).toMatchObject({
+      complete: true,
+      opaque: false,
+      fields: [
+        { type: 'float4', name: '_Color' },
+        { type: 'float4', name: '_SpecColor' },
+        { type: 'StructuredBuffer<Foo>', name: 'Foo' },
+      ],
+    });
+    expect(cbuffer.fields.map((field) => (
+      text.split('\n')[field.nameRange.start.line].slice(
+        field.nameRange.start.character,
+        field.nameRange.end.character,
+      )
+    ))).toEqual(['_Color', '_SpecColor', 'Foo']);
+    expect(cbuffer.fields[2].nameRange.start.character).toBeGreaterThan(
+      text.split('\n')[4].indexOf('Foo'),
+    );
+  });
+
+  it('collects inline native fields and ignores directive-line block comments', () => {
     const inline = [
       'Shader "Material/Inline" {',
       '  HLSLPROGRAM',
@@ -121,8 +155,8 @@ describe('scanShaderLabMaterialFacts', () => {
     ].join('\n');
     expect(scan(inline).cbuffers[0]).toMatchObject({
       complete: true,
-      opaque: true,
-      fields: [],
+      opaque: false,
+      fields: [{ type: 'float4', name: '_Color' }],
     });
 
     const comment = [
