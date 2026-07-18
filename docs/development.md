@@ -306,18 +306,20 @@ fact to cache compatibility. Missing or unrecognized layouts fail observably.
 
 ## CI
 
-GitHub Actions runs `npm run check:fast` first on every push and pull request
-to `main` (`.github/workflows/ci.yml`), then runs `npm run test:package` as a
-separately attributable current-run package check. Only after both deterministic
-checks pass does CI install the Electron runtime libraries and run
-the prepared activation + integration profiles under `xvfb`. The public
-`npm run test:electron` command includes the package gate itself; CI calls the
-internal prepared command only because the preceding named step already ran
-that same gate.
+On every push and pull request to `main`, GitHub Actions first validates its CI
+contract, then runs `npm run check:fast` in a non-cancelling matrix on Linux,
+Windows, and macOS (`.github/workflows/ci.yml`). This gives every platform the
+same clean build and complete language-server unit suite, including its native
+path-identity cases. The Linux leg then runs `npm run test:package` as a
+separately attributable current-run package check, installs the Electron runtime
+libraries, and runs the prepared activation + integration profiles under
+`xvfb`. The public `npm run test:electron` command includes the package gate
+itself; CI calls the internal prepared command only because the preceding named
+step already ran that same gate.
 
-`.vscode-test/` is the explicit persistent download cache; it
-is not disposable profile state. GitHub Actions caches it with an identity made
-from runner OS, runner architecture, the exact value in
+`.vscode-test/` is the explicit persistent download cache; it is not disposable
+profile state. The Linux integration leg caches it with an identity made from
+runner OS, runner architecture, the exact value in
 `tests/vscode-version.txt`, and the package-lock hash. There is no broad fallback
 key that can silently select a different VS Code release. The lockfile component
 also invalidates the cache when `@vscode/test-electron` changes.

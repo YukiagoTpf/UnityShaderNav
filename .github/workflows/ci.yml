@@ -8,8 +8,12 @@ on:
 
 jobs:
   test:
-    name: build and test
-    runs-on: ubuntu-latest
+    name: build and test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -26,7 +30,11 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
+      - name: Validate CI workflow contract
+        run: node --test scripts/ci-workflow.test.mjs
+
       - name: Read pinned VS Code test version
+        if: runner.os == 'Linux'
         id: vscode-test-version
         shell: bash
         run: |
@@ -38,6 +46,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Cache VS Code test runtime
+        if: runner.os == 'Linux'
         uses: actions/cache@v4
         with:
           # Runtime identity includes platform, the exact tested VS Code
@@ -52,9 +61,11 @@ jobs:
         run: npm run check:fast
 
       - name: Run package verification
+        if: runner.os == 'Linux'
         run: npm run test:package
 
       - name: Install Electron runtime libraries
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -71,5 +82,6 @@ jobs:
             libxrandr2 \
             libxshmfence1
       - name: Run Electron verification
+        if: runner.os == 'Linux'
         # test:package above produced the exact runtime and compiled tests.
         run: xvfb-run -a npm run test:electron:prepared
