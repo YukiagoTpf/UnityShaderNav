@@ -28,8 +28,32 @@ describe('analyzeCursor word', () => {
     expect(result?.range.end.character).toBe(15);
   });
 
-  it('returns null when cursor is on whitespace or symbol', () => {
-    expect(analyzeWord('a + b', { line: 0, character: 1 })).toBeNull();
+  it('returns the identifier when the cursor touches its right edge at end of line', () => {
+    const result = analyzeWord('identifier', { line: 0, character: 'identifier'.length });
+
+    expect(result?.text).toBe('identifier');
+    expect(result?.range).toEqual({
+      start: { line: 0, character: 0 },
+      end: { line: 0, character: 'identifier'.length },
+    });
+  });
+
+  it('returns the identifier when the cursor touches its right edge before whitespace', () => {
+    expect(analyzeWord('identifier next', { line: 0, character: 'identifier'.length })?.text)
+      .toBe('identifier');
+  });
+
+  it('returns the identifier when the cursor touches its right edge before punctuation', () => {
+    expect(analyzeWord('identifier()', { line: 0, character: 'identifier'.length })?.text)
+      .toBe('identifier');
+  });
+
+  it('returns null on whitespace that does not touch a word end', () => {
+    expect(analyzeWord('a  + b', { line: 0, character: 2 })).toBeNull();
+  });
+
+  it('returns null at column zero when no identifier starts there', () => {
+    expect(analyzeWord(' identifier', { line: 0, character: 0 })).toBeNull();
   });
 
   it('returns the identifier immediately before the cursor at a call boundary', () => {

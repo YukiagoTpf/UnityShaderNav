@@ -79,9 +79,9 @@ const cases: Case[] = [
     },
   },
   {
-    name: 'cursor on whitespace -> none',
-    text: 'float myVar = 0;',
-    position: { line: 0, character: 5 },
+    name: 'cursor on whitespace not adjacent to a word end -> none',
+    text: 'float  myVar = 0;',
+    position: { line: 0, character: 6 },
     assert: (target) => {
       expect(target.kind).toBe('none');
     },

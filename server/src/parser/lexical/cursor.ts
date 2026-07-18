@@ -56,7 +56,6 @@ function wordAt(text: string, pos: Position): WordAt | null {
     if (
       ch === 0
       || !ID_CHAR_RE.test(line[ch - 1] ?? '')
-      || /\s/.test(line[ch] ?? ' ')
     ) {
       return null;
     }
