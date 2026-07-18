@@ -15,6 +15,9 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 test('two real bundle metafiles produce deterministic notices for every bundled package', async () => {
   const common = {
     absWorkingDir: repositoryRoot,
+    alias: {
+      '@unity-shader-nav/shared': resolve(repositoryRoot, 'shared/src/protocol.ts'),
+    },
     bundle: true,
     platform: 'node',
     target: 'node18',
