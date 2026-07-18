@@ -37,6 +37,53 @@ describe('collector: struct', () => {
     expect(attMembers.map((m) => m.name).sort()).toEqual(['normalOS', 'positionOS', 'uv']);
     expect(attMembers.find((m) => m.name === 'positionOS')!.declaredType).toBe('float4');
   });
+
+  it('uses AST field boundaries when comments contain a textual struct terminator', async () => {
+    const text = [
+      'struct Surface {',
+      '  float3 normal;',
+      '  /* }; */',
+      '  float4 color;',
+      '};',
+    ].join('\n');
+    const tree = await parseHlsl(text);
+    const result = collect(tree.rootNode, text, 'file:///test/commented-terminator.hlsl', 0);
+
+    expect(result.symbols.filter(
+      (symbol) => symbol.kind === 'structMember' && symbol.parentType === 'Surface',
+    ).map((symbol) => symbol.name)).toEqual(['normal', 'color']);
+  });
+
+  it('collects nested struct members and later outer members at their own levels', async () => {
+    const text = [
+      'struct Outer {',
+      '  float before;',
+      '  struct Inner {',
+      '    float nested;',
+      '  };',
+      '  float after;',
+      '};',
+    ].join('\n');
+    const tree = await parseHlsl(text);
+    const result = collect(tree.rootNode, text, 'file:///test/nested-declaration.hlsl', 0);
+
+    expect(result.symbols.filter(
+      (symbol) => symbol.kind === 'structMember' && symbol.parentType === 'Outer',
+    ).map((symbol) => symbol.name)).toEqual(['before', 'after']);
+    expect(result.symbols.filter(
+      (symbol) => symbol.kind === 'structMember' && symbol.parentType === 'Inner',
+    ).map((symbol) => symbol.name)).toEqual(['nested']);
+  });
+
+  it('preserves neutral recovery for a genuinely unclosed struct', async () => {
+    const text = 'struct Broken { float before; float after;';
+    const tree = await parseHlsl(text);
+    const result = collect(tree.rootNode, text, 'file:///test/unclosed-struct.hlsl', 0);
+
+    expect(result.symbols.filter(
+      (symbol) => symbol.kind === 'struct' || symbol.kind === 'structMember',
+    )).toEqual([]);
+  });
 });
 
 describe('collector: cbuffer', () => {
