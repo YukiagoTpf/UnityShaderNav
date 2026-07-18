@@ -131,12 +131,18 @@ describe('CacheStore', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it('round-trips ShaderLab name and material facts', async () => {
+  it('round-trips ShaderLab property, name, and material facts', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'usn-cache-shaderlab-names-'));
     const store = new CacheStore(dir);
     const uri = 'file:///x/Named.shader';
     const index: FileIndex = {
       ...validIndex(uri),
+      properties: [{
+        name: '_Color',
+        nameRange: range,
+        declarationRange: range,
+        type: 'Color',
+      }],
       shaderLabNames: {
         shaders: [{ name: 'Library/Lit', nameRange: range, declarationRange: range }],
         passes: [{
@@ -196,12 +202,10 @@ describe('CacheStore', () => {
       files: [{ uri, mtimeMs: 1, size: 10, index }],
     }));
 
-    expect((await store.load(fingerprint))?.files[0].index.shaderLabNames).toEqual(
-      index.shaderLabNames,
-    );
-    expect((await store.load(fingerprint))?.files[0].index.shaderLabMaterial).toEqual(
-      index.shaderLabMaterial,
-    );
+    const restored = (await store.load(fingerprint))?.files[0].index;
+    expect(restored?.properties).toEqual(index.properties);
+    expect(restored?.shaderLabNames).toEqual(index.shaderLabNames);
+    expect(restored?.shaderLabMaterial).toEqual(index.shaderLabMaterial);
     await rm(dir, { recursive: true, force: true });
   });
 
@@ -549,6 +553,34 @@ describe('CacheStore', () => {
         },
       },
     ]);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('skips cached file records with malformed ShaderLab property facts', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'usn-cache-bad-properties-'));
+    const store = new CacheStore(dir);
+    const file = validFile('file:///x/Material.shader');
+
+    await writeRawManifest(dir, validManifest({
+      files: [
+        {
+          ...file,
+          index: {
+            ...file.index,
+            properties: [{
+              name: '_Color',
+              nameRange: range,
+              declarationRange: range,
+              type: 'not-a-property-type',
+            }],
+          },
+        } as never,
+        file,
+      ],
+    }));
+
+    expect((await store.load(fingerprint))?.files).toEqual([file]);
 
     await rm(dir, { recursive: true, force: true });
   });
