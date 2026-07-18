@@ -92,6 +92,17 @@ function context(overrides: Partial<IncludeContext> = {}): IncludeContext {
   };
 }
 
+function deferred<T>(): {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 describe('IncludeChain', () => {
   it('traverses multi-level includes, terminates cycles, and stops at a missing index', async () => {
     const aPath = join(root, 'Assets', 'A.hlsl');
@@ -158,5 +169,140 @@ describe('IncludeChain', () => {
       'Packages/com.example.rendering/ShaderLibrary/Core.hlsl',
       pathToFileURL(mainPath).href,
     )).resolves.toBeNull();
+  });
+
+  it('coalesces concurrent resolution and caches an unresolved result', async () => {
+    const mainPath = join(root, 'Assets', 'Main.hlsl');
+    const missingPath = join(root, 'Assets', 'Missing.hlsl');
+    const probeStarted = deferred<void>();
+    const releaseProbe = deferred<boolean>();
+    const probe: FileProbe = {
+      exists: vi.fn(async () => {
+        probeStarted.resolve();
+        return releaseProbe.promise;
+      }),
+      listDir: vi.fn(async () => {
+        throw new Error('not a directory');
+      }),
+    };
+    const chain = createIncludeChain({ get: () => undefined }, context(), probe);
+
+    const first = chain.resolve(missingPath, pathToFileURL(mainPath).href);
+    await probeStarted.promise;
+    const concurrent = chain.resolve(missingPath, pathToFileURL(mainPath).href);
+
+    expect(probe.exists).toHaveBeenCalledTimes(1);
+    releaseProbe.resolve(false);
+    await expect(Promise.all([first, concurrent])).resolves.toEqual([null, null]);
+    expect(probe.listDir).toHaveBeenCalledTimes(1);
+
+    await expect(chain.resolve(missingPath, pathToFileURL(mainPath).href))
+      .resolves.toBeNull();
+    expect(probe.exists).toHaveBeenCalledTimes(1);
+    expect(probe.listDir).toHaveBeenCalledTimes(1);
+  });
+
+  it('coalesces visible closure traversal without exposing the cached set', async () => {
+    const aPath = join(root, 'Assets', 'VisibleA.hlsl');
+    const bPath = join(root, 'Assets', 'VisibleB.hlsl');
+    const indexes = [file(aPath, ['VisibleB.hlsl']), file(bPath, [])];
+    const byUri = new Map(indexes.map((entry) => [uriKey(entry.uri), entry]));
+    const get = vi.fn((uri: string) => byUri.get(uriKey(uri)));
+    const chain = createIncludeChain(
+      { get },
+      context(),
+      new MemoryFileProbe([aPath, bPath]),
+    );
+    const rootUri = pathToFileURL(aPath).href;
+    const expected = [aPath, bPath]
+      .map((path) => uriKey(pathToFileURL(path).href))
+      .sort();
+
+    const [first, concurrent] = await Promise.all([
+      chain.visibleUriKeys(rootUri),
+      chain.visibleUriKeys(rootUri),
+    ]);
+
+    expect([...first].sort()).toEqual(expected);
+    expect([...concurrent].sort()).toEqual(expected);
+    expect(get).toHaveBeenCalledTimes(2);
+
+    const mutable = first as Set<string>;
+    if (typeof mutable.clear === 'function') {
+      mutable.clear();
+      mutable.add('poisoned-by-caller');
+    }
+
+    const afterCallerMutation = await chain.visibleUriKeys(rootUri);
+    expect([...afterCallerMutation].sort()).toEqual(expected);
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  it('shares directory listings within one chain and starts a new chain cold', async () => {
+    const mainPath = join(root, 'Assets', 'Main.hlsl');
+    const firstPath = join(root, 'Assets', 'First.hlsl');
+    const secondPath = join(root, 'Assets', 'Second.hlsl');
+    const probe = new MemoryFileProbe([mainPath, firstPath, secondPath]);
+    const listDir = vi.spyOn(probe, 'listDir');
+    const exists = vi.spyOn(probe, 'exists');
+    const chain = createIncludeChain({ get: () => undefined }, context(), probe);
+    const mainUri = pathToFileURL(mainPath).href;
+
+    await expect(Promise.all([
+      chain.resolve('First.hlsl', mainUri),
+      chain.resolve('Second.hlsl', mainUri),
+    ])).resolves.toEqual([
+      { absolutePath: firstPath, via: 'relative', caseInsensitive: false },
+      { absolutePath: secondPath, via: 'relative', caseInsensitive: false },
+    ]);
+
+    const assetsDirectory = pathResolve(dirname(firstPath));
+    const assetsReads = () => listDir.mock.calls.filter(
+      ([path]) => pathResolve(path) === assetsDirectory,
+    ).length;
+    expect(assetsReads()).toBe(1);
+    expect(exists).toHaveBeenCalledTimes(2);
+
+    const listingCount = listDir.mock.calls.length;
+    await expect(chain.resolve('First.hlsl', mainUri)).resolves.toEqual({
+      absolutePath: firstPath,
+      via: 'relative',
+      caseInsensitive: false,
+    });
+    expect(listDir).toHaveBeenCalledTimes(listingCount);
+    expect(exists).toHaveBeenCalledTimes(2);
+
+    const nextChain = createIncludeChain({ get: () => undefined }, context(), probe);
+    await expect(nextChain.resolve('First.hlsl', mainUri)).resolves.toEqual({
+      absolutePath: firstPath,
+      via: 'relative',
+      caseInsensitive: false,
+    });
+    expect(assetsReads()).toBe(2);
+    expect(exists).toHaveBeenCalledTimes(3);
+  });
+
+  it('shares a directory-read rejection and caches the resulting misses', async () => {
+    const mainPath = join(root, 'Assets', 'Main.hlsl');
+    const firstPath = join(root, 'Assets', 'UnreadableFirst.hlsl');
+    const secondPath = join(root, 'Assets', 'UnreadableSecond.hlsl');
+    const probe: FileProbe = {
+      exists: vi.fn(async () => true),
+      listDir: vi.fn(async () => {
+        throw new Error('permission denied');
+      }),
+    };
+    const chain = createIncludeChain({ get: () => undefined }, context(), probe);
+    const mainUri = pathToFileURL(mainPath).href;
+
+    await expect(Promise.all([
+      chain.resolve(firstPath, mainUri),
+      chain.resolve(secondPath, mainUri),
+    ])).resolves.toEqual([null, null]);
+    expect(probe.listDir).toHaveBeenCalledTimes(1);
+
+    await expect(chain.resolve(firstPath, mainUri)).resolves.toBeNull();
+    expect(probe.exists).toHaveBeenCalledTimes(2);
+    expect(probe.listDir).toHaveBeenCalledTimes(1);
   });
 });

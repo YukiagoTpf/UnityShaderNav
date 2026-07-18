@@ -8,6 +8,7 @@ import {
   resolve as pathResolve,
 } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { pathIdentity } from '../pathIdentity';
 import type { IncludeContext, ResolvedInclude } from './types';
 
 /**
@@ -33,6 +34,33 @@ const nodeFileProbe: FileProbe = {
     return fs.readdir(path);
   },
 };
+
+/**
+ * Wrap one resolver probe with a caller-owned directory-listing lifetime.
+ * Fulfilled listings and rejections are both retained; callers discard the
+ * wrapper to retry against a newer filesystem observation boundary.
+ */
+export function memoizeDirectoryListings(
+  probe: FileProbe = nodeFileProbe,
+): FileProbe {
+  const listings = new Map<string, Promise<readonly string[]>>();
+  return Object.freeze({
+    exists(path: string) {
+      return probe.exists(path);
+    },
+    listDir(path: string) {
+      const key = pathIdentity(path);
+      const cached = listings.get(key);
+      if (cached) return cached;
+
+      const listing = Promise.resolve()
+        .then(() => probe.listDir(path))
+        .then((entries) => Object.freeze([...entries]));
+      listings.set(key, listing);
+      return listing;
+    },
+  });
+}
 
 function pathSegments(path: string): { root: string; parts: string[] } {
   const root = parse(path).root;

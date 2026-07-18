@@ -101,10 +101,12 @@ npm run grammar:rebuild
   production wiring.
 - Include-chain interface tests use the same `FileProbe` seam to cover
   multi-level traversal, cycles, missing intermediate indexes, Package mapping,
-  and case fallback. Published-revision tests prove multiple query capabilities
-  consume the same captured chain and that a fork cannot change an older
-  revision's visibility. Do not add cross-request memoization or a Package
-  include helper outside this boundary.
+  case fallback, concurrent resolution/visibility/listing reuse, conservative
+  failure caching, and caller isolation from the cached visibility Set.
+  Published-revision tests prove multiple query capabilities consume the same
+  captured chain and that a fork cannot change an older revision's visibility.
+  Revision-scoped memoization belongs inside this boundary; do not add
+  cross-revision/process caches or a parallel Package include helper.
 - Document-analysis tests should prove exact-source matching, immutable shared
   blocks/structure/tokens, index-only versus full demand, and revision-owned
   live lifetimes. `FileIndex.structure` is a durable projection; disk/cache

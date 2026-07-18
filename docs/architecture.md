@@ -362,9 +362,15 @@ revision's immutable index view and the include context captured from its
 settings and `PackageContext`. Direct include jumps and transitive visibility
 for Definition, References, Hover, Completion, Signature Help, and Document
 Highlight consume this same behavior. Forked publications create a new chain;
-captured older revisions retain their original view. The chain intentionally
-does not memoize across requests, so filesystem state is not promoted to a
-process-lifetime cache.
+captured older revisions retain their original view. Within one chain, direct
+resolution, transitive visibility, and case-verification directory listings
+share their in-flight and settled Promises. Resolved misses and expected
+directory-read failures remain conservative misses for that revision. The
+cached visibility Set is never returned directly; each caller receives an
+isolated copy. A new publication starts with an empty chain, so filesystem state
+is not promoted to a cross-revision or process-lifetime cache. Shared work has
+no per-request cancellation owner: a cancellation-aware caller may stop waiting
+in the future, but must not cancel the revision's cached computation.
 
 The include resolver owns candidate generation, ordering, exact-case
 verification, and case-insensitive fallback above a narrow `FileProbe` with

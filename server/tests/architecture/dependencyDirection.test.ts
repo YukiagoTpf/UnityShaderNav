@@ -595,7 +595,7 @@ describe('server dependency direction', () => {
     expect(revision).toMatch(/suggestionCandidates: this\.suggestionCandidates/);
   });
 
-  it('binds one Include chain to each published revision and every visibility query', () => {
+  it('binds one memoized Include chain to each published revision and every visibility query', () => {
     const includeChain = readFileSync(
       resolve(SOURCE_ROOT, 'include/includeChain.ts'),
       'utf8',
@@ -604,8 +604,18 @@ describe('server dependency direction', () => {
     expect(includeChain).toMatch(/resolveInclude/);
     expect(includeChain).toMatch(/visibleUriKeys/);
     expect(includeChain).toMatch(/const visible = new Set<string>\(\)/);
-    expect(includeChain).not.toMatch(/private readonly .*cache|new Map<string, Promise<ReadonlySet/);
+    expect(includeChain).toMatch(/const revisionProbe = memoizeDirectoryListings\(probe\)/);
+    expect(includeChain).toMatch(/resolutionsBySource/);
+    expect(includeChain).toMatch(/visibleClosures/);
+    expect(includeChain).toMatch(/return closure\.then\(\(visible\) => new Set\(visible\)\)/);
     expect(existsSync(resolve(SOURCE_ROOT, 'index/visibility.ts'))).toBe(false);
+
+    const includeResolver = readFileSync(
+      resolve(SOURCE_ROOT, 'include/resolver.ts'),
+      'utf8',
+    );
+    expect(includeResolver).toMatch(/function memoizeDirectoryListings/);
+    expect(includeResolver).toMatch(/new Map<string, Promise<readonly string\[\]>>\(\)/);
 
     const revision = readFileSync(
       resolve(SOURCE_ROOT, 'workspace/indexedRevision.ts'),
