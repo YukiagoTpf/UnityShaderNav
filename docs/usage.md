@@ -215,6 +215,15 @@ project root, set `unityShaderNav.projectRoot` manually.
 In standalone mode, same-file navigation continues to work, but cross-file
 include and package navigation are disabled.
 
+## Index Status And Logs
+
+The UnityShaderNav status-bar item shows whether the language server is
+starting, indexing, ready, in standalone mode, stopped, or failed. Click a
+ready or indexing item to inspect every workspace root. Click a failed item to
+open the shared `UnityShaderNav` output channel with the current failure details.
+The same actions are available from the Command Palette as
+`UnityShaderNav: Show Index Status` and `UnityShaderNav: Show Output`.
+
 ## Cache
 
 The index cache is stored in:

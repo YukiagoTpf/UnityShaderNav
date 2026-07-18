@@ -14,6 +14,8 @@ import {
 } from '@unity-shader-nav/shared';
 
 const repositoryRoot = resolve(__dirname, '../../..');
+const TRACE_SETTING = 'unityShaderNav.trace.server';
+const PUBLIC_SETTING_SECTIONS = [...SETTING_SECTIONS, TRACE_SETTING];
 
 describe('public settings contract', () => {
   it('matches every manifest key, default, schema, and scope', () => {
@@ -24,7 +26,7 @@ describe('public settings contract', () => {
       'client/package.json configuration properties',
     );
 
-    expect(Object.keys(properties)).toEqual(SETTING_SECTIONS);
+    expect(Object.keys(properties)).toEqual(PUBLIC_SETTING_SECTIONS);
     for (const path of SETTING_PATHS) {
       const section = `unityShaderNav.${path}`;
       const manifestSetting = recordValue(properties[section], section);
@@ -36,16 +38,34 @@ describe('public settings contract', () => {
     }
   });
 
+  it('declares the standard client-only language-server trace contract', () => {
+    const clientPackage = readJson(resolve(repositoryRoot, 'client/package.json'));
+    const properties = nestedRecord(
+      clientPackage,
+      ['contributes', 'configuration', 'properties'],
+      'client/package.json configuration properties',
+    );
+    const trace = recordValue(properties[TRACE_SETTING], TRACE_SETTING);
+
+    expect(trace).toMatchObject({
+      type: 'string',
+      scope: 'window',
+      enum: ['off', 'messages', 'verbose'],
+      default: 'off',
+    });
+  });
+
   it('matches the complete canonical configuration document', () => {
     const document = readFileSync(resolve(repositoryRoot, 'docs/configuration.md'), 'utf8');
     const headings = Array.from(document.matchAll(/^## `([^`]+)`$/gm));
 
-    expect(headings.map((heading) => heading[1])).toEqual(SETTING_SECTIONS);
-    for (const [index, heading] of headings.entries()) {
-      const path = SETTING_PATHS[index];
+    expect(headings.map((heading) => heading[1])).toEqual(PUBLIC_SETTING_SECTIONS);
+    for (const path of SETTING_PATHS) {
+      const headingIndex = headings.findIndex((heading) => heading[1] === `unityShaderNav.${path}`);
+      const heading = headings[headingIndex];
       const definition = SETTING_DEFINITIONS[path];
       const start = (heading.index ?? 0) + heading[0].length;
-      const end = headings[index + 1]?.index ?? document.length;
+      const end = headings[headingIndex + 1]?.index ?? document.length;
       const section = document.slice(start, end);
 
       expect(section).toContain(`Type: \`${settingDocumentationType(definition.schema)}\``);
@@ -61,6 +81,15 @@ describe('public settings contract', () => {
         expect(section).toContain(`- \`${enumValue}\``);
       }
     }
+    const traceHeadingIndex = headings.findIndex((heading) => heading[1] === TRACE_SETTING);
+    const traceHeading = headings[traceHeadingIndex];
+    const traceSection = document.slice(
+      (traceHeading.index ?? 0) + traceHeading[0].length,
+      headings[traceHeadingIndex + 1]?.index ?? document.length,
+    );
+    expect(traceSection).toContain('Type: `string`');
+    expect(traceSection).toContain('Default: `"off"`');
+    expect(traceSection).toContain('Values: `"off"`, `"messages"`, `"verbose"`');
   });
 
   it('derives isolated defaults and deep-merges valid nested leaves', () => {

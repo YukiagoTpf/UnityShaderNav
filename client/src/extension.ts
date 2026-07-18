@@ -1,4 +1,4 @@
-import { commands, ExtensionContext } from 'vscode';
+import { commands, ExtensionContext, window } from 'vscode';
 import {
   INDEX_STATUS_NOTIFICATION,
   INDEX_STATUS_REQUEST,
@@ -7,26 +7,34 @@ import {
 import { LanguageClient, State } from 'vscode-languageclient/node';
 import { createLanguageClient } from './client';
 import { setupInactiveRegions } from './inactiveRegions';
-import { IndexStatusController } from './indexStatus';
+import { IndexStatusController, indexStatusDetails } from './indexStatus';
 import { IndexStatusSession } from './indexStatusSession';
+import { reportClientError, reportIndexStatus } from './output';
 import { StatusBar } from './statusBar';
+import {
+  SHOW_INDEX_STATUS_COMMAND,
+  SHOW_OUTPUT_COMMAND,
+} from './statusPresentation';
 import { setupFileWatchers } from './watcher';
 
 let client: LanguageClient | undefined;
-let statusBar: StatusBar | undefined;
 
 export async function activate(context: ExtensionContext): Promise<void> {
-  statusBar = new StatusBar();
-  context.subscriptions.push({ dispose: () => statusBar?.dispose() });
+  const outputChannel = window.createOutputChannel('UnityShaderNav');
+  const reportError = (message: string, error: unknown): void => {
+    reportClientError(outputChannel, message, error);
+  };
+  context.subscriptions.push(outputChannel);
 
-  client = createLanguageClient(context);
+  const statusBar = new StatusBar();
+  context.subscriptions.push(statusBar);
+
+  client = createLanguageClient(context, outputChannel);
   const indexStatus = new IndexStatusController(statusBar);
   const indexStatusSession = new IndexStatusSession(indexStatus, {
     request: () => client!.sendRequest<IndexStatusSnapshot>(INDEX_STATUS_REQUEST),
     subscribe: (handler) => client!.onNotification(INDEX_STATUS_NOTIFICATION, handler),
-  }, (error) => {
-    console.error('[UnityShaderNav] failed to refresh index status', error);
-  });
+  }, (error) => reportError('Failed to refresh index status', error));
   indexStatusSession.subscribe();
   context.subscriptions.push(indexStatusSession);
   context.subscriptions.push(
@@ -40,9 +48,25 @@ export async function activate(context: ExtensionContext): Promise<void> {
     'unityShaderNav.getIndexStatus',
     () => indexStatusSession.request(),
   ));
+  context.subscriptions.push(commands.registerCommand(
+    SHOW_OUTPUT_COMMAND,
+    () => {
+      reportIndexStatus(outputChannel, indexStatusDetails(indexStatus.current()));
+      outputChannel.show(true);
+    },
+  ));
+  context.subscriptions.push(commands.registerCommand(
+    SHOW_INDEX_STATUS_COMMAND,
+    () => window.showQuickPick(indexStatusDetails(indexStatus.current()), {
+      title: 'UnityShaderNav Index Status',
+      placeHolder: 'Current workspace index lifecycle',
+      matchOnDescription: true,
+      matchOnDetail: true,
+    }),
+  ));
   await client.start();
-  setupFileWatchers(client, context);
-  setupInactiveRegions(client, context);
+  setupFileWatchers(client, context, reportError);
+  setupInactiveRegions(client, context, reportError);
 }
 
 export async function deactivate(): Promise<void> {

@@ -7,6 +7,12 @@ interface StatusProjection {
   tooltip?: string;
 }
 
+export interface IndexStatusDetail {
+  readonly label: string;
+  readonly description?: string;
+  readonly detail?: string;
+}
+
 export class IndexStatusController {
   private lastSequence = -1;
   private sessionEpoch = 0;
@@ -80,4 +86,56 @@ export function projectIndexStatus(snapshot: IndexStatusSnapshot): StatusProject
   }
 
   return { mode: 'standalone' };
+}
+
+export function indexStatusDetails(
+  snapshot: IndexStatusSnapshot | undefined,
+): readonly IndexStatusDetail[] {
+  if (!snapshot) {
+    return [{
+      label: '$(info) Status unavailable',
+      detail: 'No current workspace index status snapshot is available.',
+    }];
+  }
+  if (snapshot.workspaces.length === 0) {
+    return [{
+      label: '$(circle-outline) Standalone mode',
+      detail: 'No workspace root is currently indexed.',
+    }];
+  }
+  return snapshot.workspaces.map(({ folderUri, mode, lifecycle }) => {
+    switch (lifecycle.state) {
+      case 'ready': {
+        const warningLabel = `${lifecycle.warningCount} warning${lifecycle.warningCount === 1 ? '' : 's'}`;
+        return {
+          label: '$(check) Ready',
+          description: mode === 'unity' ? 'Unity project' : 'Standalone',
+          detail: [folderUri, `revision ${lifecycle.revision}`, warningLabel].join(' · '),
+        };
+      }
+      case 'indexing':
+        return {
+          label: '$(sync~spin) Indexing',
+          description: lifecycle.operation,
+          detail: [
+            folderUri,
+            lifecycle.servingRevision === undefined
+              ? undefined
+              : `serving revision ${lifecycle.servingRevision}`,
+          ].filter((part): part is string => part !== undefined).join(' · '),
+        };
+      case 'failed':
+        return {
+          label: '$(error) Failed',
+          description: lifecycle.failure.category,
+          detail: [
+            folderUri,
+            lifecycle.servingRevision === undefined
+              ? undefined
+              : `serving revision ${lifecycle.servingRevision}`,
+            lifecycle.failure.message,
+          ].filter((part): part is string => part !== undefined).join(' · '),
+        };
+    }
+  });
 }

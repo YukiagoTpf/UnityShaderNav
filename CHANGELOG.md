@@ -7,6 +7,12 @@ and uses semantic versioning for extension releases.
 
 ## Unreleased
 
+### Added
+
+- Added one shared `UnityShaderNav` output channel for client, server, and LSP
+  trace messages; standard `unityShaderNav.trace.server` controls; and a
+  clickable status bar that opens per-root index details or failure logs.
+
 ## 0.1.1 - 2026-07-18
 
 ### Changed

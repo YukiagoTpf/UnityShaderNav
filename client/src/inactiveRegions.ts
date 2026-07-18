@@ -6,6 +6,7 @@ import {
   type InactiveRegionsParams,
   type InactiveRegionsResult,
 } from '@unity-shader-nav/shared';
+import type { ClientErrorReporter } from './output';
 
 const SUPPORTED_LANGUAGES = new Set(['shaderlab', 'hlsl']);
 const DEBOUNCE_MS = 300;
@@ -39,7 +40,11 @@ function createDecorationType(opacity: number): vscode.TextEditorDecorationType 
   });
 }
 
-export function setupInactiveRegions(client: LanguageClient, context: vscode.ExtensionContext): void {
+export function setupInactiveRegions(
+  client: LanguageClient,
+  context: vscode.ExtensionContext,
+  reportError: ClientErrorReporter,
+): void {
   // Per-URI decoration types and the opacity they were created with. Resource-
   // scoped config means two open files can resolve different opacity values.
   const decorationTypes = new Map<string, vscode.TextEditorDecorationType>();
@@ -104,9 +109,7 @@ export function setupInactiveRegions(client: LanguageClient, context: vscode.Ext
         );
         editor.setDecorations(decorationType, ranges);
       },
-      (err) => {
-        console.error('[UnityShaderNav] inactiveRegions request failed', err);
-      },
+      (error) => reportError('Failed to refresh inactive regions', error),
     );
   }
 

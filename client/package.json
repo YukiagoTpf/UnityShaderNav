@@ -42,6 +42,18 @@
     "onLanguage:hlsl"
   ],
   "contributes": {
+    "commands": [
+      {
+        "command": "unityShaderNav.showIndexStatus",
+        "title": "Show Index Status",
+        "category": "UnityShaderNav"
+      },
+      {
+        "command": "unityShaderNav.showOutput",
+        "title": "Show Output",
+        "category": "UnityShaderNav"
+      }
+    ],
     "languages": [
       {
         "id": "shaderlab",
@@ -134,6 +146,13 @@
           "minimum": 0.1,
           "maximum": 1,
           "description": "Opacity applied to dimmed preprocessor branches (0.1–1)."
+        },
+        "unityShaderNav.trace.server": {
+          "type": "string",
+          "scope": "window",
+          "enum": ["off", "messages", "verbose"],
+          "default": "off",
+          "description": "Trace communication between VS Code and the UnityShaderNav language server in the output channel."
         }
       }
     }

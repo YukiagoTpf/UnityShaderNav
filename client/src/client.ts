@@ -1,14 +1,18 @@
 import * as path from 'node:path';
-import { ExtensionContext, workspace } from 'vscode';
+import { ExtensionContext, type OutputChannel, workspace } from 'vscode';
 import {
   LanguageClient,
   LanguageClientOptions,
   ServerOptions,
   TransportKind,
 } from 'vscode-languageclient/node';
-import { SETTINGS_SECTION } from '@unity-shader-nav/shared';
+import { SETTING_SECTIONS } from '@unity-shader-nav/shared';
+import { reportClientError } from './output';
 
-export function createLanguageClient(context: ExtensionContext): LanguageClient {
+export function createLanguageClient(
+  context: ExtensionContext,
+  outputChannel: OutputChannel,
+): LanguageClient {
   const serverModule = context.asAbsolutePath(path.join('out', 'server', 'server.js'));
 
   const serverOptions: ServerOptions = {
@@ -24,6 +28,8 @@ export function createLanguageClient(context: ExtensionContext): LanguageClient 
     initializationOptions: {
       globalStorageDir: context.globalStorageUri.fsPath,
     },
+    outputChannel,
+    traceOutputChannel: outputChannel,
   };
 
   const client = new LanguageClient(
@@ -34,11 +40,15 @@ export function createLanguageClient(context: ExtensionContext): LanguageClient 
   );
 
   context.subscriptions.push(workspace.onDidChangeConfiguration((event) => {
-    if (!event.affectsConfiguration(SETTINGS_SECTION)) return;
+    if (!SETTING_SECTIONS.some((section) => event.affectsConfiguration(section))) return;
 
     void client.sendNotification('workspace/didChangeConfiguration', {
       settings: null,
-    }).catch((err) => console.error('[UnityShaderNav] failed to forward configuration change', err));
+    }).catch((error) => reportClientError(
+      outputChannel,
+      'Failed to forward configuration change',
+      error,
+    ));
   }));
 
   return client;

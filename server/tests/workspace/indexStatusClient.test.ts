@@ -2,8 +2,14 @@ import { describe, expect, it, vi } from 'vitest';
 import type { IndexStatusSnapshot } from '@unity-shader-nav/shared';
 import {
   IndexStatusController,
+  indexStatusDetails,
   projectIndexStatus,
 } from '../../../client/src/indexStatus';
+import {
+  SHOW_INDEX_STATUS_COMMAND,
+  SHOW_OUTPUT_COMMAND,
+  presentStatus,
+} from '../../../client/src/statusPresentation';
 
 function snapshot(
   statusSequence: number,
@@ -13,8 +19,124 @@ function snapshot(
 }
 
 describe('client index status projection', () => {
+  it('turns a failed status into an actionable output-channel presentation', () => {
+    expect(presentStatus(
+      'failed',
+      '1 root',
+      'file:///failed: [indexing] parser unavailable',
+    )).toEqual({
+      text: '$(error) UnityShaderNav: failed (1 root)',
+      tooltip: [
+        'file:///failed: [indexing] parser unavailable',
+        '',
+        'Click to open the UnityShaderNav output channel.',
+      ].join('\n'),
+      command: SHOW_OUTPUT_COMMAND,
+      background: 'error',
+    });
+  });
+
+  it('turns indexing into a spinning status with a workspace-details action', () => {
+    expect(presentStatus('indexing', '2 roots', 'file:///one: initial')).toEqual({
+      text: '$(sync~spin) UnityShaderNav: indexing… (2 roots)',
+      tooltip: [
+        'file:///one: initial',
+        '',
+        'Click to view workspace index details.',
+      ].join('\n'),
+      command: SHOW_INDEX_STATUS_COMMAND,
+    });
+  });
+
+  it('turns ready into a positive status with a workspace-details action', () => {
+    expect(presentStatus('ready')).toEqual({
+      text: '$(check) UnityShaderNav: ready',
+      tooltip: 'Click to view workspace index details.',
+      command: SHOW_INDEX_STATUS_COMMAND,
+    });
+  });
+
+  it('keeps non-error lifecycle states clickable for status details', () => {
+    expect((['starting', 'standalone', 'stopped'] as const).map((mode) => (
+      presentStatus(mode)
+    ))).toEqual([
+      {
+        text: '$(sync~spin) UnityShaderNav: starting…',
+        tooltip: 'Click to view workspace index details.',
+        command: SHOW_INDEX_STATUS_COMMAND,
+      },
+      {
+        text: '$(circle-outline) UnityShaderNav: standalone mode',
+        tooltip: 'Click to view workspace index details.',
+        command: SHOW_INDEX_STATUS_COMMAND,
+      },
+      {
+        text: '$(circle-slash) UnityShaderNav: stopped',
+        tooltip: 'Click to view workspace index details.',
+        command: SHOW_INDEX_STATUS_COMMAND,
+      },
+    ]);
+  });
+
   it('projects an empty snapshot to standalone', () => {
     expect(projectIndexStatus(snapshot(0))).toEqual({ mode: 'standalone' });
+  });
+
+  it('describes each workspace through user-facing index status details', () => {
+    expect(indexStatusDetails(snapshot(8, [
+      {
+        folderUri: 'file:///ready',
+        mode: 'unity',
+        lifecycle: { state: 'ready', revision: 3, warningCount: 1 },
+      },
+      {
+        folderUri: 'file:///indexing',
+        mode: 'standalone',
+        lifecycle: { state: 'indexing', operation: 'rebuild', servingRevision: 2 },
+      },
+      {
+        folderUri: 'file:///failed',
+        mode: 'unity',
+        lifecycle: {
+          state: 'failed',
+          servingRevision: 4,
+          failure: {
+            category: 'package-resolution',
+            message: 'Packages/packages-lock.json is malformed',
+          },
+        },
+      },
+    ]))).toEqual([
+      {
+        label: '$(check) Ready',
+        description: 'Unity project',
+        detail: 'file:///ready · revision 3 · 1 warning',
+      },
+      {
+        label: '$(sync~spin) Indexing',
+        description: 'rebuild',
+        detail: 'file:///indexing · serving revision 2',
+      },
+      {
+        label: '$(error) Failed',
+        description: 'package-resolution',
+        detail: 'file:///failed · serving revision 4 · Packages/packages-lock.json is malformed',
+      },
+    ]);
+  });
+
+  it('keeps standalone status details visible without workspace roots', () => {
+    expect(indexStatusDetails(snapshot(0))).toEqual([{
+      label: '$(circle-outline) Standalone mode',
+      detail: 'No workspace root is currently indexed.',
+    }]);
+  });
+
+  it('keeps status details neutral when no current snapshot is available', () => {
+    expect(indexStatusDetails(undefined)).toEqual([{
+      label: '$(info) Status unavailable',
+      detail: 'No current workspace index status snapshot is available.',
+    }]);
   });
 
   it('uses failed over indexing and ready while retaining actionable root details', () => {

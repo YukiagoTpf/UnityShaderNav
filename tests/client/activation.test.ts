@@ -48,6 +48,25 @@ suite('UnityShaderNav activation', () => {
     );
   });
 
+  test('manifest exposes standard language-server trace levels', () => {
+    const ext = findExt();
+    assert.ok(ext, 'extension manifest must be loaded');
+    const trace = ext.packageJSON.contributes?.configuration?.properties?.[
+      'unityShaderNav.trace.server'
+    ];
+    assert.deepStrictEqual(trace?.enum, ['off', 'messages', 'verbose']);
+    assert.strictEqual(trace?.default, 'off');
+  });
+
+  test('manifest contributes user-facing index status and output commands', () => {
+    const ext = findExt();
+    assert.ok(ext, 'extension manifest must be loaded');
+    const commands: Array<{ command?: string }> = ext.packageJSON.contributes?.commands ?? [];
+    const ids = commands.map(({ command }) => command);
+    assert.ok(ids.includes('unityShaderNav.showIndexStatus'));
+    assert.ok(ids.includes('unityShaderNav.showOutput'));
+  });
+
   test('opening a .shader document triggers activation via activationEvents', async () => {
     const ext = findExt();
     assert.ok(ext, 'extension manifest must be loaded');
@@ -66,6 +85,15 @@ suite('UnityShaderNav activation', () => {
       activated, true,
       'expected onLanguage:shaderlab to activate the extension within 5s',
     );
+  });
+
+  test('activation registers the contributed status actions', async () => {
+    const ext = findExt();
+    assert.ok(ext, 'extension manifest must be loaded');
+    await ext.activate();
+    const registered = await vscode.commands.getCommands(true);
+    assert.ok(registered.includes('unityShaderNav.showIndexStatus'));
+    assert.ok(registered.includes('unityShaderNav.showOutput'));
   });
 });
 

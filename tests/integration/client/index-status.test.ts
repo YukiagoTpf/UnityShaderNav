@@ -2,6 +2,7 @@ import * as assert from 'node:assert';
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import * as vscode from 'vscode';
 import {
   addWorkspaceFolder,
   getIndexStatus,
@@ -63,7 +64,7 @@ suite('Index status', () => {
     }
   });
 
-  test('surfaces malformed package state as an actionable failure and still removes the root', async () => {
+  test('surfaces malformed package state with an output-channel action and still removes the root', async () => {
     const root = await makeUnityProject('{ invalid json');
     try {
       const handle = await addWorkspaceFolder(root, { expectedState: 'failed' });
@@ -76,6 +77,10 @@ suite('Index status', () => {
       assert.ok(failed?.lifecycle.state === 'failed');
       assert.equal(failed.lifecycle.failure.category, 'package-resolution');
       assert.match(failed.lifecycle.failure.message, /Packages\/packages-lock\.json/i);
+      await assert.doesNotReject(
+        async () => vscode.commands.executeCommand('unityShaderNav.showOutput'),
+        'failed status should expose a registered output-channel action',
+      );
 
       await removeWorkspaceFolder(root);
       assert.equal(indexStatusForFolder(await getIndexStatus(), root), undefined);

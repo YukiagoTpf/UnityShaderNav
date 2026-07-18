@@ -2,10 +2,13 @@
 
 UnityShaderNav settings use the `unityShaderNav` prefix.
 
-Settings are validated independently at each leaf. Invalid values fall back to
-the documented default, while valid siblings in the same nested object remain
-active. All settings are resource-scoped and apply without restarting VS Code;
-settings that affect indexing trigger a workspace rebuild automatically.
+Server behavior settings are validated independently at each leaf. Invalid
+values fall back to the documented default, while valid siblings in the same
+nested object remain active. Those settings are resource-scoped; settings that
+affect indexing trigger a workspace rebuild automatically. The standard
+protocol trace setting is window-scoped because it controls one language-client
+connection rather than one indexed resource. Every setting applies without
+restarting VS Code.
 
 ## `unityShaderNav.projectRoot`
 
@@ -119,3 +122,16 @@ branches more strongly; `1` leaves them at full opacity.
   "unityShaderNav.dimInactiveBranches.opacity": 0.55
 }
 ```
+
+## `unityShaderNav.trace.server`
+
+Type: `string`
+
+Default: `"off"`
+
+Values: `"off"`, `"messages"`, `"verbose"`
+
+Controls the standard language-server protocol trace written to the shared
+`UnityShaderNav` output channel. `messages` records request and notification
+flow; `verbose` also records payloads and can produce substantially more output.
+This setting is window-scoped and applies without restarting VS Code.

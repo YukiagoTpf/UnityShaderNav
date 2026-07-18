@@ -1,9 +1,14 @@
 import * as vscode from 'vscode';
 import type { LanguageClient } from 'vscode-languageclient/node';
+import type { ClientErrorReporter } from './output';
 
 type FileChangeType = 'created' | 'changed' | 'deleted';
 
-export function setupFileWatchers(client: LanguageClient, context: vscode.ExtensionContext): void {
+export function setupFileWatchers(
+  client: LanguageClient,
+  context: vscode.ExtensionContext,
+  reportError: ClientErrorReporter,
+): void {
   const code = vscode.workspace.createFileSystemWatcher('**/*.{shader,hlsl,cginc,hlslinc,compute}');
   const git = vscode.workspace.createFileSystemWatcher('**/.git/HEAD');
   const lock = vscode.workspace.createFileSystemWatcher('**/Packages/packages-lock.json');
@@ -12,7 +17,10 @@ export function setupFileWatchers(client: LanguageClient, context: vscode.Extens
   const packageManifest = vscode.workspace.createFileSystemWatcher('**/Packages/*/package.json');
 
   function forward(uri: vscode.Uri, type: FileChangeType): void {
-    void client.sendNotification('unityShaderNav/fileChange', { uri: uri.toString(), type });
+    const uriString = uri.toString();
+    void client.sendNotification('unityShaderNav/fileChange', { uri: uriString, type }).catch(
+      (error) => reportError(`Failed to forward ${type} file change for ${uriString}`, error),
+    );
   }
 
   code.onDidCreate((uri) => forward(uri, 'created'));

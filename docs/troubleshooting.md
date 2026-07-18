@@ -56,7 +56,9 @@ The cache will be rebuilt automatically.
 
 ## Collecting Diagnostics
 
-Open VS Code's Output panel and choose `UnityShaderNav`.
+Click a failed UnityShaderNav status-bar item, or run
+`UnityShaderNav: Show Output`, to open the shared output channel. Ready and
+indexing status-bar items open the current per-root lifecycle details.
 
 For definition issues, temporarily enable:
 
@@ -67,3 +69,8 @@ For definition issues, temporarily enable:
 ```
 
 Attach the relevant output to the GitHub issue, then turn the setting off.
+
+For protocol-level failures, temporarily set
+`unityShaderNav.trace.server` to `messages` or `verbose`. The trace is written
+to the same output channel. Return it to `off` after collecting the failure;
+`verbose` may include source text or paths from protocol payloads.
