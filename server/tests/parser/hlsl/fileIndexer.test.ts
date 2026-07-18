@@ -1,7 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { indexFile } from '../../../src/parser/hlsl/fileIndexer';
+import {
+  indexFile,
+  indexFileWithTemporaryTrees,
+} from '../../../src/parser/hlsl/fileIndexer';
+import {
+  createHlslParser,
+  type ReusableHlslParser,
+} from '../../../src/parser/hlsl/parser';
 import { scanProperties } from '../../../src/parser/shaderlab/propertiesScanner';
 import { MacroPatternRecognizer } from '../../../src/macros';
 import { analyzeDocument } from '../../../src/analysis';
@@ -48,6 +55,39 @@ describe('fileIndexer: pure .hlsl', () => {
 });
 
 describe('fileIndexer: .shader multi-pass', () => {
+  it('releases every temporary full-parse tree and its parser', async () => {
+    const parser = await createHlslParser();
+    const treeDeletes: Array<ReturnType<typeof vi.fn>> = [];
+    const parserDelete = vi.fn(parser.delete.bind(parser));
+    const trackedParser: ReusableHlslParser = {
+      parseStabilized(text, oldTree) {
+        const tree = parser.parseStabilized(text, oldTree);
+        const deleteTree = vi.fn(tree.delete.bind(tree));
+        tree.delete = deleteTree;
+        treeDeletes.push(deleteTree);
+        return tree;
+      },
+      delete: parserDelete,
+    };
+    const text = shaderWithTwoBlocks('FirstDiskBlock', 'SecondDiskBlock');
+
+    const index = await indexFileWithTemporaryTrees(
+      'file:///t/TemporaryTrees.shader',
+      text,
+      undefined,
+      undefined,
+      async () => trackedParser,
+    );
+
+    expect(index.symbols.map((symbol) => symbol.name)).toEqual(expect.arrayContaining([
+      'FirstDiskBlock',
+      'SecondDiskBlock',
+    ]));
+    expect(treeDeletes).toHaveLength(2);
+    expect(treeDeletes.every((release) => release.mock.calls.length === 1)).toBe(true);
+    expect(parserDelete).toHaveBeenCalledTimes(1);
+  });
+
   it('flattens symbols from all HLSL blocks into one file index', async () => {
     const text = readFileSync(
       join(__dirname, '../shaderlab/fixtures/multi-pass.shader'),
@@ -164,6 +204,21 @@ describe('fileIndexer: .shader multi-pass', () => {
     ))).toBe(true);
   });
 });
+
+function shaderWithTwoBlocks(first: string, second: string): string {
+  return [
+    'Shader "Tests/TemporaryTrees" {',
+    '  HLSLINCLUDE',
+    `  float4 ${first}() { return 0; }`,
+    '  ENDHLSL',
+    '  SubShader { Pass {',
+    '    HLSLPROGRAM',
+    `    float4 ${second}() { return 0; }`,
+    '    ENDHLSL',
+    '  } }',
+    '}',
+  ].join('\n');
+}
 
 describe('fileIndexer: .shader Properties attachment', () => {
   it('attaches Properties entries matching scanProperties for a .shader with a Properties block', async () => {

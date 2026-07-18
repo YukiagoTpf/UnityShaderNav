@@ -1,5 +1,6 @@
 import { extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type Parser from 'web-tree-sitter';
 import type { FileIndex, ReferenceEntry, SymbolEntry } from '@unity-shader-nav/shared';
 import {
   analysisMatchesSource,
@@ -7,7 +8,12 @@ import {
   type DocumentAnalysis,
 } from '../../analysis';
 import type { MacroPatternRecognizer } from '../../macros';
-import { parseHlsl } from './parser';
+import {
+  createHlslParser,
+  stabilizeHlslSource,
+  type HlslParserFactory,
+} from './parser';
+import type { LiveDocumentTreeSession } from './liveDocumentTreeSession';
 import { collect } from './collector';
 import { scanIncludes } from '../include/lineScanner';
 import { scanDefines } from '../preproc/scanDefines';
@@ -103,13 +109,53 @@ export async function indexFile(
   text: string,
   recognizer?: MacroPatternRecognizer,
   preparedAnalysis?: DocumentAnalysis,
+  liveSession?: LiveDocumentTreeSession,
+): Promise<FileIndex> {
+  if (liveSession) return liveSession.indexFile(uri, text, recognizer, preparedAnalysis);
+  return indexFileWithTemporaryTrees(uri, text, recognizer, preparedAnalysis);
+}
+
+export async function indexFileWithTemporaryTrees(
+  uri: string,
+  text: string,
+  recognizer?: MacroPatternRecognizer,
+  preparedAnalysis?: DocumentAnalysis,
+  createParser: HlslParserFactory = createHlslParser,
+): Promise<FileIndex> {
+  let parser: Awaited<ReturnType<HlslParserFactory>> | undefined;
+  const temporaryTrees: Parser.Tree[] = [];
+  try {
+    return await indexFileWithTreeProvider(
+      uri,
+      text,
+      recognizer,
+      preparedAnalysis,
+      async (blockText) => {
+        parser ??= await createParser();
+        const tree = parser.parseStabilized(stabilizeHlslSource(blockText));
+        temporaryTrees.push(tree);
+        return tree;
+      },
+    );
+  } finally {
+    for (const tree of temporaryTrees) tree.delete();
+    parser?.delete();
+  }
+}
+
+export async function indexFileWithTreeProvider(
+  uri: string,
+  text: string,
+  recognizer: MacroPatternRecognizer | undefined,
+  preparedAnalysis: DocumentAnalysis | undefined,
+  treeForBlock: (blockText: string, blockIndex: number) => Promise<Parser.Tree>,
 ): Promise<FileIndex> {
   const analysis = preparedAnalysis && analysisMatchesSource(preparedAnalysis, text)
     ? preparedAnalysis
     : analyzeDocument(uri, text, 'index');
   const ext = extOf(uri);
   if (HLSL_EXTS.has(ext)) {
-    const tree = await parseHlsl(text);
+    const tree = await treeForBlock(text, 0);
     const idx = collect(tree.rootNode, text, uri, 0, recognizer);
     idx.references.push(...scanIncludeReferences(text, 0, uri));
     pushDefines(text, 0, uri, idx.symbols);
@@ -123,11 +169,12 @@ export async function indexFile(
     const lines = text.split(/\r?\n/);
 
     const merged: FileIndex = { uri, symbols: [], references: [] };
-    for (const block of blocks) {
+    for (let blockIndex = 0; blockIndex < blocks.length; blockIndex++) {
+      const block = blocks[blockIndex];
       const blockText = lines
         .slice(block.contentStartLine, block.contentEndLine + 1)
         .join('\n');
-      const tree = await parseHlsl(blockText);
+      const tree = await treeForBlock(blockText, blockIndex);
       const part = collect(
         tree.rootNode,
         blockText,

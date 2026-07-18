@@ -62,6 +62,7 @@ npm run test:electron
 npm run bench:index-cache -- --files 800
 npm run bench:index-fork -- --files 5000 --symbols 8 --iterations 100 --warmup 20
 npm run bench:document-analysis -- --passes 32 --properties 64 --iterations 250 --warmup 50
+npm run bench:live-document -- --functions 2000 --iterations 40 --warmup 10
 npm run package:vsix
 npm run grammar:rebuild
 ```
@@ -304,6 +305,25 @@ counts; sample count; median; p95; and the shared-to-independent ratio. Count
 equality and the 5-to-1 source-walk reduction are correctness checks. Timing is
 diagnostic only: there is deliberately no timing threshold in CI, and
 performance comparisons should use the same machine, build, and arguments.
+
+## Live Document Parsing Benchmark
+
+Run the source benchmark from the repository root; a production build is not
+required:
+
+```powershell
+npm run bench:live-document -- --functions 2000 --iterations 40 --warmup 10
+```
+
+The benchmark generates two large HLSL document versions that differ by one
+local edit and include a non-BMP UTF-16 fixture. Before timing, it requires the
+incremental and full paths to produce deeply equal `FileIndex` values. The
+parse-only comparison measures tree-sitter with and without an edited old tree.
+The end-to-end comparison measures the same `Workspace.updateDocument`
+publication path against a baseline indexer that deliberately omits the live
+session and performs a full parse. Runs alternate the two end-to-end paths and
+report mean, median, p95, and median/p95 speedup as JSON. Timing is diagnostic,
+has no CI threshold, and should be compared only on the same machine and build.
 
 ## Vendored HLSL Grammar
 

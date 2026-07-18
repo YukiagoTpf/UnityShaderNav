@@ -19,6 +19,10 @@ and uses semantic versioning for extension releases.
   per-document reconciles publish from the serving revision while rebuild or
   recovery constructs its candidate. Concurrent document publications now use
   a final compare-and-swap, and full replay preserves newer edits and closes.
+- Live HLSL and ShaderLab edits now reuse Workspace-owned tree-sitter trees,
+  including one ordered tree forest for embedded ShaderLab program blocks.
+  Disk indexing remains a resource-bounded full parse, and close or ownership
+  transfer releases the live parser state without changing navigation results.
 
 ### Fixed
 

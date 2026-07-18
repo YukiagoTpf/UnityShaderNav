@@ -59,6 +59,10 @@ import {
   signatureHelpNeedsIndex,
 } from './queries';
 import type { FileEvent } from './workspaceIndex';
+import {
+  LiveDocumentTreeSessions,
+  type LiveDocumentTreeSessionFactory,
+} from './liveDocumentTreeSessions';
 
 export type { FileEvent } from './workspaceIndex';
 
@@ -67,6 +71,7 @@ export interface WorkspaceRuntimeOptions
   onIndexStatusChanged?: () => void;
   openDocuments?: OpenDocumentsProvider;
   candidateConstructor?: IndexedRevisionCandidateConstructor;
+  createLiveDocumentTreeSession?: LiveDocumentTreeSessionFactory;
 }
 
 interface DocumentReconcileRun {
@@ -102,6 +107,7 @@ export class Workspace implements IndexedWorkspace {
    */
   private operationTail: Promise<void> = Promise.resolve();
   private readonly documentReconciler = new OpenDocumentReconciler();
+  private readonly liveDocumentTrees: LiveDocumentTreeSessions;
   private readonly documentReconciles = new Map<string, DocumentReconcileRun>();
   private readonly abortController = new AbortController();
   private disposed = false;
@@ -118,6 +124,9 @@ export class Workspace implements IndexedWorkspace {
     this.candidateConstructor = options.candidateConstructor
       ?? createDefaultIndexedRevisionCandidateConstructor(folderUri, options);
     this.openDocuments = options.openDocuments;
+    this.liveDocumentTrees = new LiveDocumentTreeSessions(
+      options.createLiveDocumentTreeSession,
+    );
   }
 
   /** Latest published settings, or requested settings before the first publish. */
@@ -167,6 +176,7 @@ export class Workspace implements IndexedWorkspace {
     if (this.disposed || !this.documentReconciler.acceptClose(input.uri, input.openId)) {
       return Promise.resolve();
     }
+    this.liveDocumentTrees.close(input.uri, input.openId);
     return this.reconcileDocumentClose(input.uri, input.openId);
   }
 
@@ -417,6 +427,9 @@ export class Workspace implements IndexedWorkspace {
           key,
           desired,
           () => !this.disposed && this.published === base,
+          desired.kind === 'open'
+            ? () => this.liveDocumentTrees.sessionFor(desired.document)
+            : undefined,
         );
         if (transition.kind === 'superseded') continue;
         if (
@@ -435,11 +448,17 @@ export class Workspace implements IndexedWorkspace {
   }
 
   private captureOpenDocuments(synchronizeOwnership = false): void {
+    const documents = this.openDocuments ? [...this.openDocuments()] : undefined;
     this.documentReconciler.captureProvider(
-      this.openDocuments,
+      documents ? () => documents : undefined,
       (uri) => this.containsDocument(uri),
       synchronizeOwnership,
     );
+    if (synchronizeOwnership && documents) {
+      this.liveDocumentTrees.retainOnly(
+        documents.filter((document) => this.containsDocument(document.uri)),
+      );
+    }
   }
 
   private ownsProvidedDocument(document: IndexedDocumentSnapshot): boolean {
@@ -469,6 +488,9 @@ export class Workspace implements IndexedWorkspace {
           key,
           desired,
           () => !this.disposed,
+          desired.kind === 'open'
+            ? () => this.liveDocumentTrees.sessionFor(desired.document)
+            : undefined,
         );
         if (transition.kind === 'closed') {
           reconciledCloses.set(key, transition.reconciled);
@@ -493,6 +515,7 @@ export class Workspace implements IndexedWorkspace {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.liveDocumentTrees.dispose();
     this.abortController.abort(new WorkspaceDisposedError(this.folderUri));
   }
 

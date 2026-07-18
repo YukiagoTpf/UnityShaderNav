@@ -27,6 +27,7 @@ import type {
   TextEdit,
 } from 'vscode-languageserver/node';
 import type { CacheManager } from '../cache';
+import type { LiveDocumentTreeSession } from '../parser/hlsl/liveDocumentTreeSession';
 import {
   shaderLabColorPresentations,
   shaderLabDocumentColors,
@@ -496,9 +497,15 @@ export class IndexedRevisionBuilder {
   prepareDocument(
     document: IndexedDocumentSnapshot,
     shouldContinue: () => boolean,
+    liveSession?: LiveDocumentTreeSession,
   ): Promise<PreparedDocumentIndex | undefined> {
     this.assertMutable();
-    return this.index.prepareDocument(document.uri, document.text, shouldContinue);
+    return this.index.prepareDocument(
+      document.uri,
+      document.text,
+      shouldContinue,
+      liveSession,
+    );
   }
 
   commitDocument(

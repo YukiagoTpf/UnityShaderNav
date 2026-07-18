@@ -17,6 +17,7 @@ import { PersistentOrderedMap } from '../index/persistentStringMap';
 import { uriKey } from '../uriKey';
 import { MacroPatternRecognizer } from '../macros';
 import { indexFile } from '../parser/hlsl';
+import type { LiveDocumentTreeSession } from '../parser/hlsl/liveDocumentTreeSession';
 
 export interface FileEvent {
   uri: string;
@@ -28,6 +29,7 @@ export type DocumentIndexer = (
   text: string,
   recognizer: MacroPatternRecognizer,
   analysis?: DocumentAnalysis,
+  liveSession?: LiveDocumentTreeSession,
 ) => Promise<FileIndex>;
 
 export type DocumentAnalyzer = (
@@ -250,10 +252,11 @@ export class WorkspaceIndex {
     uri: string,
     text: string,
     shouldContinue: () => boolean = () => true,
+    liveSession?: LiveDocumentTreeSession,
   ): Promise<PreparedDocumentIndex | undefined> {
     if (!shouldContinue()) return undefined;
     const liveAnalysis = this.analyzeSource(uri, text, 'full');
-    const liveIndex = await this.createFileIndex(uri, text, liveAnalysis);
+    const liveIndex = await this.createFileIndex(uri, text, liveAnalysis, liveSession);
     if (!shouldContinue()) return undefined;
 
     let diskIndex: DiskIndexRecord | null | undefined;
@@ -337,6 +340,7 @@ export class WorkspaceIndex {
     uri: string,
     text: string,
     preparedAnalysis?: DocumentAnalysis,
+    liveSession?: LiveDocumentTreeSession,
   ): Promise<FileIndex> {
     const analysis = preparedAnalysis ?? this.analyzeSource(uri, text, 'index');
     return freezeFileIndex(await this.indexDocument(
@@ -344,6 +348,7 @@ export class WorkspaceIndex {
       text,
       this.recognizer,
       analysis,
+      liveSession,
     ));
   }
 

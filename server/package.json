@@ -4,6 +4,7 @@
   "private": true,
   "main": "out/server.js",
   "scripts": {
+    "bench:live-document": "vite-node benchmarks/liveDocumentParsing.ts",
     "build": "tsc -p .",
     "watch": "tsc -p . -w",
     "test": "vitest run"
@@ -15,6 +16,7 @@
     "web-tree-sitter": "^0.22.6"
   },
   "devDependencies": {
+    "vite-node": "^1.6.0",
     "vitest": "^1.6.0"
   }
 }

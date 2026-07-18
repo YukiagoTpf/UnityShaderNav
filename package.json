@@ -29,6 +29,7 @@
     "bench:index-cache": "node scripts/benchmark-index-cache.mjs",
     "bench:index-fork": "node scripts/benchmark-index-fork.mjs",
     "bench:document-analysis": "node scripts/benchmark-document-analysis.mjs",
+    "bench:live-document": "npm run bench:live-document -w @unity-shader-nav/server --",
     "grammar:rebuild": "node scripts/rebuild-tree-sitter-hlsl.mjs",
     "package:vsix": "node scripts/package-vsix.mjs --build-and-verify"
   },

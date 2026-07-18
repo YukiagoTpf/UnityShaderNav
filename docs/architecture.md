@@ -188,11 +188,31 @@ didOpen / didChange / didClose
   -> open-document snapshot registry
   -> Workspace.updateDocument / closeDocument
   -> receive a complete full candidate or fork the published revision
-  -> prepare exact-source analysis + parse
+  -> prepare exact-source analysis + live incremental parse
   -> prepare optional disk baseline in the candidate
   -> validate openId + version
   -> publish once by swapping the Workspace revision pointer
 ```
+
+Each `Workspace` owns the live tree-sitter state for its open overlays. One
+session is identified by canonical URI plus `openId`; a monotonically assigned
+generation prevents late parser creation or parse completion from entering a
+later close/reopen session. Calls within a session use one queue. HLSL-like
+files retain one tree, while a `.shader` retains an ordered forest matching its
+embedded HLSL/CG blocks. An edit is computed between the stabilized old and new
+block sources in the JavaScript parser's UTF-16 coordinate space; unchanged
+blocks keep their existing trees and changed blocks pass the edited old tree to
+tree-sitter. Both incremental and full parsing feed the same symbol/reference
+collector and must project an identical `FileIndex` for the same exact source.
+
+Persistent tree state is exclusive to live overlays. Source discovery, watcher
+updates, disk fallback, and other disk reads that require parsing use the full
+path; an exact live/disk source match may reuse the already projected
+`FileIndex`. A full parser and every temporary block tree are released after
+that durable projection. Close, close/reopen, ownership transfer, and
+`Workspace.dispose()` retire the corresponding live session. An active attempt
+temporarily owns its in-flight trees until it observes the retired generation,
+then releases those trees and its parser without publishing them.
 
 `Workspace` serializes full lifecycle and watcher transactions and coalesces
 document attempts per canonical URI. While rebuild or recovery constructs an

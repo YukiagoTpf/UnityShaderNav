@@ -6,6 +6,7 @@ import type {
 import type {
   IndexedRevisionBuilder,
 } from './indexedRevision';
+import type { LiveDocumentTreeSession } from '../parser/hlsl/liveDocumentTreeSession';
 
 export type DesiredDocumentState =
   | { readonly kind: 'open'; readonly document: IndexedDocumentSnapshot }
@@ -170,6 +171,7 @@ export class OpenDocumentReconciler {
     key: string,
     desired: DesiredDocumentState,
     adapterIsCurrent: () => boolean,
+    getLiveSession?: () => LiveDocumentTreeSession,
   ): Promise<AppliedDocumentTransition> {
     const isCurrent = (): boolean => (
       adapterIsCurrent() && this.isCurrentState(desired)
@@ -186,7 +188,15 @@ export class OpenDocumentReconciler {
           : { kind: 'superseded' };
       }
 
-      const candidate = await builder.prepareDocument(desired.document, isCurrent);
+      // Keep this production prepare invocation adjacent to the current-state
+      // guard: the default indexer synchronously registers its live-tree work
+      // before yielding, so replay and incremental calls enter the session
+      // queue in accepted document-version order.
+      const candidate = await builder.prepareDocument(
+        desired.document,
+        isCurrent,
+        getLiveSession?.(),
+      );
       if (!candidate || !builder.commitDocument(desired.document, candidate, isCurrent)) {
         return { kind: 'superseded' };
       }

@@ -51,11 +51,30 @@ export async function ensureParserReady(): Promise<ParserRuntimeAssets> {
   return ensureReady();
 }
 
-export async function parseHlsl(text: string): Promise<Parser.Tree> {
+export interface ReusableHlslParser {
+  parseStabilized(text: string, oldTree?: Parser.Tree): Parser.Tree;
+  delete(): void;
+}
+
+export type HlslParserFactory = () => Promise<ReusableHlslParser>;
+
+export async function createHlslParser(): Promise<ReusableHlslParser> {
   await ensureReady();
-  const parser = new TS();
+  const parser: Parser = new TS();
   parser.setLanguage(language!);
-  return parser.parse(stabilizeMacroStatementLines(text));
+  return {
+    parseStabilized: (text, oldTree) => parser.parse(text, oldTree),
+    delete: () => parser.delete(),
+  };
+}
+
+export async function parseHlsl(text: string): Promise<Parser.Tree> {
+  const parser = await createHlslParser();
+  try {
+    return parser.parseStabilized(stabilizeHlslSource(text));
+  } finally {
+    parser.delete();
+  }
 }
 
 export async function getLanguage(): Promise<Parser.Language> {
@@ -63,7 +82,7 @@ export async function getLanguage(): Promise<Parser.Language> {
   return language!;
 }
 
-function stabilizeMacroStatementLines(text: string): string {
+export function stabilizeHlslSource(text: string): string {
   return text.replace(STRUCT_FIELD_MACRO_LINE_RE, (_line, indent: string, name: string, trailing: string) =>
     `${indent}${name.slice(0, -1)};${trailing}`);
 }
