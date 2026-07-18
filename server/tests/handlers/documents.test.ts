@@ -4,7 +4,10 @@ import {
   type Connection,
 } from 'vscode-languageserver/node';
 import { registerDocuments } from '../../src/handlers/documents';
-import type { IndexedWorkspace } from '../../src/workspace/indexedWorkspace';
+import type {
+  IndexedDocumentSnapshot,
+  IndexedWorkspace,
+} from '../../src/workspace/indexedWorkspace';
 
 type OpenHandler = (event: {
   textDocument: { uri: string; languageId: string; version: number; text: string };
@@ -21,13 +24,11 @@ function createConnectionHarness(): {
   change: ChangeHandler;
   close: CloseHandler;
   errors: string[];
-  diagnostics: unknown[];
 } {
   let open: OpenHandler | undefined;
   let change: ChangeHandler | undefined;
   let close: CloseHandler | undefined;
   const errors: string[] = [];
-  const diagnostics: unknown[] = [];
   const disposable = { dispose() {} };
   const connection = {
     console: {
@@ -49,10 +50,6 @@ function createConnectionHarness(): {
     onWillSaveTextDocument() { return disposable; },
     onWillSaveTextDocumentWaitUntil() { return disposable; },
     onDidSaveTextDocument() { return disposable; },
-    sendDiagnostics(params: unknown) {
-      diagnostics.push(params);
-      return Promise.resolve();
-    },
   } as unknown as Connection;
   return {
     connection,
@@ -60,7 +57,6 @@ function createConnectionHarness(): {
     change: (event) => change?.(event),
     close: (event) => close?.(event),
     errors,
-    diagnostics,
   };
 }
 
@@ -196,6 +192,8 @@ describe('registerDocuments', () => {
     };
 
     const registered = registerDocuments(harness.connection, manager);
+    const closedSnapshots: IndexedDocumentSnapshot[] = [];
+    registered.onDidCloseSnapshot((document) => { closedSnapshots.push(document); });
     harness.open(openEvent('float4 Opened() { return 0; }'));
     await flushPromises();
 
@@ -206,10 +204,11 @@ describe('registerDocuments', () => {
     await flushPromises();
     expect(workspace.closeDocument).toHaveBeenCalledWith({ uri, openId: 1 });
     expect(registered.snapshot(uri)).toBeUndefined();
-    expect(harness.diagnostics).toContainEqual({
+    expect(closedSnapshots).toContainEqual(expect.objectContaining({
       uri,
-      diagnostics: [],
-    });
+      openId: 1,
+      version: 1,
+    }));
   });
 
   it('keeps one lazy ensure and submits only the latest edit', async () => {

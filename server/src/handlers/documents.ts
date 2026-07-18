@@ -5,11 +5,11 @@ import { uriKey } from '../uriKey';
 import {
   snapshotDocument,
   type IndexedDocumentSnapshot,
-  type IndexedDocumentRegistry,
+  type IndexedDocumentLifecycleRegistry,
   type IndexedWorkspaceService,
 } from '../workspace/indexedWorkspace';
 
-export interface RegisteredDocuments extends IndexedDocumentRegistry {
+export interface RegisteredDocuments extends IndexedDocumentLifecycleRegistry {
   readonly documents: TextDocuments<TextDocument>;
 }
 
@@ -118,6 +118,7 @@ export function registerDocuments(
   const documents = new CanonicalTextDocuments(TextDocument);
   const openDocuments = new Map<string, IndexedDocumentSnapshot>();
   const pendingLazyRoutes = new Map<string, Promise<void>>();
+  const closeSnapshotHandlers = new Set<(document: IndexedDocumentSnapshot) => void>();
   let nextOpenId = 1;
 
   const reportFailure = (action: string, uri: string, error: unknown): void => {
@@ -219,13 +220,13 @@ export function registerDocuments(
     const current = openDocuments.get(key);
     if (!current) return;
     openDocuments.delete(key);
-
-    observe('diagnostic clear', document.uri, () => Promise.resolve(
-      connection.sendDiagnostics({
-        uri: document.uri,
-        diagnostics: [],
-      }),
-    ));
+    for (const handler of closeSnapshotHandlers) {
+      try {
+        handler(current);
+      } catch (error) {
+        reportFailure('document close notification', current.uri, error);
+      }
+    }
 
     const workspace = manager.workspaceFor(document.uri);
     if (workspace) {
@@ -242,5 +243,6 @@ export function registerDocuments(
     documents,
     snapshot: (uri) => openDocuments.get(uriKey(uri)),
     openSnapshots: () => [...openDocuments.values()],
+    onDidCloseSnapshot: (handler) => { closeSnapshotHandlers.add(handler); },
   };
 }

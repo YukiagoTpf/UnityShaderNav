@@ -154,6 +154,11 @@ export interface IndexedDocumentRegistry {
   openSnapshots(): readonly IndexedDocumentSnapshot[];
 }
 
+/** Open-document registry with lifecycle observation for revision projections. */
+export interface IndexedDocumentLifecycleRegistry extends IndexedDocumentRegistry {
+  onDidCloseSnapshot(handler: (document: IndexedDocumentSnapshot) => void): void;
+}
+
 /**
  * Resolve a request without waiting on an existing non-serving root. When no
  * route exists, a still-current open session may lazily recreate its owner.
