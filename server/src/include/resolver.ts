@@ -62,48 +62,50 @@ export function memoizeDirectoryListings(
   });
 }
 
-function pathSegments(path: string): { root: string; parts: string[] } {
-  const root = parse(path).root;
-  const rest = relative(root, path);
-  return {
-    root,
-    parts: rest.split(/[\\/]/).filter(Boolean),
-  };
-}
+/**
+ * Resolve only the path spelling contributed by `#include`. The anchor comes
+ * from an already accepted document or project setting and may legitimately
+ * contain an OS alias (for example, a Windows 8.3 ancestor).
+ */
+async function resolveAuthoredPath(
+  anchor: string,
+  authoredPath: string,
+  probe: FileProbe,
+  ignoreCase: boolean,
+): Promise<string | null> {
+  const resolvedAnchor = pathResolve(anchor);
+  const candidate = pathResolve(resolvedAnchor, authoredPath);
+  const normalizedAuthoredPath = relative(resolvedAnchor, candidate);
+  if (!ignoreCase && !(await probe.exists(candidate))) return null;
 
-async function existsCaseSensitive(path: string, probe: FileProbe): Promise<boolean> {
-  if (!(await probe.exists(path))) return false;
-
-  const { root, parts } = pathSegments(pathResolve(path));
-  let acc = root;
-  for (const part of parts) {
-    let entries: readonly string[];
-    try {
-      entries = await probe.listDir(acc);
-    } catch {
-      return false;
+  let acc = resolvedAnchor;
+  for (const part of normalizedAuthoredPath.split(/[\\/]/).filter(Boolean)) {
+    if (part === '.') continue;
+    if (part === '..') {
+      acc = dirname(acc);
+      continue;
     }
-    if (!entries.includes(part)) return false;
-    acc = join(acc, part);
-  }
-  return true;
-}
 
-async function findIgnoreCase(path: string, probe: FileProbe): Promise<string | null> {
-  const { root, parts } = pathSegments(pathResolve(path));
-  let acc = root;
-  for (const part of parts) {
     let entries: readonly string[];
     try {
       entries = await probe.listDir(acc);
     } catch {
       return null;
     }
-    const hit = entries.find((entry) => entry.toLowerCase() === part.toLowerCase());
+    const hit = ignoreCase
+      ? entries.find((entry) => entry.toLowerCase() === part.toLowerCase())
+      : entries.find((entry) => entry === part);
     if (!hit) return null;
     acc = join(acc, hit);
   }
-  return acc;
+  if (!ignoreCase) return acc;
+  return await probe.exists(acc) ? acc : null;
+}
+
+interface IncludeCandidate {
+  readonly anchor: string;
+  readonly authoredPath: string;
+  readonly via: ResolvedInclude['via'];
 }
 
 export async function resolveInclude(
@@ -126,17 +128,23 @@ export async function resolveInclude(
     const subpath = slash < 0 ? '' : rest.substring(slash + 1);
     const packageRoot = ctx.packagePhysicalPaths?.get(packageName);
     if (!packageRoot) return null;
+    const authoredSubpath = subpath ? join('.', subpath) : '';
 
-    const candidate = subpath ? join(packageRoot, subpath) : packageRoot;
-    if (await existsCaseSensitive(candidate, probe)) {
+    const exact = await resolveAuthoredPath(packageRoot, authoredSubpath, probe, false);
+    if (exact) {
       return {
-        absolutePath: candidate,
+        absolutePath: exact,
         via: 'package',
         caseInsensitive: false,
       };
     }
 
-    const caseInsensitive = await findIgnoreCase(candidate, probe);
+    const caseInsensitive = await resolveAuthoredPath(
+      packageRoot,
+      authoredSubpath,
+      probe,
+      true,
+    );
     if (caseInsensitive) {
       return {
         absolutePath: caseInsensitive,
@@ -148,26 +156,46 @@ export async function resolveInclude(
     return null;
   }
 
-  const candidates: Array<{ path: string; via: ResolvedInclude['via'] }> = [];
+  const candidates: IncludeCandidate[] = [];
   if (isAbsolute(includePath)) {
-    candidates.push({ path: includePath, via: 'relative' });
+    const root = parse(includePath).root;
+    candidates.push({
+      anchor: root,
+      authoredPath: relative(root, includePath),
+      via: 'relative',
+    });
   } else {
-    candidates.push({ path: pathResolve(dirname(fromPath), includePath), via: 'relative' });
+    candidates.push({
+      anchor: dirname(fromPath),
+      authoredPath: includePath,
+      via: 'relative',
+    });
     if (ctx.unityProjectRoot) {
       candidates.push({
-        path: join(ctx.unityProjectRoot, 'Assets', includePath),
+        anchor: ctx.unityProjectRoot,
+        authoredPath: join('Assets', includePath),
         via: 'assets',
       });
     }
     for (const dir of ctx.includeDirectories) {
-      candidates.push({ path: join(dir, includePath), via: 'includeDirectories' });
+      candidates.push({
+        anchor: dir,
+        authoredPath: includePath,
+        via: 'includeDirectories',
+      });
     }
   }
 
   for (const candidate of candidates) {
-    if (await existsCaseSensitive(candidate.path, probe)) {
+    const exact = await resolveAuthoredPath(
+      candidate.anchor,
+      candidate.authoredPath,
+      probe,
+      false,
+    );
+    if (exact) {
       return {
-        absolutePath: candidate.path,
+        absolutePath: exact,
         via: candidate.via,
         caseInsensitive: false,
       };
@@ -175,7 +203,12 @@ export async function resolveInclude(
   }
 
   for (const candidate of candidates) {
-    const found = await findIgnoreCase(candidate.path, probe);
+    const found = await resolveAuthoredPath(
+      candidate.anchor,
+      candidate.authoredPath,
+      probe,
+      true,
+    );
     if (found) {
       return {
         absolutePath: found,

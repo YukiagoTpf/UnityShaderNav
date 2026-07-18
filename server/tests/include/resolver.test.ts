@@ -81,6 +81,105 @@ describe('resolveInclude', () => {
       });
   });
 
+  it('trusts inherited filesystem aliases while checking the authored suffix', async () => {
+    const aliasedRoot = pathResolve('virtual-alias-parent', 'SHORT~1');
+    const aliasedFromFile = join(aliasedRoot, 'Assets', 'Shaders', 'Main.shader');
+    const target = join(aliasedRoot, 'Assets', 'Shaders', 'Lighting.hlsl');
+    const memory = new MemoryFileProbe([aliasedFromFile, target]);
+    const aliasParent = dirname(aliasedRoot);
+    const listDir = vi.fn(async (path: string) => {
+      if (pathResolve(path) === aliasParent) return ['LongActualName'];
+      return memory.listDir(path);
+    });
+    const probe: FileProbe = {
+      exists: (path) => memory.exists(path),
+      listDir,
+    };
+
+    await expect(resolveInclude(
+      'Lighting.hlsl',
+      pathToFileURL(aliasedFromFile).href,
+      context({ unityProjectRoot: aliasedRoot }),
+      probe,
+    )).resolves.toEqual({
+      absolutePath: target,
+      via: 'relative',
+      caseInsensitive: false,
+    });
+    expect(listDir).not.toHaveBeenCalledWith(aliasParent);
+  });
+
+  it('preserves an inherited alias while correcting authored suffix casing', async () => {
+    const aliasedRoot = pathResolve('virtual-alias-parent', 'SHORT~1');
+    const aliasedFromFile = join(aliasedRoot, 'Assets', 'Shaders', 'Main.shader');
+    const target = join(aliasedRoot, 'Assets', 'Shaders', 'lighting.hlsl');
+    const memory = new MemoryFileProbe([aliasedFromFile, target], true);
+    const aliasParent = dirname(aliasedRoot);
+    const listDir = vi.fn(async (path: string) => {
+      if (pathResolve(path) === aliasParent) return ['LongActualName'];
+      return memory.listDir(path);
+    });
+    const probe: FileProbe = {
+      exists: (path) => memory.exists(path),
+      listDir,
+    };
+
+    await expect(resolveInclude(
+      'Lighting.hlsl',
+      pathToFileURL(aliasedFromFile).href,
+      context({ unityProjectRoot: aliasedRoot }),
+      probe,
+    )).resolves.toEqual({
+      absolutePath: target,
+      via: 'relative',
+      caseInsensitive: true,
+    });
+    expect(listDir).not.toHaveBeenCalledWith(aliasParent);
+  });
+
+  it('checks the normalized authored suffix after dot-segment resolution', async () => {
+    const target = join(projectRoot, 'Assets', 'Shaders', 'Lighting.hlsl');
+    const probe = new MemoryFileProbe([fromFile, target]);
+
+    await expect(resolveInclude(
+      'Ghost/../Lighting.hlsl',
+      fromUri,
+      context(),
+      probe,
+    )).resolves.toEqual({
+      absolutePath: target,
+      via: 'relative',
+      caseInsensitive: false,
+    });
+  });
+
+  it('checks the conventional Assets segment instead of trusting its spelling', async () => {
+    const actualAssets = join(projectRoot, 'assets');
+    const target = join(actualAssets, 'Lighting.hlsl');
+    const probe: FileProbe = {
+      async exists(path) {
+        return pathResolve(path).toLowerCase() === target.toLowerCase();
+      },
+      async listDir(path) {
+        const normalized = pathResolve(path).toLowerCase();
+        if (normalized === projectRoot.toLowerCase()) return ['assets'];
+        if (normalized === actualAssets.toLowerCase()) return ['Lighting.hlsl'];
+        throw new Error(`not a directory: ${path}`);
+      },
+    };
+
+    await expect(resolveInclude(
+      'Lighting.hlsl',
+      fromUri,
+      context(),
+      probe,
+    )).resolves.toEqual({
+      absolutePath: target,
+      via: 'assets',
+      caseInsensitive: true,
+    });
+  });
+
   it('falls back to the project Assets root', async () => {
     const target = join(projectRoot, 'Assets', 'CustomCG', 'MyHelper.hlsl');
     const probe = new MemoryFileProbe([fromFile, target]);
@@ -122,6 +221,25 @@ describe('resolveInclude', () => {
 
     await expect(resolveInclude(
       'Packages/com.example.urp/ShaderLibrary/Core.hlsl',
+      fromUri,
+      context({
+        packagePhysicalPaths: new Map([['com.example.urp', packageRoot]]),
+      }),
+      probe,
+    )).resolves.toEqual({
+      absolutePath: target,
+      via: 'package',
+      caseInsensitive: false,
+    });
+  });
+
+  it('keeps a package subpath with repeated separators under the package root', async () => {
+    const packageRoot = pathResolve('virtual-package-cache', 'com.example.urp');
+    const target = join(packageRoot, 'ShaderLibrary', 'Core.hlsl');
+    const probe = new MemoryFileProbe([fromFile, target]);
+
+    await expect(resolveInclude(
+      'Packages/com.example.urp//ShaderLibrary/Core.hlsl',
       fromUri,
       context({
         packagePhysicalPaths: new Map([['com.example.urp', packageRoot]]),
