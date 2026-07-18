@@ -58,3 +58,11 @@ test('Bash, package, and Electron work remains Linux-only', () => {
   }
   assert.match(step('Read pinned VS Code test version'), /shell: bash/);
 });
+
+test('checksum-controlled grammar inputs keep their repository bytes on every runner', async () => {
+  const attributes = await readFile(join(repositoryRoot, '.gitattributes'), 'utf8');
+  assert.match(
+    attributes,
+    /^server\/grammars\/tree-sitter-hlsl\.LICENSE -text$/m,
+  );
+});
