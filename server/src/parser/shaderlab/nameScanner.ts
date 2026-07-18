@@ -5,7 +5,10 @@ import type {
   ShaderLabStructureNode,
   StructureResult,
 } from '@unity-shader-nav/shared';
-import { maskCommentsLine } from '../masking';
+import {
+  interpretShaderLabSource,
+  type ShaderLabSourceInterpretation,
+} from './sourceInterpretation';
 
 const SHADER_RE = /^\s*Shader\s+"([^"]*)"/;
 const FALLBACK_RE = /^\s*Fallback\s+"([^"]*)"/;
@@ -55,14 +58,24 @@ export function scanShaderLabNames(
   blocks: readonly ShaderLabBlock[],
   structure: StructureResult,
 ): ShaderLabNameFacts {
+  return scanShaderLabNamesFromSource(
+    interpretShaderLabSource(text),
+    blocks,
+    structure,
+  );
+}
+
+export function scanShaderLabNamesFromSource(
+  source: ShaderLabSourceInterpretation,
+  blocks: readonly ShaderLabBlock[],
+  structure: StructureResult,
+): ShaderLabNameFacts {
   const facts: ShaderLabNameFacts = { shaders: [], passes: [], references: [] };
-  const lines = text.split(/\r?\n/);
-  let inBlockComment = false;
+  const lines = source.lines;
 
   for (let line = 0; line < lines.length; line++) {
-    const masked = maskCommentsLine(lines[line], inBlockComment, { strings: 'preserve' });
-    inBlockComment = masked.inBlockComment;
-    const code = masked.code;
+    const sourceLine = lines[line];
+    const code = sourceLine.code;
     if (lineIsInHlslBlock(blocks, line)) continue;
 
     const shader = SHADER_RE.exec(code);
@@ -70,7 +83,7 @@ export function scanShaderLabNames(
       facts.shaders.push({
         name: shader[1],
         nameRange: valueRange(line, code, shader[0], shader[1]),
-        declarationRange: range(line, 0, lines[line].length),
+        declarationRange: range(line, 0, sourceLine.raw.length),
       });
     }
 
@@ -80,7 +93,7 @@ export function scanShaderLabNames(
         kind: 'fallback',
         shaderName: fallback[1],
         shaderNameRange: valueRange(line, code, fallback[0], fallback[1]),
-        directiveRange: range(line, 0, lines[line].length),
+        directiveRange: range(line, 0, sourceLine.raw.length),
       });
     }
 
@@ -107,7 +120,7 @@ export function scanShaderLabNames(
             pathRange.start.character + slash + 1,
             pathRange.end.character,
           ),
-          directiveRange: range(line, 0, lines[line].length),
+          directiveRange: range(line, 0, sourceLine.raw.length),
         });
       }
     }
@@ -123,7 +136,7 @@ export function scanShaderLabNames(
         name: value,
         canonicalName: value.toUpperCase(),
         nameRange: range(line, quote + 1, quote + 1 + value.length),
-        declarationRange: range(line, 0, lines[line].length),
+        declarationRange: range(line, 0, sourceLine.raw.length),
       });
     }
   }

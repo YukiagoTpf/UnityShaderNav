@@ -94,10 +94,14 @@ export function shaderLabSnippetCompletions(
   languageId: string,
   uri: string,
 ): CompletionItem[] {
-  if (!analysis?.layout.safe || languageId !== 'shaderlab') return [];
+  if (
+    !analysis?.layout.safe
+    || analysis.sourceText !== text
+    || languageId !== 'shaderlab'
+  ) return [];
   const cursor = analyzeCursor(text, position, languageId, uri);
   if (cursor.lexical !== 'code' || cursor.classification !== 'shaderLabCode') return [];
-  const line = text.split(/\r?\n/)[position.line];
+  const line = analysis.sourceLines[position.line];
   if (line === undefined || position.character > line.length) return [];
   const before = line.slice(0, position.character);
   const after = line.slice(position.character);

@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { maskCommentsLine, scanCommentRoles } from '../../src/parser/masking';
+import {
+  maskCommentScan,
+  maskCommentsLine,
+  scanCommentRoles,
+} from '../../src/parser/masking';
 
 describe('maskCommentsLine — preserve mode (comments only)', () => {
   it('does not enter block-comment mode when /* is inside a string literal', () => {
@@ -80,6 +84,15 @@ describe('maskCommentsLine — property vs token quote handling', () => {
     expect(result.code).toBe('Pass { Name "left right end" }');
     expect(result.code).toHaveLength(line.length);
     expect(result.inBlockComment).toBe(false);
+  });
+
+  it('projects all-string masking from one existing comment scan', () => {
+    const line = 'Tags { "Key" = "Value" } // tail';
+    const scan = scanCommentRoles(line, false);
+
+    expect(maskCommentScan(line, scan, { strings: 'blank-all' })).toBe(
+      'Tags {       =         }        ',
+    );
   });
 });
 

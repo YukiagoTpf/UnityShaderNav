@@ -6,7 +6,10 @@ import type {
   ShaderLabMaterialFieldEntry,
   StructureResult,
 } from '@unity-shader-nav/shared';
-import { maskCommentsLine } from '../masking';
+import {
+  interpretShaderLabSource,
+  type ShaderLabSourceInterpretation,
+} from './sourceInterpretation';
 
 const MACRO_START_RE = /^\s*CBUFFER_START\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)/;
 const MACRO_END_RE = /^\s*CBUFFER_END\b/;
@@ -99,14 +102,26 @@ export function scanShaderLabMaterialFacts(
   blocks: readonly ShaderLabBlock[],
   structure: StructureResult,
 ): ShaderLabMaterialFacts {
-  const lines = text.split(/\r?\n/);
+  return scanShaderLabMaterialFactsFromSource(
+    interpretShaderLabSource(text),
+    blocks,
+    structure,
+  );
+}
+
+export function scanShaderLabMaterialFactsFromSource(
+  source: ShaderLabSourceInterpretation,
+  blocks: readonly ShaderLabBlock[],
+  structure: StructureResult,
+): ShaderLabMaterialFacts {
+  const lines = source.lines;
   const facts: ShaderLabMaterialFacts = {
     srpEvidence: false,
     subShaderCount: structure.shaders.reduce((count, shader) => (
       count + shader.children.filter((child) => child.kind === 'subshader').length
     ), 0),
     hasIncludes: false,
-    lineEnding: text.includes('\r\n') ? '\r\n' : '\n',
+    lineEnding: source.lineEnding,
     cbuffers: [],
     programBlocks: blocks.map((block, blockIndex) => ({
       blockIndex,
@@ -114,33 +129,23 @@ export function scanShaderLabMaterialFacts(
       startLine: block.startLine,
       endLine: block.endLine,
       insertionPosition: { line: block.endLine, character: 0 },
-      indent: leadingWhitespace(lines[block.startLine] ?? ''),
+      indent: leadingWhitespace(lines[block.startLine]?.raw ?? ''),
       unterminated: block.unterminated,
     })),
   };
 
-  let outerBlockComment = false;
   for (let line = 0; line < lines.length; line++) {
-    const masked = maskCommentsLine(lines[line], outerBlockComment, { strings: 'preserve' });
-    outerBlockComment = masked.inBlockComment;
-    if (SRP_TAG_RE.test(masked.code)) facts.srpEvidence = true;
+    if (SRP_TAG_RE.test(lines[line].code)) facts.srpEvidence = true;
   }
 
   for (let blockIndex = 0; blockIndex < blocks.length; blockIndex++) {
     const block = blocks[blockIndex];
-    let inBlockComment = maskCommentsLine(
-      lines[block.startLine] ?? '',
-      false,
-      { strings: 'preserve' },
-    ).inBlockComment;
     let conditionalDepth = 0;
     let active: ActiveCbuffer | undefined;
 
     for (let line = block.contentStartLine; line <= block.contentEndLine; line++) {
-      const raw = lines[line] ?? '';
-      const masked = maskCommentsLine(raw, inBlockComment, { strings: 'preserve' });
-      inBlockComment = masked.inBlockComment;
-      const code = masked.code;
+      const raw = lines[line]?.raw ?? '';
+      const code = lines[line]?.code ?? '';
       if (INCLUDE_RE.test(code)) facts.hasIncludes = true;
       if (SRP_INCLUDE_RE.test(code)) facts.srpEvidence = true;
 

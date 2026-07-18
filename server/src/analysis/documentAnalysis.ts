@@ -7,17 +7,18 @@ import type {
   StructureResult,
 } from '@unity-shader-nav/shared';
 import {
-  scanShaderLabLayout,
+  scanShaderLabLayoutFromSource,
   type ShaderLabLayoutAnalysis,
 } from '../parser/shaderlab/layoutScanner';
-import { scanShaderLabNames } from '../parser/shaderlab/nameScanner';
-import { scanShaderLabMaterialFacts } from '../parser/shaderlab/materialCbufferScanner';
+import { scanShaderLabNamesFromSource } from '../parser/shaderlab/nameScanner';
+import { scanShaderLabMaterialFactsFromSource } from '../parser/shaderlab/materialCbufferScanner';
 import {
-  scanShaderLabPropertyFacts,
+  scanShaderLabPropertyFactsFromSource,
   type ShaderLabPropertyFacts,
 } from '../parser/shaderlab/propertiesScanner';
+import { interpretShaderLabSource } from '../parser/shaderlab/sourceInterpretation';
 import {
-  scanShaderLabTokens,
+  scanShaderLabTokensFromSource,
   type ShaderLabLexicalToken,
 } from '../parser/shaderlab/tokenScanner';
 
@@ -32,6 +33,7 @@ export type DocumentLexicalToken = ShaderLabLexicalToken;
  */
 export interface DocumentAnalysis {
   readonly sourceText: string;
+  readonly sourceLines: readonly string[];
   readonly blocks: readonly ShaderLabBlock[];
   readonly layout: ShaderLabLayoutAnalysis;
   readonly structure: StructureResult;
@@ -52,17 +54,19 @@ export function analyzeDocument(
 ): DocumentAnalysis | undefined {
   if (extensionOf(uri) !== '.shader') return undefined;
 
-  const layout = scanShaderLabLayout(text);
+  const source = interpretShaderLabSource(text);
+  const layout = scanShaderLabLayoutFromSource(source);
   const blocks = layout.blocks;
   const structure = layout.structure;
-  const shaderLabNames = scanShaderLabNames(text, blocks, structure);
-  const shaderLabMaterial = scanShaderLabMaterialFacts(text, blocks, structure);
-  const shaderLabProperties = scanShaderLabPropertyFacts(text, blocks);
+  const shaderLabNames = scanShaderLabNamesFromSource(source, blocks, structure);
+  const shaderLabMaterial = scanShaderLabMaterialFactsFromSource(source, blocks, structure);
+  const shaderLabProperties = scanShaderLabPropertyFactsFromSource(source, blocks);
   const lexicalTokens = demand === 'full'
-    ? scanShaderLabTokens(text, blocks)
+    ? scanShaderLabTokensFromSource(source, blocks)
     : undefined;
   return deepFreeze({
     sourceText: text,
+    sourceLines: source.lines.map((line) => line.raw),
     blocks,
     layout,
     structure,

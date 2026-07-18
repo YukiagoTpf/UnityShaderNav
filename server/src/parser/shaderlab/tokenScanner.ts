@@ -4,7 +4,10 @@ import {
   asShaderLabPropertyType,
   builtinLexicalRole,
 } from '../../vocabulary';
-import { maskCommentsLine } from '../masking';
+import {
+  interpretShaderLabSource,
+  type ShaderLabSourceInterpretation,
+} from './sourceInterpretation';
 
 export type ShaderLabLexicalTokenType =
   | 'keyword'
@@ -28,49 +31,11 @@ const NUMBER_RE = /(?<![A-Za-z_])\d+(?:\.\d+)?(?![A-Za-z_])/g;
 const STRING_RE = /"([^"\\]*(?:\\.[^"\\]*)*)"/g;
 const SWIZZLE_RE = /\.(?:[xyzw]{1,4}|[rgba]{1,4})\b/g;
 
-interface CommentState {
-  inBlockComment: boolean;
-}
-
 function makeRange(line: number, start: number, end: number): Range {
   return {
     start: { line, character: start },
     end: { line, character: end },
   };
-}
-
-function maskComments(line: string, state: CommentState): string {
-  const result = maskCommentsLine(line, state.inBlockComment, { strings: 'preserve' });
-  state.inBlockComment = result.inBlockComment;
-  return result.code;
-}
-
-function maskStrings(line: string): string {
-  const chars = line.split('');
-  let inString = false;
-
-  for (let i = 0; i < chars.length; i++) {
-    const ch = chars[i];
-    const next = chars[i + 1];
-
-    if (inString) {
-      chars[i] = ' ';
-      if (ch === '\\' && next !== undefined) {
-        chars[i + 1] = ' ';
-        i++;
-        continue;
-      }
-      if (ch === '"') inString = false;
-      continue;
-    }
-
-    if (ch === '"') {
-      chars[i] = ' ';
-      inString = true;
-    }
-  }
-
-  return chars.join('');
 }
 
 function countChar(text: string, ch: string): number {
@@ -97,10 +62,16 @@ export function scanShaderLabTokens(
   text: string,
   blocks: readonly ShaderLabBlock[],
 ): ShaderLabLexicalToken[] {
-  const lines = text.split(/\r?\n/);
+  return scanShaderLabTokensFromSource(interpretShaderLabSource(text), blocks);
+}
+
+export function scanShaderLabTokensFromSource(
+  source: ShaderLabSourceInterpretation,
+  blocks: readonly ShaderLabBlock[],
+): ShaderLabLexicalToken[] {
+  const lines = source.lines;
   const tokens: ShaderLabLexicalToken[] = [];
   const seen = new Set<string>();
-  const commentState: CommentState = { inBlockComment: false };
   let propertiesDepth = 0;
   let tagsDepth = 0;
   let blockIndex = 0;
@@ -216,8 +187,8 @@ export function scanShaderLabTokens(
   }
 
   for (let lineNo = 0; lineNo < lines.length; lineNo++) {
-    const code = maskComments(lines[lineNo], commentState);
-    const codeNoStrings = maskStrings(code);
+    const code = lines[lineNo].code;
+    const codeNoStrings = lines[lineNo].codeWithoutStrings;
     while (blocks[blockIndex] && blocks[blockIndex].endLine < lineNo) blockIndex++;
     const candidate = blocks[blockIndex];
     const block = candidate

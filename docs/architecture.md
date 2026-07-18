@@ -5,9 +5,10 @@ UnityShaderNav is a VS Code extension backed by a separate language server.
 ```text
 VS Code extension client
   -> vscode-languageclient
-  -> language server process
+     -> language server process
      -> exact-source document analysis
-        -> ShaderLab block/structure/token scanners
+        -> one ShaderLab source interpretation
+        -> block/layout/name/material/Property/token projections
      -> parser runtime assets
         -> tree-sitter HLSL parser
         -> cache implementation identity
@@ -32,11 +33,16 @@ the order `failed > indexing > ready > standalone`.
 The server owns parsing, indexing, cache restore/persist, and LSP request
 handling. Important modules:
 
-- `parser/shaderlab`: scans ShaderLab and extracts HLSL/CG blocks.
+- `parser/shaderlab`: interprets each ShaderLab source into width-preserving
+  comment/string line facts once, then projects HLSL/CG blocks, layout,
+  structure, names, material contracts, Properties/colors, and lexical tokens.
+  Standalone scanner entry points are compatibility Adapters; production
+  composition passes one shared interpretation to every projection.
 - `analysis`: composes one immutable, exact-source `DocumentAnalysis` from
-  ordered ShaderLab HLSL/CG blocks, multiline-aware structure, and, on full
-  demand, ShaderLab lexical tokens. Indexing, Outline, and Semantic Tokens
-  consume this result instead of independently rescanning the same live source.
+  the shared source lines, ordered ShaderLab HLSL/CG blocks, multiline-aware
+  structure, name/material/Property facts, and, on full demand, ShaderLab
+  lexical tokens. Indexing, Outline, authoring, and Semantic Tokens consume
+  this result instead of independently interpreting the same live source.
 - `parser/hlsl`: wraps tree-sitter and collects symbols/references.
 - `parser/runtimeAssets`: maps only the supported source, tsc-out,
   copied-server, and bundled-server layouts to the vendored HLSL grammar. A
@@ -119,10 +125,11 @@ The index is intentionally pragmatic:
   macro-head coloring, and cache identity use the macro recognizer's narrow
   interfaces. A dependency guard keeps raw built-in pattern facts private to
   that boundary.
-- A `.shader` indexing cycle derives ordered embedded-code blocks and structure
-  from one exact source analysis, then passes the blocks to Properties scanning
-  and publishes the structure through `FileIndex` for Outline. A full live
-  analysis additionally carries the lexical tokens used by Semantic Tokens.
+- A `.shader` indexing cycle interprets one exact source into shared line facts,
+  derives ordered embedded-code blocks and structure once, and passes those
+  facts to every remaining projection. It publishes the durable projections
+  through `FileIndex`; a full live analysis additionally carries source lines
+  and the lexical tokens used by authoring and Semantic Tokens.
 - The same exact analysis carries a safety-bearing ShaderLab layout and
   Property literal facts. Snippet Completion, Document Color, Color
   Presentation, and Formatting are narrow projections of those immutable
@@ -224,8 +231,8 @@ attempt removes them from the next publication, while an already captured old
 revision keeps its immutable facts until that reader finishes. Disk scans
 and other index-only source paths may construct an analysis while producing a
 `FileIndex`, but discard it immediately afterward; cache restoration does not
-reconstruct one. The durable `FileIndex.structure`, `FileIndex.shaderLabNames`,
-and `FileIndex.shaderLabMaterial` projections may be cached;
+reconstruct one. The durable `FileIndex.structure`, `FileIndex.properties`,
+`FileIndex.shaderLabNames`, and `FileIndex.shaderLabMaterial` projections may be cached;
 `DiskIndexRecord`, cache manifests, persisted cache entries, and process-wide
 caches never retain the analysis container, source text, or lexical tokens.
 This revision-owned lifetime prevents Outline or token requests from observing

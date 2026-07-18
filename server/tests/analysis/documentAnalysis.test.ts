@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   analysisMatchesSource,
@@ -5,6 +7,11 @@ import {
   type DocumentAnalysis,
 } from '../../src/analysis';
 import { indexFile } from '../../src/parser/hlsl';
+import { scanShaderLabLayout } from '../../src/parser/shaderlab/layoutScanner';
+import { scanShaderLabNames } from '../../src/parser/shaderlab/nameScanner';
+import { scanShaderLabMaterialFacts } from '../../src/parser/shaderlab/materialCbufferScanner';
+import { scanShaderLabPropertyFacts } from '../../src/parser/shaderlab/propertiesScanner';
+import { scanShaderLabTokens } from '../../src/parser/shaderlab/tokenScanner';
 
 const uri = 'file:///project/Assets/Shared.shader';
 const source = [
@@ -22,6 +29,18 @@ const source = [
   '  }',
   '}',
 ].join('\n');
+
+const equivalenceFixtures = [
+  'single-pass.shader',
+  'multi-pass.shader',
+  'multi-subshader.shader',
+  'hlslinclude-with-passes.shader',
+  'mixed-comments.shader',
+  'strings-with-braces.shader',
+  'nested-braces.shader',
+  'directive-block-comment.shader',
+  'unterminated-block.shader',
+] as const;
 
 function tokenTexts(text: string, analysis: DocumentAnalysis): Array<{
   text: string;
@@ -120,6 +139,7 @@ describe('Document analysis', () => {
     const pass = shader.children[0].children[0];
 
     expect(Object.isFrozen(analysis)).toBe(true);
+    expect(Object.isFrozen(analysis.sourceLines)).toBe(true);
     expect(Object.isFrozen(analysis.blocks)).toBe(true);
     expect(Object.isFrozen(block)).toBe(true);
     expect(Object.isFrozen(analysis.structure)).toBe(true);
@@ -137,6 +157,40 @@ describe('Document analysis', () => {
     expect(Object.isFrozen(analysis.shaderLabMaterial)).toBe(true);
     expect(Object.isFrozen(analysis.shaderLabMaterial.programBlocks)).toBe(true);
   });
+
+  it.each(equivalenceFixtures)(
+    'keeps every shared projection equivalent for fixture %s',
+    (fixtureName) => {
+      const fixtureSource = readFileSync(
+        join(__dirname, '..', 'parser', 'shaderlab', 'fixtures', fixtureName),
+        'utf8',
+      );
+      const fixtureUri = `file:///project/Assets/${fixtureName}`;
+      const analysis = analyzeDocument(fixtureUri, fixtureSource, 'full')!;
+      const independentLayout = scanShaderLabLayout(fixtureSource);
+
+      expect(analysis.sourceLines).toEqual(fixtureSource.split(/\r?\n/));
+      expect(analysis.layout).toEqual(independentLayout);
+      expect(analysis.shaderLabNames).toEqual(scanShaderLabNames(
+        fixtureSource,
+        independentLayout.blocks,
+        independentLayout.structure,
+      ));
+      expect(analysis.shaderLabMaterial).toEqual(scanShaderLabMaterialFacts(
+        fixtureSource,
+        independentLayout.blocks,
+        independentLayout.structure,
+      ));
+      expect(analysis.shaderLabProperties).toEqual(scanShaderLabPropertyFacts(
+        fixtureSource,
+        independentLayout.blocks,
+      ));
+      expect(analysis.lexicalTokens).toEqual(scanShaderLabTokens(
+        fixtureSource,
+        independentLayout.blocks,
+      ));
+    },
+  );
 
   it.each([
     'file:///project/Assets/Plain.hlsl',

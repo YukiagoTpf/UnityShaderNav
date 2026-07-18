@@ -4,8 +4,11 @@ import type {
   ShaderLabStructureNode,
   StructureResult,
 } from '@unity-shader-nav/shared';
-import { maskCommentsLine, scanCommentRoles } from '../masking';
-import { scanBlocks } from './blockScanner';
+import { scanBlocksFromSource } from './blockScanner';
+import {
+  interpretShaderLabSource,
+  type ShaderLabSourceInterpretation,
+} from './sourceInterpretation';
 
 export type ShaderLabScopeKind = ShaderLabNodeKind | 'properties';
 
@@ -67,9 +70,15 @@ const START_TO_END: Record<string, string> = {
 const END_DIRECTIVES = new Set(['ENDHLSL', 'ENDCG']);
 
 export function scanShaderLabLayout(text: string): ShaderLabLayoutAnalysis {
-  const sourceLines = text.split(/\r?\n/);
-  const blocks = scanBlocks(text).blocks;
-  const issues = validateProgramDirectives(text);
+  return scanShaderLabLayoutFromSource(interpretShaderLabSource(text));
+}
+
+export function scanShaderLabLayoutFromSource(
+  source: ShaderLabSourceInterpretation,
+): ShaderLabLayoutAnalysis {
+  const sourceLines = source.lines;
+  const blocks = scanBlocksFromSource(source).blocks;
+  const issues = validateProgramDirectives(source);
   if (blocks.some((block) => block.unterminated)) issues.push('unterminated program block');
 
   const protectedLines = new Set<number>();
@@ -86,7 +95,6 @@ export function scanShaderLabLayout(text: string): ShaderLabLayoutAnalysis {
   const shaders: ShaderLabStructureNode[] = [];
   let pending: PendingScope | undefined;
   let shaderCount = 0;
-  let inBlockComment = false;
 
   for (let lineNo = 0; lineNo < sourceLines.length; lineNo++) {
     if (protectedLines.has(lineNo)) {
@@ -100,20 +108,13 @@ export function scanShaderLabLayout(text: string): ShaderLabLayoutAnalysis {
       continue;
     }
 
-    const incomingBlockComment = inBlockComment;
-    const lexical = scanCommentRoles(sourceLines[lineNo], incomingBlockComment);
-    if (lexical.inString) issues.push(`unterminated string at line ${lineNo + 1}`);
-    if (hasStrayCommentClose(sourceLines[lineNo], lexical.roles)) {
+    const sourceLine = sourceLines[lineNo];
+    if (sourceLine.unterminatedString) issues.push(`unterminated string at line ${lineNo + 1}`);
+    if (hasStrayCommentClose(sourceLine.raw, sourceLine.commentRoles)) {
       issues.push(`stray block-comment close at line ${lineNo + 1}`);
     }
-    const masked = maskCommentsLine(sourceLines[lineNo], incomingBlockComment, {
-      strings: 'blank-braces',
-    });
-    const structuralCode = maskCommentsLine(sourceLines[lineNo], incomingBlockComment, {
-      strings: 'blank-body',
-    }).code;
-    inBlockComment = masked.inBlockComment;
-    const code = masked.code;
+    const structuralCode = sourceLine.stringBodyMaskedCode;
+    const code = sourceLine.braceSafeCode;
     const trimmed = code.trim();
     const directive = scopeDirective(code, lineNo);
     const structuralOpenings = countStructuralOpenings(structuralCode);
@@ -206,7 +207,7 @@ export function scanShaderLabLayout(text: string): ShaderLabLayoutAnalysis {
     else if (directive) pending = directive;
   }
 
-  if (inBlockComment) issues.push('unterminated block comment');
+  if (source.unterminatedBlockComment) issues.push('unterminated block comment');
   if (pending) issues.push(`missing opening brace for ${pending.kind} at line ${pending.headerLine + 1}`);
   if (stack.length > 0) issues.push('unclosed ShaderLab block');
   if (shaderCount !== 1) issues.push(`expected one top-level Shader, found ${shaderCount}`);
@@ -317,15 +318,11 @@ function countStructuralOpenings(code: string): number {
   return matches?.length ?? 0;
 }
 
-function validateProgramDirectives(text: string): string[] {
+function validateProgramDirectives(source: ShaderLabSourceInterpretation): string[] {
   const issues: string[] = [];
   let expectedEnd: string | undefined;
-  let inBlockComment = false;
-  const lines = text.split(/\r?\n/);
-  for (let lineNo = 0; lineNo < lines.length; lineNo++) {
-    const masked = maskCommentsLine(lines[lineNo], inBlockComment, { strings: 'preserve' });
-    inBlockComment = masked.inBlockComment;
-    const directive = masked.code.trim();
+  for (let lineNo = 0; lineNo < source.lines.length; lineNo++) {
+    const directive = source.lines[lineNo].code.trim();
     const markerHead = /^(HLSLPROGRAM|CGPROGRAM|HLSLINCLUDE|CGINCLUDE|ENDHLSL|ENDCG)\b/.exec(
       directive,
     )?.[1];

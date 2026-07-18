@@ -404,7 +404,34 @@ describe('server dependency direction', () => {
     expect(analysis).toMatch(/from ['"]\.\.\/parser\/shaderlab\/layoutScanner['"]/);
     expect(analysis).toMatch(/from ['"]\.\.\/parser\/shaderlab\/propertiesScanner['"]/);
     expect(analysis).toMatch(/from ['"]\.\.\/parser\/shaderlab\/tokenScanner['"]/);
+    expect(analysis).toMatch(/from ['"]\.\.\/parser\/shaderlab\/sourceInterpretation['"]/);
     expect(analysis).not.toMatch(/analyzeInactiveRegions/);
+    expect(analysis.match(/\binterpretShaderLabSource\s*\(/g)).toHaveLength(1);
+    for (const projection of [
+      'scanShaderLabLayoutFromSource',
+      'scanShaderLabNamesFromSource',
+      'scanShaderLabMaterialFactsFromSource',
+      'scanShaderLabPropertyFactsFromSource',
+      'scanShaderLabTokensFromSource',
+    ]) {
+      expect(analysis, projection).toMatch(new RegExp(`\\b${projection}\\s*\\(`));
+    }
+
+    const sourceInterpretation = readFileSync(
+      resolve(SOURCE_ROOT, 'parser/shaderlab/sourceInterpretation.ts'),
+      'utf8',
+    );
+    expect(sourceInterpretation.match(/\bscanCommentRoles\s*\(/g)).toHaveLength(1);
+    for (const moduleId of [
+      'parser/shaderlab/layoutScanner.ts',
+      'parser/shaderlab/nameScanner.ts',
+      'parser/shaderlab/materialCbufferScanner.ts',
+      'parser/shaderlab/propertiesScanner.ts',
+      'parser/shaderlab/tokenScanner.ts',
+    ]) {
+      const scanner = readFileSync(resolve(SOURCE_ROOT, moduleId), 'utf8');
+      expect(scanner.match(/\binterpretShaderLabSource\s*\(/g), moduleId).toHaveLength(1);
+    }
 
     const fileIndexer = readFileSync(
       resolve(SOURCE_ROOT, 'parser/hlsl/fileIndexer.ts'),
@@ -450,13 +477,17 @@ describe('server dependency direction', () => {
       const moduleId = relativeModuleId(SOURCE_ROOT, sourceFile);
       if (
         moduleId === 'analysis/documentAnalysis.ts'
+        || moduleId === 'parser/shaderlab/blockScanner.ts'
+        || moduleId === 'parser/shaderlab/nameScanner.ts'
+        || moduleId === 'parser/shaderlab/materialCbufferScanner.ts'
         || moduleId === 'parser/shaderlab/tokenScanner.ts'
         || moduleId === 'parser/shaderlab/structureScanner.ts'
         || moduleId === 'parser/shaderlab/layoutScanner.ts'
         || moduleId === 'parser/shaderlab/propertiesScanner.ts'
+        || moduleId === 'parser/shaderlab/sourceInterpretation.ts'
       ) continue;
       expect(readFileSync(sourceFile, 'utf8'), moduleId)
-        .not.toMatch(/\b(?:scanShaderLabTokens|scanStructure|scanShaderLabLayout|scanShaderLabPropertyFacts)\s*\(/);
+        .not.toMatch(/\b(?:interpretShaderLabSource|scanShaderLabTokens|scanStructure|scanShaderLabLayout|scanShaderLabNames|scanShaderLabMaterialFacts|scanShaderLabPropertyFacts)\s*\(/);
     }
 
     for (const moduleId of [

@@ -117,6 +117,34 @@ export interface MaskLineResult {
   inBlockComment: boolean;
 }
 
+/** Project one already-classified line without rerunning the lexical state machine. */
+export function maskCommentScan(
+  line: string,
+  scan: CommentScan,
+  options: { strings?: StringHandling | 'blank-all' } = {},
+): string {
+  const { strings = 'preserve' } = options;
+  const chars = line.split('');
+  for (let i = 0; i < chars.length; i++) {
+    const role = scan.roles[i];
+    if (role === 'comment') {
+      chars[i] = ' ';
+    } else if (
+      (strings === 'blank-all' && (role === 'stringQuote' || role === 'stringBody'))
+      || (
+        role === 'stringBody'
+        && (
+          strings === 'blank-body'
+          || (strings === 'blank-braces' && (chars[i] === '{' || chars[i] === '}'))
+        )
+      )
+    ) {
+      chars[i] = ' ';
+    }
+  }
+  return chars.join('');
+}
+
 /**
  * Replace comment runs and the selected string content with spaces while
  * preserving every other byte and the original column widths. Threads the
@@ -127,22 +155,9 @@ export function maskCommentsLine(
   inBlockComment: boolean,
   options: { strings?: StringHandling } = {},
 ): MaskLineResult {
-  const { strings = 'preserve' } = options;
   const scan = scanCommentRoles(line, inBlockComment);
-  const chars = line.split('');
-  for (let i = 0; i < chars.length; i++) {
-    const role = scan.roles[i];
-    if (role === 'comment') {
-      chars[i] = ' ';
-    } else if (
-      role === 'stringBody'
-      && (
-        strings === 'blank-body'
-        || (strings === 'blank-braces' && (chars[i] === '{' || chars[i] === '}'))
-      )
-    ) {
-      chars[i] = ' ';
-    }
-  }
-  return { code: chars.join(''), inBlockComment: scan.inBlockComment };
+  return {
+    code: maskCommentScan(line, scan, options),
+    inBlockComment: scan.inBlockComment,
+  };
 }

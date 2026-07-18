@@ -4,8 +4,11 @@ import type {
   ShaderLabPropertyEntry,
 } from '@unity-shader-nav/shared';
 import { asShaderLabPropertyType } from '../../vocabulary';
-import { maskCommentsLine } from '../masking';
-import { scanBlocks } from './blockScanner';
+import { scanBlocksFromSource } from './blockScanner';
+import {
+  interpretShaderLabSource,
+  type ShaderLabSourceInterpretation,
+} from './sourceInterpretation';
 
 // Captures:
 //   1: optional decorator run (e.g. "[NoScaleOffset] [HDR] ")
@@ -15,10 +18,6 @@ import { scanBlocks } from './blockScanner';
 //   5: default literal - validated, not stored (design decision 7)
 const PROPERTY_LINE_RE =
   /^\s*((?:\[[^\]]*\]\s*)*)([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*"([^"]*)"\s*,\s*([A-Za-z0-9_]+)(?:\s*\([^)]*\))?\s*\)\s*(?:=\s*(.+?))?\s*(?:\/\/.*)?$/;
-
-interface CommentState {
-  inBlockComment: boolean;
-}
 
 export interface ShaderLabLiteralColorFact {
   readonly range: Range;
@@ -43,19 +42,6 @@ function makeRange(line: number, start: number, end: number): Range {
   };
 }
 
-/**
- * Mask comments to spaces and, via `strings: 'blank-body'`, blank string bodies
- * too (keeping both quotes) so a literal can never contribute a `Properties`
- * keyword match or stray `{`/`}` to the brace counter — while `PROPERTY_LINE_RE`
- * still sees the `"..."` delimiters. Column widths are preserved. (The token
- * scanner uses `'preserve'`; it keeps string bodies for highlighting.)
- */
-function maskComments(line: string, state: CommentState): string {
-  const result = maskCommentsLine(line, state.inBlockComment, { strings: 'blank-body' });
-  state.inBlockComment = result.inBlockComment;
-  return result.code;
-}
-
 function countChar(text: string, ch: string): number {
   let count = 0;
   for (const c of text) {
@@ -74,11 +60,20 @@ export function scanShaderLabPropertyFacts(
   /** Ordered, non-overlapping block facts for this exact source when already available. */
   knownBlocks?: readonly ShaderLabBlock[],
 ): ShaderLabPropertyFacts {
-  const lines = text.split(/\r?\n/);
-  const blocks = knownBlocks ?? scanBlocks(text).blocks;
+  return scanShaderLabPropertyFactsFromSource(
+    interpretShaderLabSource(text),
+    knownBlocks,
+  );
+}
+
+export function scanShaderLabPropertyFactsFromSource(
+  source: ShaderLabSourceInterpretation,
+  knownBlocks?: readonly ShaderLabBlock[],
+): ShaderLabPropertyFacts {
+  const lines = source.lines;
+  const blocks = knownBlocks ?? scanBlocksFromSource(source).blocks;
   const entries: ShaderLabPropertyEntry[] = [];
   const literalColors: ShaderLabLiteralColorFact[] = [];
-  const commentState: CommentState = { inBlockComment: false };
   let propertiesDepth = 0;
   let blockIndex = 0;
   // Sticky flag: set when the `Properties` keyword is seen, cleared the first
@@ -89,8 +84,8 @@ export function scanShaderLabPropertyFacts(
   let pendingPropertiesOpen = false;
 
   for (let lineNo = 0; lineNo < lines.length; lineNo++) {
-    const rawLine = lines[lineNo];
-    const masked = maskComments(rawLine, commentState);
+    const rawLine = lines[lineNo].raw;
+    const masked = lines[lineNo].stringBodyMaskedCode;
 
     // Skip HLSL/CG content lines entirely (do not contribute to brace depth
     // either — HLSL braces belong to the HLSL block, not to Properties).

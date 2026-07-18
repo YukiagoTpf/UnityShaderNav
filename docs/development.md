@@ -252,14 +252,16 @@ npm run bench:document-analysis
 ```
 
 The command generates one representative multi-pass ShaderLab source and
-alternates two paths in the same Node.js process. The legacy path independently
-composes indexing block discovery, structure scanning, Properties scanning, and
-lexical-token block discovery; the shared path runs one full `analyzeDocument`,
-uses its structure, and passes its blocks to `scanProperties`. Output includes
-block, structure-node, property, and token counts plus sample count, median,
-p95, and the shared-to-legacy ratio. Count equality is a correctness check.
-Timing is diagnostic only: there is deliberately no timing threshold in CI,
-and performance comparisons should use the same machine, build, and arguments.
+alternates two feature-equivalent paths in the same Node.js process. The
+independent path runs the layout, Shader/Pass name, material-contract,
+Properties/color, and lexical-token projections through their compatibility
+Adapters, interpreting the source five times. The production path runs one
+full `analyzeDocument`, interpreting the source once and projecting every fact
+from that shared result. Output reports both source-walk counts; all projection
+counts; sample count; median; p95; and the shared-to-independent ratio. Count
+equality and the 5-to-1 source-walk reduction are correctness checks. Timing is
+diagnostic only: there is deliberately no timing threshold in CI, and
+performance comparisons should use the same machine, build, and arguments.
 
 ## Vendored HLSL Grammar
 
