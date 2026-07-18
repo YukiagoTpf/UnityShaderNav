@@ -1,6 +1,10 @@
 # Architecture
 
 UnityShaderNav is a VS Code extension backed by a separate language server.
+Class names, module names, and source paths in this document describe the
+current implementation topology; they are not managed vocabulary or a naming
+contract. Stable user-facing and domain language lives in
+[`CONTEXT.md`](../CONTEXT.md).
 
 ```text
 VS Code extension client
@@ -24,9 +28,11 @@ The client contributes file types, settings, activation events, status output,
 and language-client startup. The server is copied into the extension output
 during build so the packaged extension can launch it. It subscribes before
 startup and then pulls the current full index-status snapshot after each
-language-server start. Within one LSP session it accepts only snapshots with a
-newer `statusSequence`, and projects multiple roots to one status-bar state in
-the order `failed > indexing > ready > standalone`.
+language-server start. `IndexStatusSnapshot` is the wire-level aggregate of
+per-root `WorkspaceIndexStatus` values. Within one LSP session the client
+accepts only snapshots with a newer `statusSequence`, and projects multiple
+roots to one status-bar state in the order
+`failed > indexing > ready > standalone`.
 
 ## Server
 
@@ -36,6 +42,8 @@ handling. Important modules:
 - `parser/shaderlab`: interprets each ShaderLab source into width-preserving
   comment/string line facts once, then projects HLSL/CG blocks, layout,
   structure, names, material contracts, Properties/colors, and lexical tokens.
+  `ShaderLabLayoutAnalysis` and `ShaderLabLiteralColorFact` are two of these
+  current projection types.
   Standalone scanner entry points are compatibility Adapters; production
   composition passes one shared interpretation to every projection.
 - `analysis`: composes one immutable, exact-source `DocumentAnalysis` from
@@ -44,10 +52,10 @@ handling. Important modules:
   lexical tokens. Indexing, Outline, authoring, and Semantic Tokens consume
   this result instead of independently interpreting the same live source.
 - `parser/hlsl`: wraps tree-sitter and collects symbols/references.
-- `parser/runtimeAssets`: maps only the supported source, tsc-out,
-  copied-server, and bundled-server layouts to the vendored HLSL grammar. A
-  successful parser attempt captures its bytes once; parser execution and
-  cache compatibility consume that same immutable fact.
+- `parser/runtimeAssets`: exposes `ParserRuntimeAssets` and maps only the
+  supported source, tsc-out, copied-server, and bundled-server layouts to the
+  vendored HLSL grammar. A successful parser attempt captures its bytes once;
+  parser execution and cache compatibility consume that same immutable fact.
 - `parser/lexical`: owns cursor analysis behind `analyzeCursor` plus the narrow
   `classifyCursor` and gate-free `memberAccessAt` derived interfaces.
 - `macros`: is the sole compilation and recognition boundary for built-in and
@@ -60,28 +68,48 @@ handling. Important modules:
   parsing-derived coloring, Properties, hover, completion, and signature help.
   Consumers cannot import a raw catalog or keep parallel term sets.
 - `include` and `packages`: resolve relative includes and Unity Package paths.
-  Include path and casing rules depend on a narrow filesystem probe rather than
-  direct I/O; Package membership still comes from the resolved lockfile graph.
-- `index`: stores symbols, references, visibility, and chain lookup data. Its
-  position geometry module owns shared inclusive range containment and
-  before-or-at ordering used by index and suggestion visibility rules.
-- `suggestions`: classifies completion/signature contexts and exposes one
-  candidate-selector interface for completion, member completion, and
-  signature intent. The selector owns include visibility, scope/proximity,
-  current/include ranking, member inference, overload focus, dedupe, and
-  project-over-built-in precedence; separate formatters produce LSP values.
+  `PackageResolver` reads the resolved lockfile graph; `PackageContext` binds
+  those paths and provenance facts to one revision. Include path and casing
+  rules depend on a narrow filesystem probe rather than direct I/O.
+- `index`: stores `SymbolEntry` records, their `scopeRange` visibility bounds,
+  durable `FileIndex` projections, references, visibility, and chain lookup
+  data.
+- `server/src/sourceLocation.ts`: owns shared inclusive range containment,
+  location keys, URI basename formatting, and symbol-to-link conversion used
+  across parser, index, suggestion, hover, and Workspace query code.
+- `suggestions`: classifies completion/signature requests as
+  `SuggestionContext` and exposes one `SuggestionCandidateSelector` interface
+  for completion, member completion, and signature intent. The selector owns
+  include visibility, scope/proximity, current/include ranking, member
+  inference, overload focus, dedupe, and project-over-built-in precedence;
+  separate formatters produce LSP values.
+- `documentation`: exposes `DocumentationTarget` and `DocumentationResolver`,
+  which separate exact cursor interpretation from revision-owned project,
+  Package, and compatibility selection.
+- `project`: `UnityProjectFacts` captures the Editor version consumed by Quick
+  Documentation compatibility checks.
 - `handlers`: adapts LSP messages to domain behavior. The document adapter owns
-  the open-document registry; every index-backed query adapter calls only the
-  Indexed Workspace behavior interface and never receives raw index stores.
+  the open-document registry; `handlers/documentRequest.ts` centralizes
+  snapshot routing, suspension, and neutral-result policy. Every index-backed
+  query adapter calls only the `IndexedWorkspace` behavior interface and never
+  receives raw index stores.
+- `lifecycle/requestSuspender.ts`: exposes `RequestSuspender`, the bounded
+  initial request gate; rebuild and watcher paths do not use it.
+- `cache`: `CacheFingerprint` is the release compatibility fact,
+  `CacheWorkspaceIdentity` selects a Workspace bucket, `CacheManager`
+  coordinates process-local saves, and `CacheStore` owns manifest I/O.
 - `workspace/indexedRevisionCandidate`: implements the one full-construction
-  path shared by cold start, warm cache restore, rebuild, and recovery. It
-  resolves the root, Package context, parser runtime assets, release-cache
-  compatibility/restore, and retain-or-fail policy, then
-  returns one complete unpublished `IndexedRevisionBuilder`.
-- `workspace/indexedSourceMembership`: captures the immutable extension,
-  exclusion, user-root, and resolved-Package admission policy for one revision.
-  Cold discovery, warm restore, watcher admission, and close fallback all
-  consume this same fact; Package context remains package-resolution state.
+  `IndexedRevisionCandidateConstructor` path through
+  `DefaultIndexedRevisionCandidateConstructor`, shared by cold start, warm
+  cache restore, rebuild, and recovery. It resolves the root, Package context,
+  parser runtime assets, release-cache compatibility/restore, and
+  retain-or-fail policy, then returns one complete unpublished
+  `IndexedRevisionBuilder`.
+- `workspace/indexedSourceMembership`: exposes `IndexedSourceMembership`, the
+  immutable extension, exclusion, user-root, and resolved-Package admission
+  policy for one revision. Cold discovery, warm restore, watcher admission,
+  and close fallback all consume this same fact; Package context remains
+  package-resolution state.
 - `workspace`: serializes each root's lifecycle and mutations, reconciles the
   latest open-document state, applies incremental changes, owns query behavior,
   and is the only publication and cache-persistence caller.
@@ -145,8 +173,9 @@ The index is intentionally pragmatic:
 
 ## Live Documents and Indexed Query Boundary
 
-The document adapter is the only source of editor document identity. Each open
-session receives an `openId`; each immutable snapshot also carries the LSP
+The document adapter is the only source of editor document identity. It
+projects each editor state to an immutable `IndexedDocumentSnapshot`; every
+open session receives an `openId`, and each snapshot also carries the LSP
 version. The registry coalesces edits while lazy workspace creation is pending
 and always routes the current snapshot rather than a captured stale value.
 
@@ -319,11 +348,12 @@ persistence; source, tsc-out, and copied-server development layouts rebuild from
 source. Cache persistence begins only after Workspace publishes and remains best
 effort.
 
-Build-time runtime assembly is owned by one canonical artifact graph under the
-repository's `scripts/` Module. The root build materializes copied-server and
-bundled-server layouts once, copies the complete grammar and `web-tree-sitter`
-runtime trees, and records content hashes for every build input and executable
-artifact. Watch, current-run VSIX packaging, package-layout tests, and Electron
+Build-time runtime assembly is owned by the current
+`scripts/runtime-artifacts.cjs` graph. The root build materializes copied-server
+and bundled-server layouts once, copies the complete grammar and
+`web-tree-sitter` runtime trees, and records content hashes for every build
+input and executable artifact. Watch, current-run VSIX packaging,
+package-layout tests, and Electron
 short-path staging derive their paths from that graph. Packaging rejects stale
 inputs, changed local outputs, missing VSIX entries, or packaged bytes that do
 not match the build manifest; an older valid VSIX cannot satisfy the check.
