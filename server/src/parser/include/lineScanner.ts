@@ -3,12 +3,37 @@ import { maskCommentsLine } from '../masking';
 
 export interface IncludeDirective {
   path: string;
-  /** Range of the path string inside the quotes. */
+  /** Range from `#` through the include directive name. */
+  directiveRange: Range;
+  /** Range of the path string inside its quotes or angle brackets. */
   pathRange: Range;
   line: number;
 }
 
-const INCLUDE_RE = /^\s*#\s*include\s*"([^"\n]+)"/;
+const INCLUDE_RE = /^(\s*)(#\s*include(?:_with_pragmas)?)\s+(?:"([^"\n]+)"|<([^>\n]+)>)/i;
+
+/** Parse one comment-masked source line without changing its column offsets. */
+export function scanIncludeLine(code: string, line: number): IncludeDirective | null {
+  const match = INCLUDE_RE.exec(code);
+  if (!match) return null;
+
+  const directive = match[2];
+  const path = match[3] ?? match[4];
+  const directiveStart = match[1].length;
+  const pathStart = match[0].lastIndexOf(path);
+  return {
+    path,
+    line,
+    directiveRange: {
+      start: { line, character: directiveStart },
+      end: { line, character: directiveStart + directive.length },
+    },
+    pathRange: {
+      start: { line, character: pathStart },
+      end: { line, character: pathStart + path.length },
+    },
+  };
+}
 
 export function scanIncludes(text: string): IncludeDirective[] {
   const lines = text.split(/\r?\n/);
@@ -20,20 +45,8 @@ export function scanIncludes(text: string): IncludeDirective[] {
     const code = stripped.code;
     inBlockComment = stripped.inBlockComment;
 
-    const match = INCLUDE_RE.exec(code);
-    if (!match) continue;
-
-    const path = match[1];
-    const pathStart = code.indexOf('"') + 1;
-    const pathEnd = pathStart + path.length;
-    directives.push({
-      path,
-      line,
-      pathRange: {
-        start: { line, character: pathStart },
-        end: { line, character: pathEnd },
-      },
-    });
+    const directive = scanIncludeLine(code, line);
+    if (directive) directives.push(directive);
   }
 
   return directives;

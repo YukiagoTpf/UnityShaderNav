@@ -32,7 +32,8 @@ describe('registerDefinitionHandler: include definitions', () => {
     const text = [
       'Shader "T/Inc" {',
       '  HLSLPROGRAM',
-      '  #include "Common.hlsl"',
+      '  #include <Common.hlsl>',
+      '  #include_with_pragmas "Common.hlsl"',
       '  ENDHLSL',
       '}',
     ].join('\n');
@@ -53,15 +54,17 @@ describe('registerDefinitionHandler: include definitions', () => {
       manager,
     );
 
-    const result = await handler?.({
-      textDocument: { uri },
-      position: { line: 2, character: 14 },
-    }) as Array<{ targetUri: string }> | null | undefined;
+    const expectedUri = pathToFileURL(join(root, 'Assets/Shaders/Common.hlsl')).href;
+    for (const line of [2, 3]) {
+      const character = text.split('\n')[line].indexOf('Common.hlsl') + 1;
+      const result = await handler?.({
+        textDocument: { uri },
+        position: { line, character },
+      }) as Array<{ targetUri: string }> | null | undefined;
 
-    expect(result).toHaveLength(1);
-    expect(result?.[0].targetUri).toBe(
-      pathToFileURL(join(root, 'Assets/Shaders/Common.hlsl')).href,
-    );
+      expect(result).toHaveLength(1);
+      expect(result?.[0].targetUri).toBe(expectedUri);
+    }
     expect(warnings).toEqual([]);
   });
 

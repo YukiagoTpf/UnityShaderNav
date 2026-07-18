@@ -128,6 +128,25 @@ describe('scanShaderLabTokens', () => {
     ]));
   });
 
+  it('keeps include directive and path tokens for every supported include form', () => {
+    const text = [
+      'Shader "Custom/Includes" {',
+      '  HLSLPROGRAM',
+      '  #include <float4/Angle.hlsl>',
+      '  #include_with_pragmas "Pragmas.hlsl"',
+      '  ENDHLSL',
+      '}',
+    ].join('\n');
+
+    expect(tokenTexts(text)).toEqual(expect.arrayContaining([
+      { text: '#include', type: 'keyword' },
+      { text: 'float4/Angle.hlsl', type: 'string' },
+      { text: '#include_with_pragmas', type: 'keyword' },
+      { text: 'Pragmas.hlsl', type: 'string' },
+    ]));
+    expect(tokenTexts(text)).not.toContainEqual({ text: 'float4', type: 'type' });
+  });
+
   it('does not scan ShaderLab keywords or string contents inside HLSL code', () => {
     const text = [
       'Shader "Custom/Properties" {',

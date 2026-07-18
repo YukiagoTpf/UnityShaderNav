@@ -807,6 +807,8 @@ describe('registerReferencesHandler', () => {
       '#include "Common.hlsl"',
       '#include "../Shaders/Common.hlsl"',
       '#include "Packages/com.example.assets/Shaders/Common.hlsl"',
+      '#include <Common.hlsl>',
+      '#include_with_pragmas "Common.hlsl"',
       '#include "Inner/Lighting.hlsl"',
     ].join('\n');
     const index = await indexFile(uri, text);
@@ -829,6 +831,8 @@ describe('registerReferencesHandler', () => {
       { uri, range: index.references[0].location.range },
       { uri, range: index.references[1].location.range },
       { uri, range: index.references[2].location.range },
+      { uri, range: index.references[3].location.range },
+      { uri, range: index.references[4].location.range },
     ]);
   });
 

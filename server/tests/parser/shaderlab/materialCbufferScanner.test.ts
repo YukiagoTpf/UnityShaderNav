@@ -138,10 +138,11 @@ describe('scanShaderLabMaterialFacts', () => {
     expect(scan(comment).cbuffers).toEqual([]);
   });
 
-  it('treats include_with_pragmas as an unseen declaration source', () => {
+  it('treats angle-bracket and include_with_pragmas forms as unseen declaration sources', () => {
     const text = [
       'Shader "Material/PragmaInclude" {',
       '  HLSLPROGRAM',
+      '  #include <Local.hlsl>',
       '  #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"',
       '  ENDHLSL',
       '}',

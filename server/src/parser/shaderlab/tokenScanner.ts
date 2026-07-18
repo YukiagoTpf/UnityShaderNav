@@ -4,6 +4,7 @@ import {
   asShaderLabPropertyType,
   builtinLexicalRole,
 } from '../../vocabulary';
+import { scanIncludeLine } from '../include/lineScanner';
 import {
   interpretShaderLabSource,
   type ShaderLabSourceInterpretation,
@@ -133,26 +134,30 @@ export function scanShaderLabTokensFromSource(
   }
 
   function scanHlslLexical(lineNo: number, code: string, codeNoStrings: string): void {
-    const directive = /#\s*(include|pragma|define|if|ifdef|ifndef|else|elif|endif)\b/.exec(codeNoStrings);
+    const include = scanIncludeLine(code, lineNo);
+    if (include) {
+      push(
+        lineNo,
+        include.directiveRange.start.character,
+        include.directiveRange.end.character,
+        'keyword',
+      );
+      push(
+        lineNo,
+        include.pathRange.start.character,
+        include.pathRange.end.character,
+        'string',
+      );
+      return;
+    }
+
+    const directive = /#\s*(pragma|define|if|ifdef|ifndef|else|elif|endif)\b/.exec(codeNoStrings);
     if (directive) {
       const start = directive.index;
       const end = start + directive[0].length;
       push(lineNo, start, end, 'keyword');
 
-      if (directive[1] === 'include') {
-        scanStrings(lineNo, code.slice(end), 'string');
-        const offset = end;
-        const last = tokens[tokens.length - 1];
-        if (last && last.range.start.line === lineNo && last.range.start.character < offset) {
-          tokens.pop();
-          seen.delete(tokenKey(last));
-        }
-        for (const match of code.slice(end).matchAll(STRING_RE)) {
-          const value = match[1];
-          const valueStart = offset + (match.index ?? 0) + 1;
-          push(lineNo, valueStart, valueStart + value.length, 'string');
-        }
-      } else if (directive[1] === 'define') {
+      if (directive[1] === 'define') {
         const defineName = /#\s*define\s+([A-Za-z_][A-Za-z0-9_]*)/.exec(code);
         if (defineName) {
           const name = defineName[1];

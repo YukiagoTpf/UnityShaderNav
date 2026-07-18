@@ -6,6 +6,7 @@ import type {
   ShaderLabMaterialFieldEntry,
   StructureResult,
 } from '@unity-shader-nav/shared';
+import { scanIncludeLine } from '../include/lineScanner';
 import {
   interpretShaderLabSource,
   type ShaderLabSourceInterpretation,
@@ -16,8 +17,6 @@ const MACRO_END_RE = /^\s*CBUFFER_END\b/;
 const NATIVE_START_RE = /^\s*cbuffer\s+([A-Za-z_][A-Za-z0-9_]*)/;
 const FIELD_RE = /^\s*((?:(?:const|row_major|column_major|volatile)\s+)*[A-Za-z_][A-Za-z0-9_]*(?:\s*<[^;>]+>)?)\s+([A-Za-z_][A-Za-z0-9_]*)(\s*\[[^\]]+\])?\s*(?::\s*packoffset\s*\(\s*([^)]*?)\s*\))?\s*;\s*$/;
 const SRP_TAG_RE = /"RenderPipeline"\s*=\s*"(?:UniversalPipeline|UniversalRenderPipeline|HDRenderPipeline)"/;
-const INCLUDE_RE = /^\s*#\s*include(?:_with_pragmas)?\s+["<][^">]+[">]/i;
-const SRP_INCLUDE_RE = /^\s*#\s*include(?:_with_pragmas)?\s+["<][^">]*render-pipelines[^">]*[">]/i;
 
 function range(line: number, start: number, end: number): Range {
   return {
@@ -146,8 +145,11 @@ export function scanShaderLabMaterialFactsFromSource(
     for (let line = block.contentStartLine; line <= block.contentEndLine; line++) {
       const raw = lines[line]?.raw ?? '';
       const code = lines[line]?.code ?? '';
-      if (INCLUDE_RE.test(code)) facts.hasIncludes = true;
-      if (SRP_INCLUDE_RE.test(code)) facts.srpEvidence = true;
+      const include = scanIncludeLine(code, line);
+      if (include) {
+        facts.hasIncludes = true;
+        if (/render-pipelines/i.test(include.path)) facts.srpEvidence = true;
+      }
 
       const directive = /^\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b/.exec(code)?.[1];
       if (directive === 'endif') conditionalDepth = Math.max(0, conditionalDepth - 1);
