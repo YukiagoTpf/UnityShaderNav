@@ -60,6 +60,7 @@ npm test
 npm run test:electron:activation
 npm run test:electron
 npm run bench:index-cache -- --files 800
+npm run bench:index-fork -- --files 5000 --symbols 8 --iterations 100 --warmup 20
 npm run bench:document-analysis -- --passes 32 --properties 64 --iterations 250 --warmup 50
 npm run package:vsix
 npm run grammar:rebuild
@@ -245,6 +246,22 @@ The benchmark writes the production cache beneath that copy's `Library/`. For a
 real project, it selects one visible project symbol during the cold run and
 requires the warm run to restore it. Add `--keep` only for a generated synthetic
 project whose cache and files should remain available for inspection.
+
+## Index Fork Benchmark
+
+Build the server output, then measure a published index with a large synthetic
+file set:
+
+```powershell
+npm run build
+npm run bench:index-fork -- --files 5000 --symbols 8 --iterations 100 --warmup 20
+```
+
+Each sample forks the same captured index and replaces one file's symbol and
+reference shard. The benchmark verifies that the candidate sees the replacement
+while the captured base still sees its original shard, then reports median and
+p95 latency. Use identical arguments and the same machine for before/after
+comparisons; timing is diagnostic and has no CI threshold.
 
 ## Document Analysis Benchmark
 

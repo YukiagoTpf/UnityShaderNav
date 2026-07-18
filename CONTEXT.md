@@ -65,7 +65,7 @@ candidate 与 published revision 中 package 相关能力的边界：组合 **Pa
 _Avoid_: cache restore eligibility, watcher scope helper, duplicated source filter
 
 **WorkspaceIndex**:
-revision candidate 内部的可变索引实现。它维护磁盘索引、打开文档覆盖、全局符号和全局引用之间的一致性；增量 candidate 通过 copy-on-write fork 获得独立 maps / global arrays，并复用不可变 `FileIndex` 值。发布后该实例不再变更；请求 handler 和公开 Workspace behavior 都不暴露它的 stores。
+revision candidate 内部的可变索引实现。它维护磁盘索引、打开文档覆盖、全局符号和全局引用之间的一致性；URI store、disk records、global symbols 与 global references 都按文件组成 immutable shard，并通过 persistent roots 在 revision 间结构共享。增量 candidate 的 fork 只共享 roots，替换文件时仅 path-copy 该 URI 及受影响名称的 shard；已捕获 revision 的 roots 和查询顺序保持不变。发布后该实例不再变更；请求 handler 和公开 Workspace behavior 都不暴露它的 stores。
 
 **Indexed Workspace interface**:
 请求与文档生命周期使用的行为接口。它包含打开文档更新、关闭文档，以及 Diagnostics、Code Actions、Definition、References、Hover、Completion、Signature Help、Document Highlight、Document Symbols、Semantic Tokens 和 Workspace Symbols 等 index-backed 查询；`Workspace` 在接口后组合 revision publication、include 可见性、Package 过滤与符号解析。handler 只做 LSP 参数和 neutral-result 适配。

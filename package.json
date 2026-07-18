@@ -27,6 +27,7 @@
     "test:package-layout": "mocha tests/out/client/package-layout.test.js --ui tdd --timeout 60000",
     "clean": "rimraf client/out server/out shared/out tests/out client/tsconfig.tsbuildinfo server/tsconfig.tsbuildinfo shared/tsconfig.tsbuildinfo",
     "bench:index-cache": "node scripts/benchmark-index-cache.mjs",
+    "bench:index-fork": "node scripts/benchmark-index-fork.mjs",
     "bench:document-analysis": "node scripts/benchmark-document-analysis.mjs",
     "grammar:rebuild": "node scripts/rebuild-tree-sitter-hlsl.mjs",
     "package:vsix": "node scripts/package-vsix.mjs --build-and-verify"

@@ -52,4 +52,24 @@ describe('IndexStore', () => {
     expect(store.get('file:///PROJECT/CAFE%CC%81/main.shader')).toBe(file);
     expect([...store.uris()]).toEqual([file.uri]);
   });
+
+  it('forks in constant state and isolates later per-file replacements', () => {
+    const store = new IndexStore();
+    const first = idx('file:///first.hlsl');
+    const second = idx('file:///second.hlsl');
+    store.set(first.uri, first);
+    store.set(second.uri, second);
+
+    const fork = store.fork();
+    const replacement = idx(first.uri);
+    fork.set(first.uri, replacement);
+    fork.delete(second.uri);
+
+    expect(store.get(first.uri)).toBe(first);
+    expect(store.get(second.uri)).toBe(second);
+    expect(fork.get(first.uri)).toBe(replacement);
+    expect(fork.get(second.uri)).toBeUndefined();
+    expect([...store.uris()]).toEqual([first.uri, second.uri]);
+    expect([...fork.uris()]).toEqual([first.uri]);
+  });
 });

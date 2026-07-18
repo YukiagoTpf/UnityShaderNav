@@ -265,11 +265,15 @@ value: a complete unpublished builder for the discovered disk/package baseline.
 The constructor does not own lifecycle state, allocate a revision, publish, or
 persist. Live edits, close, watcher batches, and settings-only changes instead
 fork the current revision.
-`WorkspaceIndex.fork()` copies mutable maps and global-index arrays while
-sharing immutable per-file indexes. Settings, Package context, indexed source
-membership, cache identity, committed document attempts, source warnings, and
-effective index data cross the publication boundary together. A one-shot
-builder cannot be mutated again after it creates a published revision.
+`WorkspaceIndex.fork()` retains persistent roots for URI stores, disk records,
+global symbols, and global references. Those roots point to immutable per-file
+shards; replacing one file path-copies only that URI and the affected symbol or
+reference names, without enumerating the workspace. Insertion order is part of
+the persistent representation, so query ordering remains the same as the prior
+`Map`-based index. Settings, Package context, indexed source membership, cache
+identity, committed document attempts, source warnings, and effective index
+data cross the publication boundary together. A one-shot builder cannot be
+mutated again after it creates a published revision.
 
 Before full publication, Workspace replays its latest open-document desired
 state into the isolated builder. Publication is one synchronous commit after all

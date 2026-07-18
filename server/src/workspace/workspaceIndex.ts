@@ -13,6 +13,7 @@ import {
   type DocumentAnalysisDemand,
 } from '../analysis';
 import { GlobalReferenceIndex, GlobalSymbolIndex, IndexStore } from '../index';
+import { PersistentOrderedMap } from '../index/persistentStringMap';
 import { uriKey } from '../uriKey';
 import { MacroPatternRecognizer } from '../macros';
 import { indexFile } from '../parser/hlsl';
@@ -74,17 +75,24 @@ export interface AppliedFileEvent {
   readonly changed: boolean;
 }
 
+interface WorkspaceIndexForkState {
+  readonly store: IndexStore;
+  readonly global: GlobalSymbolIndex;
+  readonly globalRefs: GlobalReferenceIndex;
+  readonly diskIndexes: PersistentOrderedMap<DiskIndexRecord>;
+}
+
 /**
  * Private mutable index implementation used only while constructing a revision.
  * Published revisions retain an instance that is never mutated again; a later
- * transaction starts from {@link fork}, which rebuilds independent maps and
- * global-index arrays while sharing immutable FileIndex values.
+ * transaction starts from {@link fork}, which shares immutable per-file shard
+ * roots. Later writes path-copy only the changed URI/name paths.
  */
 export class WorkspaceIndex {
-  private readonly store = new IndexStore();
-  private readonly global = new GlobalSymbolIndex();
-  private readonly globalRefs = new GlobalReferenceIndex();
-  private readonly diskIndexes = new Map<string, DiskIndexRecord>();
+  private readonly store: IndexStore;
+  private readonly global: GlobalSymbolIndex;
+  private readonly globalRefs: GlobalReferenceIndex;
+  private diskIndexes: PersistentOrderedMap<DiskIndexRecord>;
   private readonly recognizer: MacroPatternRecognizer;
   private readonly standalone: boolean;
   private readonly indexDocument: DocumentIndexer;
@@ -96,6 +104,7 @@ export class WorkspaceIndex {
     standalone: boolean | (() => boolean),
     indexDocument: DocumentIndexer = indexFile,
     analyzeSource: DocumentAnalyzer = analyzeDocument,
+    forkState?: WorkspaceIndexForkState,
   ) {
     this.recognizer = declarationMacros instanceof MacroPatternRecognizer
       ? declarationMacros
@@ -103,6 +112,10 @@ export class WorkspaceIndex {
     this.standalone = typeof standalone === 'function' ? standalone() : standalone;
     this.indexDocument = indexDocument;
     this.analyzeSource = analyzeSource;
+    this.store = forkState?.store ?? new IndexStore();
+    this.global = forkState?.global ?? new GlobalSymbolIndex();
+    this.globalRefs = forkState?.globalRefs ?? new GlobalReferenceIndex();
+    this.diskIndexes = forkState?.diskIndexes ?? PersistentOrderedMap.empty();
     this.read = Object.freeze({
       store: Object.freeze({
         get: (uri: string) => this.store.get(uri),
@@ -125,15 +138,13 @@ export class WorkspaceIndex {
       this.standalone,
       this.indexDocument,
       this.analyzeSource,
+      {
+        store: this.store.fork(),
+        global: this.global.fork(),
+        globalRefs: this.globalRefs.fork(),
+        diskIndexes: this.diskIndexes,
+      },
     );
-
-    for (const [key, diskIndex] of this.diskIndexes) {
-      next.diskIndexes.set(key, diskIndex);
-    }
-    for (const uri of this.store.uris()) {
-      const file = this.store.get(uri);
-      if (file) next.setEffective(file);
-    }
     return next;
   }
 
@@ -144,7 +155,7 @@ export class WorkspaceIndex {
     source: DiskSourceIdentity = { mtimeMs: 0, size: 0 },
   ): void {
     const immutable = freezeFileIndex(index);
-    this.diskIndexes.set(uriKey(uri), Object.freeze({
+    this.diskIndexes = this.diskIndexes.set(uriKey(uri), Object.freeze({
       index: immutable,
       source: Object.freeze({ ...source }),
     }));
@@ -190,7 +201,7 @@ export class WorkspaceIndex {
     const uri = pathToFileURL(absPath).href;
     const record = await this.indexDiskFile(uri, connection);
     if (!record || !shouldStore()) return false;
-    this.diskIndexes.set(uriKey(uri), record);
+    this.diskIndexes = this.diskIndexes.set(uriKey(uri), record);
     this.setEffective(record.index);
     return true;
   }
@@ -210,7 +221,8 @@ export class WorkspaceIndex {
       if (!shouldStore()) return results;
       const key = uriKey(event.uri);
       if (event.type === 'deleted') {
-        const changedDisk = this.diskIndexes.delete(key);
+        const changedDisk = this.diskIndexes.has(key);
+        this.diskIndexes = this.diskIndexes.delete(key);
         const changedEffective = !liveUriKeys.has(key) && this.store.get(event.uri) !== undefined;
         if (changedEffective) this.dropEffective(event.uri);
         results.push({
@@ -226,7 +238,7 @@ export class WorkspaceIndex {
         results.push({ ...event, indexed: false, changed: false });
         continue;
       }
-      this.diskIndexes.set(key, record);
+      this.diskIndexes = this.diskIndexes.set(key, record);
       if (!liveUriKeys.has(key)) this.setEffective(record.index);
       results.push({ ...event, indexed: true, changed: true });
     }
@@ -263,9 +275,9 @@ export class WorkspaceIndex {
   ): boolean {
     if (!shouldStore()) return false;
     if (candidate.diskIndex === null) {
-      this.diskIndexes.delete(uriKey(candidate.uri));
+      this.diskIndexes = this.diskIndexes.delete(uriKey(candidate.uri));
     } else if (candidate.diskIndex !== undefined) {
-      this.diskIndexes.set(uriKey(candidate.uri), candidate.diskIndex);
+      this.diskIndexes = this.diskIndexes.set(uriKey(candidate.uri), candidate.diskIndex);
     }
     this.setEffective(candidate.liveIndex);
     return true;
@@ -290,7 +302,7 @@ export class WorkspaceIndex {
       this.dropEffective(uri);
       return true;
     }
-    this.diskIndexes.set(uriKey(uri), restored);
+    this.diskIndexes = this.diskIndexes.set(uriKey(uri), restored);
     this.setEffective(restored.index);
     return true;
   }

@@ -69,4 +69,26 @@ describe('GlobalSymbolIndex', () => {
     expect(global.lookup('bar')).toEqual([]);
     expect([...global.uris()]).toEqual([]);
   });
+
+  it('shares immutable file shards across forks and preserves update ordering', () => {
+    const global = new GlobalSymbolIndex();
+    global.upsert(fileIndex('file:///a.hlsl', ['shared', 'a']));
+    global.upsert(fileIndex('file:///b.hlsl', ['shared', 'b']));
+
+    const fork = global.fork();
+    fork.upsert(fileIndex('file:///a.hlsl', ['shared', 'updated']));
+
+    expect(global.lookup('shared').map((entry) => entry.location.uri)).toEqual([
+      'file:///a.hlsl',
+      'file:///b.hlsl',
+    ]);
+    expect(fork.lookup('shared').map((entry) => entry.location.uri)).toEqual([
+      'file:///b.hlsl',
+      'file:///a.hlsl',
+    ]);
+    expect(global.lookup('a')).toHaveLength(1);
+    expect(global.lookup('updated')).toEqual([]);
+    expect(fork.lookup('a')).toEqual([]);
+    expect(fork.lookup('updated')).toHaveLength(1);
+  });
 });

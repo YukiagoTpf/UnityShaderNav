@@ -1,5 +1,6 @@
 import type { FileIndex } from '@unity-shader-nav/shared';
 import { uriKey } from '../uriKey';
+import { PersistentOrderedMap } from './persistentStringMap';
 
 export interface IndexStoreReader {
   get(uri: string): FileIndex | undefined;
@@ -7,10 +8,16 @@ export interface IndexStoreReader {
 }
 
 export class IndexStore implements IndexStoreReader {
-  private readonly byUri = new Map<string, FileIndex>();
+  constructor(
+    private byUri = PersistentOrderedMap.empty<FileIndex>(),
+  ) {}
+
+  fork(): IndexStore {
+    return new IndexStore(this.byUri);
+  }
 
   set(uri: string, idx: FileIndex): void {
-    this.byUri.set(uriKey(uri), idx);
+    this.byUri = this.byUri.set(uriKey(uri), idx);
   }
 
   get(uri: string): FileIndex | undefined {
@@ -18,11 +25,11 @@ export class IndexStore implements IndexStoreReader {
   }
 
   delete(uri: string): void {
-    this.byUri.delete(uriKey(uri));
+    this.byUri = this.byUri.delete(uriKey(uri));
   }
 
   clear(): void {
-    this.byUri.clear();
+    this.byUri = PersistentOrderedMap.empty();
   }
 
   *uris(): IterableIterator<string> {

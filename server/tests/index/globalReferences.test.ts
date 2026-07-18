@@ -70,4 +70,23 @@ describe('GlobalReferenceIndex', () => {
     expect(global.lookup('foo')).toEqual([]);
     expect(global.lookup('bar')).toEqual([]);
   });
+
+  it('forks per-file shards without changing the captured reference view', () => {
+    const global = new GlobalReferenceIndex();
+    global.upsert(fileIndex('file:///a.hlsl', [reference('file:///a.hlsl', 'shared')]));
+    global.upsert(fileIndex('file:///b.hlsl', [reference('file:///b.hlsl', 'shared')]));
+
+    const fork = global.fork();
+    fork.upsert(fileIndex('file:///a.hlsl', [reference('file:///a.hlsl', 'updated')]));
+
+    expect(global.lookup('shared').map((entry) => entry.location.uri)).toEqual([
+      'file:///a.hlsl',
+      'file:///b.hlsl',
+    ]);
+    expect(fork.lookup('shared').map((entry) => entry.location.uri)).toEqual([
+      'file:///b.hlsl',
+    ]);
+    expect(global.lookup('updated')).toEqual([]);
+    expect(fork.lookup('updated')).toHaveLength(1);
+  });
 });

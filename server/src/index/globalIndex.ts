@@ -1,5 +1,5 @@
 import type { FileIndex, SymbolEntry } from '@unity-shader-nav/shared';
-import { uriKey } from '../uriKey';
+import { FileShardIndex } from './fileShardIndex';
 
 export interface GlobalSymbolReader {
   lookup(name: string): SymbolEntry[];
@@ -7,55 +7,35 @@ export interface GlobalSymbolReader {
 }
 
 export class GlobalSymbolIndex implements GlobalSymbolReader {
-  private readonly byName = new Map<string, SymbolEntry[]>();
-  private readonly byUri = new Map<string, SymbolEntry[]>();
+  constructor(
+    private readonly shards = FileShardIndex.empty<SymbolEntry>(),
+  ) {}
+
+  fork(): GlobalSymbolIndex {
+    return new GlobalSymbolIndex(this.shards.fork());
+  }
 
   upsert(file: FileIndex): void {
-    this.delete(file.uri);
-    const key = uriKey(file.uri);
-
-    for (const symbol of file.symbols) {
-      const entries = this.byName.get(symbol.name) ?? [];
-      entries.push(symbol);
-      this.byName.set(symbol.name, entries);
-    }
-
-    this.byUri.set(key, file.symbols.slice());
+    this.shards.upsert(file.uri, file.symbols);
   }
 
   delete(uri: string): void {
-    const key = uriKey(uri);
-    const previous = this.byUri.get(key);
-    if (!previous) return;
-
-    for (const symbol of previous) {
-      const entries = this.byName.get(symbol.name);
-      if (!entries) continue;
-
-      const next = entries.filter((entry) => uriKey(entry.location.uri) !== key);
-      if (next.length === 0) this.byName.delete(symbol.name);
-      else this.byName.set(symbol.name, next);
-    }
-
-    this.byUri.delete(key);
+    this.shards.delete(uri);
   }
 
   clear(): void {
-    this.byName.clear();
-    this.byUri.clear();
+    this.shards.clear();
   }
 
   lookup(name: string): SymbolEntry[] {
-    return this.byName.get(name)?.slice() ?? [];
+    return this.shards.lookup(name);
   }
 
   uris(): IterableIterator<string> {
-    return this.byUri.keys();
+    return this.shards.uris();
   }
 
-  *entries(): IterableIterator<SymbolEntry> {
-    for (const entries of this.byUri.values()) {
-      for (const entry of entries) yield entry;
-    }
+  entries(): IterableIterator<SymbolEntry> {
+    return this.shards.entries();
   }
 }

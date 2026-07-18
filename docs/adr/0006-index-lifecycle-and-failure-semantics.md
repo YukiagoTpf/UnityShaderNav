@@ -49,9 +49,10 @@ The implementation names that boundary directly:
   state.
 - `IndexedRevisionBuilder` is a one-shot mutable candidate. Full indexing starts
   with an empty builder; incremental work forks the published revision.
-- `WorkspaceIndex.fork()` copies mutable maps and global-index arrays while
-  sharing immutable per-file `FileIndex` values. Candidate mutation therefore
-  cannot affect the published base.
+- `WorkspaceIndex.fork()` shares persistent roots whose values are immutable
+  per-file shards. A candidate update path-copies only the changed URI and the
+  affected global names, while retaining insertion order; candidate mutation
+  therefore cannot affect the published base or reorder unchanged query data.
 - `Workspace` serializes construction, replays the latest open-document desired
   state, and remains the only caller that materializes and publishes a revision.
   It assigns the completed revision to its single current pointer. No
