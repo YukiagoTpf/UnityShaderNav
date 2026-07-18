@@ -40,9 +40,13 @@ export type SuggestionCandidateQuery =
   | {
     readonly kind: 'signature';
     readonly context: SuggestionContext;
-    readonly name: string;
+    readonly target: SignatureCallTarget;
     readonly activeParameter: number;
   };
+
+export type SignatureCallTarget =
+  | { readonly kind: 'free'; readonly name: string }
+  | { readonly kind: 'member'; readonly receiver: string; readonly name: string };
 
 export interface SuggestionCandidateInput {
   readonly uri: string;
@@ -113,7 +117,7 @@ class PublishedSuggestionCandidateSelector implements SuggestionCandidateSelecto
           current,
           input.position,
           input.query.context,
-          input.query.name,
+          input.query.target,
           input.query.activeParameter,
           input.cancellation,
         );
@@ -170,21 +174,37 @@ class PublishedSuggestionCandidateSelector implements SuggestionCandidateSelecto
     current: FileIndex,
     position: Position,
     context: SuggestionContext,
-    name: string,
+    target: SignatureCallTarget,
     activeParameter: number,
     cancellation?: CancellationToken,
   ): Promise<SuggestionCandidateSelection> {
-    const projectSuggestions = await collectVisibleProjectFunctionSuggestions({
+    const visibleUriKeys = await this.visibleUriKeys(current.uri, cancellation);
+    const inferredParentType = target.kind === 'member'
+      ? inferReceiverTypeForCompletion(
+        current,
+        this.index.global,
+        target.receiver,
+        position,
+        { visibleUriKeys },
+      )
+      : undefined;
+    const parentType = inferredParentType ?? undefined;
+    const projectSuggestions = target.kind === 'member' && !parentType
+      ? []
+      : await collectVisibleProjectFunctionSuggestions({
       index: current,
       store: this.index.store,
       global: this.index.global,
-      visibleUriKeys: await this.visibleUriKeys(current.uri, cancellation),
+      visibleUriKeys,
       position,
-      name,
+      name: target.name,
+      parentType,
     }, cancellation);
-    const suggestions = projectSuggestions.length > 0
+    const suggestions = target.kind === 'member'
       ? projectSuggestions
-      : collectBuiltinFunctionSuggestions(name, context);
+      : projectSuggestions.length > 0
+      ? projectSuggestions
+      : collectBuiltinFunctionSuggestions(target.name, context);
 
     return {
       suggestions,
@@ -216,7 +236,8 @@ interface CollectProjectSuggestionsInput {
 function isGlobalSuggestion(symbol: SymbolEntry): boolean {
   return symbol.kind !== 'parameter'
     && symbol.kind !== 'localVariable'
-    && symbol.kind !== 'structMember';
+    && symbol.kind !== 'structMember'
+    && !symbol.parentType;
 }
 
 function functionSignatureKey(symbol: FunctionSymbolEntry): string {
@@ -346,7 +367,10 @@ function* visibleProjectSymbols(
 }
 
 async function collectVisibleProjectFunctionSuggestions(
-  input: CollectProjectSuggestionsInput & { readonly name: string },
+  input: CollectProjectSuggestionsInput & {
+    readonly name: string;
+    readonly parentType?: string;
+  },
   cancellation?: CancellationToken,
 ): Promise<ShaderSuggestion[]> {
   const ordered = selectGlobalSymbolEntries(
@@ -354,7 +378,10 @@ async function collectVisibleProjectFunctionSuggestions(
     input.name,
     input.global,
     { visibleUriKeys: input.visibleUriKeys },
-  ).filter((symbol): symbol is FunctionSymbolEntry => symbol.kind === 'function')
+  ).filter((symbol): symbol is FunctionSymbolEntry => (
+    symbol.kind === 'function'
+    && (input.parentType ? symbol.parentType === input.parentType : !symbol.parentType)
+  ))
     .map((symbol) => ({
       symbol,
       rank: uriKey(symbol.location.uri) === uriKey(input.index.uri) ? 1 : 2,
@@ -366,7 +393,14 @@ async function collectVisibleProjectFunctionSuggestions(
   for (const candidate of ordered) {
     const checkpoint = cooperativeRequestCheckpoint(++processed, cancellation);
     if (checkpoint) await checkpoint;
-    const key = symbolLocationKey(candidate.symbol);
+    const key = input.parentType
+      ? [
+        candidate.symbol.parentType,
+        candidate.symbol.name,
+        candidate.symbol.returnType,
+        functionSignatureKey(candidate.symbol),
+      ].join('|')
+      : symbolLocationKey(candidate.symbol);
     if (seen.has(key)) continue;
     seen.add(key);
     suggestions.push(symbolToSuggestion(candidate.symbol, candidate.rank));
@@ -410,7 +444,7 @@ async function collectMemberSuggestions(
       const checkpoint = cooperativeRequestCheckpoint(++processed, cancellation);
       if (checkpoint) await checkpoint;
       if (
-        symbol.kind !== 'structMember'
+        (symbol.kind !== 'structMember' && symbol.kind !== 'function')
         || symbol.parentType !== receiverType
         || !symbol.name.startsWith(memberPrefix)
       ) {

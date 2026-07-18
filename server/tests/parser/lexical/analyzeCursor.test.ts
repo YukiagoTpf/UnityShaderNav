@@ -276,6 +276,28 @@ const cases: Case[] = [
 ];
 
 describe('analyzeCursor', () => {
+  it('does not scan a huge current-line suffix when a prepared entry state is available', () => {
+    const text = `code${' '.repeat(4 * 1024 * 1024)}`;
+    let characterReads = 0;
+    const countedLine = new Proxy(new String(text), {
+      get(target, property) {
+        if (typeof property === 'string' && /^\d+$/.test(property)) characterReads++;
+        const value = Reflect.get(target, property);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    }) as unknown as string;
+    const source: CursorSource = {
+      sourceText: text,
+      sourceLines: [countedLine],
+      sourceBlockCommentStates: [false],
+    };
+
+    const result = analyzeCursor(source, { line: 0, character: 4 }, 'hlsl', HLSL);
+
+    expect(result.lexical).toBe('code');
+    expect(characterReads).toBeLessThan(100);
+  });
+
   it('uses exact prepared lexical facts without rescanning preceding lines', () => {
     const text = [
       'Shader "T/Prepared" {',

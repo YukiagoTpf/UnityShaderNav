@@ -506,7 +506,7 @@ describe('SuggestionCandidateSelector', () => {
         query: {
           kind: 'signature',
           context: context(),
-          name: 'Overload',
+          target: { kind: 'free', name: 'Overload' },
           activeParameter: 1,
         },
       });
@@ -522,7 +522,7 @@ describe('SuggestionCandidateSelector', () => {
         query: {
           kind: 'signature',
           context: context(),
-          name: 'Overload',
+          target: { kind: 'free', name: 'Overload' },
           activeParameter: 0,
         },
       });
@@ -534,7 +534,7 @@ describe('SuggestionCandidateSelector', () => {
         query: {
           kind: 'signature',
           context: context(),
-          name: 'Overload',
+          target: { kind: 'free', name: 'Overload' },
           activeParameter: 3,
         },
       });
@@ -546,7 +546,7 @@ describe('SuggestionCandidateSelector', () => {
         query: {
           kind: 'signature',
           context: context(),
-          name: 'normalize',
+          target: { kind: 'free', name: 'normalize' },
           activeParameter: 0,
         },
       });
@@ -619,6 +619,7 @@ describe('SuggestionCandidateSelector', () => {
             parentType: 'Light',
             declaredType: 'float3',
           }),
+          { ...fn('Shade', typesUri, 6), parentType: 'Surface' },
         ],
       };
       const hidden: FileIndex = {
@@ -636,7 +637,7 @@ describe('SuggestionCandidateSelector', () => {
       });
 
       expect((await selectMember('surface'))?.suggestions.map((item) => item.name))
-        .toEqual(['localMember', 'positionWS', 'brdfData']);
+        .toEqual(['localMember', 'positionWS', 'brdfData', 'Shade']);
       expect((await selectMember('surface', 'pos'))?.suggestions.map((item) => item.name))
         .toEqual(['positionWS']);
       expect((await selectMember('lights[i]'))?.suggestions.map((item) => item.name))
@@ -647,6 +648,121 @@ describe('SuggestionCandidateSelector', () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+
+  it('selects only the receiver type method overloads for member signatures', async () => {
+    const uri = 'file:///project/Main.hlsl';
+    const index: FileIndex = {
+      uri,
+      references: [],
+      symbols: [
+        symbol('surface', 'parameter', uri, 1, {
+          declaredType: 'Surface',
+          scopeRange,
+        }),
+        symbol('lights', 'parameter', uri, 1, {
+          declaredType: 'Light',
+          scopeRange,
+        }),
+        symbol('brdf', 'structMember', uri, 1, {
+          parentType: 'Surface',
+          declaredType: 'Brdf',
+        }),
+        fn('Shade', uri, 2, [{ type: 'float', name: 'x' }]),
+        { ...fn('Shade', uri, 3, [{ type: 'float', name: 'x' }]), parentType: 'Light' },
+        { ...fn('Shade', uri, 4, [{ type: 'float', name: 'x' }]), parentType: 'Surface' },
+        {
+          ...fn('Shade', uri, 5, [
+            { type: 'float', name: 'x' },
+            { type: 'float', name: 'y' },
+          ]),
+          parentType: 'Surface',
+        },
+        { ...fn('Shade', uri, 6, [{ type: 'float', name: 'x' }]), parentType: 'Surface' },
+        { ...fn('Evaluate', uri, 7), parentType: 'Brdf' },
+        { ...fn('Illuminate', uri, 8), parentType: 'Light' },
+      ],
+    };
+
+    const selector = selectorFor([index]);
+    const selection = await selector.select({
+      uri,
+      position: { line: 10, character: 0 },
+      query: {
+        kind: 'signature',
+        context: context(),
+        target: { kind: 'member', receiver: 'surface', name: 'Shade' },
+        activeParameter: 1,
+      },
+    });
+
+    expect(selection?.suggestions.map((item) => ({
+      parentType: item.parentType,
+      parameterCount: item.parameters?.length,
+    }))).toEqual([
+      { parentType: 'Surface', parameterCount: 1 },
+      { parentType: 'Surface', parameterCount: 2 },
+    ]);
+    expect(selection?.activeSuggestion).toBe(1);
+
+    const freeSignatures = await selector.select({
+      uri,
+      position: { line: 10, character: 0 },
+      query: {
+        kind: 'signature',
+        context: context(),
+        target: { kind: 'free', name: 'Shade' },
+        activeParameter: 0,
+      },
+    });
+    expect(freeSignatures?.suggestions).toEqual([
+      expect.objectContaining({ name: 'Shade', parentType: undefined }),
+    ]);
+
+    const ordinaryCompletion = await completion(selector, uri, 'Shade');
+    expect(projectSuggestions(ordinaryCompletion)).toEqual([
+      expect.objectContaining({ name: 'Shade', parentType: undefined }),
+    ]);
+
+    const nested = await selector.select({
+      uri,
+      position: { line: 10, character: 0 },
+      query: {
+        kind: 'signature',
+        context: context(),
+        target: { kind: 'member', receiver: 'surface.brdf', name: 'Evaluate' },
+        activeParameter: 0,
+      },
+    });
+    expect(nested?.suggestions).toEqual([
+      expect.objectContaining({ name: 'Evaluate', parentType: 'Brdf' }),
+    ]);
+
+    const array = await selector.select({
+      uri,
+      position: { line: 10, character: 0 },
+      query: {
+        kind: 'signature',
+        context: context(),
+        target: { kind: 'member', receiver: 'lights[i]', name: 'Illuminate' },
+        activeParameter: 0,
+      },
+    });
+    expect(array?.suggestions).toEqual([
+      expect.objectContaining({ name: 'Illuminate', parentType: 'Light' }),
+    ]);
+
+    const unknown = await selector.select({
+      uri,
+      position: { line: 10, character: 0 },
+      query: {
+        kind: 'signature',
+        context: context(),
+        target: { kind: 'member', receiver: 'missing', name: 'Shade' },
+        activeParameter: 0,
+      },
+    });
+    expect(unknown?.suggestions).toEqual([]);
   });
 
   it('completes members when call-assignment overloads agree on the receiver type', async () => {
@@ -709,7 +825,7 @@ describe('SuggestionCandidateSelector', () => {
       query: {
         kind: 'signature',
         context: context(),
-        name: 'Missing',
+        target: { kind: 'free', name: 'Missing' },
         activeParameter: 0,
       },
     })).resolves.toEqual({ suggestions: [] });

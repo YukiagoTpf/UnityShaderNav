@@ -16,6 +16,8 @@ export interface ExactSource {
   readonly sourceText: string;
   readonly sourceLines: readonly string[];
   readonly sourceLexicalLines?: readonly ExactSourceLexicalLine[];
+  /** Incoming block-comment state for each line when full column roles are absent. */
+  readonly sourceBlockCommentStates?: readonly boolean[];
 }
 
 /** Reuse prepared line facts only when they describe this exact text snapshot. */

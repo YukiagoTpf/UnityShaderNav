@@ -24,6 +24,76 @@ describe('collector: functions', () => {
 });
 
 describe('collector: struct', () => {
+  it('collects an inline struct method definition as a parent-owned function', async () => {
+    const text = [
+      'struct Surface {',
+      '  float Shade(float x, float y) { return x + y; }',
+      '};',
+    ].join('\n');
+    const tree = await parseHlsl(text);
+    const result = collect(tree.rootNode, text, 'file:///test/struct-method.hlsl', 0);
+
+    expect(result.symbols).toContainEqual(expect.objectContaining({
+      kind: 'function',
+      name: 'Shade',
+      parentType: 'Surface',
+      returnType: 'float',
+      parameters: [
+        expect.objectContaining({ name: 'x', type: 'float' }),
+        expect.objectContaining({ name: 'y', type: 'float' }),
+      ],
+    }));
+    expect(result.symbols).not.toContainEqual(expect.objectContaining({
+      kind: 'structMember',
+      name: 'Shade',
+    }));
+  });
+
+  it('collects a struct method declaration as a function instead of a field', async () => {
+    const text = [
+      'struct Surface {',
+      '  float Shade(float x, float y);',
+      '};',
+    ].join('\n');
+    const tree = await parseHlsl(text);
+    const result = collect(tree.rootNode, text, 'file:///test/struct-method-declaration.hlsl', 0);
+
+    expect(result.symbols).toContainEqual(expect.objectContaining({
+      kind: 'function',
+      name: 'Shade',
+      parentType: 'Surface',
+      returnType: 'float',
+      parameters: [
+        expect.objectContaining({ name: 'x', type: 'float' }),
+        expect.objectContaining({ name: 'y', type: 'float' }),
+      ],
+    }));
+    expect(result.symbols).not.toContainEqual(expect.objectContaining({
+      kind: 'structMember',
+      name: 'Shade',
+    }));
+  });
+
+  it('splits a scoped struct method definition into parent type and method name', async () => {
+    const text = [
+      'struct Surface { float Shade(float x); };',
+      'float Surface::Shade(float x) { return x; }',
+    ].join('\n');
+    const tree = await parseHlsl(text);
+    const result = collect(tree.rootNode, text, 'file:///test/scoped-method-definition.hlsl', 0);
+
+    const definitions = result.symbols.filter((symbol) => (
+      symbol.kind === 'function'
+      && symbol.name === 'Shade'
+      && symbol.parentType === 'Surface'
+    ));
+    expect(definitions).toHaveLength(2);
+    expect(result.symbols).not.toContainEqual(expect.objectContaining({
+      kind: 'function',
+      name: 'Surface::Shade',
+    }));
+  });
+
   it('collects struct name and its members with parentType + declaredType', async () => {
     const text = fixture('structs.hlsl');
     const tree = await parseHlsl(text);
@@ -219,6 +289,21 @@ describe('collector: references', () => {
     const refs = result.references.filter((r) => r.name === 'add');
     expect(refs).toHaveLength(1);
     expect(refs[0].context).toBe('call');
+  });
+
+  it('records the receiver on a member method call reference', async () => {
+    const text = [
+      'struct Surface { float Shade(float x) { return x; } };',
+      'float Use(Surface surface) { return surface.Shade(1); }',
+    ].join('\n');
+    const tree = await parseHlsl(text);
+    const result = collect(tree.rootNode, text, 'file:///t/member-call-reference.hlsl', 0);
+
+    expect(result.references).toContainEqual(expect.objectContaining({
+      name: 'Shade',
+      context: 'call',
+      receiver: 'surface',
+    }));
   });
 
   it('records member accesses with context=member', async () => {

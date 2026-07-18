@@ -83,7 +83,7 @@ function formatProjectValue(
   const lines: string[] = [];
   lines.push(fence(code));
 
-  if (symbol.kind === 'structMember' && symbol.parentType) {
+  if (symbol.parentType) {
     lines.push(`_member of_ ${safeInlineCode(symbol.parentType)}`);
   }
 

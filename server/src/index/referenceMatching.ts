@@ -6,7 +6,7 @@ import type {
   SymbolEntry,
   SymbolKind,
 } from '@unity-shader-nav/shared';
-import type { ReferenceTarget } from './referenceResolver';
+import { methodSignatureOf, type ReferenceTarget } from './referenceResolver';
 import { containsPosition, locationKey } from '../sourceLocation';
 import { uriKey } from '../uriKey';
 
@@ -22,6 +22,16 @@ export function sameTarget(a: ReferenceTarget, b: ReferenceTarget): boolean {
   return a.kind === b.kind && uriKey(a.uri) === uriKey(b.uri) && sameRange(a.range, b.range);
 }
 
+export function sameMethodOverload(a: ReferenceTarget, b: ReferenceTarget): boolean {
+  return a.kind === 'function'
+    && b.kind === 'function'
+    && !!a.parentType
+    && a.parentType === b.parentType
+    && a.name === b.name
+    && !!a.methodSignature
+    && a.methodSignature === b.methodSignature;
+}
+
 export function symbolToTarget(symbol: SymbolEntry): ReferenceTarget {
   const target: ReferenceTarget = {
     name: symbol.name,
@@ -31,6 +41,8 @@ export function symbolToTarget(symbol: SymbolEntry): ReferenceTarget {
   };
   if (symbol.scopeRange) target.scopeRange = symbol.scopeRange;
   if (symbol.parentType) target.parentType = symbol.parentType;
+  const methodSignature = methodSignatureOf(symbol);
+  if (methodSignature) target.methodSignature = methodSignature;
   return target;
 }
 
@@ -39,7 +51,8 @@ export function isScopedTarget(target: ReferenceTarget): boolean {
 }
 
 export function isMemberTarget(target: ReferenceTarget): boolean {
-  return target.kind === 'structMember' && !!target.parentType;
+  return !!target.parentType
+    && (target.kind === 'structMember' || target.kind === 'function');
 }
 
 export function isGlobalKindAwareTarget(target: ReferenceTarget): boolean {

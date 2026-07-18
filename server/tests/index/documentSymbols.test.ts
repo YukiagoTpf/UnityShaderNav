@@ -26,6 +26,7 @@ describe('buildDocumentSymbols: .hlsl', () => {
         sym('foo', 'function', 0),
         sym('Attributes', 'struct', 5),
         sym('positionOS', 'structMember', 6, 'Attributes'),
+        sym('Transform', 'function', 7, 'Attributes'),
         sym('tmp', 'localVariable', 8),
         sym('UnityPerMaterial', 'cbuffer', 10),
       ],
@@ -51,9 +52,23 @@ describe('buildDocumentSymbols: .hlsl', () => {
       '#pragma foo',
     ]);
     const attributes = tree.find((node) => node.name === 'Attributes');
-    expect(attributes?.children?.map((node) => node.name)).toEqual(['positionOS']);
+    expect(attributes?.children?.map((node) => node.name)).toEqual(['positionOS', 'Transform']);
+    expect(attributes?.children?.[1].kind).toBe(LspSymbolKind.Function);
     const pragma = tree.find((node) => node.name === '#pragma foo');
     expect(pragma?.kind).toBe(LspSymbolKind.Event);
+  });
+
+  it('keeps a qualified method definition top-level when its owner is not in the file', () => {
+    const idx: FileIndex = {
+      uri: 'file:///t/x.hlsl',
+      symbols: [sym('Shade', 'function', 4, 'Surface')],
+      references: [],
+    };
+
+    const tree = buildDocumentSymbols(idx);
+
+    expect(tree.map((node) => node.name)).toEqual(['Shade']);
+    expect(tree[0].kind).toBe(LspSymbolKind.Function);
   });
 });
 

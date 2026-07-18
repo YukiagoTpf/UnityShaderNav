@@ -59,6 +59,22 @@ describe('formatHoverCandidate — project symbols', () => {
     expect(md.value).toBe('```hlsl\nfloat Identity()\n```\n\n_in_ `Lib.hlsl`:1');
   });
 
+  it('formats a parent-owned function as a struct member', () => {
+    const fn: FunctionSymbolEntry = {
+      name: 'Shade',
+      kind: 'function',
+      parentType: 'Surface',
+      location: loc('file:///F:/proj/Lib.hlsl', 2),
+      returnType: 'float',
+      parameters: [{ name: 'x', type: 'float', range: loc('', 0, 0).range }],
+    };
+
+    const md = formatHoverCandidate(projectInput(fn, 'file:///F:/proj'));
+    expect(md.value).toBe(
+      '```hlsl\nfloat Shade(float x)\n```\n\n_member of_ `Surface`\n\n_in_ `Lib.hlsl`:3',
+    );
+  });
+
   it('falls back returnType → declaredType → void for a function', () => {
     const fnNoReturn: FunctionSymbolEntry = {
       name: 'NoReturn',

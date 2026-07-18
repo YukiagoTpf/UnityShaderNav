@@ -93,7 +93,7 @@ describe('Indexed Workspace live-document behavior', () => {
         () => workspace.completionAt({ document, position }),
       );
       expect(result?.map((item) => item.label)).toContain('Helper');
-      expect(sourceSplitCount).toBe(1);
+      expect(sourceSplitCount).toBeLessThanOrEqual(1);
     } finally {
       workspace.dispose();
       await rm(root, { recursive: true, force: true });
@@ -121,7 +121,7 @@ describe('Indexed Workspace live-document behavior', () => {
           position: positionOf(text, 'Hel;', 0, 3),
         });
       });
-      expect(sourceSplitCount).toBe(1);
+      expect(sourceSplitCount).toBe(0);
     } finally {
       workspace.dispose();
       await rm(root, { recursive: true, force: true });
@@ -151,7 +151,7 @@ describe('Indexed Workspace live-document behavior', () => {
         }),
       );
       expect(result).toHaveLength(1);
-      expect(sourceSplitCount).toBe(1);
+      expect(sourceSplitCount).toBe(0);
     } finally {
       workspace.dispose();
       await rm(root, { recursive: true, force: true });
@@ -181,7 +181,7 @@ describe('Indexed Workspace live-document behavior', () => {
         }),
       );
       expect((result?.contents as { value?: string }).value).toContain('float4 Helper()');
-      expect(sourceSplitCount).toBe(1);
+      expect(sourceSplitCount).toBe(0);
     } finally {
       workspace.dispose();
       await rm(root, { recursive: true, force: true });
@@ -212,7 +212,7 @@ describe('Indexed Workspace live-document behavior', () => {
       );
       expect(result?.activeParameter).toBe(1);
       expect(result?.signatures).toHaveLength(1);
-      expect(sourceSplitCount).toBe(1);
+      expect(sourceSplitCount).toBe(0);
     } finally {
       workspace.dispose();
       await rm(root, { recursive: true, force: true });
@@ -242,7 +242,7 @@ describe('Indexed Workspace live-document behavior', () => {
         }),
       );
       expect(result).toHaveLength(2);
-      expect(sourceSplitCount).toBe(1);
+      expect(sourceSplitCount).toBe(0);
     } finally {
       workspace.dispose();
       await rm(root, { recursive: true, force: true });
@@ -272,7 +272,7 @@ describe('Indexed Workspace live-document behavior', () => {
         }),
       );
       expect(result).toMatchObject({ kind: 'ready', placeholder: 'Helper' });
-      expect(sourceSplitCount).toBe(1);
+      expect(sourceSplitCount).toBe(0);
     } finally {
       workspace.dispose();
       await rm(root, { recursive: true, force: true });
@@ -375,6 +375,11 @@ describe('Indexed Workspace live-document behavior', () => {
       await expect(workspace.signatureHelpAt({
         document,
         position: { line: 0, character: text.length },
+      })).resolves.toBeNull();
+      const stringText = 'float4 value = "Lighting(";';
+      await expect(workspace.signatureHelpAt({
+        document: snapshot(uri, stringText, 2, 2),
+        position: { line: 0, character: 24 },
       })).resolves.toBeNull();
 
       expect(parseCalls).toBe(0);

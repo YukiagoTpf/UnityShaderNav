@@ -92,6 +92,7 @@ export interface CommittedDocumentAttempt {
   readonly openId: number;
   readonly version: number;
   readonly analysis: DocumentAnalysis | undefined;
+  readonly source: ExactSource;
 }
 
 export interface IndexedRevisionConfiguration {
@@ -247,8 +248,15 @@ export class PublishedIndexedRevision {
     );
   }
 
-  requestAnalysis(document: IndexedDocumentSnapshot): DocumentAnalysis | undefined {
-    return this.documentAnalysis({ uri: document.uri, document });
+  requestSource(document: IndexedDocumentSnapshot): ExactSource | undefined {
+    const committed = this.committedDocuments.get(uriKey(document.uri));
+    if (
+      !committed
+      || committed.openId !== document.openId
+      || committed.version !== document.version
+      || committed.source.sourceText !== document.text
+    ) return undefined;
+    return committed.source;
   }
 
   documentColors(input: IndexedDocumentQueryInput): ColorInformation[] {
@@ -563,6 +571,7 @@ export class IndexedRevisionBuilder {
       openId: document.openId,
       version: document.version,
       analysis: candidate.liveAnalysis,
+      source: candidate.liveSource,
     }));
     return true;
   }

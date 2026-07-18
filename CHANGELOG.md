@@ -9,6 +9,8 @@ and uses semantic versioning for extension releases.
 
 ### Added
 
+- Added Signature Help on any argument line of multiline calls and for project
+  struct member methods.
 - Added one shared `UnityShaderNav` output channel for client, server, and LSP
   trace messages; standard `unityShaderNav.trace.server` controls; and a
   clickable status bar that opens per-root index details or failure logs.

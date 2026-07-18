@@ -185,19 +185,25 @@ function lexicalContextAt(source: CursorSource, pos: Position): LexicalContext {
 
   const lineText = source.sourceLines[pos.line];
   const prepared = source.sourceLexicalLines?.[pos.line];
+  const preparedBlockState = source.sourceBlockCommentStates?.[pos.line];
   let roles = prepared?.commentRoles;
   let lineComment = prepared?.lineComment;
   if (!prepared) {
     // Fallback sources retain the historical whole-prefix state scan. Exact
     // live ShaderLab analysis supplies the already-threaded per-line roles.
-    let inBlockComment = false;
-    for (let line = 0; line < pos.line; line++) {
-      inBlockComment = scanCommentRoles(
-        source.sourceLines[line],
-        inBlockComment,
-      ).inBlockComment;
+    let inBlockComment = preparedBlockState ?? false;
+    if (preparedBlockState === undefined) {
+      for (let line = 0; line < pos.line; line++) {
+        inBlockComment = scanCommentRoles(
+          source.sourceLines[line],
+          inBlockComment,
+        ).inBlockComment;
+      }
     }
-    const scan = scanCommentRoles(lineText, inBlockComment);
+    const scanText = pos.character < lineText.length
+      ? lineText.slice(0, pos.character)
+      : lineText;
+    const scan = scanCommentRoles(scanText, inBlockComment);
     roles = scan.roles;
     lineComment = scan.lineComment;
   }
@@ -208,7 +214,13 @@ function lexicalContextAt(source: CursorSource, pos: Position): LexicalContext {
   }
   // roles has a trailing entry at [length] carrying the EOL state, so a cursor
   // at end-of-line inside an unterminated string still reports 'string'.
-  const role = roles?.[pos.character];
+  let role = roles?.[pos.character];
+  if (role === 'code') {
+    const character = lineText[pos.character];
+    const next = lineText[pos.character + 1];
+    if (character === '"') role = 'stringQuote';
+    else if (character === '/' && (next === '/' || next === '*')) role = 'comment';
+  }
   if (role === 'comment') return 'comment';
   if (role === 'stringQuote' || role === 'stringBody') return 'string';
   return 'code';

@@ -87,7 +87,7 @@ function buildHlslSymbols(index: FileIndex): DocumentSymbol[] {
   for (const symbol of index.symbols) {
     if (!hasSymbolName(symbol)) continue;
     if (symbol.kind === 'parameter' || symbol.kind === 'localVariable') continue;
-    if (symbol.kind === 'structMember') continue;
+    if (symbol.parentType) continue;
     topLevel.push(symbol);
   }
 
@@ -97,12 +97,15 @@ function buildHlslSymbols(index: FileIndex): DocumentSymbol[] {
 
   for (const symbol of index.symbols) {
     if (!hasSymbolName(symbol)) continue;
-    if (symbol.kind !== 'structMember' || !symbol.parentType) continue;
+    if (!symbol.parentType) continue;
     const parent = [...structs].reverse().find((candidate) =>
       candidate.name === symbol.parentType
       && startsBefore(candidate.location.range, symbol.location.range) <= 0,
     );
-    if (!parent) continue;
+    if (!parent) {
+      topLevel.push(symbol);
+      continue;
+    }
 
     const members = membersByStruct.get(parent) ?? [];
     members.push(symbol);

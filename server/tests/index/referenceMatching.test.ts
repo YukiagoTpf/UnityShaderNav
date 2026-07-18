@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { Range } from '@unity-shader-nav/shared';
 import type { ReferenceTarget } from '../../src/index/referenceResolver';
-import { sameTarget, uniqueLocations } from '../../src/index/referenceMatching';
+import {
+  sameMethodOverload,
+  sameTarget,
+  uniqueLocations,
+} from '../../src/index/referenceMatching';
 
 const range: Range = {
   start: { line: 2, character: 4 },
@@ -13,6 +17,31 @@ function target(uri: string): ReferenceTarget {
 }
 
 describe('reference identity matching', () => {
+  it('keeps method locations distinct while recognizing their shared overload', () => {
+    const declaration: ReferenceTarget = {
+      name: 'Shade',
+      kind: 'function',
+      parentType: 'Surface',
+      methodSignature: 'float|float',
+      uri: 'file:///project/Surface.hlsl',
+      range,
+    };
+    const definition: ReferenceTarget = {
+      ...declaration,
+      range: {
+        start: { line: 8, character: 10 },
+        end: { line: 8, character: 15 },
+      },
+    };
+
+    expect(sameTarget(declaration, definition)).toBe(false);
+    expect(sameMethodOverload(declaration, definition)).toBe(true);
+    expect(sameMethodOverload(declaration, {
+      ...definition,
+      methodSignature: 'float|float,float',
+    })).toBe(false);
+  });
+
   it('matches targets through canonical file identity', () => {
     expect(sameTarget(
       target('file:///C:/Unity/Project/Color.hlsl'),

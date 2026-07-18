@@ -71,19 +71,48 @@ function isFunctionDeclarator(node: Parser.SyntaxNode | null | undefined): boole
   return isFunctionDeclarator(node.childForFieldName('declarator'));
 }
 
-/**
- * Extract the function-name identifier from a `function_definition` node.
- * Path: function_definition.declarator (function_declarator).declarator (identifier).
- * For grammar-mis-parsed cbuffer/tbuffer the declarator is itself an identifier.
- */
-function functionNameNode(node: Parser.SyntaxNode): Parser.SyntaxNode | undefined {
+function functionDeclaratorNode(
+  node: Parser.SyntaxNode | null | undefined,
+): Parser.SyntaxNode | undefined {
+  if (!node) return undefined;
+  if (node.type === 'function_declarator') return node;
+  return functionDeclaratorNode(node.childForFieldName('declarator'));
+}
+
+interface FunctionIdentity {
+  readonly nameNode: Parser.SyntaxNode;
+  readonly parentType?: string;
+}
+
+/** Extract a free, inline-method, or qualified-method identity. */
+function functionIdentity(node: Parser.SyntaxNode): FunctionIdentity | undefined {
   const decl = node.childForFieldName('declarator');
   if (!decl) return undefined;
   if (decl.type === 'function_declarator') {
     const inner = decl.childForFieldName('declarator');
-    return inner ?? undefined;
+    if (!inner) return undefined;
+    if (inner.type === 'qualified_identifier') {
+      const nameNode = inner.childForFieldName('name');
+      const scopeNode = inner.childForFieldName('scope');
+      return nameNode
+        ? { nameNode, parentType: textOf(scopeNode) }
+        : undefined;
+    }
+    return { nameNode: inner, parentType: enclosingStructName(node) };
   }
-  if (decl.type === 'identifier') return decl;
+  if (decl.type === 'identifier') return { nameNode: decl };
+  return undefined;
+}
+
+function enclosingStructName(node: Parser.SyntaxNode): string | undefined {
+  let parent = node.parent;
+  while (parent) {
+    if (parent.type === 'struct_specifier') {
+      const name = parent.childForFieldName('name');
+      return name ? textOf(name) : undefined;
+    }
+    parent = parent.parent;
+  }
   return undefined;
 }
 
@@ -178,8 +207,9 @@ function collectFunction(node: Parser.SyntaxNode, st: CollectorState): void {
     return;
   }
 
-  const nameNode = functionNameNode(node);
-  if (!nameNode) return;
+  const identity = functionIdentity(node);
+  if (!identity) return;
+  const { nameNode } = identity;
   const typeNode = node.childForFieldName('type');
   const fnDeclarator = node.childForFieldName('declarator');
 
@@ -202,6 +232,7 @@ function collectFunction(node: Parser.SyntaxNode, st: CollectorState): void {
     returnType: textOf(typeNode),
     parameters,
   };
+  if (identity.parentType) entry.parentType = identity.parentType;
   if (scopeRange) entry.scopeRange = scopeRange;
   st.symbols.push(entry);
 
@@ -297,6 +328,22 @@ function collectStruct(node: Parser.SyntaxNode, st: CollectorState): void {
     if (!field || field.type !== 'field_declaration') continue;
     const typeNode = field.childForFieldName('type');
     for (const declNode of declaratorNodes(field)) {
+      const fnDeclarator = functionDeclaratorNode(declNode);
+      if (fnDeclarator) {
+        const nameNode = declaratorNameNode(fnDeclarator);
+        if (!nameNode) continue;
+        markDecl(st, nameNode);
+        const method: FunctionSymbolEntry = {
+          name: textOf(nameNode),
+          kind: 'function',
+          parentType: structName,
+          returnType: textOf(typeNode),
+          parameters: collectParameters(fnDeclarator, st),
+          location: { uri: st.uri, range: offsetRange(rangeOf(nameNode), st.lineOffset) },
+        };
+        st.symbols.push(method);
+        continue;
+      }
       const fidNode = declaratorNameNode(declNode);
       if (!fidNode) continue;
       markDecl(st, fidNode);
@@ -371,11 +418,16 @@ function collectReferences(
         return;
       }
       if (nameNode && !st.declarationSites.has(siteKey(nameNode))) {
-        st.references.push({
+        const reference: ReferenceEntry = {
           name: textOf(nameNode),
           location: { uri: st.uri, range: offsetRange(rangeOf(nameNode), st.lineOffset) },
           context: 'call',
-        });
+        };
+        const receiver = callee.type === 'field_expression'
+          ? receiverExpression(callee)
+          : undefined;
+        if (receiver) reference.receiver = receiver;
+        st.references.push(reference);
         // Mark so we don't also record it via the generic identifier branch.
         st.declarationSites.add(siteKey(nameNode));
       }

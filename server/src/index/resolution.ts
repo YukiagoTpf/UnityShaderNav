@@ -19,10 +19,12 @@ import {
   isReferenceContextCompatible,
   isScopedTarget,
   narrowGlobalTargetsForOccurrence,
+  sameMethodOverload,
   sameTarget,
   symbolToTarget,
   uniqueLocations,
 } from './referenceMatching';
+import { selectGlobalSymbolEntries } from './symbolSelection';
 import { uriKey } from '../uriKey';
 import {
   awaitWithRequestCancellation,
@@ -73,6 +75,16 @@ export interface ActiveReferenceTargetSelection {
   readonly targets: readonly ReferenceTarget[];
 }
 
+function uniqueReferenceTargets(targets: readonly ReferenceTarget[]): ReferenceTarget[] {
+  const unique: ReferenceTarget[] = [];
+  for (const target of targets) {
+    if (!unique.some((candidate) => (
+      sameTarget(candidate, target) || sameMethodOverload(candidate, target)
+    ))) unique.push(target);
+  }
+  return unique;
+}
+
 type VisibleUriLookup = (uri: string) => Promise<ReadonlySet<string>>;
 
 /**
@@ -97,7 +109,7 @@ export function selectActiveReferenceTargets(
   );
   const scopedTargets = resolved.filter(isScopedTarget);
   const memberTargets = resolved.filter(isMemberTarget);
-  const narrowedTargets = [...scopedTargets, ...memberTargets];
+  const narrowedTargets = uniqueReferenceTargets([...scopedTargets, ...memberTargets]);
   const word = target.kind === 'member'
     ? target.member
     : target.kind === 'symbol'
@@ -186,7 +198,8 @@ async function collectReferencesForTargets(
   ctx: ReferenceCollectionContext,
   visibleForUri: VisibleUriLookup,
 ): Promise<Location[]> {
-  const globalKindAwareTargets = activeTargets.filter(isGlobalKindAwareTarget);
+  const concreteTargets = await expandMethodTargets(activeTargets, ctx, visibleForUri);
+  const globalKindAwareTargets = concreteTargets.filter(isGlobalKindAwareTarget);
   const includePackages = ctx.includePackages;
   const symbolsAsReferences: Location[] = [];
   let processed = 0;
@@ -196,8 +209,8 @@ async function collectReferencesForTargets(
       if (checkpoint) await checkpoint;
       if (!includePackages && ctx.isInPackages(symbol.location.uri)) continue;
       if (
-        activeTargets.length > 0
-        && !activeTargets.some((target) => sameTarget(target, symbolToTarget(symbol)))
+        concreteTargets.length > 0
+        && !concreteTargets.some((target) => sameTarget(target, symbolToTarget(symbol)))
       ) continue;
       symbolsAsReferences.push({
         uri: symbol.location.uri,
@@ -212,7 +225,7 @@ async function collectReferencesForTargets(
     if (checkpoint) await checkpoint;
     if (!includePackages && ctx.isInPackages(reference.location.uri)) continue;
 
-    if (activeTargets.length === 0) {
+    if (concreteTargets.length === 0) {
       references.push({ uri: reference.location.uri, range: reference.location.range });
       continue;
     }
@@ -231,7 +244,7 @@ async function collectReferencesForTargets(
 
     const candidateVisibleUriKeys = await visibleForUri(reference.location.uri);
     const candidateResolutionOptions = { visibleUriKeys: candidateVisibleUriKeys };
-    const candidateTargets = reference.context === 'member'
+    const candidateTargets = reference.receiver
       ? resolveReferenceTargetsForMemberReference(
         candidateIndex,
         reference,
@@ -250,7 +263,7 @@ async function collectReferencesForTargets(
 
     if (
       candidateTargets.some((candidate) =>
-        activeTargets.some((target) => sameTarget(candidate, target)),
+        concreteTargets.some((target) => sameTarget(candidate, target)),
       )
     ) {
       references.push({ uri: reference.location.uri, range: reference.location.range });
@@ -259,6 +272,44 @@ async function collectReferencesForTargets(
 
   throwIfRequestCancelled(ctx.cancellation);
   return uniqueLocations([...symbolsAsReferences, ...references]);
+}
+
+async function expandMethodTargets(
+  targets: readonly ReferenceTarget[],
+  ctx: ReferenceCollectionContext,
+  visibleForUri: VisibleUriLookup,
+): Promise<ReferenceTarget[]> {
+  const expanded: ReferenceTarget[] = [];
+  for (const target of targets) {
+    if (!target.parentType || target.kind !== 'function' || !target.methodSignature) {
+      expanded.push(target);
+      continue;
+    }
+    const sourceIndex = ctx.index ?? ctx.store.get(target.uri);
+    if (!sourceIndex) {
+      expanded.push(target);
+      continue;
+    }
+    const visibleUriKeys = await visibleForUri(ctx.index?.uri ?? target.uri);
+    const candidates = selectGlobalSymbolEntries(
+      sourceIndex,
+      target.name,
+      ctx.global,
+      { visibleUriKeys },
+    ).map(symbolToTarget).filter((candidate) => sameMethodOverload(candidate, target));
+    expanded.push(...(candidates.length > 0 ? candidates : [target]));
+  }
+  return uniqueReferenceTargetsByLocation(expanded);
+}
+
+function uniqueReferenceTargetsByLocation(
+  targets: readonly ReferenceTarget[],
+): ReferenceTarget[] {
+  const unique: ReferenceTarget[] = [];
+  for (const target of targets) {
+    if (!unique.some((candidate) => sameTarget(candidate, target))) unique.push(target);
+  }
+  return unique;
 }
 
 export interface HighlightCollectionContext {
@@ -310,7 +361,6 @@ function sameReceiverMemberLocations(
     throwIfRequestCancelled(cancellation);
     if (
       reference.name !== memberName ||
-      reference.context !== 'member' ||
       !reference.receiver ||
       !isSimpleIdentifier(reference.receiver)
     ) {
@@ -422,7 +472,7 @@ export function findHighlights(target: CursorTarget, ctx: HighlightCollectionCon
       continue;
     }
 
-    const candidateTargets = reference.context === 'member'
+    const candidateTargets = reference.receiver
       ? resolveReferenceTargetsForMemberReference(index, reference, global, options)
       : resolveReferenceTargetsForName(
         index,

@@ -162,7 +162,7 @@ function skipBalanced(text: string, start: number, open: string, close: string):
   return start;
 }
 
-function structMembersFor(
+function ownedMembersFor(
   index: FileIndex,
   global: GlobalSymbolReader | null | undefined,
   parentType: string,
@@ -171,7 +171,7 @@ function structMembersFor(
 ): SymbolEntry[] {
   return selectGlobalSymbolEntries(index, member, global, options)
     .filter((symbol) => (
-      symbol.kind === 'structMember'
+      (symbol.kind === 'structMember' || symbol.kind === 'function')
       && symbol.parentType === parentType
     ));
 }
@@ -191,8 +191,8 @@ function inferReceiverExpressionType(
   let currentType: string = rootType;
 
   for (const field of expression.fields) {
-    const nextMember: SymbolEntry | undefined = structMembersFor(index, global, currentType, field, options)
-      .find((symbol) => symbol.declaredType);
+    const nextMember: SymbolEntry | undefined = ownedMembersFor(index, global, currentType, field, options)
+      .find((symbol) => symbol.kind === 'structMember' && symbol.declaredType);
     if (!nextMember?.declaredType) {
       options?.trace?.('member.noNestedType', {
         receiver,
@@ -242,7 +242,7 @@ export function resolveMemberSymbols(
     return [];
   }
 
-  const members = structMembersFor(index, global, receiverType, member, options);
+  const members = ownedMembersFor(index, global, receiverType, member, options);
 
   const seen = new Set<string>();
   const unique = members.filter((symbol) => {

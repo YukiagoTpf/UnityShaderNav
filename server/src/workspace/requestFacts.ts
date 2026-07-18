@@ -1,12 +1,11 @@
 import type { Position } from '@unity-shader-nav/shared';
-import type { DocumentAnalysis } from '../analysis';
 import { cursorTargetAt, type CursorTarget } from '../index/cursorTarget';
 import {
   analyzeCursor,
   type CursorContext,
   type CursorSource,
 } from '../parser/lexical/cursor';
-import { exactSource } from '../sourceLocation';
+import { exactSource, type ExactSource } from '../sourceLocation';
 import { callContextAt, type CallContext } from '../suggestions/callContext';
 import type { IndexedDocumentSnapshot } from './indexedWorkspace';
 
@@ -20,7 +19,7 @@ export interface CursorRequestFacts {
 export function createCursorRequestFacts(
   document: IndexedDocumentSnapshot,
   position: Position,
-  prepared?: DocumentAnalysis,
+  prepared?: ExactSource,
 ): CursorRequestFacts {
   const source = exactSource(document.text, prepared) as CursorSource;
   const cursor = analyzeCursor(source, position, document.languageId, document.uri);

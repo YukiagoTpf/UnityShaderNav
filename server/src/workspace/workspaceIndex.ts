@@ -19,6 +19,7 @@ import type { ExactSource } from '../sourceLocation';
 import { MacroPatternRecognizer } from '../macros';
 import { indexFile } from '../parser/hlsl';
 import type { LiveDocumentTreeSession } from '../parser/hlsl/liveDocumentTreeSession';
+import { prepareLiveSourceFacts } from './liveSourceFacts';
 
 export interface FileEvent {
   uri: string;
@@ -54,6 +55,7 @@ export interface PreparedDocumentIndex {
   readonly uri: string;
   readonly liveIndex: FileIndex;
   readonly liveAnalysis: DocumentAnalysis | undefined;
+  readonly liveSource: ExactSource;
   /** undefined: keep scan state; null: standalone file has no disk form. */
   readonly diskIndex: DiskIndexRecord | null | undefined;
 }
@@ -259,12 +261,13 @@ export class WorkspaceIndex {
   ): Promise<PreparedDocumentIndex | undefined> {
     if (!shouldContinue()) return undefined;
     const liveAnalysis = this.analyzeSource(uri, text, 'full');
+    const liveSource = prepareLiveSourceFacts(text, liveAnalysis ?? source);
     const liveIndex = await this.createFileIndex(
       uri,
       text,
       liveAnalysis,
       liveSession,
-      source,
+      liveSource,
     );
     if (!shouldContinue()) return undefined;
 
@@ -277,6 +280,7 @@ export class WorkspaceIndex {
       uri,
       liveIndex,
       liveAnalysis,
+      liveSource,
       diskIndex,
     };
   }

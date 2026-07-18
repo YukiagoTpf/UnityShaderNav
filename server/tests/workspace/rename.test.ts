@@ -124,6 +124,73 @@ describe('Workspace Rename', () => {
     expect(edit && 'changes' in edit ? edit.changes?.[uri] : undefined).toHaveLength(2);
   });
 
+  it('renames a struct method without touching the same method name on another type', async () => {
+    const uri = 'file:///project/Method.hlsl';
+    const text = [
+      'struct Surface { float Shade(float x) { return x; } };',
+      'struct Light { float Shade(float x) { return x; } };',
+      'float Use(Surface surface, Light light) { return surface.Shade(1) + light.Shade(2); }',
+    ].join('\n');
+    const workspace = createIndexedWorkspaceFixture([await indexFile(uri, text)]);
+    const edit = await workspace.renameAt({
+      document: snapshot(uri, text),
+      position: positionOf(text, 'Shade', 2),
+      newName: 'Evaluate',
+    });
+
+    const changes = edit && 'changes' in edit ? edit.changes?.[uri] : undefined;
+    expect(changes).toEqual([
+      { range: expect.objectContaining({ start: { line: 0, character: 23 } }), newText: 'Evaluate' },
+      { range: expect.objectContaining({ start: { line: 2, character: 57 } }), newText: 'Evaluate' },
+    ]);
+  });
+
+  it('renames one logical method symmetrically from its declaration, definition, and call', async () => {
+    const uri = 'file:///project/DeclaredMethod.hlsl';
+    const text = [
+      'struct Surface { float Shade(float x); };',
+      'float Surface::Shade(float x) { return x; }',
+      'float Use(Surface surface) { return surface.Shade(1); }',
+    ].join('\n');
+    const workspace = createIndexedWorkspaceFixture([await indexFile(uri, text)]);
+    for (const occurrence of [0, 1, 2]) {
+      const edit = await workspace.renameAt({
+        document: snapshot(uri, text),
+        position: positionOf(text, 'Shade', occurrence),
+        newName: 'Evaluate',
+      });
+
+      expect(edit && 'changes' in edit ? edit.changes?.[uri] : undefined).toHaveLength(3);
+    }
+  });
+
+  it('does not rename the same method signature in an unrelated file', async () => {
+    const firstUri = 'file:///project/A.hlsl';
+    const secondUri = 'file:///project/B.hlsl';
+    const methodText = [
+      'struct Surface { float Shade(float x); };',
+      'float Surface::Shade(float x) { return x; }',
+      'float Use(Surface surface) { return surface.Shade(1); }',
+    ].join('\n');
+    const workspace = createIndexedWorkspaceFixture([
+      await indexFile(firstUri, methodText),
+      await indexFile(secondUri, methodText),
+    ]);
+    const edit = await workspace.renameAt({
+      document: snapshot(firstUri, methodText),
+      position: positionOf(methodText, 'Shade', 2),
+      newName: 'Evaluate',
+    });
+
+    expect(edit && 'changes' in edit ? edit.changes : undefined).toEqual({
+      [firstUri]: [
+        { range: expect.any(Object), newText: 'Evaluate' },
+        { range: expect.any(Object), newText: 'Evaluate' },
+        { range: expect.any(Object), newText: 'Evaluate' },
+      ],
+    });
+  });
+
   it('renames a macro declaration and compatible call references', async () => {
     const uri = 'file:///project/Macro.hlsl';
     const text = [

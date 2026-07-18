@@ -27,6 +27,7 @@ import {
 } from '../../src/workspace/indexedRevision';
 import { SEMANTIC_TOKEN_TYPES } from '../../src/workspace/semanticTokenLegend';
 import { WorkspaceManager } from '../../src/workspace/workspaceManager';
+import { createCursorRequestFacts } from '../../src/workspace/requestFacts';
 
 const connection = {
   console: { log() {}, warn() {}, error() {} },
@@ -791,6 +792,128 @@ describe('published query behavior', () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+
+  it('provides multiline member signatures from include-visible struct methods', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-member-signatures-'));
+    const mainPath = join(root, 'Main.hlsl');
+    const sharedPath = join(root, 'Shared.hlsl');
+    const hiddenPath = join(root, 'Hidden.hlsl');
+    const mainText = [
+      '#include "Shared.hlsl"',
+      'float4 Use(Surface surface) {',
+      '  return surface.Shade(',
+      '    1,',
+      '    2',
+      '  );',
+      '}',
+      'float4 Again(Surface surface) { return surface.Shade(3); }',
+    ].join('\n');
+    const sharedText = [
+      'struct Surface {',
+      '  float4 Shade(float x);',
+      '  float4 Shade(float x, float y);',
+      '};',
+      'float4 Surface::Shade(float x) { return x; }',
+      'float4 Surface::Shade(float x, float y) { return x + y; }',
+    ].join('\n');
+    const hiddenText = [
+      'struct Surface { float4 Shade(float x, float y, float z); };',
+      'float4 Surface::Shade(float x, float y, float z) { return x + y + z; }',
+    ].join('\n');
+    await Promise.all([
+      writeFile(mainPath, mainText),
+      writeFile(sharedPath, sharedText),
+      writeFile(hiddenPath, hiddenText),
+    ]);
+
+    try {
+      const mainUri = pathToFileURL(mainPath).href;
+      const revision = await publishTextFiles(pathToFileURL(root).href, [
+        { uri: mainUri, text: mainText },
+        { uri: pathToFileURL(sharedPath).href, text: sharedText },
+        { uri: pathToFileURL(hiddenPath).href, text: hiddenText },
+      ]);
+
+      const signatureHelp = await revision.signatureHelpAt({
+        document: snapshot(mainUri, mainText),
+        position: positionOf(mainText, '    2', 0, 5),
+      });
+
+      expect(signatureHelp?.signatures.map((signature) => signature.label)).toEqual([
+        'float4 Shade(float x)',
+        'float4 Shade(float x, float y)',
+      ]);
+      expect(signatureHelp?.activeSignature).toBe(1);
+      expect(signatureHelp?.activeParameter).toBe(1);
+      expect(revision.workspaceSymbols('Shade')[0]).toMatchObject({
+        name: 'Shade',
+        containerName: 'Surface',
+      });
+      const memberPosition = positionOf(mainText, 'surface.Shade', 0, 'surface.'.length);
+      const definitions = await revision.definitionAt({
+        document: snapshot(mainUri, mainText),
+        position: memberPosition,
+      });
+      expect(definitions).toHaveLength(4);
+      expect(definitions?.every((location) => (
+        'targetUri' in location
+          ? location.targetUri === pathToFileURL(sharedPath).href
+          : location.uri === pathToFileURL(sharedPath).href
+      ))).toBe(true);
+
+      const references = await revision.referencesAt({
+        document: snapshot(mainUri, mainText),
+        position: memberPosition,
+        includeDeclaration: true,
+      });
+      expect(references).toHaveLength(6);
+      expect(references?.some((location) => location.uri === pathToFileURL(hiddenPath).href))
+        .toBe(false);
+
+      const highlights = await revision.highlightsAt({
+        document: snapshot(mainUri, mainText),
+        position: memberPosition,
+      });
+      expect(highlights?.map((highlight) => highlight.range.start.line)).toEqual([2, 7]);
+
+      const hover = await revision.hoverAt({
+        document: snapshot(mainUri, mainText),
+        position: memberPosition,
+      });
+      expect((hover?.contents as { value?: string }).value).toContain('_member of_ `Surface`');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('reuses published HLSL lexical facts for a high-line multiline call', async () => {
+    const uri = 'file:///project/HighLine.hlsl';
+    const text = [
+      'float Lighting(float x, float y) { return x + y; }',
+      ...Array.from({ length: 300 }, (_, index) => `float filler${index};`),
+      'float Use() {',
+      '  return Lighting(',
+      '    1,',
+      '    2',
+      '  );',
+      '}',
+    ].join('\n');
+    const document = snapshot(uri, text);
+    const position = positionOf(text, '    2', 0, 5);
+    const revision = await publishOpenDocument('file:///project', document);
+    const facts = createCursorRequestFacts(
+      document,
+      position,
+      revision.requestSource(document),
+    );
+
+    const signatureHelp = await revision.signatureHelpAt({ document, position }, facts);
+
+    expect(signatureHelp?.signatures.map((signature) => signature.label)).toEqual([
+      'float Lighting(float x, float y)',
+    ]);
+    expect(signatureHelp?.activeParameter).toBe(1);
   });
 
   it('keeps each published revision bound to its own suggestion selector', async () => {

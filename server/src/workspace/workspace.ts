@@ -225,7 +225,7 @@ export class Workspace implements IndexedWorkspace {
     const facts = createCursorRequestFacts(
       input.document,
       input.position,
-      this.captureServingRevision()?.requestAnalysis(input.document),
+      this.captureServingRevision()?.requestSource(input.document),
     );
     if (canNavigateDefinitionWithoutDocumentIndex(input, facts)) {
       return this.queryRevision(
@@ -250,7 +250,7 @@ export class Workspace implements IndexedWorkspace {
     const facts = createCursorRequestFacts(
       input.document,
       input.position,
-      this.captureServingRevision()?.requestAnalysis(input.document),
+      this.captureServingRevision()?.requestSource(input.document),
     );
     return this.queryRevision(
       input.document,
@@ -266,7 +266,7 @@ export class Workspace implements IndexedWorkspace {
     const facts = createCursorRequestFacts(
       input.document,
       input.position,
-      this.captureServingRevision()?.requestAnalysis(input.document),
+      this.captureServingRevision()?.requestSource(input.document),
     );
     return this.queryRevision(
       input.document,
@@ -282,7 +282,7 @@ export class Workspace implements IndexedWorkspace {
     const facts = createCursorRequestFacts(
       input.document,
       input.position,
-      this.captureServingRevision()?.requestAnalysis(input.document),
+      this.captureServingRevision()?.requestSource(input.document),
     );
     const withoutIndex = completionWithoutIndex(input, facts);
     if (withoutIndex !== undefined) return withoutIndex;
@@ -331,7 +331,7 @@ export class Workspace implements IndexedWorkspace {
     const facts = createCursorRequestFacts(
       input.document,
       input.position,
-      this.captureServingRevision()?.requestAnalysis(input.document),
+      this.captureServingRevision()?.requestSource(input.document),
     );
     if (!signatureHelpNeedsIndex(input, facts)) return null;
     return this.queryRevision(
@@ -348,7 +348,7 @@ export class Workspace implements IndexedWorkspace {
     const facts = createCursorRequestFacts(
       input.document,
       input.position,
-      this.captureServingRevision()?.requestAnalysis(input.document),
+      this.captureServingRevision()?.requestSource(input.document),
     );
     return this.queryRevision(
       input.document,
@@ -364,7 +364,7 @@ export class Workspace implements IndexedWorkspace {
     const facts = createCursorRequestFacts(
       input.document,
       input.position,
-      this.captureServingRevision()?.requestAnalysis(input.document),
+      this.captureServingRevision()?.requestSource(input.document),
     );
     return this.queryRevision(
       input.document,
@@ -382,7 +382,7 @@ export class Workspace implements IndexedWorkspace {
     const facts = createCursorRequestFacts(
       input.document,
       input.position,
-      this.captureServingRevision()?.requestAnalysis(input.document),
+      this.captureServingRevision()?.requestSource(input.document),
     );
     return this.queryRevision(
       input.document,

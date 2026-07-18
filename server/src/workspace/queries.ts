@@ -281,7 +281,7 @@ export async function querySignatureHelp(
     query: {
       kind: 'signature',
       context,
-      name: call.calleeName,
+      target: call.target,
       activeParameter: call.activeParameter,
     },
   });
@@ -475,7 +475,7 @@ export function compareWorkspaceSymbols(
 }
 
 function containerNameFor(symbol: SymbolEntry): string | undefined {
-  if (symbol.kind === 'structMember' && symbol.parentType) return symbol.parentType;
+  if (symbol.parentType) return symbol.parentType;
   return uriBasename(symbol.location.uri);
 }
 

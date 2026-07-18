@@ -1,5 +1,6 @@
 import type {
   FileIndex,
+  FunctionSymbolEntry,
   Position,
   Range,
   ReferenceEntry,
@@ -11,7 +12,10 @@ import type { CursorTarget } from './cursorTarget';
 import { resolveMemberSymbols } from './chainLookup';
 import { containsPosition } from '../sourceLocation';
 import { resolveDefinitionSymbols, type ResolutionOptions } from './symbolResolver';
+import { selectGlobalSymbolEntries } from './symbolSelection';
 import { memberAccessAt } from '../parser/lexical/cursor';
+import { locationKey } from '../sourceLocation';
+import { uriKey } from '../uriKey';
 
 export interface ReferenceTarget {
   name: string;
@@ -20,6 +24,16 @@ export interface ReferenceTarget {
   range: Range;
   scopeRange?: Range;
   parentType?: string;
+  methodSignature?: string;
+}
+
+export function methodSignatureOf(symbol: SymbolEntry): string | undefined {
+  if (symbol.kind !== 'function' || !symbol.parentType) return undefined;
+  const fn = symbol as FunctionSymbolEntry;
+  return [
+    fn.returnType,
+    fn.parameters.map((parameter) => parameter.type).join(','),
+  ].join('|');
 }
 
 function toReferenceTarget(symbol: SymbolEntry): ReferenceTarget {
@@ -32,12 +46,16 @@ function toReferenceTarget(symbol: SymbolEntry): ReferenceTarget {
 
   if (symbol.scopeRange) target.scopeRange = symbol.scopeRange;
   if (symbol.parentType) target.parentType = symbol.parentType;
+  const methodSignature = methodSignatureOf(symbol);
+  if (methodSignature) target.methodSignature = methodSignature;
 
   return target;
 }
 
 function isExactDeclarationTarget(symbol: SymbolEntry): boolean {
-  return symbol.kind === 'parameter' || symbol.kind === 'localVariable' || symbol.kind === 'structMember';
+  return symbol.kind === 'parameter'
+    || symbol.kind === 'localVariable'
+    || !!symbol.parentType;
 }
 
 export function resolveReferenceTargetsForName(
@@ -53,7 +71,24 @@ export function resolveReferenceTargetsForName(
       isExactDeclarationTarget(symbol) &&
       containsPosition(symbol.location.range, position),
   );
-  if (exactDeclarations.length > 0) return exactDeclarations.map(toReferenceTarget);
+  if (exactDeclarations.length > 0) {
+    const expanded = exactDeclarations.flatMap((declaration) => {
+      const signature = methodSignatureOf(declaration);
+      if (!signature || !declaration.parentType) return [declaration];
+      return selectGlobalSymbolEntries(index, name, global, options).filter((candidate) => (
+        candidate.kind === 'function'
+        && candidate.parentType === declaration.parentType
+        && methodSignatureOf(candidate) === signature
+      ));
+    });
+    const seen = new Set<string>();
+    return expanded.filter((symbol) => {
+      const key = locationKey(uriKey(symbol.location.uri), symbol.location.range);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).map(toReferenceTarget);
+  }
 
   return resolveDefinitionSymbols(index, name, position, global, options).map(toReferenceTarget);
 }
@@ -120,7 +155,7 @@ export function resolveReferenceTargetsForMemberReference(
   global?: GlobalSymbolReader | null,
   options?: ResolutionOptions,
 ): ReferenceTarget[] {
-  if (reference.context !== 'member' || !reference.receiver) return [];
+  if (!reference.receiver) return [];
 
   return resolveMemberSymbols(
     index,

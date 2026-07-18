@@ -171,10 +171,9 @@ function collisionReason(
       : undefined;
   }
 
-  if (target.kind === 'structMember') {
+  if (target.parentType) {
     const collision = state.index.global.lookup(newName).some((symbol) => (
-      symbol.kind === 'structMember'
-      && symbol.parentType === target.parentType
+      symbol.parentType === target.parentType
       && !sameRange(symbol.location.range, target.range)
     ));
     return collision
@@ -184,7 +183,7 @@ function collisionReason(
 
   const collision = state.index.global.lookup(newName).some((symbol) => (
     !isScoped(symbol)
-    && symbol.kind !== 'structMember'
+    && !symbol.parentType
     && !(
       uriKey(symbol.location.uri) === uriKey(target.uri)
       && sameRange(symbol.location.range, target.range)

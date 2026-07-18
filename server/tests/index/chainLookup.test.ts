@@ -38,6 +38,18 @@ function globalWithSurface(): GlobalSymbolIndex {
         location: { uri: 'file:///t/Surface.hlsl', range: memberRange },
       }),
       {
+        name: 'Shade',
+        kind: 'function',
+        parentType: 'Surface',
+        declaredType: 'MustNotBecomeReceiverType',
+        returnType: 'float4',
+        parameters: [],
+        location: {
+          uri: 'file:///t/Surface.hlsl',
+          range: { start: { line: 2, character: 8 }, end: { line: 2, character: 13 } },
+        },
+      },
+      {
         name: 'MakeSurface',
         kind: 'function',
         returnType: 'Surface',
@@ -118,6 +130,40 @@ function globalWithIssue9Types(): GlobalSymbolIndex {
 }
 
 describe('resolveMember', () => {
+  it('resolves a parent-owned function as a callable member', () => {
+    const idx: FileIndex = {
+      uri,
+      references: [],
+      symbols: [sym({
+        name: 'surface',
+        kind: 'parameter',
+        declaredType: 'Surface',
+        scopeRange: functionScope,
+      })],
+    };
+
+    const links = resolveMember(
+      idx,
+      globalWithSurface(),
+      'surface',
+      'Shade',
+      { line: 10, character: 22 },
+    );
+
+    expect(links).toEqual([expect.objectContaining({
+      targetRange: {
+        start: { line: 2, character: 8 },
+        end: { line: 2, character: 13 },
+      },
+    })]);
+    expect(inferReceiverTypeForCompletion(
+      idx,
+      globalWithSurface(),
+      'surface.Shade',
+      { line: 10, character: 22 },
+    )).toBeNull();
+  });
+
   it('resolves a member through a function parameter receiver', () => {
     const idx: FileIndex = {
       uri,
