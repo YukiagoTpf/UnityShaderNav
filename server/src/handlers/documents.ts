@@ -146,11 +146,15 @@ export function registerDocuments(
     }
   };
 
-  const routeLatest = (uri: string): void => {
+  const routeLatest = (uri: string, allowLazyCreation = true): void => {
     const key = uriKey(uri);
     const latest = openDocuments.get(key);
     if (!latest) return;
+    const routedOpenId = latest.openId;
     let routedSnapshot = latest;
+    const routeIsCurrent = (): boolean => (
+      openDocuments.get(key)?.openId === routedOpenId
+    );
 
     // Existing includes an initial/rebuilding Workspace. updateDocument records
     // the desired attempt synchronously and coalesces behind its operation queue.
@@ -159,16 +163,17 @@ export function registerDocuments(
       observe('document update', latest.uri, () => existing.updateDocument(latest));
       return;
     }
+    if (!allowLazyCreation) return;
 
     if (pendingLazyRoutes.has(key)) return;
     let route!: Promise<void>;
     route = (async () => {
       const workspace = await manager.workspaceForOrCreateFile(
         latest.uri,
-        () => openDocuments.has(key),
+        routeIsCurrent,
       );
       const current = openDocuments.get(key);
-      if (workspace && current) {
+      if (workspace && current?.openId === routedOpenId) {
         routedSnapshot = current;
         await workspace.updateDocument(current);
         if (openDocuments.get(key) === current) cancelPendingEditRoute(key);
@@ -197,11 +202,12 @@ export function registerDocuments(
 
   const routeLatestAfterEditWindow = (uri: string): void => {
     const key = uriKey(uri);
+    const hadWorkspace = manager.workspaceFor(uri) !== undefined;
     cancelPendingEditRoute(key);
     const timer = setTimeout(() => {
       if (pendingEditRoutes.get(key) !== timer) return;
       pendingEditRoutes.delete(key);
-      routeLatest(uri);
+      routeLatest(uri, !hadWorkspace);
     }, LIVE_EDIT_COALESCE_MS);
     pendingEditRoutes.set(key, timer);
   };

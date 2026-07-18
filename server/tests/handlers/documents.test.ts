@@ -253,6 +253,38 @@ describe('registerDocuments', () => {
     }
   });
 
+  it('does not recreate a removed owner from its delayed edit route', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createConnectionHarness();
+      const workspace = workspaceFixture();
+      let owner: IndexedWorkspace | undefined = workspace;
+      const manager = {
+        workspaceFor: () => owner,
+        servingWorkspaceFor: () => owner,
+        workspaceForOrCreateFile: vi.fn(async () => workspace),
+        releaseDocument: vi.fn(async () => {}),
+        configureOpenDocumentsProvider: vi.fn(),
+      };
+      const registered = registerDocuments(harness.connection, manager);
+
+      harness.open(openEvent('float4 BeforeRemoval() { return 0; }'));
+      await flushPromises();
+      expect(workspace.updateDocument).toHaveBeenCalledTimes(1);
+
+      harness.change(changeEvent('float4 DelayedEdit() { return 0; }', 2));
+      expect(registered.snapshot(uri)).toMatchObject({ version: 2 });
+      owner = undefined;
+      await vi.advanceTimersByTimeAsync(75);
+      await flushPromises();
+
+      expect(manager.workspaceForOrCreateFile).not.toHaveBeenCalled();
+      expect(workspace.updateDocument).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('reroutes the latest edit when a lazy document update outlives the edit window', async () => {
     vi.useFakeTimers();
     const firstUpdate = deferred<boolean>();
@@ -294,6 +326,62 @@ describe('registerDocuments', () => {
     }
   });
 
+  it('does not let a delayed edit route cross a close and reopen boundary', async () => {
+    vi.useFakeTimers();
+    const releaseRetiredRoute = deferred<void>();
+    try {
+      const harness = createConnectionHarness();
+      const workspace = workspaceFixture();
+      let existingWorkspace: IndexedWorkspace | undefined = workspace;
+      let retiredRouteCreatedWorkspace = false;
+      const manager = {
+        workspaceFor: () => existingWorkspace,
+        servingWorkspaceFor: () => existingWorkspace,
+        workspaceForOrCreateFile: vi.fn()
+          .mockImplementationOnce(async (
+            _uri: string,
+            shouldCreate: () => boolean,
+          ) => {
+            await releaseRetiredRoute.promise;
+            retiredRouteCreatedWorkspace = shouldCreate();
+            return retiredRouteCreatedWorkspace ? workspace : undefined;
+          })
+          .mockResolvedValueOnce(workspace),
+        releaseDocument: vi.fn(async () => {}),
+        configureOpenDocumentsProvider: vi.fn(),
+      };
+      registerDocuments(harness.connection, manager);
+
+      harness.open(openEvent('float4 FirstSession() { return 0; }'));
+      await flushPromises();
+      expect(workspace.updateDocument).toHaveBeenCalledWith(expect.objectContaining({
+        openId: 1,
+        version: 1,
+      }));
+
+      existingWorkspace = undefined;
+      harness.change(changeEvent('float4 RetiredEdit() { return 0; }', 2));
+      await vi.advanceTimersByTimeAsync(75);
+      expect(manager.workspaceForOrCreateFile).toHaveBeenCalledTimes(1);
+
+      harness.close({ textDocument: { uri } });
+      harness.open(openEvent('float4 ReopenedSession() { return 0; }'));
+      releaseRetiredRoute.resolve();
+      await flushPromises();
+
+      expect(retiredRouteCreatedWorkspace).toBe(false);
+      expect(manager.workspaceForOrCreateFile).toHaveBeenCalledTimes(2);
+      expect(workspace.updateDocument).toHaveBeenLastCalledWith(expect.objectContaining({
+        openId: 2,
+        version: 1,
+        text: 'float4 ReopenedSession() { return 0; }',
+      }));
+    } finally {
+      releaseRetiredRoute.resolve();
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps one lazy ensure and submits only the latest edit', async () => {
     const harness = createConnectionHarness();
     const workspace = workspaceFixture();
@@ -328,11 +416,19 @@ describe('registerDocuments', () => {
   it('does not resurrect a document closed while lazy routing is pending', async () => {
     const harness = createConnectionHarness();
     const workspace = workspaceFixture();
-    const pending = deferred<IndexedWorkspace | undefined>();
+    const pending = deferred<void>();
+    let createdWorkspace = false;
     const manager = {
       workspaceFor: () => undefined,
       servingWorkspaceFor: () => undefined,
-      workspaceForOrCreateFile: vi.fn(() => pending.promise),
+      workspaceForOrCreateFile: vi.fn(async (
+        _uri: string,
+        shouldCreate: () => boolean,
+      ) => {
+        await pending.promise;
+        createdWorkspace = shouldCreate();
+        return createdWorkspace ? workspace : undefined;
+      }),
       releaseDocument: vi.fn(async () => {}),
       configureOpenDocumentsProvider: vi.fn(),
     };
@@ -340,9 +436,10 @@ describe('registerDocuments', () => {
 
     harness.open(openEvent('float4 Closed() { return 0; }'));
     harness.close({ textDocument: { uri } });
-    pending.resolve(workspace);
+    pending.resolve();
     await flushPromises();
 
+    expect(createdWorkspace).toBe(false);
     expect(workspace.updateDocument).not.toHaveBeenCalled();
     expect(workspace.closeDocument).not.toHaveBeenCalled();
     expect(manager.workspaceForOrCreateFile).toHaveBeenCalledTimes(1);
