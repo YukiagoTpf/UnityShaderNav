@@ -33,6 +33,14 @@ UnityShaderNav 本身**不评估**预处理条件（见 [ADR-0001](0001-multi-ca
 含义：一个**可能**通过未知宏（来自 include / material keyword）而生效的分支，
 绝不会被当作"仅 variant 门控"而变暗。这是对 false dimming 的刻意防御。
 
+### 支持的条件表达式子集
+
+呈现层求值器支持十进制整数、裸宏名、`defined`、`!`、整数比较、括号以及按 C
+优先级组合的 `&&` / `||`。整数 `0` 为假，其他整数为真；裸宏名复用与 `#ifdef`
+相同的四值状态。只有两侧都拥有可证明的整数值时才执行比较，因此未知宏或仅能证明
+“已定义”但不知道替换值的宏参与比较时仍返回 `UNKNOWN`。算术、位运算、宏调用及其他
+未支持语法整体返回 `UNKNOWN`，不会依靠局部猜测变暗分支。
+
 ### Variant keyword 来自 pragma，`.shader` 全文件收集
 
 variant keyword 取自 `#pragma multi_compile*` / `#pragma shader_feature*`

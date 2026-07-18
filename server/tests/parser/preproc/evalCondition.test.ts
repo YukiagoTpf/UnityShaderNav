@@ -157,15 +157,69 @@ describe('evalCondition — defined(A) || defined(B) (or table)', () => {
   });
 });
 
+describe('evalCondition — literals, bare macros, comparisons, and precedence', () => {
+  it('coerces integer literals with C truthiness', () => {
+    expect(evalCondition('if', '0', state())).toBe('FALSE');
+    expect(evalCondition('if', '1', state())).toBe('TRUE');
+    expect(evalCondition('elif', '42', state())).toBe('TRUE');
+  });
+
+  it('resolves a bare macro through the same four macro-state buckets as ifdef', () => {
+    const cases: Array<[MacroState, CondValue]> = [
+      [state({ D: ['MACRO'] }), 'TRUE'],
+      [state({ U: ['MACRO'] }), 'FALSE'],
+      [state({ V: ['MACRO'] }), 'VARIANT'],
+      [state(), 'UNKNOWN'],
+    ];
+
+    for (const [macroState, expected] of cases) {
+      expect(evalCondition('if', 'MACRO', macroState)).toBe(expected);
+      expect(evalCondition('ifdef', 'MACRO', macroState)).toBe(expected);
+    }
+  });
+
+  it('evaluates integer comparisons and parenthesized subexpressions', () => {
+    const comparisons: Array<[string, CondValue]> = [
+      ['1 < 2', 'TRUE'],
+      ['2 <= 2', 'TRUE'],
+      ['3 > 4', 'FALSE'],
+      ['4 >= 4', 'TRUE'],
+      ['5 == 5', 'TRUE'],
+      ['5 != 5', 'FALSE'],
+      ['(1 < 2) && (3 >= 3)', 'TRUE'],
+      ['(1 > 2) || (3 != 3)', 'FALSE'],
+    ];
+
+    for (const [expr, expected] of comparisons) {
+      expect(evalCondition('if', expr, state())).toBe(expected);
+    }
+  });
+
+  it('keeps comparisons involving macros without a proven integer value unknown', () => {
+    expect(evalCondition('if', 'UNITY_VERSION >= 202120', state())).toBe('UNKNOWN');
+    expect(evalCondition('if', 'LOCAL_VERSION >= 1', state({ D: ['LOCAL_VERSION'] })))
+      .toBe('UNKNOWN');
+  });
+
+  it('uses standard && before || precedence and lets parentheses override it', () => {
+    const s = state({ D: ['A', 'C'], U: ['B'] });
+    expect(evalCondition('if', 'defined(A) && defined(B) || defined(C)', s)).toBe('TRUE');
+    expect(evalCondition('if', 'defined(A) || defined(B) && defined(B)', s)).toBe('TRUE');
+    expect(evalCondition('if', '(defined(A) || defined(B)) && defined(B)', s)).toBe('FALSE');
+  });
+
+  it('preserves UNKNOWN dominance over VARIANT in mixed expressions', () => {
+    const s = state({ V: ['VARIANT_MACRO'] });
+    expect(evalCondition('if', 'UNKNOWN_MACRO && 1 || VARIANT_MACRO', s)).toBe('UNKNOWN');
+  });
+});
+
 describe('evalCondition — unsupported expressions collapse to UNKNOWN', () => {
   const s = state({ D: ['A'], V: ['FOO'] });
   const unsupported: Array<[CondKind, string]> = [
     ['if', 'A > 2'],
     ['if', 'FOO(1)'],
-    ['if', '1'],
-    ['if', '0'],
     ['if', 'A == B'],
-    ['if', 'defined(A) && defined(B) || defined(C)'], // mixed && / ||
     ['if', 'defined(A) +'],
     ['if', ''],
     ['ifdef', 'A B'], // not a bare name

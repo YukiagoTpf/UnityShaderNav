@@ -109,6 +109,47 @@ describe('analyzeInactiveRegions — #if defined / !defined / && / ||', () => {
   });
 });
 
+describe('analyzeInactiveRegions — integer and bare-macro conditions', () => {
+  it('#if 0 dims its body while leaving the else branch visible', () => {
+    const src = ['#if 0', 'inactive;', '#else', 'active;', '#endif'].join('\n');
+    const regions = hlsl(src);
+
+    expect(hasRegion(regions, 1, 1, 'inactive')).toBe(true);
+    expect(regions.some((region) => region.range.start.line <= 3 && region.range.end.line >= 3))
+      .toBe(false);
+  });
+
+  it('#if 1 leaves its body visible and dims the else branch', () => {
+    const src = ['#if 1', 'active;', '#else', 'inactive;', '#endif'].join('\n');
+    const regions = hlsl(src);
+
+    expect(hasRegion(regions, 3, 3, 'inactive')).toBe(true);
+    expect(regions.some((region) => region.range.start.line <= 1 && region.range.end.line >= 1))
+      .toBe(false);
+  });
+
+  it('bare macros follow define, undef, and variant state', () => {
+    const src = [
+      '#define ENABLED',
+      '#if ENABLED',
+      'active;',
+      '#endif',
+      '#undef ENABLED',
+      '#if ENABLED',
+      'inactive;',
+      '#endif',
+      '#pragma multi_compile _ VARIANT_MACRO',
+      '#if VARIANT_MACRO',
+      'variant;',
+      '#endif',
+    ].join('\n');
+    const regions = hlsl(src);
+
+    expect(hasRegion(regions, 6, 6, 'inactive')).toBe(true);
+    expect(hasRegion(regions, 10, 10, 'variant')).toBe(true);
+  });
+});
+
 describe('analyzeInactiveRegions — VARIANT || UNKNOWN false-dim guard', () => {
   it('VARIANT || UNKNOWN stays visible', () => {
     const src = [
@@ -251,12 +292,12 @@ describe('analyzeInactiveRegions — nesting', () => {
 });
 
 describe('analyzeInactiveRegions — unknown / complex expressions', () => {
-  it('unknown macro and arithmetic conditions stay visible', () => {
+  it('unknown macro and unsupported arithmetic conditions stay visible', () => {
     const src = [
       '#if SOMETHING_FROM_INCLUDE', // 0 UNKNOWN
       'a;', // 1
       '#endif', // 2
-      '#if 1', // 3 UNKNOWN (arithmetic literal not modeled)
+      '#if VALUE + 1', // 3 UNKNOWN (arithmetic is not modeled)
       'b;', // 4
       '#endif', // 5
       '#if FOO > 2', // 6 UNKNOWN

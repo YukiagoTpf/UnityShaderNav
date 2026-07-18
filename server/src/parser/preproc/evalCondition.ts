@@ -70,12 +70,19 @@ type Token =
   | { kind: 'not' }
   | { kind: 'and' }
   | { kind: 'or' }
+  | { kind: 'eq' }
+  | { kind: 'ne' }
+  | { kind: 'lt' }
+  | { kind: 'le' }
+  | { kind: 'gt' }
+  | { kind: 'ge' }
+  | { kind: 'integer'; value: bigint }
   | { kind: 'ident'; value: string };
 
 /**
- * Tokenize on the supported set only: `defined`, `(`, `)`, `!`, `&&`, `||`, and
- * identifiers. Returns `null` on any character outside this set so callers fall
- * back to `UNKNOWN`.
+ * Tokenize on the supported set only. Returns `null` on any character outside
+ * this set so callers fall back to `UNKNOWN` rather than guessing at C syntax
+ * that this presentation-only evaluator does not model.
  */
 function tokenize(expr: string): Token[] | null {
   const tokens: Token[] = [];
@@ -99,11 +106,6 @@ function tokenize(expr: string): Token[] | null {
       i++;
       continue;
     }
-    if (c === '!') {
-      tokens.push({ kind: 'not' });
-      i++;
-      continue;
-    }
     if (c === '&' && expr[i + 1] === '&') {
       tokens.push({ kind: 'and' });
       i += 2;
@@ -114,6 +116,48 @@ function tokenize(expr: string): Token[] | null {
       i += 2;
       continue;
     }
+    if (c === '=' && expr[i + 1] === '=') {
+      tokens.push({ kind: 'eq' });
+      i += 2;
+      continue;
+    }
+    if (c === '!' && expr[i + 1] === '=') {
+      tokens.push({ kind: 'ne' });
+      i += 2;
+      continue;
+    }
+    if (c === '<' && expr[i + 1] === '=') {
+      tokens.push({ kind: 'le' });
+      i += 2;
+      continue;
+    }
+    if (c === '>' && expr[i + 1] === '=') {
+      tokens.push({ kind: 'ge' });
+      i += 2;
+      continue;
+    }
+    if (c === '!') {
+      tokens.push({ kind: 'not' });
+      i++;
+      continue;
+    }
+    if (c === '<') {
+      tokens.push({ kind: 'lt' });
+      i++;
+      continue;
+    }
+    if (c === '>') {
+      tokens.push({ kind: 'gt' });
+      i++;
+      continue;
+    }
+    if (/\d/.test(c)) {
+      let j = i + 1;
+      while (j < n && /\d/.test(expr[j])) j++;
+      tokens.push({ kind: 'integer', value: BigInt(expr.slice(i, j)) });
+      i = j;
+      continue;
+    }
     if (/[A-Za-z_]/.test(c)) {
       let j = i + 1;
       while (j < n && /[A-Za-z0-9_]/.test(expr[j])) j++;
@@ -122,22 +166,76 @@ function tokenize(expr: string): Token[] | null {
       i = j;
       continue;
     }
-    // Anything else (digits, comparison ops, commas, etc.) is unsupported.
+    // Arithmetic, calls, bitwise operators, commas, and all other syntax stay unsupported.
     return null;
   }
 
   return tokens;
 }
 
+interface EvalValue {
+  condition: CondValue;
+  /** Exact integer value when proven; null for macros whose replacement value is unknown. */
+  integer: bigint | null;
+}
+
+function conditionValue(condition: CondValue): EvalValue {
+  return {
+    condition,
+    integer: condition === 'TRUE' ? 1n : condition === 'FALSE' ? 0n : null,
+  };
+}
+
+function macroValue(name: string, state: MacroState): EvalValue {
+  return { condition: evalDefined(name, state), integer: null };
+}
+
+function integerValue(integer: bigint): EvalValue {
+  return { condition: integer === 0n ? 'FALSE' : 'TRUE', integer };
+}
+
+type ComparisonKind = 'eq' | 'ne' | 'lt' | 'le' | 'gt' | 'ge';
+
+function compare(kind: ComparisonKind, left: EvalValue, right: EvalValue): EvalValue {
+  if (left.integer === null || right.integer === null) {
+    return { condition: 'UNKNOWN', integer: null };
+  }
+
+  let result: boolean;
+  switch (kind) {
+    case 'eq':
+      result = left.integer === right.integer;
+      break;
+    case 'ne':
+      result = left.integer !== right.integer;
+      break;
+    case 'lt':
+      result = left.integer < right.integer;
+      break;
+    case 'le':
+      result = left.integer <= right.integer;
+      break;
+    case 'gt':
+      result = left.integer > right.integer;
+      break;
+    case 'ge':
+      result = left.integer >= right.integer;
+      break;
+  }
+  return conditionValue(result ? 'TRUE' : 'FALSE');
+}
+
 /**
- * Recursive-descent parser for the tiny grammar:
+ * Recursive-descent parser for the supported C-preprocessor expression subset:
  *
- *   expr   := term ( '&&' term )* | term ( '||' term )*   // no mixing &&/||
- *   term   := '!' term | 'defined' atom
- *   atom   := '(' IDENT ')' | IDENT
+ *   or         := and ( '||' and )*
+ *   and        := equality ( '&&' equality )*
+ *   equality   := relational ( ('==' | '!=') relational )*
+ *   relational := unary ( ('<' | '<=' | '>' | '>=') unary )*
+ *   unary      := '!' unary | primary
+ *   primary    := INTEGER | IDENT | defined-atom | '(' or ')'
  *
- * Returns `null` (→ UNKNOWN) for anything it can't model, including a mix of
- * `&&` and `||` at the same level.
+ * Returns `null` (→ UNKNOWN) for malformed or unsupported syntax.
  */
 class Parser {
   private pos = 0;
@@ -148,60 +246,116 @@ class Parser {
   ) {}
 
   parse(): CondValue | null {
-    const value = this.parseExpr();
+    const value = this.parseOr();
     if (value === null) return null;
     if (this.pos !== this.tokens.length) return null; // trailing tokens ⇒ unsupported
-    return value;
+    return value.condition;
   }
 
   private peek(): Token | undefined {
     return this.tokens[this.pos];
   }
 
-  private parseExpr(): CondValue | null {
-    const first = this.parseTerm();
-    if (first === null) return null;
-
-    const next = this.peek();
-    if (!next || next.kind === 'rparen') return first;
-    if (next.kind !== 'and' && next.kind !== 'or') return null;
-
-    const op = next.kind; // lock to a single operator for the whole chain
-    let acc = first;
-    while (this.peek() && this.peek()!.kind === op) {
-      this.pos++; // consume operator
-      const rhs = this.parseTerm();
+  private parseOr(): EvalValue | null {
+    let acc = this.parseAnd();
+    if (acc === null) return null;
+    while (this.peek()?.kind === 'or') {
+      this.pos++;
+      const rhs = this.parseAnd();
       if (rhs === null) return null;
-      acc = op === 'and' ? and(acc, rhs) : or(acc, rhs);
+      acc = conditionValue(or(acc.condition, rhs.condition));
     }
-
-    // Reject a mix like `defined(A) && defined(B) || defined(C)`.
-    const after = this.peek();
-    if (after && (after.kind === 'and' || after.kind === 'or')) return null;
-
     return acc;
   }
 
-  private parseTerm(): CondValue | null {
+  private parseAnd(): EvalValue | null {
+    let acc = this.parseEquality();
+    if (acc === null) return null;
+    while (this.peek()?.kind === 'and') {
+      this.pos++;
+      const rhs = this.parseEquality();
+      if (rhs === null) return null;
+      acc = conditionValue(and(acc.condition, rhs.condition));
+    }
+    return acc;
+  }
+
+  private parseEquality(): EvalValue | null {
+    let acc = this.parseRelational();
+    if (acc === null) return null;
+    while (this.peek()?.kind === 'eq' || this.peek()?.kind === 'ne') {
+      const operator = this.peek()!.kind as 'eq' | 'ne';
+      this.pos++;
+      const rhs = this.parseRelational();
+      if (rhs === null) return null;
+      acc = compare(operator, acc, rhs);
+    }
+    return acc;
+  }
+
+  private parseRelational(): EvalValue | null {
+    let acc = this.parseUnary();
+    if (acc === null) return null;
+    while (
+      this.peek()?.kind === 'lt'
+      || this.peek()?.kind === 'le'
+      || this.peek()?.kind === 'gt'
+      || this.peek()?.kind === 'ge'
+    ) {
+      const operator = this.peek()!.kind as 'lt' | 'le' | 'gt' | 'ge';
+      this.pos++;
+      const rhs = this.parseUnary();
+      if (rhs === null) return null;
+      acc = compare(operator, acc, rhs);
+    }
+    return acc;
+  }
+
+  private parseUnary(): EvalValue | null {
     const t = this.peek();
     if (!t) return null;
 
     if (t.kind === 'not') {
       this.pos++;
-      const inner = this.parseTerm();
+      const inner = this.parseUnary();
       if (inner === null) return null;
-      return not(inner);
+      return conditionValue(not(inner.condition));
     }
+
+    return this.parsePrimary();
+  }
+
+  private parsePrimary(): EvalValue | null {
+    const t = this.peek();
+    if (!t) return null;
 
     if (t.kind === 'defined') {
       this.pos++;
       return this.parseDefinedAtom();
     }
 
+    if (t.kind === 'integer') {
+      this.pos++;
+      return integerValue(t.value);
+    }
+
+    if (t.kind === 'ident') {
+      this.pos++;
+      return macroValue(t.value, this.state);
+    }
+
+    if (t.kind === 'lparen') {
+      this.pos++;
+      const inner = this.parseOr();
+      if (inner === null || this.peek()?.kind !== 'rparen') return null;
+      this.pos++;
+      return inner;
+    }
+
     return null;
   }
 
-  private parseDefinedAtom(): CondValue | null {
+  private parseDefinedAtom(): EvalValue | null {
     const t = this.peek();
     if (!t) return null;
 
@@ -213,12 +367,12 @@ class Parser {
       const close = this.peek();
       if (!close || close.kind !== 'rparen') return null;
       this.pos++;
-      return evalDefined(name.value, this.state);
+      return conditionValue(evalDefined(name.value, this.state));
     }
 
     if (t.kind === 'ident') {
       this.pos++;
-      return evalDefined(t.value, this.state);
+      return conditionValue(evalDefined(t.value, this.state));
     }
 
     return null;
