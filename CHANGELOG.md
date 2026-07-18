@@ -15,6 +15,17 @@ and uses semantic versioning for extension releases.
 
 ### Changed
 
+- Reduced the VSIX to an exact 18-file allowlist containing the minified
+  Extension and server bundles, parser/runtime assets, generated third-party
+  notices, language metadata, and release files. Loose transpiled client/server
+  modules and the unused runtime artifact manifest are no longer packaged.
+- Made the language-client termination script a graph-owned runtime file and
+  normalized its VSIX entry to Unix mode `100755` on every packaging host; all
+  other regular entries use `100644`.
+- Added pinned `wasm-opt -Oz` verification to the reproducible HLSL grammar
+  rebuild. The checked artifact changes from 4,223,843 to 4,223,826 bytes, a
+  17-byte size reduction only; it does not establish a runtime performance
+  improvement.
 - Reused exact-source lines, lexical roles, and cursor facts across each live
   document request; pushed Completion prefix filtering into
   current/include-visible symbol iteration; and made LSP cancellation

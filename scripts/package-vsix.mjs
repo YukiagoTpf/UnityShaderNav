@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { listFiles, PackageManager } from '@vscode/vsce';
 import runtimeArtifacts from './runtime-artifacts.cjs';
+import vsixFileModes from './vsix-file-modes.cjs';
 
 const MINIMUM_VSIX_BYTES = 1_024;
 const defaultRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -65,6 +66,8 @@ async function packageVsix() {
       : npxArgs;
     await run(command, commandArgs, clientRoot);
     await assertPackageReady();
+    await assertVsixFile(vsixPath);
+    await vsixFileModes.normalizeVsixFileModes(vsixPath);
     vsixStat = await assertVsixFile(vsixPath);
   } catch (error) {
     failure = asError(error);

@@ -485,13 +485,24 @@ or repository-escaping files; parent-directory symlinks cannot move a critical
 path outside the canonical repository root. Packaging and direct VSCE prepublish
 also require every path in VSCE's public file plan to be unique, canonical,
 regular, and contained by the Extension root, and require that plan to contain
-every graph-owned package path. Current-run packaging checks that VSCE produced
-a non-trivial VSIX file.
-Packaging does not parse ZIP bytes or maintain a parallel content manifest. A
-failed attempt restores staged metadata before deleting its exact versioned
-VSIX; unrelated package files are untouched. Source, tsc-out, copied-server,
-and bundled-server parser layouts remain distinct runtime interpretations of
-this one assembled graph.
+every graph-owned package path. That plan is an exact 18-file allowlist: seven
+Extension metadata/release files, two minified bundles, three grammar files,
+four `web-tree-sitter` runtime files, generated third-party notices, and the
+language-client termination script. No loose transpiled client/server modules,
+source maps, or runtime verification manifest are packaged. The notice file is
+derived from both esbuild metafiles and is removed on any invalid bundled
+package identity or license evidence.
+
+Current-run packaging checks that VSCE produced a non-trivial regular VSIX,
+then uses ZIP libraries to rewrite it through a bounded sibling temporary file.
+The exact `extension/out/terminateProcess.sh` entry has Unix mode `100755` on
+every packaging host and every other regular entry has `100644`; the workflow
+does not implement ZIP byte parsing. A failed attempt restores staged metadata
+before deleting its exact versioned VSIX; unrelated package files are untouched.
+The grammar rebuild records and verifies the pinned `wasm-opt -Oz` transition
+from 4,223,843 to 4,223,826 bytes. The 17-byte delta is not a runtime performance
+claim. Source, tsc-out, copied-server, and bundled-server parser layouts remain
+distinct runtime interpretations of this one assembled graph.
 
 Persistence contains only an immutable published revision's disk indexes and
 the source identities captured with them. It excludes live overlays, document

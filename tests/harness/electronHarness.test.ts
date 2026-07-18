@@ -73,6 +73,55 @@ suite('Electron harness', () => {
     }
   });
 
+  test('stages only the 15 graph-owned extension runtime files', async () => {
+    const fake = await createFakeRepository();
+    try {
+      await runElectronHarness(
+        {
+          repositoryRoot: fake.root,
+          fixtureRelativePath: 'tests/fixtures/empty-workspace',
+          suite: 'activation',
+          sandboxBase: fake.sandboxBase,
+        },
+        async (options) => {
+          const sandboxRoot = options.extensionTestsEnv?.USN_HARNESS_ROOT;
+          assert.ok(sandboxRoot);
+          const extensionRoot = path.join(sandboxRoot, 'e');
+          const stagedFiles = (await snapshotTree(extensionRoot))
+            .filter((entry) => entry.startsWith('file:'))
+            .map((entry) => entry.slice('file:'.length, entry.indexOf(':', 'file:'.length)))
+            .sort();
+
+          assert.deepStrictEqual(stagedFiles, [
+            'images/icon.png',
+            'language-configuration/hlsl.json',
+            'language-configuration/shader.json',
+            'out/THIRD_PARTY_NOTICES.txt',
+            'out/extension.js',
+            'out/grammars/tree-sitter-hlsl.LICENSE',
+            'out/grammars/tree-sitter-hlsl.provenance.json',
+            'out/grammars/tree-sitter-hlsl.wasm',
+            'out/server/node_modules/web-tree-sitter/LICENSE',
+            'out/server/node_modules/web-tree-sitter/package.json',
+            'out/server/node_modules/web-tree-sitter/tree-sitter.js',
+            'out/server/node_modules/web-tree-sitter/tree-sitter.wasm',
+            'out/server/server.js',
+            'out/terminateProcess.sh',
+            'package.json',
+          ]);
+          if (process.platform !== 'win32') {
+            const terminatorMode = (await fs.stat(
+              path.join(extensionRoot, 'out/terminateProcess.sh'),
+            )).mode;
+            assert.notStrictEqual(terminatorMode & 0o111, 0);
+          }
+        },
+      );
+    } finally {
+      await fake.cleanup();
+    }
+  });
+
   test('stages deterministic short paths without Library state and cleans successful runs', async () => {
     const fake = await createFakeRepository();
     const sourceBefore = await snapshotTree(fake.root);
@@ -241,12 +290,24 @@ async function createFakeRepository(): Promise<FakeRepository> {
 
   const files: Array<[string, string]> = [
     ['client/package.json', '{"name":"fixture-extension","main":"./out/extension.js"}\n'],
+    ['client/out/client.js', 'loose client module\n'],
+    ['client/out/THIRD_PARTY_NOTICES.txt', 'third-party notices\n'],
     ['client/out/extension.js', 'module.exports = {};\n'],
+    ['client/out/grammars/tree-sitter-hlsl.LICENSE', 'grammar license'],
+    ['client/out/grammars/tree-sitter-hlsl.provenance.json', '{"source":"fixture"}\n'],
     ['client/out/grammars/tree-sitter-hlsl.wasm', 'grammar'],
+    ['client/out/server/parser/hlsl/parser.js', 'loose server module\n'],
+    ['client/out/server/server.js', 'bundled server\n'],
+    ['client/out/server/node_modules/web-tree-sitter/LICENSE', 'runtime license'],
+    ['client/out/server/node_modules/web-tree-sitter/package.json', '{"name":"web-tree-sitter"}\n'],
+    ['client/out/server/node_modules/web-tree-sitter/README.md', 'runtime readme'],
     ['client/out/server/node_modules/web-tree-sitter/tree-sitter.js', 'runtime'],
+    ['client/out/server/node_modules/web-tree-sitter/tree-sitter-web.d.ts', 'runtime types'],
     ['client/out/server/node_modules/web-tree-sitter/tree-sitter.wasm', 'runtime wasm'],
+    ['client/out/terminateProcess.sh', '#!/bin/sh\nexit 0\n'],
     ['client/images/icon.png', 'fixture icon'],
     ['client/language-configuration/hlsl.json', '{}\n'],
+    ['client/language-configuration/shader.json', '{}\n'],
     ['tests/out/client/suite/index.js', 'exports.run = async () => {};\n'],
     ['tests/out/integration/client/example.test.js', 'module.exports = {};\n'],
     ['tests/fixtures/empty-workspace/.gitkeep', ''],
@@ -260,6 +321,9 @@ async function createFakeRepository(): Promise<FakeRepository> {
     ['tests/vscode-version.txt', '1.85.2\n'],
   ];
   for (const [relativePath, content] of files) await write(root, relativePath, content);
+  if (process.platform !== 'win32') {
+    await fs.chmod(path.join(root, 'client/out/terminateProcess.sh'), 0o755);
+  }
 
   return {
     root,

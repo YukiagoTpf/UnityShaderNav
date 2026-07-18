@@ -1,10 +1,51 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, rm, symlink, unlink, writeFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import {
+  chmod,
+  mkdtemp,
+  mkdir,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import runtimeArtifacts from './runtime-artifacts.cjs';
+
+test('runtime graph owns the exact 18-file VSIX payload', () => {
+  const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const graph = runtimeArtifacts.createRuntimeArtifactGraph(repositoryRoot);
+  const expectedPackagePaths = [
+    'package.json',
+    'README.md',
+    'CHANGELOG.md',
+    'LICENSE',
+    'images/icon.png',
+    'language-configuration/shader.json',
+    'language-configuration/hlsl.json',
+    'out/extension.js',
+    'out/THIRD_PARTY_NOTICES.txt',
+    'out/terminateProcess.sh',
+    'out/server/server.js',
+    'out/grammars/tree-sitter-hlsl.wasm',
+    'out/grammars/tree-sitter-hlsl.provenance.json',
+    'out/grammars/tree-sitter-hlsl.LICENSE',
+    'out/server/node_modules/web-tree-sitter/LICENSE',
+    'out/server/node_modules/web-tree-sitter/package.json',
+    'out/server/node_modules/web-tree-sitter/tree-sitter.js',
+    'out/server/node_modules/web-tree-sitter/tree-sitter.wasm',
+  ];
+
+  assert.deepEqual(
+    [...graph.requiredPackagePaths].sort(),
+    expectedPackagePaths.sort(),
+  );
+});
 
 test('one graph assembles the complete grammar and web-tree-sitter runtime', async () => {
   const fixture = await createFixture();
@@ -23,6 +64,8 @@ test('one graph assembles the complete grammar and web-tree-sitter runtime', asy
       'runtime-extra',
     );
     assert(fixture.graph.watchInputs.includes('node_modules/web-tree-sitter'));
+    assert(fixture.graph.watchInputs.includes('package.json'));
+    assert(fixture.graph.watchInputs.includes('package-lock.json'));
     assert.deepEqual(fixture.graph.bundles, [
       {
         id: 'extension',
@@ -53,6 +96,50 @@ test('one graph assembles the complete grammar and web-tree-sitter runtime', asy
         `package graph must require ${packagePath}`,
       );
     }
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test('runtime assembly installs an executable language-client terminator', async () => {
+  const fixture = await createFixture();
+  try {
+    await runtimeArtifacts.assembleCopiedServerRuntime(fixture.graph);
+    const terminator = join(fixture.root, 'client/out/terminateProcess.sh');
+    const contents = await readFile(terminator, 'utf8');
+
+    assert.match(contents, /^#!\/bin\/sh/);
+    if (process.platform !== 'win32') {
+      assert.notEqual((await stat(terminator)).mode & 0o111, 0);
+      const marker = join(fixture.root, 'terminator-marker.txt');
+      const result = spawnSync(terminator, ['stuck-child'], {
+        env: { ...process.env, USN_TERMINATOR_MARKER: marker },
+        encoding: 'utf8',
+      });
+      assert.equal(result.status, 0, result.error?.message || result.stderr);
+      assert.equal(await readFile(marker, 'utf8'), 'stuck-child');
+    }
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test('runtime assertions reject a non-executable language-client terminator', {
+  skip: process.platform === 'win32',
+}, async () => {
+  const fixture = await createFixture();
+  try {
+    await runtimeArtifacts.assembleCopiedServerRuntime(fixture.graph);
+    await write(
+      join(fixture.root, 'client/out/extension.js'),
+      Buffer.alloc(2_048, 'e'),
+    );
+    await chmod(join(fixture.root, 'client/out/terminateProcess.sh'), 0o644);
+
+    await assert.rejects(
+      runtimeArtifacts.assertRuntimeArtifacts(fixture.graph),
+      /client\/out\/terminateProcess\.sh must be executable/,
+    );
   } finally {
     await fixture.cleanup();
   }
@@ -248,6 +335,28 @@ test('package plan rejects duplicate and non-canonical raw paths', async () => {
   }
 });
 
+test('package plan rejects a regular file outside the exact graph allowlist', async () => {
+  const fixture = await createFixture();
+  try {
+    await runtimeArtifacts.assembleCopiedServerRuntime(fixture.graph);
+    await write(
+      join(fixture.root, 'client/out/extension.js'),
+      Buffer.alloc(2_048, 'e'),
+    );
+    await write(join(fixture.root, 'client/extra.js'), 'module.exports = {};');
+
+    await assert.rejects(
+      runtimeArtifacts.assertPackagePlan(fixture.graph, [
+        ...fixture.graph.requiredPackagePaths,
+        'extra.js',
+      ]),
+      /VSCE package plan contains unexpected file extra\.js/,
+    );
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
 test('runtime artifact contract has no content manifest or input freshness state', async () => {
   const fixture = await createFixture();
   try {
@@ -314,10 +423,46 @@ test('build, watch, packaging, tests, and Electron staging consume the graph', a
     packageSource,
     /inflateRawSync|readUInt(?:16|32)LE|central directory|sha256/i,
   );
+  const modeNormalizerSource = await readFile(
+    join(repositoryRoot, 'scripts/vsix-file-modes.cjs'),
+    'utf8',
+  );
+  assert.match(modeNormalizerSource, /require\(['"]yauzl['"]\)/);
+  assert.match(modeNormalizerSource, /require\(['"]yazl['"]\)/);
+  assert.doesNotMatch(
+    modeNormalizerSource,
+    /readUInt(?:16|32)LE|central directory|end.of.central.directory|0x0?6054b50/i,
+  );
   const clientPackage = JSON.parse(
     await readFile(join(repositoryRoot, 'client/package.json'), 'utf8'),
   );
   assert.equal(clientPackage.scripts.build, 'tsc -p . && node ../scripts/build.mjs');
+  const rootPackage = JSON.parse(
+    await readFile(join(repositoryRoot, 'package.json'), 'utf8'),
+  );
+  assert.equal(rootPackage.devDependencies.yauzl, '3.4.0');
+  assert.equal(rootPackage.devDependencies.yazl, '2.5.1');
+  assert.equal(
+    rootPackage.scripts['check:artifacts'],
+    'node --test scripts/bundled-third-party-notices.test.mjs scripts/runtime-artifacts.test.mjs scripts/vsix-file-modes.test.mjs',
+  );
+});
+
+test('both bundles are minified, retain source maps, and feed their metafiles to notices', async () => {
+  const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const buildSource = await readFile(join(repositoryRoot, 'scripts/build.mjs'), 'utf8');
+  const commonOptions = buildSource.match(/const common = \{([\s\S]*?)\n\};/)?.[1];
+
+  assert(commonOptions, 'build must declare shared esbuild options');
+  assert.match(commonOptions, /\babsWorkingDir:\s*monorepoRoot,/);
+  assert.match(commonOptions, /\bminify:\s*true,/);
+  assert.match(commonOptions, /\bsourcemap:\s*true,/);
+  assert.match(commonOptions, /\bmetafile:\s*true,/);
+  assert.equal(buildSource.match(/\.\.\.common,/g)?.length, 2);
+  assert.match(
+    buildSource,
+    /metafiles:\s*\[extensionResult\.metafile, serverResult\.metafile\],/,
+  );
 });
 
 async function createFixture() {
@@ -328,8 +473,10 @@ async function createFixture() {
     ['client/README.md', 'r'.repeat(64)],
     ['client/CHANGELOG.md', 'c'.repeat(64)],
     ['client/LICENSE', 'l'.repeat(64)],
+    ['client/images/icon.png', 'i'.repeat(64)],
     ['client/language-configuration/shader.json', 's'.repeat(64)],
     ['client/language-configuration/hlsl.json', 'h'.repeat(64)],
+    ['client/out/THIRD_PARTY_NOTICES.txt', 'n'.repeat(64)],
     ['server/src/server.ts', 'server source'],
     ['server/out/server.js', Buffer.alloc(2_048, 's')],
     ['server/out/parser/runtimeAssets.js', 'runtime assets module'],
@@ -337,10 +484,15 @@ async function createFixture() {
     ['server/grammars/tree-sitter-hlsl.provenance.json', 'p'.repeat(64)],
     ['server/grammars/tree-sitter-hlsl.LICENSE', 'l'.repeat(64)],
     ['server/grammars/extra-grammar-fact.txt', 'grammar-extra'],
+    ['node_modules/web-tree-sitter/LICENSE', 'l'.repeat(64)],
     ['node_modules/web-tree-sitter/package.json', 'p'.repeat(64)],
     ['node_modules/web-tree-sitter/tree-sitter.js', Buffer.alloc(2_048, 'j')],
     ['node_modules/web-tree-sitter/tree-sitter.wasm', Buffer.alloc(2_048, 'w')],
     ['node_modules/web-tree-sitter/tree-sitter-web.d.ts', 'runtime-extra'],
+    [
+      'node_modules/vscode-languageclient/lib/node/terminateProcess.sh',
+      '#!/bin/sh\nprintf \'%s\' "$1" > "$USN_TERMINATOR_MARKER"\n',
+    ],
   ]);
   for (const [relativePath, contents] of files) {
     await write(join(root, relativePath), contents);

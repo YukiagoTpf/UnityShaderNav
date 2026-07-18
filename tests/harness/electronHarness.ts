@@ -31,7 +31,7 @@ const runtimeArtifacts = require(path.resolve(
   '../../../scripts/runtime-artifacts.cjs',
 )) as {
   createRuntimeArtifactGraph(root: string): {
-    readonly extensionStagingPaths: readonly string[];
+    readonly extensionStagingFiles: readonly string[];
   };
 };
 
@@ -138,8 +138,8 @@ async function stageSandbox(
 
   const fixtureSource = resolveFixtureSource(repositoryRoot, fixtureRelativePath);
   const artifactGraph = runtimeArtifacts.createRuntimeArtifactGraph(repositoryRoot);
-  for (const relativePath of artifactGraph.extensionStagingPaths) {
-    await copyWithoutLibrary(
+  for (const relativePath of artifactGraph.extensionStagingFiles) {
+    await copyFile(
       path.join(repositoryRoot, 'client', relativePath),
       path.join(extensionDevelopmentPath, relativePath),
     );
@@ -204,6 +204,13 @@ function resolveFixtureSource(repositoryRoot: string, fixtureRelativePath: strin
     );
   }
   return fixtureSource;
+}
+
+async function copyFile(source: string, target: string): Promise<void> {
+  const sourceStat = await fs.stat(source);
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.copyFile(source, target);
+  if (process.platform !== 'win32') await fs.chmod(target, sourceStat.mode & 0o777);
 }
 
 async function copyWithoutLibrary(source: string, target: string): Promise<void> {

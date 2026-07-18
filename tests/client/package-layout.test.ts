@@ -5,17 +5,16 @@ import { createRequire } from 'node:module';
 import * as os from 'node:os';
 import { spawnSync } from 'node:child_process';
 
+interface RuntimeArtifactFile {
+  readonly path: string;
+  readonly packagePath: string;
+  readonly minBytes: number;
+  readonly executable?: boolean;
+}
+
 interface RuntimeArtifactGraph {
-  readonly runtimeFiles: ReadonlyArray<{
-    readonly path: string;
-    readonly packagePath: string;
-    readonly minBytes: number;
-  }>;
-  readonly packageFiles: ReadonlyArray<{
-    readonly path: string;
-    readonly packagePath: string;
-    readonly minBytes: number;
-  }>;
+  readonly runtimeFiles: ReadonlyArray<RuntimeArtifactFile>;
+  readonly packageFiles: ReadonlyArray<RuntimeArtifactFile>;
   readonly parserRuntimeLayouts: ReadonlyArray<readonly [string, string]>;
   readonly requiredOutputFiles: readonly string[];
   readonly requiredPackagePaths: readonly string[];
@@ -26,6 +25,12 @@ const runtimeArtifacts = require(path.resolve(
   '../../../scripts/runtime-artifacts.cjs',
 )) as {
   createRuntimeArtifactGraph(root: string): RuntimeArtifactGraph;
+};
+const vsixFileModes = require(path.resolve(
+  __dirname,
+  '../../../scripts/vsix-file-modes.cjs',
+)) as {
+  readVsixFileModes(vsixPath: string): Promise<ReadonlyMap<string, number>>;
 };
 const ARTIFACT_GRAPH = runtimeArtifacts.createRuntimeArtifactGraph(monorepoRoot());
 const vsce = require('@vscode/vsce') as {
@@ -40,6 +45,17 @@ interface ParserRuntimeAssets {
     readonly path: string;
     readonly contentHash: string;
     readBytes(): Uint8Array;
+  };
+}
+
+interface TreeSitterModule {
+  new (): {
+    setLanguage(language: unknown): void;
+    parse(text: string): { rootNode: { type: string; hasError: boolean } };
+  };
+  init(): Promise<void>;
+  readonly Language: {
+    load(bytes: Uint8Array): Promise<unknown>;
   };
 }
 
@@ -153,9 +169,8 @@ suite('packaged server layout', () => {
     assert.ok(fromServerEntry.resolve('web-tree-sitter').includes('web-tree-sitter'));
   });
 
-  test('VSIX-like extension root can start packaged parser without monorepo node_modules', async () => {
+  test('VSIX-like runtime payload loads the grammar without loose modules or monorepo node_modules', async () => {
     const root = monorepoRoot();
-    const sourceOutRoot = path.resolve(root, 'client/out');
     // realpathSync the temp root: on macOS os.tmpdir() can return a symlinked
     // path (/tmp -> /private/tmp), but createRequire(...).resolve() below returns
     // the realpath, so the `startsWith(packagedServerRoot)` check would fail
@@ -165,20 +180,30 @@ suite('packaged server layout', () => {
     const packagedOutRoot = path.join(extensionRoot, 'out');
     const packagedServerRoot = path.join(packagedOutRoot, 'server');
     try {
-      fs.cpSync(sourceOutRoot, packagedOutRoot, { recursive: true });
+      for (const file of ARTIFACT_GRAPH.runtimeFiles) {
+        const target = path.join(extensionRoot, file.packagePath);
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.copyFileSync(path.join(root, file.path), target);
+      }
       const serverEntry = path.join(packagedServerRoot, 'server.js');
-      const resolved = createRequire(serverEntry).resolve('web-tree-sitter');
+      const requireFromServer = createRequire(serverEntry);
+      const resolved = requireFromServer.resolve('web-tree-sitter');
 
       assert.ok(
         resolved.startsWith(packagedServerRoot),
         `expected web-tree-sitter to resolve inside packaged server root, got ${resolved}`,
       );
+      assert.strictEqual(fs.existsSync(path.join(packagedOutRoot, 'client.js')), false);
+      assert.strictEqual(fs.existsSync(path.join(packagedServerRoot, 'parser')), false);
 
-      const parserPath = path.join(packagedServerRoot, 'parser/hlsl/parser.js');
-      const { parseHlsl } = require(parserPath) as {
-        parseHlsl(text: string): Promise<{ rootNode: { type: string; hasError: boolean } }>;
-      };
-      const tree = await parseHlsl('float f() { return 1; }');
+      const TS = requireFromServer('web-tree-sitter') as TreeSitterModule;
+      await TS.init();
+      const language = await TS.Language.load(
+        fs.readFileSync(path.join(packagedOutRoot, 'grammars/tree-sitter-hlsl.wasm')),
+      );
+      const parser = new TS();
+      parser.setLanguage(language);
+      const tree = parser.parse('float f() { return 1; }');
       assert.strictEqual(tree.rootNode.type, 'translation_unit');
       assert.strictEqual(tree.rootNode.hasError, false);
     } finally {
@@ -192,9 +217,7 @@ suite('packaged server layout', () => {
     try {
       const tempGraph = runtimeArtifacts.createRuntimeArtifactGraph(tempRoot);
       for (const file of tempGraph.runtimeFiles) {
-        const absolute = path.join(tempRoot, file.path);
-        fs.mkdirSync(path.dirname(absolute), { recursive: true });
-        fs.writeFileSync(absolute, Buffer.alloc(file.minBytes, 'x'));
+        writeSizedArtifact(tempRoot, file);
       }
       fs.writeFileSync(path.join(tempRoot, 'client/out/server/server.js'), 'truncated');
 
@@ -226,9 +249,7 @@ suite('packaged server layout', () => {
 
       for (const file of tempGraph.packageFiles) {
         if (stagedNames.has(file.packagePath)) continue;
-        const absolute = path.join(tempRoot, file.path);
-        fs.mkdirSync(path.dirname(absolute), { recursive: true });
-        fs.writeFileSync(absolute, Buffer.alloc(file.minBytes, 'x'));
+        writeSizedArtifact(tempRoot, file);
       }
       const packageScript = path.resolve(root, 'scripts/package-vsix.mjs');
       const prepublish = [
@@ -337,9 +358,7 @@ suite('packaged server layout', () => {
 
       for (const file of tempGraph.packageFiles) {
         if (stagedNames.has(file.packagePath)) continue;
-        const absolute = path.join(tempRoot, file.path);
-        fs.mkdirSync(path.dirname(absolute), { recursive: true });
-        fs.writeFileSync(absolute, Buffer.alloc(file.minBytes, 'x'));
+        writeSizedArtifact(tempRoot, file);
       }
       fs.writeFileSync(
         path.join(clientRoot, 'package.json'),
@@ -430,7 +449,7 @@ suite('packaged server layout', () => {
     }
   });
 
-  test('VSCE package plan includes every graph-owned package file', async function () {
+  test('VSCE package plan is the exact 18-file graph payload with only three JavaScript files', async function () {
     this.timeout(60000);
 
     const root = monorepoRoot();
@@ -453,21 +472,22 @@ suite('packaged server layout', () => {
         prepareResult.error?.message || prepareResult.stderr || prepareResult.stdout,
       );
 
-      const plannedFiles = new Set(await vsce.listFiles({
+      const plannedFiles = await vsce.listFiles({
         cwd: clientRoot,
         packageManager: vsce.PackageManager.None,
-      }));
-      for (const requiredPath of ARTIFACT_GRAPH.requiredPackagePaths) {
-        assert.ok(plannedFiles.has(requiredPath), `VSCE must package ${requiredPath}`);
-      }
-      assert.ok(
-        [...plannedFiles].every((packagePath) => !packagePath.endsWith('.tsbuildinfo')),
-        'VSCE package plan must exclude TypeScript build caches',
+      });
+      assert.strictEqual(plannedFiles.length, 18);
+      assert.deepStrictEqual(
+        [...plannedFiles].sort(),
+        [...ARTIFACT_GRAPH.requiredPackagePaths].sort(),
       );
-      assert.strictEqual(
-        plannedFiles.has('out/runtime-artifacts.json'),
-        false,
-        'VSCE package plan must exclude obsolete runtime manifests',
+      assert.deepStrictEqual(
+        plannedFiles.filter((packagePath) => packagePath.endsWith('.js')).sort(),
+        [
+          'out/extension.js',
+          'out/server/server.js',
+          'out/server/node_modules/web-tree-sitter/tree-sitter.js',
+        ].sort(),
       );
     } finally {
       for (const [name, previous] of previousFiles) {
@@ -475,6 +495,30 @@ suite('packaged server layout', () => {
         if (previous) fs.writeFileSync(target, previous);
         else fs.rmSync(target, { force: true });
       }
+    }
+  });
+
+  test('current VSIX stores deterministic Unix modes for every regular file', async () => {
+    const root = monorepoRoot();
+    const clientPackage = JSON.parse(
+      fs.readFileSync(path.join(root, 'client/package.json'), 'utf8'),
+    ) as { name: string; version: string };
+    const vsixPath = path.join(
+      root,
+      'client',
+      `${clientPackage.name}-${clientPackage.version}.vsix`,
+    );
+    const modes = await vsixFileModes.readVsixFileModes(vsixPath);
+    const executableEntry = 'extension/out/terminateProcess.sh';
+
+    assert.strictEqual(modes.get(executableEntry), 0o100755);
+    for (const [entry, mode] of modes) {
+      if (entry.endsWith('/')) continue;
+      assert.strictEqual(
+        mode,
+        entry === executableEntry ? 0o100755 : 0o100644,
+        `unexpected Unix mode for ${entry}`,
+      );
     }
   });
 });
@@ -606,4 +650,11 @@ suite('verification command contract', () => {
 
 function quoteShellArgument(value: string): string {
   return `"${value.replace(/"/g, '\\"')}"`;
+}
+
+function writeSizedArtifact(root: string, file: RuntimeArtifactFile): void {
+  const absolute = path.join(root, file.path);
+  fs.mkdirSync(path.dirname(absolute), { recursive: true });
+  fs.writeFileSync(absolute, Buffer.alloc(file.minBytes, 'x'));
+  if (file.executable && process.platform !== 'win32') fs.chmodSync(absolute, 0o755);
 }

@@ -224,10 +224,14 @@ npm run grammar:rebuild
   integration in separate profiles.
 - Every Electron process stages its extension runtime, compiled tests, selected
   workspace, and repository fixtures under a short `/tmp/usn-*` sandbox on
-  POSIX (the OS temp directory on Windows). Copying rejects existing `Library/`
-  state, nested test temp directories stay inside the sandbox through
-  `TMPDIR`/`TMP`/`TEMP`, and both success and failure remove the complete
-  sandbox.
+  POSIX (the OS temp directory on Windows). The sandbox contains only the
+  graph-owned Extension staging set under `e/`; compiled tests, the three
+  repository fixture trees, and a test-only `node_modules` link under `t/`; the
+  copied selected workspace under `w/`; and isolated user data, Extension, and
+  temp directories under `u/`, `x/`, and `m/`. `ws.code-workspace` points only
+  at `w/`. Copying rejects existing `Library/` state, nested test temp
+  directories stay inside `m/` through `TMPDIR`/`TMP`/`TEMP`, and both success
+  and failure remove the complete sandbox.
 - Tests that bootstrap a Unity project must copy repository fixtures to a
   disposable directory before allowing `Library/UnityShaderNavCache/` writes.
 - Package-layout verification directly spawns the index-cache benchmark with
@@ -235,6 +239,32 @@ npm run grammar:rebuild
   persistence, warm restore, and symbol visibility, not a timing threshold.
 - Add fixtures that describe the shader shape being fixed. Small, explicit
   fixtures are easier to maintain than copied production shaders.
+
+## Runtime Package Contract
+
+`npm run build` uses esbuild to minify the Extension and server entry points,
+emits build-only source maps, assembles the graph-owned parser/runtime support
+files, and generates `client/out/THIRD_PARTY_NOTICES.txt` from both bundle
+metafiles. Notice generation is fail-closed: every bundled package must have
+non-empty string `name`, `version`, and `license` manifest fields and at least
+one license file. A failure removes a stale notices file instead of leaving it
+available for packaging.
+
+`npm run package:vsix` packages the exact 18-file graph allowlist described in
+[Architecture](architecture.md). The public VSCE plan must match that allowlist,
+so loose transpiled client/server modules, source maps, and a runtime artifact
+manifest cannot enter the VSIX. After VSCE writes the archive,
+`extension/out/terminateProcess.sh` is normalized to Unix mode `100755` on
+Windows, macOS, and Linux; every other regular entry is normalized to `100644`.
+The source file is copied from the public `vscode-languageclient` runtime to
+`client/out/terminateProcess.sh` during assembly.
+
+The Electron harness stages the same graph-owned Extension set used by package
+verification, excluding only release documentation that is not needed for
+activation (`README.md`, `CHANGELOG.md`, and `LICENSE`). Tests therefore run
+against the two bundles and exact runtime support files rather than loose
+workspace output. The test runner's repository `node_modules` link exists only
+under the separate `t/` mirror and is never placed in the staged Extension.
 
 ## Index Cache Benchmark
 
@@ -334,11 +364,16 @@ source of truth in
 
 `npm run check:knowledge` verifies the checked-in artifact and license offline.
 `npm run grammar:rebuild` performs a clean build from the pinned public source
-and compares it byte for byte with the repository. The rebuild requires Git,
-Docker, network access to GitHub, Docker Hub, and the public npm registry, and a
-runtime capable of executing the pinned Linux/amd64 Emscripten image. The
-command is intentionally verification-only: changing the vendored artifact is
-a separate, reviewable provenance update.
+and compares it byte for byte with the repository. It first verifies the
+4,223,843-byte tree-sitter output, then runs the pinned `wasm-opt -Oz` from the
+same pinned Emscripten image with networking disabled and verifies the
+4,223,826-byte optimized output. This 17-byte reduction is a reproducible size
+fact only; it does not establish a runtime performance improvement. The rebuild
+requires Git, Docker, network access to GitHub, Docker Hub, and the public npm
+registry for source and toolchain acquisition, and a runtime capable of
+executing the pinned Linux/amd64 Emscripten image. The command is intentionally
+verification-only: changing the vendored artifact is a separate, reviewable
+provenance update.
 
 At runtime the grammar is not located through Workspace paths. The parser
 runtime-assets Module maps the four supported build layouts to one exact file,

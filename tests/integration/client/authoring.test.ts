@@ -56,8 +56,11 @@ suite('ShaderLab authoring assistance', () => {
         : program.textEdit?.newText;
       assert.ok(snippet?.includes('#pragma fragment ${2:frag}'), 'expected serialized snippet body');
       const start = atEnd('vertex').translate(0, -'vertex'.length);
-      editor.selection = new vscode.Selection(start, atEnd('vertex'));
-      await vscode.commands.executeCommand('editor.action.insertSnippet', { snippet });
+      const selection = new vscode.Selection(start, atEnd('vertex'));
+      assert.strictEqual(
+        await editor.insertSnippet(new vscode.SnippetString(snippet), selection),
+        true,
+      );
       assert.ok(document.getText().includes('#pragma vertex vert'));
       assert.ok(document.getText().includes('ENDHLSL'));
       assert.ok(!document.getText().includes('${'));

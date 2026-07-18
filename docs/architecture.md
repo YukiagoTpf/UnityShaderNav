@@ -410,13 +410,48 @@ Build-time runtime assembly is owned by the current
 and bundled-server layouts once, copies the complete grammar and
 `web-tree-sitter` runtime trees, and requires critical paths to be
 repository-internal regular files that meet graph-declared minimum sizes.
+The VSCE allowlist contains exactly 18 regular files:
+
+- seven Extension files: `package.json`, `README.md`, `CHANGELOG.md`, `LICENSE`,
+  `images/icon.png`, and the two files under `language-configuration/`;
+- the minified `out/extension.js` and `out/server/server.js` bundles;
+- the HLSL grammar WASM, provenance, and upstream license under
+  `out/grammars/`;
+- `web-tree-sitter`'s license, package metadata, JavaScript runtime, and WASM
+  under `out/server/node_modules/web-tree-sitter/`; and
+- `out/THIRD_PARTY_NOTICES.txt` plus `out/terminateProcess.sh`.
+
+These are the only package paths: source maps remain build output, loose
+transpiled client/server modules are absent, and no runtime verification
+manifest is emitted. Consequently the only packaged JavaScript files are the
+two bundles and `web-tree-sitter/tree-sitter.js`. Both esbuild operations are
+minified and retain metafiles. Notice generation derives the bundled package
+set from both metafiles and fails closed unless every discovered manifest has
+non-empty string `name`, `version`, and `license` fields plus at least one
+license file; a failed generation removes any stale notice output.
+
+The graph copies
+`node_modules/vscode-languageclient/lib/node/terminateProcess.sh` to
+`client/out/terminateProcess.sh`, which becomes
+`extension/out/terminateProcess.sh` inside the VSIX. POSIX builds require the
+copied file to be executable. After VSCE packaging, the ZIP entry is normalized
+to Unix mode `100755` on every host while every other regular entry is
+`100644`. The ZIP-library rewrite uses a bounded, same-directory temporary file
+and atomic replacement; it does not implement ZIP byte parsing.
+
 Watch, current-run VSIX packaging, package-layout tests, and Electron short-path
-staging derive their paths from that graph. Packaging removes the versioned
-output from any earlier run, checks required disk files and the VSCE public file
-plan before and after packaging, and rejects a missing or trivially small VSIX;
-direct VSCE prepublish applies the same file and plan checks. A failed attempt
-restores staged metadata before removing only its exact versioned output. The
-workflow does not parse ZIP bytes or emit a runtime verification manifest.
+staging derive their paths from the artifact graph. Packaging removes the
+versioned output from any earlier run, checks required disk files and the VSCE
+public file plan before and after packaging, and rejects a missing or trivially
+small VSIX; direct VSCE prepublish applies the same file and plan checks. A
+failed attempt restores staged metadata before removing only its exact
+versioned output. No parallel content manifest is maintained.
+
+The reproducible grammar build verifies the 4,223,843-byte unoptimized output,
+runs the pinned `wasm-opt -Oz` from the pinned Emscripten image without network
+access, and verifies the 4,223,826-byte checked artifact. The 17-byte reduction
+is an artifact-size fact, not evidence of an activation or parsing performance
+change.
 
 Lifecycle state is observable through the same LSP connection used by editor
 features. The server exposes both an index-status pull request and a changed

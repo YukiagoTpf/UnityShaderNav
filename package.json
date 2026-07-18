@@ -14,7 +14,7 @@
     "watch:typecheck": "node scripts/watch-typecheck.mjs",
     "check:workspace-lock": "node --test scripts/check-workspace-lock.test.mjs && node scripts/check-workspace-lock.mjs",
     "check:knowledge": "node --test scripts/check-public-knowledge.test.mjs && node scripts/check-public-knowledge.mjs",
-    "check:artifacts": "node --test scripts/runtime-artifacts.test.mjs",
+    "check:artifacts": "node --test scripts/bundled-third-party-notices.test.mjs scripts/runtime-artifacts.test.mjs scripts/vsix-file-modes.test.mjs",
     "check:fast": "npm run check:workspace-lock && npm run check:knowledge && npm run check:artifacts && npm run clean && npm run build && npm run test -w @unity-shader-nav/server",
     "test": "npm run check:fast && npm run test:integration",
     "test:integration": "npm run test:package && npm run test:electron:prepared",
@@ -41,7 +41,9 @@
     "github-slugger": "2.0.0",
     "markdown-it": "14.3.0",
     "rimraf": "^6.1.3",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "yauzl": "3.4.0",
+    "yazl": "2.5.1"
   },
   "engines": {
     "node": ">=18.0.0"

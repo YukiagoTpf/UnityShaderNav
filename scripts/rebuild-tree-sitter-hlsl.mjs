@@ -18,7 +18,8 @@ export async function rebuildGrammar() {
   );
   const tempRoot = await mkdtemp(join(tmpdir(), 'usn-grammar-rebuild-'));
   const sourceRoot = join(tempRoot, 'source');
-  const builtArtifact = join(tempRoot, 'tree-sitter-hlsl.wasm');
+  const unoptimizedArtifact = join(tempRoot, 'tree-sitter-hlsl.unoptimized.wasm');
+  const optimizedArtifact = join(tempRoot, 'tree-sitter-hlsl.wasm');
 
   try {
     await run('git', ['init', '--quiet', sourceRoot], tempRoot);
@@ -53,18 +54,38 @@ export async function rebuildGrammar() {
       [
         'exec', '--yes', registryArg, `--package=${packageSpec}`, '--',
         'tree-sitter', 'build', '--wasm', '--docker',
-        '--output', builtArtifact,
+        '--output', unoptimizedArtifact,
         sourceRoot,
       ],
       sourceRoot,
       { DOCKER_DEFAULT_PLATFORM: emscripten.platform },
     );
 
-    const builtBytes = await verifiedBytes(
-      builtArtifact,
+    await verifiedBytes(
+      unoptimizedArtifact,
+      provenance.artifact.unoptimized.size,
+      provenance.artifact.unoptimized.sha256,
+      'unoptimized grammar',
+    );
+
+    const wasmOpt = wasmOptInvocations(provenance.toolchain, tempRoot);
+    const wasmOptVersion = (await capture(
+      wasmOpt.version.command,
+      wasmOpt.version.args,
+      tempRoot,
+    )).trim();
+    assertEqual(
+      wasmOptVersion,
+      provenance.toolchain.wasmOpt.version,
+      'wasm-opt version',
+    );
+    await run(wasmOpt.optimize.command, wasmOpt.optimize.args, tempRoot);
+
+    const optimizedBytes = await verifiedBytes(
+      optimizedArtifact,
       provenance.artifact.size,
       provenance.artifact.sha256,
-      'rebuilt grammar',
+      'optimized grammar',
     );
     const sourceLicense = resolve(sourceRoot, 'LICENSE');
     const licenseBytes = await verifiedBytes(
@@ -76,11 +97,14 @@ export async function rebuildGrammar() {
 
     const checkedArtifact = resolve(repositoryRoot, provenance.artifact.path);
     const checkedLicense = resolve(repositoryRoot, provenance.source.licensePath);
-    assertBuffersEqual(builtBytes, await readFile(checkedArtifact), 'checked-in grammar');
+    assertBuffersEqual(optimizedBytes, await readFile(checkedArtifact), 'checked-in grammar');
     assertBuffersEqual(licenseBytes, await readFile(checkedLicense), 'checked-in upstream license');
 
     console.log('[grammar] rebuild is byte-identical to the checked-in grammar and license');
-    console.log(`[grammar] ${provenance.artifact.size} bytes; sha256 ${provenance.artifact.sha256}`);
+    console.log(
+      `[grammar] unoptimized: ${provenance.artifact.unoptimized.size} bytes; sha256 ${provenance.artifact.unoptimized.sha256}`,
+    );
+    console.log(`[grammar] optimized: ${provenance.artifact.size} bytes; sha256 ${provenance.artifact.sha256}`);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
@@ -96,6 +120,40 @@ export function npmInvocation(
     command: commandShell || 'cmd.exe',
     args: ['/d', '/s', '/c', 'npm.cmd', ...args],
   };
+}
+
+export function wasmOptInvocations(toolchain, hostDirectory) {
+  const emscripten = toolchain.emscripten;
+  const wasmOpt = toolchain.wasmOpt;
+  const commonArgs = [
+    'run', '--rm', '--network', 'none',
+    '--platform', emscripten.platform,
+    '--mount', dockerBindMount(hostDirectory),
+    `${emscripten.image}@${emscripten.digest}`,
+    wasmOpt.path,
+  ];
+
+  return {
+    version: {
+      command: 'docker',
+      args: [...commonArgs, '--version'],
+    },
+    optimize: {
+      command: 'docker',
+      args: [
+        ...commonArgs,
+        ...wasmOpt.arguments,
+        '/grammar/tree-sitter-hlsl.unoptimized.wasm',
+        '-o',
+        '/grammar/tree-sitter-hlsl.wasm',
+      ],
+    },
+  };
+}
+
+function dockerBindMount(hostDirectory) {
+  const sourceField = `source=${hostDirectory}`.replaceAll('"', '""');
+  return `type=bind,"${sourceField}",target=/grammar`;
 }
 
 async function verifiedBytes(path, expectedSize, expectedHash, label) {

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "source": {
     "repository": "https://github.com/tree-sitter-grammars/tree-sitter-hlsl.git",
     "tag": "v0.2.0",
@@ -18,11 +18,22 @@
       "tag": "3.1.64",
       "digest": "sha256:8847dad4171ebc8a53d9ae5cda86a2546ef5b2e68834c14dc1ba2b2962e125cc",
       "platform": "linux/amd64"
+    },
+    "wasmOpt": {
+      "path": "/emsdk/upstream/bin/wasm-opt",
+      "version": "wasm-opt version 118 (version_118-52-ga8066e661)",
+      "arguments": [
+        "-Oz"
+      ]
     }
   },
   "artifact": {
     "path": "server/grammars/tree-sitter-hlsl.wasm",
-    "size": 4223843,
-    "sha256": "3ab32399a9c1a284330e0c943013319ffa146472ca9eeef321875a203f0b702f"
+    "unoptimized": {
+      "size": 4223843,
+      "sha256": "3ab32399a9c1a284330e0c943013319ffa146472ca9eeef321875a203f0b702f"
+    },
+    "size": 4223826,
+    "sha256": "ac2ec4f2587014b0a00251e53ce31627ec1471f8a472d89f7ea1f0144ca11208"
   }
 }

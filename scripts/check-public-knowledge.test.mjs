@@ -14,7 +14,10 @@ import {
   collectRepositorySnapshot,
   validateKnowledgeSnapshot,
 } from './check-public-knowledge.mjs';
-import { npmInvocation } from './rebuild-tree-sitter-hlsl.mjs';
+import {
+  npmInvocation,
+  wasmOptInvocations,
+} from './rebuild-tree-sitter-hlsl.mjs';
 
 test('accepts exact local links, reference links, parentheses, ADR identity, and provenance', () => {
   const files = validSnapshot();
@@ -235,6 +238,78 @@ test('rejects tampered grammar and upstream license bytes', () => {
   assert(rules.includes('grammar-license'));
 });
 
+test('accepts pinned wasm-opt and unoptimized grammar provenance', () => {
+  const result = validateKnowledgeSnapshot(validSnapshot());
+
+  assert.deepEqual(result.diagnostics, []);
+});
+
+test('rejects wasm-opt outside the pinned absolute image path', () => {
+  const files = validSnapshot();
+  mutateProvenance(files, (provenance) => {
+    provenance.toolchain.wasmOpt.path = 'wasm-opt';
+  });
+
+  assert(validateKnowledgeSnapshot(files).diagnostics.some((item) => (
+    item.rule === 'grammar-provenance'
+  )));
+});
+
+test('rejects a wasm-opt version that cannot be checked against tool output', () => {
+  const files = validSnapshot();
+  mutateProvenance(files, (provenance) => {
+    provenance.toolchain.wasmOpt.version = '118';
+  });
+
+  assert(validateKnowledgeSnapshot(files).diagnostics.some((item) => (
+    item.rule === 'grammar-provenance'
+  )));
+});
+
+test('rejects wasm-opt arguments other than exactly -Oz', () => {
+  const files = validSnapshot();
+  mutateProvenance(files, (provenance) => {
+    provenance.toolchain.wasmOpt.arguments = ['-O3'];
+  });
+
+  assert(validateKnowledgeSnapshot(files).diagnostics.some((item) => (
+    item.rule === 'grammar-provenance'
+  )));
+});
+
+test('rejects an invalid unoptimized grammar size', () => {
+  const files = validSnapshot();
+  mutateProvenance(files, (provenance) => {
+    provenance.artifact.unoptimized.size = 0;
+  });
+
+  assert(validateKnowledgeSnapshot(files).diagnostics.some((item) => (
+    item.rule === 'grammar-provenance'
+  )));
+});
+
+test('rejects an invalid unoptimized grammar checksum', () => {
+  const files = validSnapshot();
+  mutateProvenance(files, (provenance) => {
+    provenance.artifact.unoptimized.sha256 = 'not-a-sha256';
+  });
+
+  assert(validateKnowledgeSnapshot(files).diagnostics.some((item) => (
+    item.rule === 'grammar-provenance'
+  )));
+});
+
+test('rejects provenance unless wasm-opt makes the grammar smaller', () => {
+  const files = validSnapshot();
+  mutateProvenance(files, (provenance) => {
+    provenance.artifact.unoptimized.size = provenance.artifact.size;
+  });
+
+  assert(validateKnowledgeSnapshot(files).diagnostics.some((item) => (
+    item.rule === 'grammar-provenance'
+  )));
+});
+
 test('rejects invalid UTF-8 in public source files instead of treating it as binary', () => {
   const files = validSnapshot();
   files.set('secret.md', Buffer.from([0xff, 0xfe]));
@@ -312,11 +387,69 @@ test('uses an executable npm launcher on POSIX and Windows', () => {
   );
 });
 
+test('runs wasm-opt from the pinned digest without network access or relative paths', () => {
+  const provenance = JSON.parse(
+    validSnapshot().get('server/grammars/tree-sitter-hlsl.provenance.json').toString('utf8'),
+  );
+  const commonArgs = [
+    'run', '--rm', '--network', 'none',
+    '--platform', 'linux/amd64',
+    '--mount', 'type=bind,"source=/host/grammar",target=/grammar',
+    `docker.io/emscripten/emsdk@sha256:${'b'.repeat(64)}`,
+    '/emsdk/upstream/bin/wasm-opt',
+  ];
+
+  assert.deepEqual(
+    wasmOptInvocations(provenance.toolchain, '/host/grammar'),
+    {
+      version: {
+        command: 'docker',
+        args: [...commonArgs, '--version'],
+      },
+      optimize: {
+        command: 'docker',
+        args: [
+          ...commonArgs,
+          '-Oz',
+          '/grammar/tree-sitter-hlsl.unoptimized.wasm',
+          '-o',
+          '/grammar/tree-sitter-hlsl.wasm',
+        ],
+      },
+    },
+  );
+});
+
+test('quotes Docker bind-mount sources as one CSV field for every host path form', () => {
+  const provenance = JSON.parse(
+    validSnapshot().get('server/grammars/tree-sitter-hlsl.provenance.json').toString('utf8'),
+  );
+  const cases = [
+    ['/host/grammar,cache', 'type=bind,"source=/host/grammar,cache",target=/grammar'],
+    ['/host/grammar cache', 'type=bind,"source=/host/grammar cache",target=/grammar'],
+    ['/host/grammar"cache', 'type=bind,"source=/host/grammar""cache",target=/grammar'],
+    [
+      'C:\\Build Cache\\Temp,Cache',
+      'type=bind,"source=C:\\Build Cache\\Temp,Cache",target=/grammar',
+    ],
+  ];
+
+  for (const [hostDirectory, expectedMount] of cases) {
+    const invocations = wasmOptInvocations(provenance.toolchain, hostDirectory);
+    const actualMounts = [invocations.version, invocations.optimize].map((invocation) => {
+      const mountIndex = invocation.args.indexOf('--mount');
+      return invocation.args[mountIndex + 1];
+    });
+    assert.deepEqual(actualMounts, [expectedMount, expectedMount], hostDirectory);
+  }
+});
+
 function validSnapshot() {
   const artifact = bytes('deterministic wasm fixture');
+  const unoptimizedArtifact = bytes('unoptimized deterministic wasm fixture');
   const license = bytes('upstream license fixture\n');
   const provenance = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     source: {
       repository: 'https://github.com/tree-sitter-grammars/tree-sitter-hlsl.git',
       tag: 'v0.2.0',
@@ -336,9 +469,18 @@ function validSnapshot() {
         digest: `sha256:${'b'.repeat(64)}`,
         platform: 'linux/amd64',
       },
+      wasmOpt: {
+        path: '/emsdk/upstream/bin/wasm-opt',
+        version: 'wasm-opt version 118 (version_118-52-ga8066e661)',
+        arguments: ['-Oz'],
+      },
     },
     artifact: {
       path: 'server/grammars/tree-sitter-hlsl.wasm',
+      unoptimized: {
+        size: unoptimizedArtifact.length,
+        sha256: sha256(unoptimizedArtifact),
+      },
       size: artifact.length,
       sha256: sha256(artifact),
     },
