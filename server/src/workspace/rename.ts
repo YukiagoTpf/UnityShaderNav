@@ -6,7 +6,7 @@ import type { SymbolEntry } from '@unity-shader-nav/shared';
 import {
   cursorTargetAt,
   findPropertyCandidatesForName,
-  findReferences,
+  findReferencesForTarget,
   propertyAt,
   selectActiveReferenceTargets,
   type ActiveReferenceTargetSelection,
@@ -30,7 +30,6 @@ import { uriKey } from '../uriKey';
 type RenameTarget = ActiveReferenceTargetSelection['targets'][number];
 
 interface RenameSubject {
-  readonly cursorTarget: ReturnType<typeof cursorTargetAt>;
   readonly token: { readonly text: string; readonly range: Range };
   readonly declaration: RenameTarget;
 }
@@ -121,7 +120,7 @@ async function resolveRenameSubject(
     );
   }
 
-  return { cursorTarget, token, declaration };
+  return { token, declaration };
 }
 
 function isRenameSubject(
@@ -225,7 +224,7 @@ export async function renameWorkspaceSymbol(
 
   const index = state.index.store.get(input.document.uri);
   if (!index) return null;
-  const locations = await findReferences(subject.cursorTarget, {
+  const locations = await findReferencesForTarget(subject.declaration, {
     index,
     position: input.position,
     global: state.index.global,

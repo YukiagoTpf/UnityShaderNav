@@ -13,6 +13,7 @@ export {
 export {
   resolveDefinition,
   findReferences,
+  findReferencesForTarget,
   findHighlights,
   selectActiveReferenceTargets,
 } from './resolution';

@@ -67,6 +67,8 @@ export interface ActiveReferenceTargetSelection {
   readonly targets: readonly ReferenceTarget[];
 }
 
+type VisibleUriLookup = (uri: string) => Promise<ReadonlySet<string>>;
+
 /**
  * Resolve the declaration identity selected by one cursor occurrence. This is
  * the shared narrowing policy for References and Rename: scoped declarations
@@ -122,15 +124,7 @@ export async function findReferences(
       ? target.word
       : undefined;
 
-  const visibleByUri = new Map<string, Promise<ReadonlySet<string>>>();
-  const visibleForUri = (uri: string): Promise<ReadonlySet<string>> => {
-    const existing = visibleByUri.get(uri);
-    if (existing) return existing;
-
-    const next = ctx.includeChain.visibleUriKeys(uri);
-    visibleByUri.set(uri, next);
-    return next;
-  };
+  const visibleForUri = createVisibleUriLookup(ctx);
   const visibleUriKeys = idx ? await visibleForUri(idx.uri) : undefined;
   const resolutionOptions: ResolutionOptions | undefined = visibleUriKeys ? { visibleUriKeys } : undefined;
   const selection = idx
@@ -142,8 +136,49 @@ export async function findReferences(
       resolutionOptions,
     )
     : { queryName: word?.text ?? '', targets: [] };
-  const queryName = selection.queryName;
-  const activeTargets = [...selection.targets];
+  return collectReferencesForTargets(
+    selection.queryName,
+    selection.targets,
+    ctx,
+    visibleForUri,
+  );
+}
+
+/**
+ * Collect references for one already-proven declaration. Rename uses this
+ * fail-closed path so a later target-selection miss cannot fall back to every
+ * occurrence that merely shares the same spelling.
+ */
+export async function findReferencesForTarget(
+  target: ReferenceTarget,
+  ctx: ReferenceCollectionContext,
+): Promise<Location[]> {
+  return collectReferencesForTargets(
+    target.name,
+    [target],
+    ctx,
+    createVisibleUriLookup(ctx),
+  );
+}
+
+function createVisibleUriLookup(ctx: ReferenceCollectionContext): VisibleUriLookup {
+  const visibleByUri = new Map<string, Promise<ReadonlySet<string>>>();
+  return (uri: string): Promise<ReadonlySet<string>> => {
+    const key = uriKey(uri);
+    const existing = visibleByUri.get(key);
+    if (existing) return existing;
+    const next = ctx.includeChain.visibleUriKeys(uri);
+    visibleByUri.set(key, next);
+    return next;
+  };
+}
+
+async function collectReferencesForTargets(
+  queryName: string,
+  activeTargets: readonly ReferenceTarget[],
+  ctx: ReferenceCollectionContext,
+  visibleForUri: VisibleUriLookup,
+): Promise<Location[]> {
   const globalKindAwareTargets = activeTargets.filter(isGlobalKindAwareTarget);
   const includePackages = ctx.includePackages;
   const symbolsAsReferences = ctx.includeDeclaration

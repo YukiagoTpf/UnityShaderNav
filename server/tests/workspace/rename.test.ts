@@ -3,13 +3,17 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
+import type { SymbolEntry } from '@unity-shader-nav/shared';
+import { GlobalReferenceIndex, IndexStore } from '../../src/index';
 import { MacroPatternRecognizer } from '../../src/macros';
 import { indexFile } from '../../src/parser/hlsl/fileIndexer';
+import { uriKey } from '../../src/uriKey';
 import type {
   IndexedDocumentSnapshot,
   RenameFailure,
 } from '../../src/workspace/indexedWorkspace';
 import { createIndexedWorkspaceFixture } from '../helpers/indexedWorkspaceFixture';
+import { renameWorkspaceSymbol } from '../../src/workspace/rename';
 
 function snapshot(uri: string, text: string): IndexedDocumentSnapshot {
   return { uri, languageId: 'hlsl', text, openId: 1, version: 1 };
@@ -153,6 +157,56 @@ describe('Workspace Rename', () => {
     });
 
     expect(failureMessage(outcome)).toContain('ambiguous');
+  });
+
+  it('fails closed when the prepared declaration disappears before edit collection', async () => {
+    const uri = 'file:///project/Diverged.hlsl';
+    const text = 'float Main() { return Helper(); }';
+    const declarationUri = 'file:///project/Library.hlsl';
+    const index = await indexFile(uri, text);
+    const store = new IndexStore();
+    const globalRefs = new GlobalReferenceIndex();
+    store.set(uri, index);
+    globalRefs.upsert(index);
+    const declaration: SymbolEntry = {
+      name: 'Helper',
+      kind: 'function',
+      returnType: 'float',
+      parameters: [],
+      location: {
+        uri: declarationUri,
+        range: { start: { line: 5, character: 0 }, end: { line: 5, character: 6 } },
+      },
+    };
+    let helperLookups = 0;
+    const global = {
+      lookup(name: string): SymbolEntry[] {
+        if (name !== 'Helper') return [];
+        return helperLookups++ === 0 ? [declaration] : [];
+      },
+      *entries(): IterableIterator<SymbolEntry> {},
+    };
+
+    const outcome = await renameWorkspaceSymbol({
+      index: { store, global, globalRefs },
+      includeChain: {
+        resolve: async () => null,
+        visibleUriKeys: async () => new Set([uriKey(uri), uriKey(declarationUri)]),
+      },
+      isInPackages: () => false,
+      includePackages: false,
+      definitionTrace: false,
+    }, {
+      document: snapshot(uri, text),
+      position: positionOf(text, 'Helper'),
+      newName: 'RenamedHelper',
+    });
+
+    expect(outcome).toEqual({
+      kind: 'failure',
+      message: expect.stringContaining('No editable occurrences'),
+    });
+    expect(helperLookups).toBeGreaterThan(1);
   });
 
   it('refuses built-ins, include paths, invalid names, and global collisions', async () => {
