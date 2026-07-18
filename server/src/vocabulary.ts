@@ -11,13 +11,24 @@ export type BuiltinCategory =
 
 export interface BuiltinEntry {
   readonly name: string;
-  readonly kind: 'function' | 'keyword' | 'semantic' | 'state' | 'macro' | 'type';
+  readonly kind:
+    | 'function'
+    | 'keyword'
+    | 'semantic'
+    | 'state'
+    | 'macro'
+    | 'type'
+    | 'variable'
+    | 'structMember';
   readonly category: BuiltinCategory;
   readonly roles?: readonly BuiltinRole[];
   readonly detail?: string;
   readonly documentation?: string;
   readonly quickDocumentation?: BuiltinQuickDocumentation;
   readonly insertText?: string;
+  readonly declaredType?: string;
+  readonly parentType?: string;
+  readonly typeShape?: BuiltinTypeShape;
   readonly returnType?: string;
   readonly parameters?: readonly {
     readonly name: string;
@@ -25,6 +36,25 @@ export interface BuiltinEntry {
     readonly documentation?: string;
   }[];
 }
+
+export type BuiltinTypeShape =
+  | {
+    readonly kind: 'vector';
+    readonly elementType: string;
+    readonly size: 1 | 2 | 3 | 4;
+  }
+  | {
+    readonly kind: 'matrix';
+    readonly elementType: string;
+    readonly rows: 1 | 2 | 3 | 4;
+    readonly columns: 1 | 2 | 3 | 4;
+  }
+  | {
+    readonly kind: 'texture';
+    readonly dimensions: 1 | 2 | 3 | 'cube';
+    readonly array?: boolean;
+    readonly writable?: boolean;
+  };
 
 export interface BuiltinQuickDocumentation {
   readonly summary: string;
@@ -62,7 +92,13 @@ export type BuiltinContext =
   | 'shaderLabStateValue';
 
 export type BuiltinLexicalContext = 'hlsl' | 'shaderLab' | 'shaderLabProperty';
-export type BuiltinLexicalRole = 'keyword' | 'function' | 'macro' | 'type' | 'semantic';
+export type BuiltinLexicalRole =
+  | 'keyword'
+  | 'function'
+  | 'macro'
+  | 'type'
+  | 'semantic'
+  | 'variable';
 
 const shaderLabStateDetail = 'ShaderLab render state';
 const shaderLabValueDetail = 'ShaderLab state value';
@@ -225,56 +261,552 @@ function shaderLabPropertyTypes(): BuiltinEntry[] {
     .map(shaderLabPropertyType);
 }
 
+type BuiltinParameter = NonNullable<BuiltinEntry['parameters']>[number];
+
+function hlslFunction(
+  name: string,
+  returnType: string,
+  parameters: readonly BuiltinParameter[],
+  documentation: string,
+): BuiltinEntry {
+  return {
+    name,
+    kind: 'function',
+    category: 'hlsl',
+    returnType,
+    parameters,
+    documentation,
+  };
+}
+
+function hlslComponentShapeOverloads(
+  name: string,
+  returnComponentType: string,
+  inputComponentTypes: readonly string[],
+  documentation: string,
+): BuiltinEntry[] {
+  return inputComponentTypes.map((inputComponentType) => hlslFunction(
+    name,
+    `${returnComponentType}<x>`,
+    [{ type: `${inputComponentType}<x>`, name: 'x' }],
+    documentation,
+  ));
+}
+
+function hlslMatchingComponentShapeOverloads(
+  name: string,
+  componentTypes: readonly string[],
+  documentation: string,
+): BuiltinEntry[] {
+  return componentTypes.flatMap((componentType) => hlslComponentShapeOverloads(
+    name,
+    componentType,
+    [componentType],
+    documentation,
+  ));
+}
+
+const VECTOR_SIZES = [1, 2, 3, 4] as const;
+const MATRIX_DIMENSIONS = [1, 2, 3, 4] as const;
+
+function numericTypeFamily(
+  elementType: string,
+  category: BuiltinCategory,
+  scopeLabel: string,
+): BuiltinEntry[] {
+  return [
+    {
+      name: elementType,
+      kind: 'type',
+      category,
+      detail: `${scopeLabel} scalar type`,
+      documentation: `${scopeLabel} scalar numeric type ${elementType}.`,
+    },
+    ...VECTOR_SIZES.map((size): BuiltinEntry => ({
+      name: `${elementType}${size}`,
+      kind: 'type',
+      category,
+      typeShape: { kind: 'vector', elementType, size },
+      detail: `${scopeLabel} vector type`,
+      documentation: `${size}-component ${elementType} vector.`,
+    })),
+  ];
+}
+
+function matrixTypeFamily(
+  elementType: string,
+  category: BuiltinCategory,
+  scopeLabel: string,
+): BuiltinEntry[] {
+  const entries: BuiltinEntry[] = [];
+  for (const rows of MATRIX_DIMENSIONS) {
+    for (const columns of MATRIX_DIMENSIONS) {
+      entries.push({
+        name: `${elementType}${rows}x${columns}`,
+        kind: 'type',
+        category,
+        typeShape: { kind: 'matrix', elementType, rows, columns },
+        detail: `${scopeLabel} matrix type`,
+        documentation: `${rows}x${columns} ${elementType} matrix.`,
+      });
+    }
+  }
+  return entries;
+}
+
+function hlslKeywords(
+  names: readonly string[],
+  detail: string,
+): BuiltinEntry[] {
+  return names.map((name) => ({
+    name,
+    kind: 'keyword',
+    category: 'hlsl',
+    detail,
+  }));
+}
+
+const HLSL_KEYWORDS = [
+  ...hlslKeywords(
+    ['if', 'else', 'for', 'while', 'do', 'switch', 'case', 'default', 'break', 'continue', 'return', 'discard'],
+    'HLSL control-flow keyword',
+  ),
+  ...hlslKeywords(
+    ['in', 'out', 'inout'],
+    'HLSL parameter modifier',
+  ),
+  ...hlslKeywords(
+    ['const', 'static', 'uniform', 'register', 'packoffset', 'groupshared', 'precise'],
+    'HLSL storage or declaration qualifier',
+  ),
+  ...hlslKeywords(
+    ['linear', 'centroid', 'nointerpolation', 'noperspective', 'sample'],
+    'HLSL interpolation modifier',
+  ),
+  ...hlslKeywords(
+    ['numthreads'],
+    'HLSL shader attribute',
+  ),
+] satisfies readonly BuiltinEntry[];
+
+function unityGlobal(
+  name: string,
+  declaredType: string,
+  documentation: string,
+): BuiltinEntry {
+  return {
+    name,
+    kind: 'variable',
+    category: 'unitycg',
+    declaredType,
+    detail: 'Unity built-in global',
+    documentation,
+  };
+}
+
+function unityMacros(
+  names: readonly string[],
+  detail: string,
+): BuiltinEntry[] {
+  return names.map((name) => ({
+    name,
+    kind: 'macro',
+    category: 'unitycg',
+    detail,
+  }));
+}
+
+const UNITY_BUILTIN_GLOBALS = [
+  unityGlobal('_ScreenParams', 'float4', 'Screen dimensions and related reciprocal terms.'),
+  unityGlobal('_ProjectionParams', 'float4', 'Projection flip sign, near plane, far plane, and reciprocal far plane.'),
+  unityGlobal('_ZBufferParams', 'float4', 'Parameters used to linearize values from the depth buffer.'),
+  unityGlobal('_WorldSpaceLightPos0', 'float4', 'Position or direction of the primary light in world space.'),
+  unityGlobal('_LightColor0', 'fixed4', 'Color of the primary light.'),
+  unityGlobal('unity_MatrixVP', 'float4x4', 'Current view-projection matrix.'),
+  unityGlobal('unity_ObjectToWorld', 'float4x4', 'Object-to-world transformation matrix.'),
+  unityGlobal('unity_WorldToObject', 'float4x4', 'World-to-object transformation matrix.'),
+  unityGlobal('_WorldSpaceCameraPos', 'float3', 'World-space position of the active camera.'),
+  unityGlobal('_Time', 'float4', 'Time values packed as (t/20, t, t*2, t*3).'),
+  unityGlobal('_SinTime', 'float4', 'Sine of time packed as (t/8, t/4, t/2, t).'),
+  unityGlobal('_CosTime', 'float4', 'Cosine of time packed as (t/8, t/4, t/2, t).'),
+] satisfies readonly BuiltinEntry[];
+
+const UNITY_BUILTIN_MACROS = [
+  ...unityMacros(
+    ['UNITY_MATRIX_MVP', 'UNITY_MATRIX_M', 'UNITY_MATRIX_V', 'UNITY_MATRIX_P', 'UNITY_MATRIX_VP'],
+    'Unity matrix macro',
+  ),
+  ...unityMacros(
+    ['UNITY_MATRIX_I_M', 'UNITY_MATRIX_I_V', 'UNITY_MATRIX_I_P', 'UNITY_MATRIX_I_VP'],
+    'Unity inverse matrix macro',
+  ),
+  ...unityMacros(
+    ['UNITY_BRANCH', 'UNITY_FLATTEN', 'UNITY_UNROLL', 'UNITY_UNROLLX', 'UNITY_LOOP'],
+    'Unity flow-control attribute macro',
+  ),
+  ...unityMacros(['UNITY_PI'], 'Unity numeric constant macro'),
+  ...unityMacros(['UNITY_INITIALIZE_OUTPUT'], 'Unity output initialization macro'),
+] satisfies readonly BuiltinEntry[];
+
+function urpFunction(
+  name: string,
+  returnType: string,
+  parameters: readonly BuiltinParameter[],
+  documentation: string,
+): BuiltinEntry {
+  return {
+    name,
+    kind: 'function',
+    category: 'urp',
+    returnType,
+    parameters,
+    documentation,
+  };
+}
+
+const URP_ADDITIONS = [
+  { name: 'SAMPLE_TEXTURE2D_X', kind: 'macro', category: 'urp', detail: 'URP texture sampling macro' },
+  { name: 'SAMPLE_TEXTURE2D_X_LOD', kind: 'macro', category: 'urp', detail: 'URP texture sampling macro' },
+  { name: 'SAMPLE_GI', kind: 'macro', category: 'urp', detail: 'URP global illumination macro' },
+  { name: 'InputData', kind: 'type', category: 'urp', detail: 'URP fragment input structure' },
+  { name: 'SurfaceData', kind: 'type', category: 'urp', detail: 'URP material surface structure' },
+  urpFunction(
+    'GetShadowCoord',
+    'float4',
+    [{ type: 'VertexPositionInputs', name: 'positionInputs' }],
+    'Returns the shadow-map coordinate derived from URP vertex position inputs.',
+  ),
+  urpFunction(
+    'SampleSH',
+    'half3',
+    [{ type: 'half3', name: 'normalWS' }],
+    'Samples spherical-harmonics ambient lighting for a world-space normal.',
+  ),
+  urpFunction(
+    'MixFog',
+    'half3',
+    [{ type: 'half3', name: 'fragmentColor' }, { type: 'float', name: 'fogFactor' }],
+    'Blends a fragment color with the active URP fog color.',
+  ),
+] satisfies readonly BuiltinEntry[];
+
+interface TextureObjectDescriptor {
+  readonly name: string;
+  readonly dimensions: 1 | 2 | 3 | 'cube';
+  readonly array?: boolean;
+  readonly coordinateType: string;
+  readonly gradientType: string;
+  readonly offsetType?: string;
+  readonly loadLocationType?: string;
+  readonly dimensionNames: readonly string[];
+  readonly floatNumberOfLevelsType?: 'float' | 'uint';
+  readonly supportsComparison?: boolean;
+  readonly supportsGather?: boolean;
+}
+
+function textureMethod(
+  parentType: string,
+  name: string,
+  returnType: string,
+  parameters: readonly BuiltinParameter[],
+  documentation: string,
+): BuiltinEntry {
+  return {
+    name,
+    kind: 'function',
+    category: 'hlsl',
+    parentType,
+    returnType,
+    parameters,
+    documentation,
+  };
+}
+
+function textureMethodWithOptionalOffset(
+  descriptor: TextureObjectDescriptor,
+  name: string,
+  returnType: string,
+  parameters: readonly BuiltinParameter[],
+  documentation: string,
+): BuiltinEntry[] {
+  const entries = [textureMethod(
+    descriptor.name,
+    name,
+    returnType,
+    parameters,
+    documentation,
+  )];
+  if (descriptor.offsetType) {
+    entries.push(textureMethod(
+      descriptor.name,
+      name,
+      returnType,
+      [...parameters, { type: descriptor.offsetType, name: 'offset' }],
+      `${documentation} Applies a constant texel offset.`,
+    ));
+  }
+  return entries;
+}
+
+function textureObjectEntries(
+  descriptor: TextureObjectDescriptor,
+): BuiltinEntry[] {
+  const samplerAndLocation: readonly BuiltinParameter[] = [
+    { type: 'SamplerState', name: 'samplerState' },
+    { type: descriptor.coordinateType, name: 'location' },
+  ];
+  const entries: BuiltinEntry[] = [{
+    name: descriptor.name,
+    kind: 'type',
+    category: 'hlsl',
+    typeShape: descriptor.array
+      ? { kind: 'texture', dimensions: descriptor.dimensions, array: true }
+      : { kind: 'texture', dimensions: descriptor.dimensions },
+    detail: 'HLSL texture-object type',
+    documentation: `${descriptor.name} texture resource.`,
+  }];
+
+  entries.push(...textureMethodWithOptionalOffset(
+    descriptor,
+    'Sample',
+    'T',
+    samplerAndLocation,
+    'Samples the texture using implicit derivatives.',
+  ));
+  entries.push(...textureMethodWithOptionalOffset(
+    descriptor,
+    'SampleLevel',
+    'T',
+    [...samplerAndLocation, { type: 'float', name: 'lod' }],
+    'Samples the texture at an explicit mip level.',
+  ));
+  entries.push(...textureMethodWithOptionalOffset(
+    descriptor,
+    'SampleBias',
+    'T',
+    [...samplerAndLocation, { type: 'float', name: 'bias' }],
+    'Samples the texture after applying a mip-level bias.',
+  ));
+  entries.push(...textureMethodWithOptionalOffset(
+    descriptor,
+    'SampleGrad',
+    'T',
+    [
+      ...samplerAndLocation,
+      { type: descriptor.gradientType, name: 'ddx' },
+      { type: descriptor.gradientType, name: 'ddy' },
+    ],
+    'Samples the texture using explicit coordinate gradients.',
+  ));
+
+  if (descriptor.supportsComparison) {
+    entries.push(...textureMethodWithOptionalOffset(
+      descriptor,
+      'SampleCmp',
+      'float',
+      [
+        { type: 'SamplerComparisonState', name: 'samplerState' },
+        { type: descriptor.coordinateType, name: 'location' },
+        { type: 'float', name: 'compareValue' },
+      ],
+      'Samples the texture and compares its first component with a reference value.',
+    ));
+  }
+
+  if (descriptor.loadLocationType) {
+    entries.push(...textureMethodWithOptionalOffset(
+      descriptor,
+      'Load',
+      'T',
+      [{ type: descriptor.loadLocationType, name: 'location' }],
+      'Reads a texel without filtering.',
+    ));
+  }
+
+  if (descriptor.supportsGather) {
+    for (const name of ['Gather', 'GatherRed', 'GatherGreen', 'GatherBlue', 'GatherAlpha']) {
+      entries.push(...textureMethodWithOptionalOffset(
+        descriptor,
+        name,
+        'T4',
+        samplerAndLocation,
+        `Gathers four ${name === 'Gather' ? 'red' : name.slice('Gather'.length).toLowerCase()} components from neighboring texels.`,
+      ));
+    }
+  }
+
+  for (const componentType of ['uint', 'float'] as const) {
+    const dimensions = descriptor.dimensionNames.map((name): BuiltinParameter => ({
+      type: `out ${componentType}`,
+      name,
+    }));
+    const numberOfLevelsType = componentType === 'float'
+      ? descriptor.floatNumberOfLevelsType ?? 'float'
+      : 'uint';
+    entries.push(textureMethod(
+      descriptor.name,
+      'GetDimensions',
+      'void',
+      dimensions,
+      'Returns dimensions of the largest mip level.',
+    ));
+    entries.push(textureMethod(
+      descriptor.name,
+      'GetDimensions',
+      'void',
+      [
+        { type: 'uint', name: 'mipLevel' },
+        ...dimensions,
+        { type: `out ${numberOfLevelsType}`, name: 'numberOfLevels' },
+      ],
+      'Returns dimensions and mip count for an explicit mip level.',
+    ));
+  }
+  return entries;
+}
+
+const TEXTURE_OBJECT_ENTRIES = [
+  ...textureObjectEntries({
+    name: 'Texture1D',
+    dimensions: 1,
+    coordinateType: 'float',
+    gradientType: 'float',
+    offsetType: 'int',
+    loadLocationType: 'int2',
+    dimensionNames: ['width'],
+    supportsComparison: true,
+  }),
+  ...textureObjectEntries({
+    name: 'Texture1DArray',
+    dimensions: 1,
+    array: true,
+    coordinateType: 'float2',
+    gradientType: 'float',
+    offsetType: 'int',
+    loadLocationType: 'int3',
+    dimensionNames: ['width', 'elements'],
+    supportsComparison: true,
+  }),
+  ...textureObjectEntries({
+    name: 'Texture2D',
+    dimensions: 2,
+    coordinateType: 'float2',
+    gradientType: 'float2',
+    offsetType: 'int2',
+    loadLocationType: 'int3',
+    dimensionNames: ['width', 'height'],
+    supportsComparison: true,
+    supportsGather: true,
+  }),
+  ...textureObjectEntries({
+    name: 'Texture2DArray',
+    dimensions: 2,
+    array: true,
+    coordinateType: 'float3',
+    gradientType: 'float2',
+    offsetType: 'int2',
+    loadLocationType: 'int4',
+    dimensionNames: ['width', 'height', 'elements'],
+    supportsComparison: true,
+    supportsGather: true,
+  }),
+  ...textureObjectEntries({
+    name: 'Texture3D',
+    dimensions: 3,
+    coordinateType: 'float3',
+    gradientType: 'float3',
+    offsetType: 'int3',
+    loadLocationType: 'int4',
+    dimensionNames: ['width', 'height', 'depth'],
+  }),
+  ...textureObjectEntries({
+    name: 'TextureCube',
+    dimensions: 'cube',
+    coordinateType: 'float3',
+    gradientType: 'float3',
+    dimensionNames: ['width', 'height'],
+    floatNumberOfLevelsType: 'uint',
+    supportsComparison: true,
+    supportsGather: true,
+  }),
+  ...textureObjectEntries({
+    name: 'TextureCubeArray',
+    dimensions: 'cube',
+    array: true,
+    coordinateType: 'float4',
+    gradientType: 'float3',
+    dimensionNames: ['width', 'height', 'elements'],
+    supportsComparison: true,
+    supportsGather: true,
+  }),
+] satisfies readonly BuiltinEntry[];
+
+const ADVANCED_HLSL_FUNCTIONS = [
+  hlslFunction('sincos', 'void', [{ type: 'T', name: 'x' }, { type: 'out T', name: 'sine' }, { type: 'out T', name: 'cosine' }], 'Returns the sine and cosine of x through output parameters.'),
+  ...hlslComponentShapeOverloads('asfloat', 'float', ['float', 'int', 'uint'], 'Reinterprets each component of x as float while preserving scalar, vector, or matrix dimensions.'),
+  ...hlslComponentShapeOverloads('asint', 'int', ['float', 'uint'], 'Reinterprets each component of x as int while preserving scalar, vector, or matrix dimensions.'),
+  ...hlslComponentShapeOverloads('asuint', 'uint', ['float', 'int'], 'Reinterprets each component of x as uint while preserving scalar, vector, or matrix dimensions.'),
+  ...hlslComponentShapeOverloads('isnan', 'bool', ['float'], 'Tests each floating-point component of x for NaN while preserving scalar, vector, or matrix dimensions.'),
+  ...hlslComponentShapeOverloads('isinf', 'bool', ['float'], 'Tests each floating-point component of x for infinity while preserving scalar, vector, or matrix dimensions.'),
+  ...hlslComponentShapeOverloads('isfinite', 'bool', ['float'], 'Tests each floating-point component of x for finiteness while preserving scalar, vector, or matrix dimensions.'),
+  hlslFunction('trunc', 'T', [{ type: 'T', name: 'x' }], 'Truncates the fractional part of x.'),
+  hlslFunction('ldexp', 'T', [{ type: 'T', name: 'x' }, { type: 'T', name: 'exponent' }], 'Returns x multiplied by two raised to exponent.'),
+  hlslFunction('frexp', 'T', [{ type: 'T', name: 'x' }, { type: 'out T', name: 'exponent' }], 'Splits x into a normalized fraction and an integral power of two.'),
+  hlslFunction('modf', 'T', [{ type: 'T', name: 'x' }, { type: 'out T', name: 'integerPart' }], 'Splits x into fractional and integral parts.'),
+  hlslFunction('log10', 'T', [{ type: 'T', name: 'x' }], 'Returns the base-10 logarithm of x.'),
+  hlslFunction('sinh', 'T', [{ type: 'T', name: 'x' }], 'Returns the hyperbolic sine of x.'),
+  hlslFunction('cosh', 'T', [{ type: 'T', name: 'x' }], 'Returns the hyperbolic cosine of x.'),
+  hlslFunction('tanh', 'T', [{ type: 'T', name: 'x' }], 'Returns the hyperbolic tangent of x.'),
+  ...hlslMatchingComponentShapeOverloads('reversebits', ['uint'], 'Reverses the order of bits in each component of an unsigned integer scalar or vector.'),
+  ...hlslMatchingComponentShapeOverloads('firstbitlow', ['int', 'uint'], 'Returns the lowest set-bit position per component of a signed or unsigned integer scalar or vector.'),
+  ...hlslMatchingComponentShapeOverloads('firstbithigh', ['int', 'uint'], 'Returns the highest matching-bit position per component of a signed or unsigned integer scalar or vector.'),
+  hlslFunction('msad4', 'uint4', [{ type: 'uint', name: 'reference' }, { type: 'uint2', name: 'source' }, { type: 'uint4', name: 'accumulator' }], 'Computes four masked sums of absolute differences.'),
+  hlslFunction('WaveIsFirstLane', 'bool', [], 'Returns whether the current lane is the first active lane.'),
+  hlslFunction('WaveGetLaneCount', 'uint', [], 'Returns the number of lanes in the current wave.'),
+  hlslFunction('WaveGetLaneIndex', 'uint', [], 'Returns the current lane index.'),
+  hlslFunction('WaveActiveAnyTrue', 'bool', [{ type: 'bool', name: 'expression' }], 'Returns whether the expression is true in any active lane.'),
+  hlslFunction('WaveActiveAllTrue', 'bool', [{ type: 'bool', name: 'expression' }], 'Returns whether the expression is true in every active lane.'),
+  hlslFunction('WaveActiveBallot', 'uint4', [{ type: 'bool', name: 'expression' }], 'Returns a bit mask of active lanes where expression is true.'),
+  hlslFunction('WaveReadLaneAt', 'T', [{ type: 'T', name: 'value' }, { type: 'uint', name: 'laneIndex' }], 'Reads value from a selected lane.'),
+  hlslFunction('WaveReadLaneFirst', 'T', [{ type: 'T', name: 'value' }], 'Reads value from the first active lane.'),
+  hlslFunction('WaveActiveAllEqual', 'bool', [{ type: 'T', name: 'value' }], 'Tests whether value is equal in every active lane.'),
+  hlslFunction('WaveActiveCountBits', 'uint', [{ type: 'bool', name: 'expression' }], 'Counts active lanes where expression is true.'),
+  hlslFunction('WavePrefixCountBits', 'uint', [{ type: 'bool', name: 'expression' }], 'Counts preceding active lanes where expression is true.'),
+  hlslFunction('WaveActiveSum', 'T', [{ type: 'T', name: 'value' }], 'Returns the sum of value across active lanes.'),
+  hlslFunction('WaveActiveProduct', 'T', [{ type: 'T', name: 'value' }], 'Returns the product of value across active lanes.'),
+  hlslFunction('WaveActiveBitAnd', 'T', [{ type: 'T', name: 'value' }], 'Returns the bitwise AND of value across active lanes.'),
+  hlslFunction('WaveActiveBitOr', 'T', [{ type: 'T', name: 'value' }], 'Returns the bitwise OR of value across active lanes.'),
+  hlslFunction('WaveActiveBitXor', 'T', [{ type: 'T', name: 'value' }], 'Returns the bitwise XOR of value across active lanes.'),
+  hlslFunction('WaveActiveMin', 'T', [{ type: 'T', name: 'value' }], 'Returns the minimum value across active lanes.'),
+  hlslFunction('WaveActiveMax', 'T', [{ type: 'T', name: 'value' }], 'Returns the maximum value across active lanes.'),
+  hlslFunction('WavePrefixSum', 'T', [{ type: 'T', name: 'value' }], 'Returns the sum of value in preceding active lanes.'),
+  hlslFunction('WavePrefixProduct', 'T', [{ type: 'T', name: 'value' }], 'Returns the product of value in preceding active lanes.'),
+  hlslFunction('WaveMatch', 'uint4', [{ type: 'T', name: 'value' }], 'Returns a lane mask for active lanes whose value matches the current lane.'),
+  ...['Sum', 'Product', 'BitAnd', 'BitOr', 'BitXor'].map((operation) => hlslFunction(
+    `WaveMultiPrefix${operation}`,
+    'T',
+    [{ type: 'T', name: 'value' }, { type: 'uint4', name: 'mask' }],
+    `Returns the ${operation.toLowerCase()} prefix within the lanes selected by mask.`,
+  )),
+  hlslFunction('QuadReadAcrossX', 'T', [{ type: 'T', name: 'value' }], 'Reads value from the horizontally adjacent lane in a quad.'),
+  hlslFunction('QuadReadAcrossY', 'T', [{ type: 'T', name: 'value' }], 'Reads value from the vertically adjacent lane in a quad.'),
+  hlslFunction('QuadReadAcrossDiagonal', 'T', [{ type: 'T', name: 'value' }], 'Reads value from the diagonally adjacent lane in a quad.'),
+  hlslFunction('QuadReadLaneAt', 'T', [{ type: 'T', name: 'value' }, { type: 'uint', name: 'quadLane' }], 'Reads value from a selected lane in a quad.'),
+  hlslFunction('QuadAny', 'bool', [{ type: 'bool', name: 'expression' }], 'Returns whether expression is true in any lane of a quad.'),
+  hlslFunction('QuadAll', 'bool', [{ type: 'bool', name: 'expression' }], 'Returns whether expression is true in every lane of a quad.'),
+] satisfies readonly BuiltinEntry[];
+
 const BUILTIN_ENTRIES = [
-  {
-    name: 'float2',
-    kind: 'type',
-    category: 'hlsl',
-    detail: 'HLSL vector type',
-    documentation: 'Two-component 32-bit floating point vector.',
-  },
-  {
-    name: 'float3',
-    kind: 'type',
-    category: 'hlsl',
-    detail: 'HLSL vector type',
-    documentation: 'Three-component 32-bit floating point vector.',
-  },
-  {
-    name: 'float4',
-    kind: 'type',
-    category: 'hlsl',
-    detail: 'HLSL vector type',
-    documentation: 'Four-component 32-bit floating point vector.',
-  },
-  {
-    name: 'half',
-    kind: 'type',
-    category: 'hlsl',
-    detail: 'HLSL scalar type',
-    documentation: '16-bit floating point scalar used in shader code.',
-  },
-  {
-    name: 'half2',
-    kind: 'type',
-    category: 'hlsl',
-    detail: 'HLSL vector type',
-    documentation: 'Two-component half precision vector.',
-  },
-  {
-    name: 'half3',
-    kind: 'type',
-    category: 'hlsl',
-    detail: 'HLSL vector type',
-    documentation: 'Three-component half precision vector.',
-  },
-  {
-    name: 'half4',
-    kind: 'type',
-    category: 'hlsl',
-    detail: 'HLSL vector type',
-    documentation: 'Four-component half precision vector.',
-  },
+  ...numericTypeFamily('float', 'hlsl', 'HLSL'),
+  ...numericTypeFamily('half', 'hlsl', 'HLSL'),
+  ...numericTypeFamily('fixed', 'unitycg', 'Unity shader'),
+  ...numericTypeFamily('double', 'hlsl', 'HLSL'),
+  ...numericTypeFamily('min16float', 'hlsl', 'HLSL minimum-precision'),
+  ...numericTypeFamily('min10float', 'hlsl', 'HLSL minimum-precision'),
+  ...numericTypeFamily('min16int', 'hlsl', 'HLSL minimum-precision'),
+  ...numericTypeFamily('min12int', 'hlsl', 'HLSL minimum-precision'),
+  ...numericTypeFamily('min16uint', 'hlsl', 'HLSL minimum-precision'),
+  ...numericTypeFamily('real', 'urp', 'SRP'),
   {
     name: 'normalize',
     kind: 'function',
@@ -433,6 +965,7 @@ const BUILTIN_ENTRIES = [
   { name: 'atan2', kind: 'function', category: 'hlsl', returnType: 'T', parameters: [{ type: 'T', name: 'y' }, { type: 'T', name: 'x' }], documentation: 'Returns the arctangent of y / x using the signs to choose the quadrant.' },
   { name: 'radians', kind: 'function', category: 'hlsl', returnType: 'T', parameters: [{ type: 'T', name: 'degrees' }], documentation: 'Converts degrees to radians.' },
   { name: 'degrees', kind: 'function', category: 'hlsl', returnType: 'T', parameters: [{ type: 'T', name: 'radians' }], documentation: 'Converts radians to degrees.' },
+  ...ADVANCED_HLSL_FUNCTIONS,
   // === HLSL geometry helpers ===
   { name: 'length', kind: 'function', category: 'hlsl', returnType: 'scalar', parameters: [{ type: 'T', name: 'x' }], documentation: 'Returns the length of vector x.' },
   { name: 'distance', kind: 'function', category: 'hlsl', returnType: 'scalar', parameters: [{ type: 'T', name: 'x' }, { type: 'T', name: 'y' }], documentation: 'Returns the distance between vectors x and y.' },
@@ -450,35 +983,25 @@ const BUILTIN_ENTRIES = [
   { name: 'any', kind: 'function', category: 'hlsl', returnType: 'bool', parameters: [{ type: 'T', name: 'x' }], documentation: 'Returns true if any component of x is non-zero.' },
   { name: 'all', kind: 'function', category: 'hlsl', returnType: 'bool', parameters: [{ type: 'T', name: 'x' }], documentation: 'Returns true if all components of x are non-zero.' },
   { name: 'clip', kind: 'function', category: 'hlsl', returnType: 'void', parameters: [{ type: 'T', name: 'x' }], documentation: 'Discards the current pixel if any component of x is negative.' },
-  { name: 'firstbithigh', kind: 'function', category: 'hlsl', returnType: 'uint', parameters: [{ type: 'uint', name: 'x' }], documentation: 'Returns the position of the highest set bit in x.' },
   { name: 'countbits', kind: 'function', category: 'hlsl', returnType: 'uint', parameters: [{ type: 'uint', name: 'x' }], documentation: 'Returns the number of bits set in x.' },
-  { name: 'discard', kind: 'keyword', category: 'hlsl', detail: 'HLSL statement', documentation: 'Discards the current pixel.' },
+  ...HLSL_KEYWORDS,
   // === HLSL scalar and vector types ===
-  { name: 'int', kind: 'type', category: 'hlsl', detail: 'HLSL scalar type', documentation: 'Signed 32-bit integer scalar.' },
-  { name: 'int2', kind: 'type', category: 'hlsl', detail: 'HLSL vector type', documentation: 'Two-component signed integer vector.' },
-  { name: 'int3', kind: 'type', category: 'hlsl', detail: 'HLSL vector type', documentation: 'Three-component signed integer vector.' },
-  { name: 'int4', kind: 'type', category: 'hlsl', detail: 'HLSL vector type', documentation: 'Four-component signed integer vector.' },
-  { name: 'uint', kind: 'type', category: 'hlsl', detail: 'HLSL scalar type', documentation: 'Unsigned 32-bit integer scalar.' },
-  { name: 'uint2', kind: 'type', category: 'hlsl', detail: 'HLSL vector type', documentation: 'Two-component unsigned integer vector.' },
-  { name: 'uint3', kind: 'type', category: 'hlsl', detail: 'HLSL vector type', documentation: 'Three-component unsigned integer vector.' },
-  { name: 'uint4', kind: 'type', category: 'hlsl', detail: 'HLSL vector type', documentation: 'Four-component unsigned integer vector.' },
-  { name: 'bool', kind: 'type', category: 'hlsl', detail: 'HLSL scalar type', documentation: 'Boolean scalar.' },
-  { name: 'bool2', kind: 'type', category: 'hlsl', detail: 'HLSL vector type', documentation: 'Two-component boolean vector.' },
-  { name: 'bool3', kind: 'type', category: 'hlsl', detail: 'HLSL vector type', documentation: 'Three-component boolean vector.' },
-  { name: 'bool4', kind: 'type', category: 'hlsl', detail: 'HLSL vector type', documentation: 'Four-component boolean vector.' },
+  ...numericTypeFamily('int', 'hlsl', 'HLSL'),
+  ...numericTypeFamily('uint', 'hlsl', 'HLSL'),
+  ...numericTypeFamily('bool', 'hlsl', 'HLSL'),
+  { name: 'vector', kind: 'type', category: 'hlsl', detail: 'HLSL generic vector type', documentation: 'Generic vector type written as vector<elementType, size>.' },
+  { name: 'matrix', kind: 'type', category: 'hlsl', detail: 'HLSL generic matrix type', documentation: 'Generic matrix type written as matrix<elementType, rows, columns>.' },
   // === HLSL matrix types ===
-  { name: 'float2x2', kind: 'type', category: 'hlsl', detail: 'HLSL matrix type', documentation: '2x2 32-bit floating point matrix.' },
-  { name: 'float3x3', kind: 'type', category: 'hlsl', detail: 'HLSL matrix type', documentation: '3x3 32-bit floating point matrix.' },
-  { name: 'float4x4', kind: 'type', category: 'hlsl', detail: 'HLSL matrix type', documentation: '4x4 32-bit floating point matrix.' },
-  { name: 'half2x2', kind: 'type', category: 'hlsl', detail: 'HLSL matrix type', documentation: '2x2 half precision matrix.' },
-  { name: 'half3x3', kind: 'type', category: 'hlsl', detail: 'HLSL matrix type', documentation: '3x3 half precision matrix.' },
-  { name: 'half4x4', kind: 'type', category: 'hlsl', detail: 'HLSL matrix type', documentation: '4x4 half precision matrix.' },
+  ...matrixTypeFamily('float', 'hlsl', 'HLSL'),
+  ...matrixTypeFamily('half', 'hlsl', 'HLSL'),
+  ...matrixTypeFamily('double', 'hlsl', 'HLSL'),
   // === HLSL resource types ===
-  { name: 'Texture2D', kind: 'type', category: 'hlsl', detail: 'HLSL resource type', documentation: 'Two-dimensional texture resource.' },
-  { name: 'Texture2DArray', kind: 'type', category: 'hlsl', detail: 'HLSL resource type', documentation: 'Array of two-dimensional textures.' },
-  { name: 'Texture3D', kind: 'type', category: 'hlsl', detail: 'HLSL resource type', documentation: 'Three-dimensional texture resource.' },
-  { name: 'TextureCube', kind: 'type', category: 'hlsl', detail: 'HLSL resource type', documentation: 'Cube map texture resource.' },
-  { name: 'TextureCubeArray', kind: 'type', category: 'hlsl', detail: 'HLSL resource type', documentation: 'Array of cube map texture resources.' },
+  { name: 'sampler', kind: 'type', category: 'hlsl', detail: 'HLSL sampler type', documentation: 'Legacy sampler object.' },
+  { name: 'sampler1D', kind: 'type', category: 'hlsl', detail: 'HLSL sampler type', documentation: 'Legacy one-dimensional texture sampler.' },
+  { name: 'sampler2D', kind: 'type', category: 'hlsl', detail: 'HLSL sampler type', documentation: 'Legacy two-dimensional texture sampler.' },
+  { name: 'sampler3D', kind: 'type', category: 'hlsl', detail: 'HLSL sampler type', documentation: 'Legacy three-dimensional texture sampler.' },
+  { name: 'samplerCUBE', kind: 'type', category: 'hlsl', detail: 'HLSL sampler type', documentation: 'Legacy cube-map texture sampler.' },
+  ...TEXTURE_OBJECT_ENTRIES,
   { name: 'SamplerState', kind: 'type', category: 'hlsl', detail: 'HLSL resource type', documentation: 'Standalone sampler state object.' },
   { name: 'SamplerComparisonState', kind: 'type', category: 'hlsl', detail: 'HLSL resource type', documentation: 'Sampler state object for comparison sampling.' },
   { name: 'RWTexture2D', kind: 'type', category: 'hlsl', detail: 'HLSL resource type', documentation: 'Read-write 2D texture resource for compute shaders.' },
@@ -521,6 +1044,7 @@ const BUILTIN_ENTRIES = [
     detail: 'URP sampler declaration macro',
     documentation: 'Declares a sampler state.',
   },
+  ...URP_ADDITIONS,
   // === URP/SRP Core texture sampling and declaration macros ===
   { name: 'SAMPLE_TEXTURE2D_LOD', kind: 'macro', category: 'urp', detail: 'URP texture sampling macro', documentation: 'Samples a Texture2D at an explicit mip level.' },
   { name: 'SAMPLE_TEXTURE2D_GRAD', kind: 'macro', category: 'urp', detail: 'URP texture sampling macro', documentation: 'Samples a Texture2D using explicit derivatives.' },
@@ -607,17 +1131,8 @@ const BUILTIN_ENTRIES = [
   { name: 'UNITY_DECLARE_TEX2D', kind: 'macro', category: 'unitycg', detail: 'UnityCG texture declaration macro', documentation: 'Declares a 2D texture with paired sampler using Unity’s legacy abstraction.' },
   { name: 'UNITY_PASS_TEX2D', kind: 'macro', category: 'unitycg', detail: 'UnityCG texture forwarding macro', documentation: 'Forwards a Unity-declared 2D texture into another function.' },
   // === UnityCG built-in matrices and globals ===
-  { name: 'UNITY_MATRIX_MVP', kind: 'macro', category: 'unitycg', detail: 'UnityCG matrix', documentation: 'Combined model-view-projection matrix.' },
-  { name: 'UNITY_MATRIX_M', kind: 'macro', category: 'unitycg', detail: 'UnityCG matrix', documentation: 'Object-to-world (model) matrix.' },
-  { name: 'UNITY_MATRIX_V', kind: 'macro', category: 'unitycg', detail: 'UnityCG matrix', documentation: 'World-to-camera (view) matrix.' },
-  { name: 'UNITY_MATRIX_P', kind: 'macro', category: 'unitycg', detail: 'UnityCG matrix', documentation: 'Camera-to-clip (projection) matrix.' },
-  { name: 'UNITY_MATRIX_VP', kind: 'macro', category: 'unitycg', detail: 'UnityCG matrix', documentation: 'Combined view-projection matrix.' },
-  { name: 'unity_ObjectToWorld', kind: 'macro', category: 'unitycg', detail: 'UnityCG matrix', documentation: 'Object-to-world transformation matrix.' },
-  { name: 'unity_WorldToObject', kind: 'macro', category: 'unitycg', detail: 'UnityCG matrix', documentation: 'World-to-object transformation matrix.' },
-  { name: '_WorldSpaceCameraPos', kind: 'macro', category: 'unitycg', detail: 'UnityCG global', documentation: 'World-space position of the active camera.' },
-  { name: '_Time', kind: 'macro', category: 'unitycg', detail: 'UnityCG global', documentation: 'Time in seconds since level load, packed as (t/20, t, t*2, t*3).' },
-  { name: '_SinTime', kind: 'macro', category: 'unitycg', detail: 'UnityCG global', documentation: 'Sine of time, packed as (t/8, t/4, t/2, t).' },
-  { name: '_CosTime', kind: 'macro', category: 'unitycg', detail: 'UnityCG global', documentation: 'Cosine of time, packed as (t/8, t/4, t/2, t).' },
+  ...UNITY_BUILTIN_MACROS,
+  ...UNITY_BUILTIN_GLOBALS,
   { name: 'POSITION', kind: 'semantic', category: 'semantic', detail: 'Shader semantic' },
   { name: 'NORMAL', kind: 'semantic', category: 'semantic', detail: 'Shader semantic' },
   { name: 'TANGENT', kind: 'semantic', category: 'semantic', detail: 'Shader semantic' },
@@ -811,33 +1326,52 @@ const BUILTIN_ENTRIES = [
 
 const EMPTY_ENTRIES: readonly BuiltinEntry[] = Object.freeze([]);
 const ENTRIES_BY_NAME = new Map<string, readonly BuiltinEntry[]>();
+const ENTRIES_BY_PARENT_TYPE = new Map<string, readonly BuiltinEntry[]>();
 
 for (const entry of BUILTIN_ENTRIES) {
   ENTRIES_BY_NAME.set(entry.name, [
     ...(ENTRIES_BY_NAME.get(entry.name) ?? EMPTY_ENTRIES),
     entry,
   ]);
+  if (entry.parentType) {
+    ENTRIES_BY_PARENT_TYPE.set(entry.parentType, [
+      ...(ENTRIES_BY_PARENT_TYPE.get(entry.parentType) ?? EMPTY_ENTRIES),
+      entry,
+    ]);
+  }
 }
 
 function hasRole(entry: BuiltinEntry, role: BuiltinRole): boolean {
   return entry.roles?.includes(role) ?? false;
 }
 
+function uniqueEntriesByName(entries: readonly BuiltinEntry[]): readonly BuiltinEntry[] {
+  const seenNames = new Set<string>();
+  return entries.filter((entry) => {
+    if (seenNames.has(entry.name)) return false;
+    seenNames.add(entry.name);
+    return true;
+  });
+}
+
 const ENTRIES_BY_CONTEXT: Readonly<Record<BuiltinContext, readonly BuiltinEntry[]>> = {
-  hlsl: BUILTIN_ENTRIES.filter((entry) => (
-    entry.category === 'hlsl'
-    || entry.category === 'unitycg'
-    || entry.category === 'srp-core'
-    || entry.category === 'urp'
-    || entry.category === 'hdrp'
-  )),
-  semantic: BUILTIN_ENTRIES.filter((entry) => entry.kind === 'semantic'),
-  shaderLab: BUILTIN_ENTRIES.filter((entry) => (
+  hlsl: uniqueEntriesByName(BUILTIN_ENTRIES.filter((entry) => (
+    !entry.parentType
+    && (
+      entry.category === 'hlsl'
+      || entry.category === 'unitycg'
+      || entry.category === 'srp-core'
+      || entry.category === 'urp'
+      || entry.category === 'hdrp'
+    )
+  ))),
+  semantic: uniqueEntriesByName(BUILTIN_ENTRIES.filter((entry) => entry.kind === 'semantic')),
+  shaderLab: uniqueEntriesByName(BUILTIN_ENTRIES.filter((entry) => (
     entry.category === 'shaderlab' && !hasRole(entry, 'shaderLabStateValue')
-  )),
-  shaderLabStateValue: BUILTIN_ENTRIES.filter((entry) => (
+  ))),
+  shaderLabStateValue: uniqueEntriesByName(BUILTIN_ENTRIES.filter((entry) => (
     hasRole(entry, 'shaderLabStateValue')
-  )),
+  ))),
 };
 
 /** Exact-name lookup used by Hover and other name-oriented projections. */
@@ -852,10 +1386,44 @@ export function builtinEntriesForContext(
   return ENTRIES_BY_CONTEXT[context];
 }
 
+/** Receiver-owned projection used by member Completion without parsing types downstream. */
+export function builtinMemberEntriesForReceiverType(
+  receiverType: string,
+  prefix = '',
+): readonly BuiltinEntry[] {
+  const receiver = receiverTypeFacts(receiverType);
+  const canonicalType = receiver.canonicalType;
+  const declaredMembers = (ENTRIES_BY_PARENT_TYPE.get(canonicalType) ?? EMPTY_ENTRIES)
+    .filter((entry) => entry.name.startsWith(prefix));
+  const typeShape = receiver.typeShape ?? findBuiltinEntries(canonicalType)
+    .find((entry) => entry.kind === 'type')?.typeShape;
+  if (typeShape?.kind === 'vector') {
+    return [...declaredMembers, ...vectorSwizzleEntries(canonicalType, typeShape, prefix)];
+  }
+  if (typeShape?.kind === 'matrix') {
+    return [...declaredMembers, ...matrixComponentEntries(canonicalType, typeShape, prefix)];
+  }
+  return declaredMembers;
+}
+
 /** Exact callable lookup used by Signature Help. */
 export function findBuiltinFunctions(name: string): readonly BuiltinEntry[] {
   return findBuiltinEntries(name).filter((entry) => (
-    entry.kind === 'function' && entry.parameters !== undefined
+    entry.kind === 'function'
+    && !entry.parentType
+    && entry.parameters !== undefined
+  ));
+}
+
+/** Exact receiver-owned callable lookup used by member Signature Help. */
+export function findBuiltinMemberFunctions(
+  receiverType: string,
+  name: string,
+): readonly BuiltinEntry[] {
+  return builtinMemberEntriesForReceiverType(receiverType, name).filter((entry) => (
+    entry.name === name
+    && entry.kind === 'function'
+    && entry.parameters !== undefined
   ));
 }
 
@@ -865,10 +1433,17 @@ export function builtinLexicalRole(
   context: BuiltinLexicalContext,
 ): BuiltinLexicalRole | undefined {
   for (const entry of findBuiltinEntries(name)) {
+    if (entry.parentType) continue;
     switch (context) {
       case 'hlsl':
         if (entry.category === 'shaderlab') break;
-        if (entry.kind === 'function' || entry.kind === 'macro' || entry.kind === 'type') {
+        if (
+          entry.kind === 'function'
+          || entry.kind === 'keyword'
+          || entry.kind === 'macro'
+          || entry.kind === 'type'
+          || entry.kind === 'variable'
+        ) {
           return entry.kind;
         }
         if (entry.kind === 'semantic') return 'semantic';
@@ -885,6 +1460,120 @@ export function builtinLexicalRole(
     }
   }
   return undefined;
+}
+
+function canonicalReceiverType(receiverType: string): string {
+  return receiverType.trim().replace(/\s*<.*>\s*$/, '');
+}
+
+function receiverTypeFacts(receiverType: string): {
+  readonly canonicalType: string;
+  readonly typeShape?: BuiltinTypeShape;
+} {
+  const trimmedType = receiverType.trim();
+  const vector = /^vector(?:\s*<\s*([A-Za-z_][A-Za-z0-9_]*)(?:\s*,\s*([1-4]))?\s*>)?$/.exec(
+    trimmedType,
+  );
+  if (vector) {
+    return {
+      canonicalType: 'vector',
+      typeShape: {
+        kind: 'vector',
+        elementType: vector[1] ?? 'float',
+        size: Number(vector[2] ?? 4) as 1 | 2 | 3 | 4,
+      },
+    };
+  }
+
+  const matrix = /^matrix(?:\s*<\s*([A-Za-z_][A-Za-z0-9_]*)(?:\s*,\s*([1-4])(?:\s*,\s*([1-4]))?)?\s*>)?$/.exec(
+    trimmedType,
+  );
+  if (matrix) {
+    return {
+      canonicalType: 'matrix',
+      typeShape: {
+        kind: 'matrix',
+        elementType: matrix[1] ?? 'float',
+        rows: Number(matrix[2] ?? 4) as 1 | 2 | 3 | 4,
+        columns: Number(matrix[3] ?? 4) as 1 | 2 | 3 | 4,
+      },
+    };
+  }
+
+  return { canonicalType: canonicalReceiverType(receiverType) };
+}
+
+function vectorSwizzleEntries(
+  parentType: string,
+  shape: Extract<BuiltinTypeShape, { readonly kind: 'vector' }>,
+  prefix: string,
+): BuiltinEntry[] {
+  const alphabets = ['xyzw'.slice(0, shape.size), 'rgba'.slice(0, shape.size)];
+  const entries: BuiltinEntry[] = [];
+  for (const alphabet of alphabets) {
+    if (prefix.length > 4 || [...prefix].some((character) => !alphabet.includes(character))) {
+      continue;
+    }
+    for (let length = Math.max(1, prefix.length); length <= 4; length++) {
+      appendSwizzles(entries, parentType, shape.elementType, alphabet, prefix, length);
+    }
+  }
+  return entries;
+}
+
+function appendSwizzles(
+  entries: BuiltinEntry[],
+  parentType: string,
+  elementType: string,
+  alphabet: string,
+  value: string,
+  targetLength: number,
+): void {
+  if (value.length === targetLength) {
+    entries.push({
+      name: value,
+      kind: 'structMember',
+      category: 'hlsl',
+      parentType,
+      declaredType: targetLength === 1 ? elementType : `${elementType}${targetLength}`,
+      detail: 'HLSL vector swizzle',
+    });
+    return;
+  }
+  for (const character of alphabet) {
+    appendSwizzles(
+      entries,
+      parentType,
+      elementType,
+      alphabet,
+      value + character,
+      targetLength,
+    );
+  }
+}
+
+function matrixComponentEntries(
+  parentType: string,
+  shape: Extract<BuiltinTypeShape, { readonly kind: 'matrix' }>,
+  prefix: string,
+): BuiltinEntry[] {
+  const entries: BuiltinEntry[] = [];
+  for (let row = 0; row < shape.rows; row++) {
+    for (let column = 0; column < shape.columns; column++) {
+      for (const name of [`_m${row}${column}`, `_${row + 1}${column + 1}`]) {
+        if (!name.startsWith(prefix)) continue;
+        entries.push({
+          name,
+          kind: 'structMember',
+          category: 'hlsl',
+          parentType,
+          declaredType: shape.elementType,
+          detail: 'HLSL matrix component',
+        });
+      }
+    }
+  }
+  return entries;
 }
 
 /** Parse one authoritative ShaderLab Property type term. */

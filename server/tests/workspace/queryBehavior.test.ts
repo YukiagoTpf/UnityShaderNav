@@ -887,6 +887,112 @@ describe('published query behavior', () => {
     }
   });
 
+  it('publishes generic texture member completion and multiline overload signatures', async () => {
+    const uri = 'file:///project/Assets/TextureMembers.hlsl';
+    const text = [
+      'float4 Use(Texture2D<float4> texture, SamplerState samplerState) {',
+      '  texture.Sam',
+      '  return texture.Sample(',
+      '    samplerState,',
+      '    float2(0, 0),',
+      '    int2(0, 0)',
+      '  );',
+      '}',
+    ].join('\n');
+    const document = snapshot(uri, text);
+    const revision = await publishOpenDocument('file:///project', document);
+
+    const completion = await revision.completionAt({
+      document,
+      position: positionOf(text, 'texture.Sam', 0, 'texture.Sam'.length),
+    });
+    expect(completion?.filter((item) => item.label === 'Sample')).toHaveLength(1);
+
+    const signatureHelp = await revision.signatureHelpAt({
+      document,
+      position: positionOf(text, '    int2(0, 0)', 0, '    int2(0, 0)'.length),
+    });
+    expect(signatureHelp?.signatures.map((signature) => signature.label)).toEqual([
+      'T Sample(SamplerState samplerState, float2 location)',
+      'T Sample(SamplerState samplerState, float2 location, int2 offset)',
+    ]);
+    expect(signatureHelp?.activeSignature).toBe(1);
+    expect(signatureHelp?.activeParameter).toBe(2);
+  });
+
+  it('publishes typed texture macro members without guessing TEXTURE2D_X ownership', async () => {
+    const uri = 'file:///project/Assets/TextureMacros.hlsl';
+    const text = [
+      'TYPED_TEXTURE2D(float4, _TypedTexture);',
+      'TEXTURE2D_X(_PlatformTexture);',
+      'SAMPLER(sampler_TypedTexture);',
+      'float4 Use() {',
+      '  _TypedTexture.Sam',
+      '  _PlatformTexture.Sam',
+      '  return _TypedTexture.Sample(',
+      '    sampler_TypedTexture,',
+      '    float2(0, 0)',
+      '  );',
+      '}',
+    ].join('\n');
+    const document = snapshot(uri, text);
+    const revision = await publishOpenDocument('file:///project', document);
+
+    const typedMembers = await revision.completionAt({
+      document,
+      position: positionOf(text, '_TypedTexture.Sam', 0, '_TypedTexture.Sam'.length),
+    });
+    expect(typedMembers?.filter((item) => item.label === 'Sample')).toHaveLength(1);
+
+    const platformMembers = await revision.completionAt({
+      document,
+      position: positionOf(text, '_PlatformTexture.Sam', 0, '_PlatformTexture.Sam'.length),
+    });
+    expect(platformMembers?.map((item) => item.label)).not.toContain('Sample');
+
+    const signatureHelp = await revision.signatureHelpAt({
+      document,
+      position: positionOf(text, '    float2(0, 0)', 0, '    float2(0, 0)'.length),
+    });
+    expect(signatureHelp?.signatures.map((signature) => signature.label)).toEqual([
+      'T Sample(SamplerState samplerState, float2 location)',
+      'T Sample(SamplerState samplerState, float2 location, int2 offset)',
+    ]);
+    expect(signatureHelp?.activeSignature).toBe(0);
+    expect(signatureHelp?.activeParameter).toBe(1);
+  });
+
+  it('publishes vector swizzles and bounded non-square matrix members', async () => {
+    const uri = 'file:///project/Assets/NumericMembers.hlsl';
+    const text = [
+      'float Use(float4 color, float3x4 transform) {',
+      '  float2 pair = color.xy;',
+      '  return transform._m2;',
+      '}',
+    ].join('\n');
+    const document = snapshot(uri, text);
+    const revision = await publishOpenDocument('file:///project', document);
+
+    const swizzles = await revision.completionAt({
+      document,
+      position: positionOf(text, 'color.xy', 0, 'color.xy'.length),
+    });
+    expect(swizzles).toContainEqual(expect.objectContaining({
+      label: 'xy',
+      detail: 'HLSL vector swizzle',
+    }));
+
+    const matrixMembers = await revision.completionAt({
+      document,
+      position: positionOf(text, 'transform._m2', 0, 'transform._m2'.length),
+    });
+    expect(matrixMembers).toContainEqual(expect.objectContaining({
+      label: '_m23',
+      detail: 'HLSL matrix component',
+    }));
+    expect(matrixMembers?.map((item) => item.label)).not.toContain('_m30');
+  });
+
   it('reuses published HLSL lexical facts for a high-line multiline call', async () => {
     const uri = 'file:///project/HighLine.hlsl';
     const text = [
@@ -1056,13 +1162,16 @@ describe('published query behavior', () => {
       '      #pragma vertex vert',
       '      #define SAMPLE_ALBEDO(tex, uv) tex.Sample(sampler##tex, uv)',
       '      TEXTURE2D(_BaseMap);',
+      '      TEXTURE2D_HALF(_HalfMap);',
       '      SAMPLER(sampler_BaseMap);',
       '      Texture2D _DetailMap;',
       '      SamplerState sampler_DetailMap;',
+      '      groupshared float SharedValue;',
       '      CBUFFER_START(UnityPerMaterial)',
       '      float4 _Tint;',
       '      CBUFFER_END',
       '      struct Attributes { float3 positionOS : POSITION; float2 uv : TEXCOORD0; };',
+      '      bool finiteScreen() { return isnan(_ScreenParams.x) || isfinite(_ScreenParams.y); }',
       '      float4 vert(Attributes input) : SV_POSITION { return TransformObjectToHClip(input.positionOS).xyxy; }',
       '      ENDHLSL',
       '    }',
@@ -1106,12 +1215,17 @@ describe('published query behavior', () => {
       { text: 'vert', type: 'function' },
       { text: 'SAMPLE_ALBEDO', type: 'macro' },
       { text: 'TEXTURE2D', type: 'macro' },
+      { text: 'TEXTURE2D_HALF', type: 'macro' },
       { text: 'SAMPLER', type: 'macro' },
       { text: 'Texture2D', type: 'type' },
       { text: 'SamplerState', type: 'type' },
+      { text: 'groupshared', type: 'keyword' },
       { text: 'CBUFFER_START', type: 'macro' },
       { text: 'UnityPerMaterial', type: 'variable' },
       { text: 'Attributes', type: 'type' },
+      { text: 'isnan', type: 'function' },
+      { text: 'isfinite', type: 'function' },
+      { text: '_ScreenParams', type: 'variable' },
       { text: 'POSITION', type: 'enumMember' },
       { text: 'TEXCOORD0', type: 'enumMember' },
       { text: 'SV_POSITION', type: 'enumMember' },

@@ -12,6 +12,7 @@ import {
   BUILTIN_DECLARATION_MACROS,
   BUILTIN_REFERENCE_MACROS,
   BUILTIN_SENTINEL_MACROS,
+  type BuiltinDeclaredTypeRecipe,
 } from './builtin';
 
 interface CompiledCallPattern {
@@ -22,12 +23,15 @@ interface CompiledCallPattern {
 
 interface CompiledDeclarationPattern extends CompiledCallPattern {
   readonly symbolKind: DeclarationMacroKind;
+  readonly declaredType?: string;
+  readonly declaredTypeRecipe?: BuiltinDeclaredTypeRecipe;
 }
 
 export interface DeclarationMacroMatch {
   readonly symbolKind: DeclarationMacroKind;
   readonly capturedName: string;
   readonly nameRange: Range;
+  readonly declaredType?: string;
 }
 
 export interface ReferencePatternMatch {
@@ -63,7 +67,12 @@ export class MacroPatternRecognizer {
     this.reportDiagnostic = options.reportDiagnostic ?? ((message) => console.warn(message));
     for (const macro of BUILTIN_DECLARATION_MACROS) {
       if (macro.kind === 'function-reference') continue;
-      this.addDeclaration(macro.pattern, macro.kind);
+      this.addDeclaration(
+        macro.pattern,
+        macro.kind,
+        macro.declaredType,
+        macro.declaredTypeRecipe,
+      );
     }
     for (const macro of BUILTIN_REFERENCE_MACROS) {
       this.referenceHeads.add(compilePragmaPattern(macro.pattern));
@@ -89,6 +98,7 @@ export class MacroPatternRecognizer {
         symbolKind: candidate.symbolKind,
         capturedName: textOf(nameNode),
         nameRange: rangeOf(nameNode),
+        declaredType: resolveDeclaredType(candidate, args),
       };
     }
     return null;
@@ -140,10 +150,20 @@ export class MacroPatternRecognizer {
     };
   }
 
-  private addDeclaration(pattern: string, symbolKind: DeclarationMacroKind): void {
+  private addDeclaration(
+    pattern: string,
+    symbolKind: DeclarationMacroKind,
+    declaredType?: string,
+    declaredTypeRecipe?: BuiltinDeclaredTypeRecipe,
+  ): void {
     const compiled = compileCallPattern(pattern);
     const declarations = this.declarationsByHead.get(compiled.head) ?? [];
-    declarations.push({ ...compiled, symbolKind });
+    declarations.push({
+      ...compiled,
+      symbolKind,
+      declaredType,
+      declaredTypeRecipe,
+    });
     this.declarationsByHead.set(compiled.head, declarations);
   }
 
@@ -174,6 +194,8 @@ export function macroPatternIdentity(
     ...BUILTIN_DECLARATION_MACROS.map((macro) => ({
       pattern: macro.pattern,
       kind: macro.kind,
+      declaredType: macro.declaredType,
+      declaredTypeRecipe: macro.declaredTypeRecipe,
       source: 'builtin-declaration',
     })),
     ...BUILTIN_REFERENCE_MACROS.map((macro) => ({
@@ -224,6 +246,135 @@ function compilePragmaPattern(source: string): string {
   return `#pragma ${match[1]}`;
 }
 
+function resolveDeclaredType(
+  pattern: CompiledDeclarationPattern,
+  args: readonly Parser.SyntaxNode[],
+): string | undefined {
+  if (pattern.declaredType) return pattern.declaredType;
+  const recipe = pattern.declaredTypeRecipe;
+  if (!recipe) return undefined;
+  const argument = args[recipe.argumentIndex];
+  if (!argument || argument.type === 'ERROR') return undefined;
+  const argumentType = parseTypeArgumentText(textOf(argument));
+  if (!argumentType) return undefined;
+  return recipe.kind === 'generic'
+    ? `${recipe.baseType}<${argumentType}>`
+    : argumentType;
+}
+
+type TypeArgumentToken =
+  | { readonly kind: 'identifier' | 'integer'; readonly text: string }
+  | { readonly kind: 'scope' | 'less' | 'greater' | 'comma' };
+
+function parseTypeArgumentText(source: string): string | undefined {
+  const tokens = tokenizeTypeArgument(source);
+  if (!tokens || tokens.length === 0) return undefined;
+  let index = 0;
+
+  const parseNamedType = (): string | undefined => {
+    const first = tokens[index];
+    if (first?.kind !== 'identifier') return undefined;
+    index++;
+    let result = first.text;
+
+    while (tokens[index]?.kind === 'scope') {
+      const name = tokens[index + 1];
+      if (name?.kind !== 'identifier') return undefined;
+      result += `::${name.text}`;
+      index += 2;
+    }
+
+    if (tokens[index]?.kind !== 'less') return result;
+    index++;
+    const arguments_: string[] = [];
+    while (true) {
+      const token = tokens[index];
+      let argument: string | undefined;
+      if (token?.kind === 'integer') {
+        argument = token.text;
+        index++;
+      } else {
+        argument = parseNamedType();
+      }
+      if (!argument) return undefined;
+      arguments_.push(argument);
+      if (tokens[index]?.kind === 'greater') break;
+      if (tokens[index]?.kind !== 'comma') return undefined;
+      index++;
+    }
+    if (tokens[index]?.kind !== 'greater') return undefined;
+    index++;
+    return `${result}<${arguments_.join(', ')}>`;
+  };
+
+  const parsed = parseNamedType();
+  return parsed && index === tokens.length ? parsed : undefined;
+}
+
+function tokenizeTypeArgument(source: string): TypeArgumentToken[] | undefined {
+  const uncommented = stripTypeArgumentComments(source);
+  if (uncommented === undefined) return undefined;
+  const tokens: TypeArgumentToken[] = [];
+  for (let index = 0; index < uncommented.length;) {
+    const character = uncommented[index];
+    if (/\s/.test(character)) {
+      index++;
+      continue;
+    }
+    const identifier = /^[A-Za-z_][A-Za-z0-9_]*/.exec(uncommented.slice(index));
+    if (identifier) {
+      tokens.push({ kind: 'identifier', text: identifier[0] });
+      index += identifier[0].length;
+      continue;
+    }
+    const integer = /^\d+/.exec(uncommented.slice(index));
+    if (integer) {
+      tokens.push({ kind: 'integer', text: integer[0] });
+      index += integer[0].length;
+      continue;
+    }
+    if (uncommented.startsWith('::', index)) {
+      tokens.push({ kind: 'scope' });
+      index += 2;
+      continue;
+    }
+    const punctuation = character === '<'
+      ? 'less'
+      : character === '>'
+        ? 'greater'
+        : character === ','
+          ? 'comma'
+          : undefined;
+    if (!punctuation) return undefined;
+    tokens.push({ kind: punctuation });
+    index++;
+  }
+  return tokens;
+}
+
+function stripTypeArgumentComments(source: string): string | undefined {
+  let result = '';
+  for (let index = 0; index < source.length;) {
+    if (source.startsWith('//', index)) {
+      const lineEnd = source.indexOf('\n', index + 2);
+      if (lineEnd < 0) break;
+      result += ' ';
+      index = lineEnd + 1;
+      continue;
+    }
+    if (source.startsWith('/*', index)) {
+      const commentEnd = source.indexOf('*/', index + 2);
+      if (commentEnd < 0) return undefined;
+      result += ' ';
+      index = commentEnd + 2;
+      continue;
+    }
+    result += source[index];
+    index++;
+  }
+  return result;
+}
+
 function firstNamedDescendantOfType(
   node: Parser.SyntaxNode,
   type: string,
@@ -241,5 +392,5 @@ function firstNamedDescendantOfType(
 function argumentNodes(callNode: Parser.SyntaxNode): Parser.SyntaxNode[] {
   const argumentsNode = callNode.childForFieldName('arguments')
     ?? firstNamedDescendantOfType(callNode, 'argument_list');
-  return argumentsNode?.namedChildren ?? [];
+  return argumentsNode?.namedChildren.filter((child) => child.type !== 'comment') ?? [];
 }

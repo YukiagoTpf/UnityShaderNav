@@ -20,6 +20,73 @@ describe('integration: macros end-to-end', () => {
     expect(main?.kind).toBe('variable');
   });
 
+  it.each([
+    ['TEXTURE2D_HALF(_HalfTex)', '_HalfTex', 'Texture2D'],
+    ['TYPED_TEXTURE2D(float4, _TypedTex)', '_TypedTex', 'Texture2D<float4>'],
+    ['RW_TEXTURE2D(uint4, _WritableTex)', '_WritableTex', 'RWTexture2D<uint4>'],
+  ])('indexes canonical type from %s', async (declaration, name, declaredType) => {
+    const idx = await indexFile(
+      'file:///t/typed-textures.hlsl',
+      `${declaration};`,
+      new MacroPatternRecognizer(),
+    );
+
+    expect(idx.symbols.find((symbol) => symbol.name === name)).toMatchObject({
+      kind: 'variable',
+      declaredType,
+    });
+  });
+
+  it.each([
+    ['TEXTURE2D_X_HALF(_XHalf)', '_XHalf', undefined],
+    ['TEXTURE2D_X_FLOAT(_XFloat)', '_XFloat', undefined],
+    ['RW_TEXTURE2D_X(float4, _WritableX)', '_WritableX', undefined],
+    [
+      'UNITY_DOTS_INSTANCED_PROP_OVERRIDE_DISABLED(float4, _Disabled)',
+      '_Disabled',
+      'float4',
+    ],
+    [
+      'UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(SurfaceData, _Supported)',
+      '_Supported',
+      'SurfaceData',
+    ],
+    [
+      'UNITY_DOTS_INSTANCED_PROP_OVERRIDE_REQUIRED(vector<float, 4>, _Required)',
+      '_Required',
+      'vector<float, 4>',
+    ],
+  ])('indexes the official declaration form %s', async (
+    declaration,
+    name,
+    declaredType,
+  ) => {
+    const idx = await indexFile(
+      'file:///t/official-declaration-macros.hlsl',
+      `${declaration};`,
+      new MacroPatternRecognizer(),
+    );
+
+    const symbol = idx.symbols.find((candidate) => candidate.name === name);
+    expect(symbol).toMatchObject({ kind: 'variable' });
+    expect(symbol?.declaredType).toBe(declaredType);
+  });
+
+  it.each([
+    ['TYPED_TEXTURE2D(, _Incomplete)', '_Incomplete'],
+    ['TYPED_TEXTURE2D(1 + 2, _Invalid)', '_Invalid'],
+  ])('indexes %s without a fabricated receiver type', async (declaration, name) => {
+    const idx = await indexFile(
+      'file:///t/invalid-declaration-types.hlsl',
+      `${declaration};`,
+      new MacroPatternRecognizer(),
+    );
+
+    const symbol = idx.symbols.find((candidate) => candidate.name === name);
+    expect(symbol).toMatchObject({ kind: 'variable' });
+    expect(symbol?.declaredType).toBeUndefined();
+  });
+
   it('#pragma vertex vert registers vert as pragma reference', async () => {
     const idx = await indexFile(
       'file:///t/pragmas.shader',
@@ -83,8 +150,33 @@ describe('integration: macros end-to-end', () => {
       new MacroPatternRecognizer(),
     );
 
-    expect(idx.symbols.find((s) => s.name === '_BaseColor')?.kind).toBe('variable');
+    expect(idx.symbols.find((s) => s.name === '_BaseColor')).toMatchObject({
+      kind: 'variable',
+      declaredType: 'float4',
+    });
     expect(idx.references.map((r) => `${r.name}:${r.context}`).sort()).toEqual([]);
+  });
+
+  it.each([
+    ['UNITY_INSTANCING_BUFFER_START', 'Props', 'UNITY_INSTANCING_BUFFER_END(Props)'],
+    ['UNITY_INSTANCING_CBUFFER_SCOPE_BEGIN', 'UnityDrawCallInfo', 'UNITY_INSTANCING_CBUFFER_SCOPE_END'],
+    ['UNITY_DOTS_INSTANCING_START', 'MaterialMetadata', 'UNITY_DOTS_INSTANCING_END(MaterialMetadata)'],
+  ])('indexes %s declarations without fabricating END symbols', async (
+    start,
+    name,
+    end,
+  ) => {
+    const text = [`${start}(${name})`, end].join('\n');
+    const idx = await indexFile(
+      'file:///t/instancing-buffers.hlsl',
+      text,
+      new MacroPatternRecognizer(),
+    );
+
+    expect(idx.symbols.filter((symbol) => symbol.kind === 'cbuffer').map(
+      (symbol) => symbol.name,
+    )).toEqual([name]);
+    expect(idx.references).toEqual([]);
   });
 
   it('#pragma kernel CSMain registers CSMain as pragma reference in .compute files', async () => {

@@ -22,6 +22,8 @@ import {
 } from '../lifecycle/requestCancellation';
 import {
   collectBuiltinFunctionSuggestions,
+  collectBuiltinMemberFunctionSuggestions,
+  collectBuiltinMemberSuggestions,
   collectBuiltinSuggestions,
 } from './builtins';
 import type { SuggestionContext } from './context';
@@ -156,16 +158,26 @@ class PublishedSuggestionCandidateSelector implements SuggestionCandidateSelecto
     cancellation?: CancellationToken,
   ): Promise<SuggestionCandidateSelection> {
     const visibleUriKeys = await this.visibleUriKeys(current.uri, cancellation);
+    const receiverType = inferReceiverTypeForCompletion(
+      current,
+      this.index.global,
+      receiver,
+      position,
+      { visibleUriKeys },
+    );
+    if (!receiverType) return { suggestions: [] };
+    const projectSuggestions = await collectMemberSuggestions(
+      current,
+      this.index.store,
+      visibleUriKeys,
+      receiverType,
+      prefix,
+      cancellation,
+    );
     return {
-      suggestions: await collectMemberSuggestions(
-        current,
-        this.index.store,
-        this.index.global,
-        visibleUriKeys,
-        receiver,
-        prefix,
-        position,
-        cancellation,
+      suggestions: mergeProjectAndBuiltinSuggestions(
+        projectSuggestions,
+        collectBuiltinMemberSuggestions(receiverType, prefix),
       ),
     };
   }
@@ -201,7 +213,11 @@ class PublishedSuggestionCandidateSelector implements SuggestionCandidateSelecto
       parentType,
     }, cancellation);
     const suggestions = target.kind === 'member'
-      ? projectSuggestions
+      ? projectSuggestions.length > 0
+        ? projectSuggestions
+        : parentType
+          ? collectBuiltinMemberFunctionSuggestions(parentType, target.name, context)
+          : []
       : projectSuggestions.length > 0
       ? projectSuggestions
       : collectBuiltinFunctionSuggestions(target.name, context);
@@ -411,22 +427,11 @@ async function collectVisibleProjectFunctionSuggestions(
 async function collectMemberSuggestions(
   index: FileIndex,
   store: IndexStoreReader,
-  global: GlobalSymbolReader | null | undefined,
   visibleUriKeys: ReadonlySet<string>,
-  receiver: string,
+  receiverType: string,
   memberPrefix: string,
-  position: Position,
   cancellation?: CancellationToken,
 ): Promise<ShaderSuggestion[]> {
-  const receiverType = inferReceiverTypeForCompletion(
-    index,
-    global,
-    receiver,
-    position,
-    { visibleUriKeys },
-  );
-  if (!receiverType) return [];
-
   const indexes = [index];
   for (const uri of store.uris()) {
     const key = uriKey(uri);

@@ -39,6 +39,38 @@ describe('built-in suggestion filtering', () => {
     ]));
   });
 
+  it('projects expanded free vocabulary without leaking receiver-owned methods', () => {
+    const text = 'float4 main() { return ';
+    const result = collect(text, 0, text.length);
+    const byName = new Map(result.map((suggestion) => [suggestion.name, suggestion]));
+
+    expect(byName.get('sincos')).toMatchObject({ kind: 'function' });
+    expect(byName.get('_ProjectionParams')).toMatchObject({ kind: 'variable' });
+    expect(byName.get('precise')).toMatchObject({ kind: 'keyword' });
+    expect(byName.get('UNITY_PI')).toMatchObject({ kind: 'macro' });
+    expect(byName.get('SAMPLE_TEXTURE2D_X')).toMatchObject({ kind: 'macro' });
+    expect(byName.get('InputData')).toMatchObject({ kind: 'type' });
+
+    expect([...byName.keys()]).not.toEqual(expect.arrayContaining([
+      'Sample',
+      'SampleLevel',
+      'SampleBias',
+      'SampleGrad',
+      'SampleCmp',
+      'Load',
+      'Gather',
+      'GetDimensions',
+    ]));
+  });
+
+  it('projects overloaded intrinsics once for Completion', () => {
+    const text = 'float4 main() { return asf';
+    const result = collect(text, 0, text.length);
+
+    expect(result.filter((suggestion) => suggestion.name === 'asfloat'))
+      .toHaveLength(1);
+  });
+
   it('returns only semantic entries in semantic positions', () => {
     const text = 'struct Varyings { float4 positionCS : ';
     const result = names(text, 0, text.length);

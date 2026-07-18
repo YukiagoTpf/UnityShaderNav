@@ -14,6 +14,36 @@ function tokenTexts(text: string): Array<{ text: string; type: string }> {
 }
 
 describe('scanShaderLabTokens', () => {
+  it('colors expanded HLSL, Unity, and URP vocabulary by neutral lexical roles', () => {
+    const text = [
+      'Shader "Custom/LexicalRoles" {',
+      '  HLSLPROGRAM',
+      '  groupshared float4 sharedColor;',
+      '  InputData inputData;',
+      '  float4 frag() : SV_Target {',
+      '    precise float sineValue, cosineValue;',
+      '    UNITY_BRANCH if (_ProjectionParams.x > 0) {',
+      '      sincos(UNITY_PI, sineValue, cosineValue);',
+      '    }',
+      '    return _ScreenParams;',
+      '  }',
+      '  ENDHLSL',
+      '}',
+    ].join('\n');
+
+    expect(tokenTexts(text)).toEqual(expect.arrayContaining([
+      { text: 'groupshared', type: 'keyword' },
+      { text: 'InputData', type: 'type' },
+      { text: 'precise', type: 'keyword' },
+      { text: 'UNITY_BRANCH', type: 'macro' },
+      { text: 'if', type: 'keyword' },
+      { text: '_ProjectionParams', type: 'variable' },
+      { text: 'sincos', type: 'function' },
+      { text: 'UNITY_PI', type: 'macro' },
+      { text: '_ScreenParams', type: 'variable' },
+    ]));
+  });
+
   it('scans ShaderLab wrapper, Properties, Tags, preprocessor, macros, and semantics', () => {
     const text = [
       'Shader "Custom/Mixed" {',

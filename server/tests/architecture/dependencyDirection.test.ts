@@ -161,6 +161,8 @@ describe('server dependency direction', () => {
       'findBuiltinEntries',
       'builtinEntriesForContext',
       'findBuiltinFunctions',
+      'builtinMemberEntriesForReceiverType',
+      'findBuiltinMemberFunctions',
       'builtinLexicalRole',
       'asShaderLabPropertyType',
       'isShaderLabStateValueContext',
@@ -208,6 +210,11 @@ describe('server dependency direction', () => {
         forbidden: /entry\.name|entry\.kind|entry\.parameters/,
       },
       {
+        moduleId: 'suggestions/builtins/members.ts',
+        required: /builtinMemberEntriesForReceiverType[\s\S]*findBuiltinMemberFunctions/,
+        forbidden: /\bBUILTIN_ENTRIES\b|builtinEntriesForContext|findBuiltinEntries|entry\.kind/,
+      },
+      {
         moduleId: 'documentation/resolver.ts',
         required: /findBuiltinEntries/,
         forbidden: /BUILTIN_ENTRIES\.filter/,
@@ -218,6 +225,15 @@ describe('server dependency direction', () => {
       expect(source, consumer.moduleId).toMatch(consumer.required);
       expect(source, consumer.moduleId).not.toMatch(consumer.forbidden);
     }
+  });
+
+  it('keeps the built-in suggestion adapter neutral about authoritative kinds', () => {
+    const adapter = readFileSync(
+      resolve(SOURCE_ROOT, 'suggestions/builtins/toSuggestion.ts'),
+      'utf8',
+    );
+
+    expect(adapter).toMatch(/\bkind:\s*entry\.kind\s*,/);
   });
 
   it('uses captured grammar and release metadata without hashing runtime trees', () => {

@@ -7,6 +7,12 @@ function fixturePath(...segments: string[]): string {
   return path.resolve(__dirname, '../../../integration/client/fixtures', ...segments);
 }
 
+function positionAfter(document: vscode.TextDocument, needle: string): vscode.Position {
+  const offset = document.getText().indexOf(needle);
+  assert.ok(offset >= 0, `expected fixture text ${needle}`);
+  return document.positionAt(offset + needle.length);
+}
+
 async function waitForCompletion(
   uri: vscode.Uri,
   position: vscode.Position,
@@ -57,6 +63,47 @@ suite('Built-in Completion', () => {
       );
 
       assert.ok(items.some((item) => item.label === 'Blend'), 'expected Blend completion');
+    });
+  });
+
+  test('suggests receiver-owned texture, vector, and matrix members', async () => {
+    const root = fixturePath('builtin-members');
+    await withWorkspaceFolder(root, async () => {
+      const uri = vscode.Uri.file(path.join(root, 'Representative.hlsl'));
+      const doc = await vscode.workspace.openTextDocument(uri);
+      await vscode.window.showTextDocument(doc);
+
+      const textureItems = await waitForCompletion(
+        uri,
+        positionAfter(doc, 'texture.Sam'),
+        (result) => result.some((item) => item.label === 'Sample'),
+      );
+      assert.strictEqual(
+        textureItems.filter((item) => item.label === 'Sample').length,
+        1,
+        'expected one Sample completion despite signature overloads',
+      );
+
+      const swizzles = await waitForCompletion(
+        uri,
+        positionAfter(doc, 'color.xy'),
+        (result) => result.some((item) => item.label === 'xy'),
+      );
+      assert.ok(swizzles.some((item) => item.label === 'xy'), 'expected float4 xy swizzle');
+
+      const matrixMembers = await waitForCompletion(
+        uri,
+        positionAfter(doc, 'transform._m2'),
+        (result) => result.some((item) => item.label === '_m23'),
+      );
+      assert.ok(
+        matrixMembers.some((item) => item.label === '_m23'),
+        'expected bounded float3x4 component _m23',
+      );
+      assert.ok(
+        !matrixMembers.some((item) => item.label === '_m30'),
+        'did not expect out-of-bounds float3x4 component _m30',
+      );
     });
   });
 });

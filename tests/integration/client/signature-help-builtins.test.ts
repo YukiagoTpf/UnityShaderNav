@@ -7,6 +7,12 @@ function fixturePath(...segments: string[]): string {
   return path.resolve(__dirname, '../../../integration/client/fixtures', ...segments);
 }
 
+function positionAfter(document: vscode.TextDocument, needle: string): vscode.Position {
+  const offset = document.getText().indexOf(needle);
+  assert.ok(offset >= 0, `expected fixture text ${needle}`);
+  return document.positionAt(offset + needle.length);
+}
+
 async function waitForSignatureHelp(
   uri: vscode.Uri,
   position: vscode.Position,
@@ -40,6 +46,31 @@ suite('Built-in Signature Help', () => {
 
       assert.ok(help, 'expected built-in signature help');
       assert.ok(help.signatures.some((signature) => signature.label.includes('lerp')));
+    });
+  });
+
+  test('shows all texture member overloads from a later multiline argument', async () => {
+    const root = fixturePath('builtin-members');
+    await withWorkspaceFolder(root, async () => {
+      const uri = vscode.Uri.file(path.join(root, 'Representative.hlsl'));
+      const doc = await vscode.workspace.openTextDocument(uri);
+      await vscode.window.showTextDocument(doc);
+
+      const help = await waitForSignatureHelp(
+        uri,
+        positionAfter(doc, '    int2(0, 0)'),
+        (result) => (result?.signatures.filter((signature) => (
+          signature.label.includes('Sample(')
+        )).length ?? 0) === 2,
+      );
+
+      assert.ok(help, 'expected texture member signature help');
+      assert.strictEqual(
+        help.signatures.filter((signature) => signature.label.includes('Sample(')).length,
+        2,
+      );
+      assert.strictEqual(help.activeSignature, 1);
+      assert.strictEqual(help.activeParameter, 2);
     });
   });
 });

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseHlsl } from '../../../src/parser/hlsl/parser';
 import { collect } from '../../../src/parser/hlsl/collector';
+import { MacroPatternRecognizer } from '../../../src/macros';
 
 const fixture = (n: string) => readFileSync(join(__dirname, 'fixtures', n), 'utf8');
 
@@ -171,6 +172,34 @@ describe('collector: cbuffer', () => {
 });
 
 describe('collector: global variables', () => {
+  it('preserves built-in macro types without assigning a type to user macros', async () => {
+    const text = [
+      'TEXTURE2D_HALF(_MainTex);',
+      'TYPED_TEXTURE2D(float4, _TypedTex);',
+      'RW_TEXTURE2D(uint4, _WritableTex);',
+      'MY_RESOURCE(float3, _Custom);',
+    ].join('\n');
+    const tree = await parseHlsl(text);
+    const result = collect(
+      tree.rootNode,
+      text,
+      'file:///test/texture-macro.hlsl',
+      0,
+      new MacroPatternRecognizer([
+        { pattern: 'MY_RESOURCE(_, $name)', kind: 'variable' },
+      ]),
+    );
+
+    expect(new Map(result.symbols.map(
+      (symbol) => [symbol.name, symbol.declaredType],
+    ))).toEqual(new Map([
+      ['_MainTex', 'Texture2D'],
+      ['_TypedTex', 'Texture2D<float4>'],
+      ['_WritableTex', 'RWTexture2D<uint4>'],
+      ['_Custom', undefined],
+    ]));
+  });
+
   it('collects top-level ordinary variable declarations', async () => {
     const text = `float4 _Color; struct Surface { float3 positionWS; }; Surface gSurface;`;
     const tree = await parseHlsl(text);

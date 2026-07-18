@@ -308,7 +308,14 @@ Completion suggests project functions, variables, parameters, structs, macros,
 and receiver-aware struct members in HLSL/CG code. It also merges a curated
 built-in vocabulary for common HLSL intrinsics, Unity/URP helper names and
 macros, semantics, and ShaderLab states and values. Project symbols are
-preferred when names collide with built-ins.
+preferred when names collide with built-ins. Built-in member candidates are a
+narrow, receiver-owned projection: the project selector first resolves the
+receiver's indexed declared type, then queries only members owned by that type.
+Vector swizzles and bounded matrix components follow the resolved shape;
+generic texture spellings such as `Texture2D<float4>` use the canonical texture
+owner. Completion collapses callable overloads to one method name, while
+Signature Help preserves every matching overload. A same-name project member
+suppresses the built-in member in both paths.
 
 Signature help is also project-index-backed and conservative. It shows indexed
 project function signatures for visible free-function calls and may return
@@ -335,10 +342,11 @@ Built-in vocabulary entries and their neutral metadata live behind the single
 `server/src/vocabulary.ts` production interface. Stable roles distinguish
 ShaderLab keywords, render states, state-value heads and values, and Property
 types. Exact-name Hover lookup, Completion contexts, callable Signature Help,
-lexical coloring, cursor state contexts, and Property parsing each consume a
-narrow neutral projection; no consumer reads a raw catalog or reinterprets
-category/kind with a private name list. Parser modules must not import
-suggestion modules, including through transitive imports.
+receiver-owned member Completion and Signature Help, lexical coloring, cursor
+state contexts, and Property parsing each consume a narrow neutral projection;
+no consumer reads a raw catalog or reinterprets category/kind with a private
+name list. Parser modules must not import suggestion modules, including through
+transitive imports.
 
 The curated Property-type contract includes `2DArray`, `CubeArray`, and the
 modern integer-backed `Integer` alongside legacy float-backed `Int`, and
@@ -401,6 +409,14 @@ declaration and reference patterns:
 - `#pragma vertex`, `#pragma fragment`, `#pragma geometry`, `#pragma hull`,
   `#pragma domain`, and `#pragma kernel` entry references.
 - `#define` macro declarations.
+
+When a built-in declaration macro has a stable type contract, its canonical
+recipe is stored with the pattern rather than inferred by a downstream
+consumer: a fixed declared type, an argument-captured type, or a generic base
+plus its element-type argument. For example, a typed texture recipe produces
+`Texture2D<float4>` from `TYPED_TEXTURE2D(float4, _MainTex)`. Platform-dependent
+aliases without one unique resource type remain untyped; in particular,
+`TEXTURE2D_X` must not fabricate a canonical type.
 
 Projects can add custom declaration patterns with
 `unityShaderNav.declarationMacros`. One recognizer validates and compiles those

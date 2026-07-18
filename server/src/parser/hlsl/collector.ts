@@ -370,6 +370,7 @@ function collectMacroDeclaration(
   st.symbols.push({
     name: match.capturedName,
     kind: match.symbolKind,
+    declaredType: match.declaredType,
     location: { uri: st.uri, range: offsetRange(match.nameRange, st.lineOffset) },
   });
 }

@@ -77,10 +77,15 @@ suite('Semantic Tokens', () => {
       assert.ok(tokens, 'expected semantic tokens for Mixed.shader');
       assert.ok(tokens.data.length > 0, 'expected semantic token data for Mixed.shader');
       const decoded = decodeTokens(tokens);
-      // Stable server legend: type=0, keyword=6.
+      // Stable server legend: type=0, variable=1, function=4, macro=5, keyword=6.
       expectToken(doc, decoded, 'UsePass', 6);
       expectToken(doc, decoded, '2DArray', 0);
       expectToken(doc, decoded, 'CubeArray', 0);
+      expectToken(doc, decoded, 'isnan', 4);
+      expectToken(doc, decoded, 'isfinite', 4);
+      expectToken(doc, decoded, '_ScreenParams', 1);
+      expectToken(doc, decoded, 'groupshared', 6);
+      expectToken(doc, decoded, 'TEXTURE2D_HALF', 5);
     });
   });
 });

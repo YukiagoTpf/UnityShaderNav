@@ -9,6 +9,9 @@ and uses semantic versioning for extension releases.
 
 ### Added
 
+- Added #127 receiver-aware built-in member completion and signature help for
+  texture methods, vector swizzles, bounded matrix components, and typed
+  built-in declarations, with project members retaining precedence.
 - Added Signature Help on any argument line of multiline calls and for project
   struct member methods.
 - Added one shared `UnityShaderNav` output channel for client, server, and LSP

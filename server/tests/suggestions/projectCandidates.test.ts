@@ -765,6 +765,118 @@ describe('SuggestionCandidateSelector', () => {
     expect(unknown?.suggestions).toEqual([]);
   });
 
+  it('falls back to all compatible builtin member signature overloads', async () => {
+    const uri = 'file:///project/TextureSignature.hlsl';
+    const index: FileIndex = {
+      uri,
+      references: [],
+      symbols: [symbol('texture', 'parameter', uri, 1, {
+        declaredType: 'Texture2D<float4>',
+        scopeRange,
+      })],
+    };
+    const selector = selectorFor([index]);
+
+    const selection = await selector.select({
+      uri,
+      position: { line: 10, character: 0 },
+      query: {
+        kind: 'signature',
+        context: context(),
+        target: { kind: 'member', receiver: 'texture', name: 'Sample' },
+        activeParameter: 2,
+      },
+    });
+
+    expect(selection?.suggestions.map((item) => ({
+      source: item.source,
+      parentType: item.parentType,
+      parameterCount: item.parameters?.length,
+    }))).toEqual([
+      { source: 'builtin', parentType: 'Texture2D', parameterCount: 2 },
+      { source: 'builtin', parentType: 'Texture2D', parameterCount: 3 },
+    ]);
+    expect(selection?.activeSuggestion).toBe(1);
+  });
+
+  it('prefers same-name project members over builtin completion and signatures', async () => {
+    const uri = 'file:///project/TextureOverride.hlsl';
+    const projectSample = {
+      ...fn('Sample', uri, 2, [{ type: 'ProjectSampler', name: 'sampler' }]),
+      parentType: 'Texture2D<float4>',
+    };
+    const index: FileIndex = {
+      uri,
+      references: [],
+      symbols: [
+        symbol('texture', 'parameter', uri, 1, {
+          declaredType: 'Texture2D<float4>',
+          scopeRange,
+        }),
+        projectSample,
+      ],
+    };
+    const selector = selectorFor([index]);
+    const memberCompletion = await selector.select({
+      uri,
+      position: { line: 10, character: 0 },
+      query: { kind: 'member', receiver: 'texture', prefix: 'Sam' },
+    });
+    const memberSignature = await selector.select({
+      uri,
+      position: { line: 10, character: 0 },
+      query: {
+        kind: 'signature',
+        context: context(),
+        target: { kind: 'member', receiver: 'texture', name: 'Sample' },
+        activeParameter: 0,
+      },
+    });
+
+    expect(memberCompletion?.suggestions.filter((item) => item.name === 'Sample')).toEqual([
+      expect.objectContaining({ source: 'project', parentType: 'Texture2D<float4>' }),
+    ]);
+    expect(memberSignature?.suggestions).toEqual([
+      expect.objectContaining({
+        source: 'project',
+        parameters: [{ type: 'ProjectSampler', name: 'sampler' }],
+      }),
+    ]);
+  });
+
+  it('does not leak builtin members to unknown receivers or free queries', async () => {
+    const uri = 'file:///project/UnknownReceiver.hlsl';
+    const index: FileIndex = {
+      uri,
+      references: [],
+      symbols: [symbol('unknown', 'parameter', uri, 1, {
+        declaredType: 'UserDefinedType',
+        scopeRange,
+      })],
+    };
+    const selector = selectorFor([index]);
+    const unknownMember = await selector.select({
+      uri,
+      position: { line: 10, character: 0 },
+      query: { kind: 'member', receiver: 'unknown', prefix: 'Sam' },
+    });
+    const freeSignature = await selector.select({
+      uri,
+      position: { line: 10, character: 0 },
+      query: {
+        kind: 'signature',
+        context: context(),
+        target: { kind: 'free', name: 'Sample' },
+        activeParameter: 0,
+      },
+    });
+    const freeCompletion = await completion(selector, uri, 'Sam');
+
+    expect(unknownMember?.suggestions).toEqual([]);
+    expect(freeSignature?.suggestions).toEqual([]);
+    expect(freeCompletion.suggestions.map((item) => item.name)).not.toContain('Sample');
+  });
+
   it('completes members when call-assignment overloads agree on the receiver type', async () => {
     const uri = 'file:///project/Main.hlsl';
     const index: FileIndex = {
@@ -807,6 +919,96 @@ describe('SuggestionCandidateSelector', () => {
         parentType: 'Surface',
       }),
     ]);
+  });
+
+  it('completes generic Texture2D builtin methods once per method name', async () => {
+    const uri = 'file:///project/Texture.hlsl';
+    const index: FileIndex = {
+      uri,
+      references: [],
+      symbols: [symbol('texture', 'parameter', uri, 1, {
+        declaredType: 'Texture2D<float4>',
+        scopeRange,
+      })],
+    };
+    const selector = selectorFor([index]);
+
+    const selection = await selector.select({
+      uri,
+      position: { line: 10, character: 0 },
+      query: { kind: 'member', receiver: 'texture', prefix: 'Sam' },
+    });
+
+    expect(selection?.suggestions.filter((item) => item.name === 'Sample')).toEqual([
+      expect.objectContaining({
+        name: 'Sample',
+        kind: 'function',
+        source: 'builtin',
+        parentType: 'Texture2D',
+      }),
+    ]);
+    expect(selection?.suggestions.map((item) => item.name)).toEqual(expect.arrayContaining([
+      'Sample',
+      'SampleLevel',
+      'SampleBias',
+      'SampleGrad',
+      'SampleCmp',
+    ]));
+  });
+
+  it('projects float4 swizzles as typed builtin struct members', async () => {
+    const uri = 'file:///project/Vector.hlsl';
+    const index: FileIndex = {
+      uri,
+      references: [],
+      symbols: [symbol('color', 'parameter', uri, 1, {
+        declaredType: 'float4',
+        scopeRange,
+      })],
+    };
+    const selector = selectorFor([index]);
+
+    const selection = await selector.select({
+      uri,
+      position: { line: 10, character: 0 },
+      query: { kind: 'member', receiver: 'color', prefix: 'xy' },
+    });
+
+    expect(selection?.suggestions).toContainEqual(expect.objectContaining({
+      name: 'xy',
+      kind: 'structMember',
+      source: 'builtin',
+      declaredType: 'float2',
+      parentType: 'float4',
+    }));
+  });
+
+  it('projects bounded non-square matrix components as typed struct members', async () => {
+    const uri = 'file:///project/Matrix.hlsl';
+    const index: FileIndex = {
+      uri,
+      references: [],
+      symbols: [symbol('transform', 'parameter', uri, 1, {
+        declaredType: 'float3x4',
+        scopeRange,
+      })],
+    };
+    const selector = selectorFor([index]);
+
+    const selection = await selector.select({
+      uri,
+      position: { line: 10, character: 0 },
+      query: { kind: 'member', receiver: 'transform', prefix: '_m2' },
+    });
+
+    expect(selection?.suggestions).toContainEqual(expect.objectContaining({
+      name: '_m23',
+      kind: 'structMember',
+      source: 'builtin',
+      declaredType: 'float',
+      parentType: 'float3x4',
+    }));
+    expect(selection?.suggestions.map((item) => item.name)).not.toContain('_m30');
   });
 
   it('distinguishes a missing current index from an indexed query with no candidates', async () => {

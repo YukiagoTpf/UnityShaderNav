@@ -20,7 +20,8 @@ export type ShaderLabLexicalTokenType =
   | 'number'
   | 'macro'
   | 'enumMember'
-  | 'function';
+  | 'function'
+  | 'variable';
 
 export interface ShaderLabLexicalToken {
   range: Range;

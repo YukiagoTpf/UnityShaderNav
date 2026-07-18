@@ -34,7 +34,10 @@ The extension focuses on fast code navigation:
   fallback.
 - Conservative completion and signature help for indexed HLSL/CG code, plus a
   curated Unity/HLSL/ShaderLab/URP/HDRP built-in vocabulary covering common
-  intrinsics, helper macros, render states, and semantics.
+  intrinsics, helper macros, render states, and semantics. Receiver-aware
+  results include texture methods and overload signatures, vector swizzles,
+  non-square matrix components, and explicitly typed texture declarations such
+  as `Texture2D<float4>`.
 - Context-scoped ShaderLab snippets for common Material Properties, Passes, and
   a pipeline-neutral vertex/fragment program; editable presentations for
   normalized literal Color defaults; and safe ShaderLab indentation formatting.
@@ -154,7 +157,9 @@ See [Configuration](docs/configuration.md) for the full explanation and examples
 - Surface Shader implicit parameters and ShaderGraph generated code are not
   indexed as special sources.
 - Built-in completion and signature help are curated and non-exhaustive.
-  Project symbols are preferred when names collide with built-ins.
+  Receiver members are offered only when an indexed declaration supplies a
+  supported type; project symbols are preferred when names collide with
+  built-ins.
 - Quick Documentation is curated and non-exhaustive. Package-specific fallback
   appears only for a compatible, include-visible built-in or default-registry
   Unity Package. Unity-scoped prose is currently verified for Editor 2022.3;
