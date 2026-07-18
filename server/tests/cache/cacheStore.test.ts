@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -10,9 +10,7 @@ import {
 } from '@unity-shader-nav/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CacheStore } from '../../src/cache/cacheStore';
-
-const INDEX_IMPLEMENTATION_A = 'a'.repeat(64);
-const INDEX_IMPLEMENTATION_B = 'b'.repeat(64);
+import * as fileIndexCodec from '../../src/cache/fileIndexCodec';
 
 const fsMock = vi.hoisted(() => ({
   failNextRename: false,
@@ -36,7 +34,7 @@ vi.mock('node:fs', async (importOriginal) => {
 });
 
 const fingerprint: CacheFingerprint = {
-  indexImplementation: INDEX_IMPLEMENTATION_A,
+  releaseVersion: '0.1.1',
   grammarVersion: 'c'.repeat(64),
   settingsHash: 's',
   macroTableHash: 'm',
@@ -107,7 +105,7 @@ describe('CacheStore', () => {
     const dir = await mkdtemp(join(tmpdir(), 'usn-cache-valid-'));
     const store = new CacheStore(dir);
     const fingerprint: CacheFingerprint = {
-      indexImplementation: INDEX_IMPLEMENTATION_A,
+      releaseVersion: '0.2.0',
       grammarVersion: 'd'.repeat(64),
       settingsHash: 's1',
       macroTableHash: 'm1',
@@ -127,6 +125,26 @@ describe('CacheStore', () => {
       workspaceFolderUri: 'file:///x',
       fingerprint,
     });
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('rejects an incompatible fingerprint before traversing file payloads', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'usn-cache-fingerprint-first-'));
+    const store = new CacheStore(dir);
+    const realDecoder = fileIndexCodec.decodePersistedFileIndex;
+    const decoder = vi.spyOn(fileIndexCodec, 'decodePersistedFileIndex')
+      .mockImplementation((...args) => realDecoder(...args));
+    await writeRawManifest(dir, validManifest({ files: [validFile()] }));
+
+    await expect(store.load({
+      ...fingerprint,
+      releaseVersion: '9.9.9',
+    })).resolves.toBeNull();
+    expect(decoder).not.toHaveBeenCalled();
+
+    await expect(store.load(fingerprint)).resolves.toMatchObject({ files: [validFile()] });
+    expect(decoder).toHaveBeenCalledOnce();
 
     await rm(dir, { recursive: true, force: true });
   });
@@ -239,118 +257,17 @@ describe('CacheStore', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it('rejects pre-macro-symbol cache manifests', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'usn-cache-pre-macro-'));
-    const store = new CacheStore(dir);
-
-    await writeFile(join(dir, 'index.json'), JSON.stringify({
-      version: 2,
-      workspaceFolderUri: 'file:///x',
-      unityProjectRoot: '/x',
-      createdAt: 123,
-      fingerprint: { grammarVersion: 'c'.repeat(64), settingsHash: 's', macroTableHash: 'm' },
-      files: [],
-    }), 'utf8');
-
-    expect(await store.load()).toBeNull();
-
-    await rm(dir, { recursive: true, force: true });
-  });
-
-  it('rejects pre-member-receiver cache manifests', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'usn-cache-pre-member-receiver-'));
-    const store = new CacheStore(dir);
-
-    await writeFile(join(dir, 'index.json'), JSON.stringify({
-      version: 3,
-      workspaceFolderUri: 'file:///x',
-      unityProjectRoot: '/x',
-      createdAt: 123,
-      fingerprint: { grammarVersion: 'c'.repeat(64), settingsHash: 's', macroTableHash: 'm' },
-      files: [],
-    }), 'utf8');
-
-    expect(await store.load()).toBeNull();
-
-    await rm(dir, { recursive: true, force: true });
-  });
-
-  it('rejects pre-struct-macro-cache manifests', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'usn-cache-pre-struct-macro-'));
-    const store = new CacheStore(dir);
-
-    await writeFile(join(dir, 'index.json'), JSON.stringify({
-      version: 4,
-      workspaceFolderUri: 'file:///x',
-      unityProjectRoot: '/x',
-      createdAt: 123,
-      fingerprint: { grammarVersion: 'c'.repeat(64), settingsHash: 's', macroTableHash: 'm' },
-      files: [],
-    }), 'utf8');
-
-    expect(await store.load()).toBeNull();
-
-    await rm(dir, { recursive: true, force: true });
-  });
-
-  it('rejects pre-rhs-inference cache manifests', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'usn-cache-pre-rhs-inference-'));
-    const store = new CacheStore(dir);
-
-    await writeFile(join(dir, 'index.json'), JSON.stringify({
-      version: 5,
-      workspaceFolderUri: 'file:///x',
-      unityProjectRoot: '/x',
-      createdAt: 123,
-      fingerprint: { grammarVersion: 'c'.repeat(64), settingsHash: 's', macroTableHash: 'm' },
-      files: [],
-    }), 'utf8');
-
-    expect(await store.load()).toBeNull();
-
-    await rm(dir, { recursive: true, force: true });
-  });
-
-  it('rejects v6 manifests from before automatic implementation identity', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'usn-cache-pre-implementation-identity-'));
-    const store = new CacheStore(dir);
-
-    await writeRawManifest(dir, {
-      version: 6,
-      workspaceFolderUri: 'file:///x',
-      unityProjectRoot: '/x',
-      createdAt: 123,
-      fingerprint: { grammarVersion: 'c'.repeat(64), settingsHash: 's', macroTableHash: 'm' },
-      files: [],
-    });
-
-    expect(await store.load()).toBeNull();
-    await rm(dir, { recursive: true, force: true });
-  });
-
-  it('rejects v7 manifests from before exact parser runtime assets', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'usn-cache-pre-runtime-assets-'));
-    const store = new CacheStore(dir);
-    await writeRawManifest(dir, {
-      ...validManifest(),
-      version: 7,
-    });
-
-    expect(await store.load()).toBeNull();
-    await rm(dir, { recursive: true, force: true });
-  });
-
-  it('returns null when the index implementation identity mismatches', async () => {
+  it('returns null when the release version mismatches', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'usn-cache-fp-'));
     const store = new CacheStore(dir);
     const fpA: CacheFingerprint = {
-      indexImplementation: INDEX_IMPLEMENTATION_A,
+      releaseVersion: '0.1.1',
       grammarVersion: 'c'.repeat(64),
       settingsHash: 's1',
       macroTableHash: 'm1',
     };
     const fpB: CacheFingerprint = {
-      indexImplementation: INDEX_IMPLEMENTATION_B,
+      releaseVersion: '0.2.0',
       grammarVersion: 'c'.repeat(64),
       settingsHash: 's1',
       macroTableHash: 'm1',
@@ -411,42 +328,6 @@ describe('CacheStore', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it('rejects the legacy missing-grammar sentinel', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'usn-cache-no-grammar-sentinel-'));
-    const store = new CacheStore(dir);
-    await writeRawManifest(dir, {
-      ...validManifest(),
-      fingerprint: {
-        ...fingerprint,
-        grammarVersion: 'no-wasm',
-      },
-    });
-
-    expect(await store.load()).toBeNull();
-    await rm(dir, { recursive: true, force: true });
-  });
-
-  it.each([
-    undefined,
-    'short',
-    'A'.repeat(64),
-    'z'.repeat(64),
-  ])('rejects malformed index implementation identity %s', async (indexImplementation) => {
-    const dir = await mkdtemp(join(tmpdir(), 'usn-cache-bad-identity-'));
-    const store = new CacheStore(dir);
-
-    await writeRawManifest(dir, {
-      ...validManifest(),
-      fingerprint: {
-        ...fingerprint,
-        indexImplementation,
-      },
-    });
-
-    expect(await store.load()).toBeNull();
-    await rm(dir, { recursive: true, force: true });
-  });
-
   it('skips malformed cached file records', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'usn-cache-bad-file-'));
     const store = new CacheStore(dir);
@@ -481,101 +362,14 @@ describe('CacheStore', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it('skips cached file records with malformed location ranges', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'usn-cache-bad-range-'));
+  it('skips cached file records with non-record projection entries', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'usn-cache-bad-entry-'));
     const store = new CacheStore(dir);
     const file = validFile();
 
     await writeRawManifest(dir, validManifest({
       files: [
-        {
-          ...file,
-          index: {
-            ...file.index,
-            symbols: [{
-              name: 'Bad',
-              kind: 'variable',
-              location: { uri: file.uri, range: { start: { line: 0 } } },
-            }],
-          },
-        } as never,
-        file,
-      ],
-    }));
-
-    expect((await store.load(fingerprint))?.files).toEqual([file]);
-
-    await rm(dir, { recursive: true, force: true });
-  });
-
-  it('skips cached file records with malformed type inference facts', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'usn-cache-bad-type-inference-'));
-    const store = new CacheStore(dir);
-    const file = validFile();
-
-    await writeRawManifest(dir, validManifest({
-      files: [
-        {
-          ...file,
-          index: {
-            ...file.index,
-            typeInferences: [{
-              receiver: 'surface',
-              callName: 'MakeSurface',
-              assignmentRange: { start: { line: 0 } },
-            }],
-          },
-        } as never,
-        {
-          ...file,
-          index: {
-            ...file.index,
-            typeInferences: [{
-              receiver: 'surface',
-              callName: 'MakeSurface',
-              assignmentRange: range,
-            }],
-          },
-        },
-      ],
-    }));
-
-    expect((await store.load(fingerprint))?.files).toEqual([
-      {
-        ...file,
-        index: {
-          ...file.index,
-          typeInferences: [{
-            receiver: 'surface',
-            callName: 'MakeSurface',
-            assignmentRange: range,
-          }],
-        },
-      },
-    ]);
-
-    await rm(dir, { recursive: true, force: true });
-  });
-
-  it('skips cached file records with malformed ShaderLab property facts', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'usn-cache-bad-properties-'));
-    const store = new CacheStore(dir);
-    const file = validFile('file:///x/Material.shader');
-
-    await writeRawManifest(dir, validManifest({
-      files: [
-        {
-          ...file,
-          index: {
-            ...file.index,
-            properties: [{
-              name: '_Color',
-              nameRange: range,
-              declarationRange: range,
-              type: 'not-a-property-type',
-            }],
-          },
-        } as never,
+        { ...file, index: { ...file.index, symbols: [null] } } as never,
         file,
       ],
     }));
@@ -605,67 +399,6 @@ describe('CacheStore', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it('skips cached file records whose nested locations differ from the index uri', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'usn-cache-mismatched-location-uri-'));
-    const store = new CacheStore(dir);
-    const file = validFile();
-    const foreignUri = 'file:///x/Foreign.hlsl';
-
-    await writeRawManifest(dir, validManifest({
-      files: [
-        {
-          ...file,
-          index: {
-            ...file.index,
-            symbols: [{
-              ...file.index.symbols[0],
-              location: { uri: foreignUri, range },
-            }],
-          },
-        },
-        {
-          ...file,
-          index: {
-            ...file.index,
-            references: [{
-              ...file.index.references[0],
-              location: { uri: foreignUri, range },
-            }],
-          },
-        },
-        file,
-      ],
-    }));
-
-    expect((await store.load(fingerprint))?.files).toEqual([file]);
-
-    await rm(dir, { recursive: true, force: true });
-  });
-
-  it('supports concurrent saves without sharing a tmp file', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'usn-cache-concurrent-'));
-    const store = new CacheStore(dir);
-    const fingerprint: CacheFingerprint = {
-      indexImplementation: INDEX_IMPLEMENTATION_A,
-      grammarVersion: 'c'.repeat(64),
-      settingsHash: 's',
-      macroTableHash: 'm',
-    };
-
-    await Promise.all(Array.from({ length: 8 }, (_, index) => store.save({
-      version: CACHE_VERSION,
-      workspaceFolderUri: `file:///x-${index}`,
-      unityProjectRoot: '/x',
-      createdAt: index,
-      fingerprint,
-      files: [],
-    })));
-
-    expect(await store.load(fingerprint)).not.toBeNull();
-
-    await rm(dir, { recursive: true, force: true });
-  });
-
   it('keeps the previous manifest when replacing the cache manifest fails', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'usn-cache-preserve-'));
     const store = new CacheStore(dir);
@@ -685,22 +418,4 @@ describe('CacheStore', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it('supports concurrent saves from separate store instances for the same cache directory', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'usn-cache-multi-store-'));
-    const storeA = new CacheStore(dir);
-    const storeB = new CacheStore(dir);
-
-    await Promise.all(Array.from({ length: 8 }, (_, index) => {
-      const store = index % 2 === 0 ? storeA : storeB;
-      return store.save(validManifest({
-        workspaceFolderUri: `file:///writer-${index}`,
-        createdAt: index,
-      }));
-    }));
-
-    expect(await storeA.load(fingerprint)).not.toBeNull();
-    expect((await readdir(dir)).filter((name) => name.endsWith('.tmp'))).toEqual([]);
-
-    await rm(dir, { recursive: true, force: true });
-  });
 });

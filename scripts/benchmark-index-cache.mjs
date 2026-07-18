@@ -5,6 +5,9 @@ import { pathToFileURL } from 'node:url';
 import { performance } from 'node:perf_hooks';
 
 const shaderExtensions = new Set(['.shader', '.hlsl', '.cginc', '.hlslinc', '.compute']);
+const benchmarkRuntime = {
+  releaseVersion: `0.0.0-benchmark.${process.pid}.${Date.now()}`,
+};
 
 function parseArgs(argv) {
   const args = {
@@ -152,7 +155,7 @@ async function main() {
     const cachePath = join(cacheDir, 'index.json');
 
     const coldProgress = createProgressRecorder();
-    coldWorkspace = new Workspace(folderUri, DEFAULT_SETTINGS);
+    coldWorkspace = new Workspace(folderUri, DEFAULT_SETTINGS, benchmarkRuntime);
     const coldStart = performance.now();
     await coldWorkspace.initialize(coldProgress.connection);
     const coldMs = performance.now() - coldStart;
@@ -162,7 +165,7 @@ async function main() {
     coldWorkspace = undefined;
 
     const warmProgress = createProgressRecorder();
-    warmWorkspace = new Workspace(folderUri, DEFAULT_SETTINGS);
+    warmWorkspace = new Workspace(folderUri, DEFAULT_SETTINGS, benchmarkRuntime);
     const warmStart = performance.now();
     await warmWorkspace.initialize(warmProgress.connection);
     const warmMs = performance.now() - warmStart;

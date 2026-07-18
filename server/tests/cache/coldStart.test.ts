@@ -17,6 +17,8 @@ const fakeConnection = {
   },
 } as never;
 
+const releaseRuntime = { releaseVersion: '0.1.1' } as const;
+
 describe('cold start with cache', () => {
   it('second initialization restores a usable index from cache', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-cold-cache-'));
@@ -30,12 +32,12 @@ describe('cold start with cache', () => {
     await rm(libraryDir, { recursive: true, force: true });
 
     try {
-      const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, releaseRuntime);
       const coldStart = Date.now();
       await ws1.initialize(fakeConnection);
       const coldMs = Date.now() - coldStart;
 
-      const ws2 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      const ws2 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, releaseRuntime);
       const warmStart = Date.now();
       await ws2.initialize(fakeConnection);
       const warmMs = Date.now() - warmStart;

@@ -11,7 +11,7 @@ VS Code extension client
         -> block/layout/name/material/Property/token projections
      -> parser runtime assets
         -> tree-sitter HLSL parser
-        -> cache implementation identity
+        -> release cache fingerprint
      -> macro pattern recognizer
      -> per-file symbol/reference indexes
      -> workspace/global indexes
@@ -75,7 +75,7 @@ handling. Important modules:
   Indexed Workspace behavior interface and never receives raw index stores.
 - `workspace/indexedRevisionCandidate`: implements the one full-construction
   path shared by cold start, warm cache restore, rebuild, and recovery. It
-  resolves the root, Package context, parser runtime identity, cache
+  resolves the root, Package context, parser runtime assets, release-cache
   compatibility/restore, and retain-or-fail policy, then
   returns one complete unpublished `IndexedRevisionBuilder`.
 - `workspace/indexedSourceMembership`: captures the immutable extension,
@@ -312,10 +312,12 @@ Candidate construction consumes parser readiness and resolves runtime assets
 before cache work. A missing or unknown grammar layout is classified as parser
 initialization failure, so no cache can be restored or persisted for that
 attempt. Failed readiness remains retryable for same-process recovery. After
-success, the loaded language, grammar SHA-256, and index implementation identity
-remain bound to those exact captured bytes even if a watch build later replaces
-the file on disk. Cache persistence begins only after Workspace publishes and
-remains best effort.
+success, the loaded language and grammar SHA-256 remain bound to those exact
+captured bytes even if a watch build later replaces the file on disk. Only the
+bundled-server layout can add the Extension package version and enable
+persistence; source, tsc-out, and copied-server development layouts rebuild from
+source. Cache persistence begins only after Workspace publishes and remains best
+effort.
 
 Build-time runtime assembly is owned by one canonical artifact graph under the
 repository's `scripts/` Module. The root build materializes copied-server and
@@ -438,12 +440,15 @@ validation and persistence coordination use canonical filesystem path identity,
 so Windows path casing cannot split one physical manifest into separate queues.
 Standalone mode retains its per-workspace bucket under VS Code global storage.
 
-The manifest has a schema version and source fingerprint. The fingerprint
-content-addresses the captured server implementation, resolved shared and
-external parser runtimes, the exact grammar bytes already accepted by parser
-initialization, index-affecting settings, and macro table. It never reopens or
-guesses a grammar path. A different or unavailable implementation identity
-forces a source rebuild without a manual version bump. Cache contents are limited to the
+The manifest has a schema version and source fingerprint. A release fingerprint
+contains the Extension package version, the exact grammar hash already accepted
+by parser initialization, index-affecting settings, and the macro table. It does
+not read or hash the server, shared, or `web-tree-sitter` runtime trees. Source,
+tsc-out, and copied-server layouts do not create a persistable fingerprint; a
+different release or content fact forces a source rebuild. CacheStore validates
+the manifest envelope and expected fingerprint before walking file records.
+Compatible records receive only shallow JSON-container checks because the
+fingerprint owns semantic compatibility. Cache contents are limited to the
 published revision's disk projection and source identities. Live overlays,
 document analysis, lifecycle state, source warnings, and document attempts are
 not persisted. Package entries are restored only while the current
@@ -456,9 +461,10 @@ instances in one language-server process. A path has at most one active request
 and one latest pending request. A newer request replaces the pending payload and
 inherits its waiters, so intermediate states may be coalesced without losing the
 newest process-local request. Active failure rejects that request but still
-drains the retained pending request. `CacheStore` writes a same-directory
-temporary file and atomically renames it, so a failed replacement preserves the
-previous valid manifest.
+drains the retained pending request. This is the only in-process save queue.
+`CacheStore` writes immediately to a unique same-directory temporary file and
+atomically renames it, so a failed replacement preserves the previous valid
+manifest.
 
 This ordering guarantee is deliberately process-local. Separate server
 processes have neither comparable session revisions nor a shared total order;

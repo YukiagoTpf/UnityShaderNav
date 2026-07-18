@@ -93,9 +93,11 @@ npm run grammar:rebuild
   behavior. Extension Host semantic-token tests decode exact token positions
   and types for cross-consumer vocabulary changes.
 - Parser-runtime tests cover the source, tsc-out, copied-server, and bundled
-  layouts with real grammar loading. They must prove that parser readiness,
-  implementation identity, and cache fingerprints consume the same captured
-  bytes; missing or unknown assets cannot use a fallback fingerprint.
+  layouts with real grammar loading. They must prove that parser readiness and
+  cache fingerprints consume the same captured grammar hash, that the bundled
+  layout reads the Extension release version, and that development layouts do
+  not enable persistent cache. Missing or unknown assets cannot use a fallback
+  fingerprint.
 - Include-resolution rule tests inject an in-memory `FileProbe`; they do not use
   disk fixtures to prove candidate ordering or casing behavior. Handler and
   Electron include tests exercise the default Node filesystem adapter and its
@@ -112,12 +114,19 @@ npm run grammar:rebuild
   blocks/structure/tokens, index-only versus full demand, and revision-owned
   live lifetimes. `FileIndex.structure` is a durable projection; disk/cache
   records must remain free of the analysis container, source, and lexical facts.
+- Cache tests are behavior-oriented: cover complete `FileIndex` round-trip,
+  invalidation on release/settings/grammar changes, development-layout disable,
+  fingerprint-first rejection of incompatible payloads, manager-level latest
+  publication coordination, and atomic-rename crash safety. Do not restore
+  per-field codec matrices, historical-schema inventories, or a second queue in
+  `CacheStore`; compatible records receive only shallow container checks.
 - `npm run test:package` is the authoritative package check. One invocation
   removes generated output, rebuilds current source, creates the versioned VSIX,
   verifies its content-addressed input/output manifest and every packaged
   server/grammar/runtime byte, then runs package-layout tests. The
   package-layout gate resolves the shipped grammar through the same runtime
-  adapter as the bundled server, loads it, and verifies its bytes and identity.
+  adapter as the bundled server, loads it, and verifies bundled release-cache
+  eligibility while development layouts remain non-persistable.
 - Thin LSP adapter behavior belongs in server handler tests. Every index-backed
   query adapter and the document lifecycle fake only Indexed Workspace behavior;
   tests must not reconstruct `store/global/globalRefs` Workspace shapes or
@@ -231,6 +240,9 @@ The benchmark performs cold and warm `Workspace.initialize` cycles, resolves
 the manifest through the production `chooseCacheDir`, and records a separate
 explicit persist. It fails unless the manifest is non-empty, warm initialization
 reports cache restoration, and the restored index exposes a workspace symbol.
+Because it executes tsc-out development code, it opts into persistence with a
+process-local synthetic release identity shared only by its cold and warm runs;
+normal source, tsc-out, and copied-server sessions remain non-persistable.
 Its JSON output includes project and cache paths, file and cache-byte counts,
 cold/warm/persist milliseconds, `warmRestored`, `symbolName`, and
 `symbolAvailable`. Timing fields are diagnostic and have no CI threshold.
@@ -242,10 +254,11 @@ copy:
 npm run bench:index-cache -- --project <path>
 ```
 
-The benchmark writes the production cache beneath that copy's `Library/`. For a
-real project, it selects one visible project symbol during the cold run and
-requires the warm run to restore it. Add `--keep` only for a generated synthetic
-project whose cache and files should remain available for inspection.
+The benchmark writes the standard cache manifest beneath that copy's `Library/`.
+Its process-local identity rejects cache from an earlier benchmark invocation.
+For a real project, it selects one visible project symbol during the cold run
+and requires the warm run to restore it. Add `--keep` only for a generated
+synthetic project whose cache and files should remain available for inspection.
 
 ## Index Fork Benchmark
 

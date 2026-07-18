@@ -63,7 +63,7 @@ describe('rebuildWorkspaces', () => {
     try {
       const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
         ensureParserReady: async () => {},
-        indexImplementation: null,
+        releaseVersion: null,
         openDocuments: () => [current],
         async indexDocument(indexUri, text, table) {
           if (text.includes('AfterRebuild')) {
@@ -358,7 +358,7 @@ describe('rebuildWorkspaces', () => {
         DEFAULT_SETTINGS,
         {
           ensureParserReady: async () => {},
-          indexImplementation: null,
+          releaseVersion: null,
           openDocuments: () => [open],
           async indexDocument(uri, text, recognizer) {
             indexingAttempt++;

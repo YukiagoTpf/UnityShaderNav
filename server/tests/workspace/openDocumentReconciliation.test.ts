@@ -143,7 +143,7 @@ async function runScenario(
   try {
     if (scenario.diskText) await writeFile(join(root, 'Document.hlsl'), scenario.diskText);
     const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
-      indexImplementation: null,
+      releaseVersion: null,
       async ensureParserReady() {
         parserReadinessAttempts++;
         if (adapter === 'full-replay' && parserReadinessAttempts === 2) {

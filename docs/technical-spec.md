@@ -119,15 +119,15 @@ metadata for an older index value.
 
 Initial indexing, rebuild, recovery, and warm cache restore use one
 `IndexedRevisionCandidateConstructor`. It resolves the Unity root, creates the
-Package context, preflights the parser and its exact runtime identity, configures
-cache compatibility, constructs one immutable indexed source membership from
-settings/root/Package facts, restores or scans sources through it, and applies
-the shared retain-or-fail policy. The constructor returns one complete unpublished builder
-for the disk/package baseline; it does not mutate Workspace lifecycle, allocate
-a revision, publish, or persist. Workspace serializes the transaction, replays
-the latest open-document snapshots, and performs the only synchronous
-materialize/pointer-swap/revision-status commit. Cache persistence starts after
-that commit and is best effort.
+Package context, preflights the parser and exact grammar assets, resolves
+release-cache eligibility, constructs one immutable indexed source membership
+from settings/root/Package facts, restores or scans sources through it, and
+applies the shared retain-or-fail policy. The constructor returns one complete
+unpublished builder for the disk/package baseline; it does not mutate Workspace
+lifecycle, allocate a revision, publish, or persist. Workspace serializes the
+transaction, replays the latest open-document snapshots, and performs the only
+synchronous materialize/pointer-swap/revision-status commit. Cache persistence
+starts after that commit and is best effort.
 
 Recognized package source kinds must contain the fields needed for deterministic
 physical-path resolution. For example, git entries require a non-empty hash and

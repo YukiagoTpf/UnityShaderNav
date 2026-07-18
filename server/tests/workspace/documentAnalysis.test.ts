@@ -118,7 +118,7 @@ describe('Workspace-owned Document analysis', () => {
     const replacementText = shaderSource('_ReplacementTexture', 'ReplacementFunction');
     const calls: AnalysisCall[] = [];
     const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
-      indexImplementation: null,
+      releaseVersion: null,
       indexDocument: indexFile,
       analyzeDocument(analysisUri, text, demand) {
         calls.push({ uri: analysisUri, text, demand });
@@ -244,7 +244,7 @@ describe('Workspace-owned Document analysis', () => {
     const releaseStale = deferred();
     const calls: AnalysisCall[] = [];
     const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
-      indexImplementation: null,
+      releaseVersion: null,
       analyzeDocument(analysisUri, text, demand) {
         calls.push({ uri: analysisUri, text, demand });
         return analyzeDocument(analysisUri, text, demand);
@@ -316,7 +316,7 @@ describe('Workspace-owned Document analysis', () => {
     const folderUri = pathToFileURL(root).href;
     const calls: AnalysisCall[] = [];
     const workspace = new Workspace(folderUri, DEFAULT_SETTINGS, {
-      indexImplementation: 'a'.repeat(64),
+      releaseVersion: '0.1.1',
       indexDocument: indexFile,
       analyzeDocument(analysisUri, sourceText, demand) {
         calls.push({ uri: analysisUri, text: sourceText, demand });
@@ -393,7 +393,7 @@ describe('Workspace-owned Document analysis', () => {
       workspace.dispose();
       const warmCalls: AnalysisCall[] = [];
       const warmWorkspace = new Workspace(folderUri, DEFAULT_SETTINGS, {
-        indexImplementation: 'a'.repeat(64),
+        releaseVersion: '0.1.1',
         indexDocument: indexFile,
         analyzeDocument(analysisUri, sourceText, demand) {
           warmCalls.push({ uri: analysisUri, text: sourceText, demand });

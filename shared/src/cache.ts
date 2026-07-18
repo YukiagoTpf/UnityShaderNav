@@ -1,14 +1,14 @@
 import type { FileIndex } from './symbols';
 
-export const CACHE_VERSION = 8;
+export const CACHE_VERSION = 9;
 
 /**
  * Fields that invalidate the whole cache when changed between runs.
  * Values are deterministic, JSON-friendly content identities.
  */
 export interface CacheFingerprint {
-  /** SHA-256 of the actual server and parser runtime that produced FileIndex. */
-  indexImplementation: string;
+  /** Extension release version that produced this FileIndex. */
+  releaseVersion: string;
   /** SHA-256 of the exact vendored grammar bytes loaded by the running parser. */
   grammarVersion: string;
   /** SHA-1 over settings keys that influence indexing. */

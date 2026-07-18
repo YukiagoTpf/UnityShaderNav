@@ -35,6 +35,8 @@ const fakeConnection = {
   },
 } as never;
 
+const releaseRuntime = { releaseVersion: '0.1.1' } as const;
+
 function deferred<T = void>(): {
   promise: Promise<T>;
   resolve: (value: T | PromiseLike<T>) => void;
@@ -166,7 +168,7 @@ describe('Workspace candidate publication', () => {
       const candidateConstructor = interceptCandidateConstruction({
         folderUri,
         ensureParserReady: async () => {},
-        indexImplementation: null,
+        releaseVersion: null,
       }, async (proceed) => {
         await initial.promise;
         return proceed();
@@ -203,7 +205,11 @@ describe('Workspace candidate publication', () => {
     await writeFile(shaderPath, 'float4 CachedSymbol() { return 0; }');
 
     try {
-      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      const workspace = new Workspace(
+        pathToFileURL(root).href,
+        DEFAULT_SETTINGS,
+        releaseRuntime,
+      );
       await workspace.initialize(fakeConnection);
       const snapshotStarted = deferred();
       const releaseSnapshot = deferred();
@@ -236,7 +242,7 @@ describe('Workspace candidate publication', () => {
     try {
       const folderUri = pathToFileURL(root).href;
       const candidateConstructor = interceptCandidateConstruction(
-        { folderUri },
+        { folderUri, ...releaseRuntime },
         (proceed) => proceed(),
       );
       const workspace = new Workspace(folderUri, DEFAULT_SETTINGS, { candidateConstructor });
@@ -272,7 +278,7 @@ describe('Workspace candidate publication', () => {
       const candidateConstructor = interceptCandidateConstruction({
         folderUri,
         ensureParserReady: async () => {},
-        indexImplementation: null,
+        releaseVersion: null,
       }, async (proceed) => {
         const constructionNumber = ++constructionCount;
         const candidate = await proceed();
@@ -419,7 +425,7 @@ describe('Workspace candidate publication', () => {
     try {
       const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
         ensureParserReady: async () => {},
-        indexImplementation: null,
+        releaseVersion: null,
       });
       await workspace.initialize(fakeConnection);
 
@@ -446,7 +452,7 @@ describe('Workspace candidate publication', () => {
     try {
       const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
         ensureParserReady: async () => {},
-        indexImplementation: null,
+        releaseVersion: null,
       });
 
       await expect(workspace.initialize(fakeConnection)).rejects.toThrow('parser engine panic');
@@ -469,7 +475,7 @@ describe('Workspace candidate publication', () => {
       const candidateConstructor = interceptCandidateConstruction({
         folderUri,
         ensureParserReady: async () => {},
-        indexImplementation: null,
+        releaseVersion: null,
       }, async (proceed) => {
         const constructionNumber = ++constructionCount;
         const candidate = await proceed();
@@ -522,7 +528,7 @@ describe('Workspace candidate publication', () => {
       const candidateConstructor = interceptCandidateConstruction({
         folderUri,
         ensureParserReady: async () => {},
-        indexImplementation: null,
+        releaseVersion: null,
       }, async (proceed) => {
         const constructionNumber = ++constructionCount;
         const candidate = await proceed();
@@ -558,7 +564,7 @@ describe('Workspace candidate publication', () => {
       const candidateConstructor = interceptCandidateConstruction({
         folderUri,
         ensureParserReady: async () => {},
-        indexImplementation: null,
+        releaseVersion: null,
       }, async (proceed) => {
         constructionCount++;
         if (constructionCount === 2) throw new Error('rebuild infrastructure failed');
@@ -626,7 +632,7 @@ describe('Workspace candidate publication', () => {
     await writeFile(join(root, 'Assets', 'Shaders', 'Cached.hlsl'), 'float4 CachedSymbol() { return 0; }');
 
     try {
-      const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, releaseRuntime);
       await ws1.initialize(fakeConnection);
 
       const cachePath = unityCachePath(root);
@@ -634,7 +640,7 @@ describe('Workspace candidate publication', () => {
       expect(manifest.files.length).toBeGreaterThanOrEqual(1);
 
       const restore = vi.spyOn(WorkspaceIndex.prototype, 'restoreFromCache');
-      const ws2 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      const ws2 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, releaseRuntime);
       await ws2.initialize(fakeConnection);
 
       expect(restore).toHaveBeenCalled();
@@ -644,8 +650,8 @@ describe('Workspace candidate publication', () => {
     }
   });
 
-  it('rebuilds and replaces a cache produced by a different index implementation', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'usn-cache-implementation-mismatch-'));
+  it('rebuilds and replaces a cache produced by a different release', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-cache-release-mismatch-'));
     await mkdir(join(root, 'Assets', 'Shaders'), { recursive: true });
     await mkdir(join(root, 'Packages'), { recursive: true });
     await mkdir(join(root, 'ProjectSettings'), { recursive: true });
@@ -656,20 +662,18 @@ describe('Workspace candidate publication', () => {
 
     try {
       const folderUri = pathToFileURL(root).href;
-      const first = new Workspace(folderUri, DEFAULT_SETTINGS);
+      const first = new Workspace(folderUri, DEFAULT_SETTINGS, releaseRuntime);
       await first.initialize(fakeConnection);
 
       const cachePath = unityCachePath(root, folderUri);
       const manifest = JSON.parse(await readFile(cachePath, 'utf8'));
-      const persistedIdentity = manifest.fingerprint.indexImplementation as string;
-      const staleIdentity = persistedIdentity === 'a'.repeat(64)
-        ? 'b'.repeat(64)
-        : 'a'.repeat(64);
-      manifest.fingerprint.indexImplementation = staleIdentity;
+      const persistedVersion = manifest.fingerprint.releaseVersion as string;
+      const staleVersion = '0.0.1';
+      manifest.fingerprint.releaseVersion = staleVersion;
       await writeFile(cachePath, JSON.stringify(manifest), 'utf8');
 
       const restore = vi.spyOn(WorkspaceIndex.prototype, 'restoreFromCache');
-      const second = new Workspace(folderUri, DEFAULT_SETTINGS);
+      const second = new Workspace(folderUri, DEFAULT_SETTINGS, releaseRuntime);
       await second.initialize(fakeConnection);
 
       expect(restore).not.toHaveBeenCalled();
@@ -677,14 +681,14 @@ describe('Workspace candidate publication', () => {
       expect(await readFile(shaderPath, 'utf8')).toBe(source);
 
       const rewritten = JSON.parse(await readFile(cachePath, 'utf8'));
-      expect(rewritten.fingerprint.indexImplementation).toBe(persistedIdentity);
-      expect(rewritten.fingerprint.indexImplementation).not.toBe(staleIdentity);
+      expect(rewritten.fingerprint.releaseVersion).toBe(persistedVersion);
+      expect(rewritten.fingerprint.releaseVersion).not.toBe(staleVersion);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   });
 
-  it('keeps source indexing usable while cache identity is unavailable', async () => {
+  it('keeps source indexing usable while persistent cache is disabled for development', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-cache-identity-unavailable-'));
     await mkdir(join(root, 'Assets', 'Shaders'), { recursive: true });
     await mkdir(join(root, 'Packages'), { recursive: true });
@@ -701,9 +705,7 @@ describe('Workspace candidate publication', () => {
     } as never;
 
     try {
-      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
-        indexImplementation: null,
-      });
+      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
       await workspace.initialize(connection);
 
       expect(hasWorkspaceSymbol(workspace, 'SourceStillWorks')).toBe(true);
@@ -726,14 +728,18 @@ describe('Workspace candidate publication', () => {
     await writeFile(join(root, 'Assets', 'Shaders', 'Recovered.hlsl'), 'float4 RecoveredSymbol() { return 0; }');
 
     try {
-      const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, releaseRuntime);
       await ws1.initialize(fakeConnection);
 
       const cachePath = unityCachePath(root);
       const { files: _files, ...corruptedManifest } = JSON.parse(await readFile(cachePath, 'utf8'));
       await writeFile(cachePath, JSON.stringify(corruptedManifest), 'utf8');
 
-      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      const workspace = new Workspace(
+        pathToFileURL(root).href,
+        DEFAULT_SETTINGS,
+        releaseRuntime,
+      );
       await workspace.initialize(fakeConnection);
 
       expect(hasWorkspaceSymbol(workspace, 'RecoveredSymbol')).toBe(true);
@@ -750,12 +756,12 @@ describe('Workspace candidate publication', () => {
     await writeFile(shaderPath, 'float4 StandaloneCached() { return 0; }');
 
     try {
-      const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, releaseRuntime);
       await ws1.initialize(fakeConnection, globalStorageDir);
       await ws1.updateDocument(snapshot(shaderUri, await readFile(shaderPath, 'utf8')));
       await ws1.persist();
 
-      const ws2 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      const ws2 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, releaseRuntime);
       await ws2.initialize(fakeConnection, globalStorageDir);
 
       expect(ws2.isStandalone()).toBe(true);
@@ -774,12 +780,12 @@ describe('Workspace candidate publication', () => {
     await writeFile(shaderPath, 'float4 SavedOnly() { return 0; }');
 
     try {
-      const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, releaseRuntime);
       await ws1.initialize(fakeConnection, globalStorageDir);
       await ws1.updateDocument(snapshot(shaderUri, 'float4 UnsavedOnly() { return 0; }'));
       await ws1.persist();
 
-      const ws2 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      const ws2 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, releaseRuntime);
       await ws2.initialize(fakeConnection, globalStorageDir);
 
       expect(hasWorkspaceSymbol(ws2, 'UnsavedOnly')).toBe(false);
@@ -802,7 +808,7 @@ describe('Workspace candidate publication', () => {
     await writeFile(bPath, 'float4 B() { return 0; }');
 
     try {
-      const workspace = new Workspace(folderUri, DEFAULT_SETTINGS);
+      const workspace = new Workspace(folderUri, DEFAULT_SETTINGS, releaseRuntime);
       await workspace.initialize(fakeConnection, globalStorageDir);
       await workspace.updateDocument(snapshot(bUri, await readFile(bPath, 'utf8')));
       await workspace.updateDocument(snapshot(aUri, await readFile(aPath, 'utf8')));
@@ -851,12 +857,12 @@ describe('Workspace candidate publication', () => {
 
     try {
       await writeLockfile('oldhash');
-      const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      const ws1 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, releaseRuntime);
       await ws1.initialize(fakeConnection);
       expect(await hasDocumentSymbol(ws1, oldPackageUri, 'OldPackageSymbol')).toBe(true);
 
       await writeLockfile('newhash');
-      const ws2 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      const ws2 = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, releaseRuntime);
       await ws2.initialize(fakeConnection);
 
       expect(await hasDocumentSymbol(ws2, oldPackageUri, 'OldPackageSymbol')).toBe(false);
@@ -1058,7 +1064,7 @@ describe('Workspace.reconfigure', () => {
     try {
       const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
         ensureParserReady: async () => {},
-        indexImplementation: null,
+        releaseVersion: null,
       });
       await workspace.initialize(fakeConnection);
       await workspace.updateDocument(document);

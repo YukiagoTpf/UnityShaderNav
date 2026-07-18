@@ -72,6 +72,7 @@ function controlledCandidateConstruction(
     input: IndexedRevisionCandidateConstructionInput,
     folderUri: string,
   ) => Promise<IndexedRevisionBuilder>,
+  releaseVersion?: string,
 ) {
   const construct = vi.fn((
     folderUri: string,
@@ -80,7 +81,10 @@ function controlledCandidateConstruction(
   ) => interceptor(proceed, input, folderUri));
   const runtimeOptions = {
     createCandidateConstructor(folderUri: string) {
-      const delegate = new DefaultIndexedRevisionCandidateConstructor({ folderUri });
+      const delegate = new DefaultIndexedRevisionCandidateConstructor({
+        folderUri,
+        releaseVersion,
+      });
       return {
         construct(input: IndexedRevisionCandidateConstructionInput) {
           return construct(folderUri, input, () => delegate.construct(input));
@@ -1028,11 +1032,14 @@ describe('WorkspaceManager: multi-root', () => {
       'float4 StableBeforeFailure() { return 0; }',
     );
     let constructionCount = 0;
-    const construction = controlledCandidateConstruction(async (proceed) => {
-      constructionCount++;
-      if (constructionCount === 2) throw new Error('rebuild failed');
-      return proceed();
-    });
+    const construction = controlledCandidateConstruction(
+      async (proceed) => {
+        constructionCount++;
+        if (constructionCount === 2) throw new Error('rebuild failed');
+        return proceed();
+      },
+      '0.1.1',
+    );
     const manager = new WorkspaceManager(construction.runtimeOptions);
     await manager.addFolder(pathToFileURL(root).href, DEFAULT_SETTINGS, fakeConnection);
     const workspace = manager.list()[0];

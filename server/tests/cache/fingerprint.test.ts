@@ -49,18 +49,19 @@ describe('macroTableHash', () => {
 });
 
 describe('buildFingerprint + fingerprintsEqual', () => {
-  it('equal inputs produce equal fingerprints', async () => {
+  it('builds the same fingerprint from the same release version and grammar bytes', async () => {
     const first = await writeRuntimeAssets('grammar bytes\n');
     const second = await writeRuntimeAssets('grammar bytes\n');
     try {
-      const identity = 'a'.repeat(64);
-      const f1 = buildFingerprint(DEFAULT_SETTINGS, first.assets, identity);
-      const f2 = buildFingerprint(DEFAULT_SETTINGS, second.assets, identity);
+      const releaseVersion = '0.1.1';
+      const f1 = buildFingerprint(DEFAULT_SETTINGS, first.assets, releaseVersion);
+      const f2 = buildFingerprint(DEFAULT_SETTINGS, second.assets, releaseVersion);
 
       expect(f1).toBeDefined();
       expect(f2).toBeDefined();
       if (!f1 || !f2) throw new Error('expected cache fingerprints');
       expect(fingerprintsEqual(f1, f2)).toBe(true);
+      expect(f1.releaseVersion).toBe(releaseVersion);
       expect(f1.grammarVersion).toBe(first.assets.hlslGrammar.contentHash);
     } finally {
       await first.cleanup();
@@ -68,11 +69,11 @@ describe('buildFingerprint + fingerprintsEqual', () => {
     }
   });
 
-  it('changes when only the index implementation changes', async () => {
+  it('changes when only the release version changes', async () => {
     const runtime = await writeRuntimeAssets('grammar bytes\n');
     try {
-      const first = buildFingerprint(DEFAULT_SETTINGS, runtime.assets, 'a'.repeat(64));
-      const second = buildFingerprint(DEFAULT_SETTINGS, runtime.assets, 'b'.repeat(64));
+      const first = buildFingerprint(DEFAULT_SETTINGS, runtime.assets, '0.1.1');
+      const second = buildFingerprint(DEFAULT_SETTINGS, runtime.assets, '0.2.0');
 
       expect(first).toBeDefined();
       expect(second).toBeDefined();
@@ -87,9 +88,8 @@ describe('buildFingerprint + fingerprintsEqual', () => {
     const firstRuntime = await writeRuntimeAssets('grammar A\n');
     const secondRuntime = await writeRuntimeAssets('grammar B\n');
     try {
-      const identity = 'a'.repeat(64);
-      const first = buildFingerprint(DEFAULT_SETTINGS, firstRuntime.assets, identity);
-      const second = buildFingerprint(DEFAULT_SETTINGS, secondRuntime.assets, identity);
+      const first = buildFingerprint(DEFAULT_SETTINGS, firstRuntime.assets, '0.1.1');
+      const second = buildFingerprint(DEFAULT_SETTINGS, secondRuntime.assets, '0.1.1');
 
       expect(first).toBeDefined();
       expect(second).toBeDefined();
@@ -106,9 +106,8 @@ describe('buildFingerprint + fingerprintsEqual', () => {
     const secondRuntime = await writeRuntimeAssets('grammar B\n');
     const cacheDir = await mkdtemp(join(tmpdir(), 'usn-grammar-cache-'));
     try {
-      const identity = 'a'.repeat(64);
-      const first = buildFingerprint(DEFAULT_SETTINGS, firstRuntime.assets, identity);
-      const second = buildFingerprint(DEFAULT_SETTINGS, secondRuntime.assets, identity);
+      const first = buildFingerprint(DEFAULT_SETTINGS, firstRuntime.assets, '0.1.1');
+      const second = buildFingerprint(DEFAULT_SETTINGS, secondRuntime.assets, '0.1.1');
       if (!first || !second) throw new Error('expected cache fingerprints');
       const store = new CacheStore(cacheDir);
       await store.save({
@@ -129,22 +128,31 @@ describe('buildFingerprint + fingerprintsEqual', () => {
     }
   });
 
-  it.each([
-    undefined,
-    'short',
-    'A'.repeat(64),
-    'z'.repeat(64),
-  ])('does not create a persistable fingerprint for identity %s', async (identity) => {
+  it('changes when index-affecting settings change', async () => {
     const runtime = await writeRuntimeAssets('grammar bytes\n');
     try {
-      expect(buildFingerprint(DEFAULT_SETTINGS, runtime.assets, identity)).toBeUndefined();
+      const changedSettings = {
+        ...DEFAULT_SETTINGS,
+        excludePatterns: [...DEFAULT_SETTINGS.excludePatterns, '**/Generated/**'],
+      };
+      const first = buildFingerprint(DEFAULT_SETTINGS, runtime.assets, '0.1.1');
+      const second = buildFingerprint(changedSettings, runtime.assets, '0.1.1');
+      if (!first || !second) throw new Error('expected cache fingerprints');
+
+      expect(fingerprintsEqual(first, second)).toBe(false);
     } finally {
       await runtime.cleanup();
     }
   });
 
-  it('does not create a persistable fingerprint without identified runtime assets', () => {
-    expect(buildFingerprint(DEFAULT_SETTINGS, undefined, 'a'.repeat(64))).toBeUndefined();
+  it('does not create a persistable fingerprint without runtime assets or a release', async () => {
+    const runtime = await writeRuntimeAssets('grammar bytes\n');
+    try {
+      expect(buildFingerprint(DEFAULT_SETTINGS, undefined, '0.1.1')).toBeUndefined();
+      expect(buildFingerprint(DEFAULT_SETTINGS, runtime.assets, undefined)).toBeUndefined();
+    } finally {
+      await runtime.cleanup();
+    }
   });
 });
 

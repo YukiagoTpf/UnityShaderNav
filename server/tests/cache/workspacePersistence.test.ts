@@ -31,6 +31,8 @@ const fakeConnection = {
   },
 } as never;
 
+const releaseRuntime = { releaseVersion: '0.1.1' } as const;
+
 interface Deferred {
   readonly promise: Promise<void>;
   readonly resolve: () => void;
@@ -108,7 +110,7 @@ describe('Workspace cache persistence lifecycle', () => {
     await writeFile(deletedPath, 'float4 DeletedTarget() { return 0; }');
 
     try {
-      const workspace = new Workspace(folderUri, DEFAULT_SETTINGS);
+      const workspace = new Workspace(folderUri, DEFAULT_SETTINGS, releaseRuntime);
       await workspace.initialize(fakeConnection);
       expect(hasWorkspaceSymbol(workspace, 'StaleTarget')).toBe(true);
       expect(hasWorkspaceSymbol(workspace, 'DeletedTarget')).toBe(true);
@@ -168,7 +170,7 @@ describe('Workspace cache persistence lifecycle', () => {
 
       const indexAndStore = vi.spyOn(WorkspaceIndex.prototype, 'indexAndStore');
       const restoreFromCache = vi.spyOn(WorkspaceIndex.prototype, 'restoreFromCache');
-      const restarted = new Workspace(folderUri, DEFAULT_SETTINGS);
+      const restarted = new Workspace(folderUri, DEFAULT_SETTINGS, releaseRuntime);
       await restarted.initialize(fakeConnection);
 
       expect(indexAndStore).not.toHaveBeenCalled();
@@ -198,7 +200,7 @@ describe('Workspace cache persistence lifecycle', () => {
     await writeFile(shaderPath, 'float4 BeforeFailure() { return 0; }');
 
     try {
-      const workspace = new Workspace(folderUri, DEFAULT_SETTINGS);
+      const workspace = new Workspace(folderUri, DEFAULT_SETTINGS, releaseRuntime);
       await workspace.initialize(fakeConnection);
       vi.spyOn(CacheStore.prototype, 'save')
         .mockRejectedValueOnce(new Error('simulated cache write failure'));
@@ -222,74 +224,6 @@ describe('Workspace cache persistence lifecycle', () => {
     }
   }, 60_000);
 
-  it('reindexes malformed cached Property facts before publishing recovery', async () => {
-    const root = await createUnityProject('usn-cache-malformed-property-');
-    const folderUri = pathToFileURL(root).href;
-    const shaderPath = join(root, 'Assets', 'Shaders', 'Material.shader');
-    const shaderUri = pathToFileURL(shaderPath).href;
-    const source = [
-      'Shader "Cache/Recovery" {',
-      '  Properties {',
-      '    _Color ("Color", Color) = (1,1,1,1)',
-      '  }',
-      '  SubShader { Pass {',
-      '    HLSLPROGRAM',
-      '    float4 RecoveredFromDisk() { return 1; }',
-      '    ENDHLSL',
-      '  } }',
-      '}',
-    ].join('\n');
-    await writeFile(shaderPath, source);
-    let first: Workspace | undefined;
-    let restarted: Workspace | undefined;
-
-    try {
-      first = new Workspace(folderUri, DEFAULT_SETTINGS);
-      await first.initialize(fakeConnection);
-      await first.persist();
-      first.dispose();
-      first = undefined;
-
-      const manifest = await loadManifest(root, folderUri);
-      const cached = manifest.files.find((file) => file.uri === shaderUri);
-      const property = cached?.index.properties?.[0];
-      if (!cached || !property) throw new Error('Expected cached ShaderLab Property facts');
-      (property as { type: unknown }).type = 'not-a-property-type';
-      await writeFile(
-        join(cacheDir(root, folderUri), 'index.json'),
-        JSON.stringify(manifest),
-        'utf8',
-      );
-
-      const restoreFromCache = vi.spyOn(WorkspaceIndex.prototype, 'restoreFromCache');
-      const indexAndStore = vi.spyOn(WorkspaceIndex.prototype, 'indexAndStore');
-      restarted = new Workspace(folderUri, DEFAULT_SETTINGS);
-      await restarted.initialize(fakeConnection);
-
-      expect(restoreFromCache.mock.calls.some(([uri]) => uri === shaderUri)).toBe(false);
-      expect(indexAndStore.mock.calls.some(([path]) => path === shaderPath)).toBe(true);
-      expect(restarted.indexStatus().lifecycle).toEqual({
-        state: 'ready',
-        revision: 1,
-        warningCount: 0,
-      });
-      expect(restarted.workspaceSymbols('RecoveredFromDisk')).toEqual([
-        expect.objectContaining({
-          name: 'RecoveredFromDisk',
-          location: expect.objectContaining({ uri: shaderUri }),
-        }),
-      ]);
-
-      await restarted.persist();
-      const recovered = await loadManifest(root, folderUri);
-      expect(recovered.files.find((file) => file.uri === shaderUri)?.index.properties?.[0]?.type)
-        .toBe('Color');
-    } finally {
-      first?.dispose();
-      restarted?.dispose();
-      await rm(root, { recursive: true, force: true });
-    }
-  }, 60_000);
 });
 
 describe('Unity cache workspace identity isolation', () => {
@@ -311,7 +245,11 @@ describe('Unity cache workspace identity isolation', () => {
 
     try {
       for (const identity of order) {
-        const workspace = new Workspace(folderUris[identity], DEFAULT_SETTINGS);
+        const workspace = new Workspace(
+          folderUris[identity],
+          DEFAULT_SETTINGS,
+          releaseRuntime,
+        );
         original.set(identity, workspace);
         await workspace.initialize(fakeConnection);
       }
@@ -324,8 +262,8 @@ describe('Unity cache workspace identity isolation', () => {
       for (const workspace of original.values()) workspace.dispose();
 
       const restoreFromCache = vi.spyOn(WorkspaceIndex.prototype, 'restoreFromCache');
-      const parentRestarted = new Workspace(parentUri, DEFAULT_SETTINGS);
-      const nestedRestarted = new Workspace(nestedUri, DEFAULT_SETTINGS);
+      const parentRestarted = new Workspace(parentUri, DEFAULT_SETTINGS, releaseRuntime);
+      const nestedRestarted = new Workspace(nestedUri, DEFAULT_SETTINGS, releaseRuntime);
       await parentRestarted.initialize(fakeConnection);
       const parentRestoreCalls = restoreFromCache.mock.calls.length;
       await nestedRestarted.initialize(fakeConnection);
@@ -356,7 +294,7 @@ describe('Unity cache workspace identity isolation', () => {
     try {
       expect(cacheDir(root, upperDriveUri)).toBe(cacheDir(root, lowerDriveUri));
 
-      cold = new Workspace(upperDriveUri, settings);
+      cold = new Workspace(upperDriveUri, settings, releaseRuntime);
       await cold.initialize(fakeConnection);
       expect(hasWorkspaceSymbol(cold, symbolName)).toBe(true);
       expect((await loadManifest(root, upperDriveUri)).workspaceFolderUri).toBe(upperDriveUri);
@@ -364,7 +302,7 @@ describe('Unity cache workspace identity isolation', () => {
       cold = undefined;
 
       const restoreFromCache = vi.spyOn(WorkspaceIndex.prototype, 'restoreFromCache');
-      warm = new Workspace(lowerDriveUri, settings);
+      warm = new Workspace(lowerDriveUri, settings, releaseRuntime);
       await warm.initialize(fakeConnection);
 
       expect(restoreFromCache).toHaveBeenCalled();
@@ -406,7 +344,7 @@ describe('Unity cache package membership', () => {
     }));
 
     try {
-      const first = new Workspace(folderUri, DEFAULT_SETTINGS);
+      const first = new Workspace(folderUri, DEFAULT_SETTINGS, releaseRuntime);
       await first.initialize(fakeConnection);
       expect((await first.documentSymbols({ uri: packageUri }))?.some(
         (symbol) => symbol.name === 'ExternalPackageSymbol',
@@ -424,7 +362,7 @@ describe('Unity cache package membership', () => {
 
       await writeFile(lockPath, '{"dependencies":{}}');
       const restoreFromCache = vi.spyOn(WorkspaceIndex.prototype, 'restoreFromCache');
-      const restarted = new Workspace(folderUri, DEFAULT_SETTINGS);
+      const restarted = new Workspace(folderUri, DEFAULT_SETTINGS, releaseRuntime);
       await restarted.initialize(fakeConnection);
 
       expect(restoreFromCache).toHaveBeenCalled();

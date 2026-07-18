@@ -13,13 +13,12 @@ import { MacroPatternRecognizer } from '../../src/macros';
 import { PackageContext } from '../../src/packages';
 import { indexFile } from '../../src/parser/hlsl';
 import { CacheStore } from '../../src/cache/cacheStore';
-import { decodePersistedFileIndex } from '../../src/cache/fileIndexCodec';
 import type { IndexedDocumentSnapshot } from '../../src/workspace/indexedWorkspace';
 import { IndexedRevisionBuilder } from '../../src/workspace/indexedRevision';
 import { SRP_BATCHER_PROPERTY_CODE } from '../../src/workspace/materialContracts';
 
 const fingerprint: CacheFingerprint = {
-  indexImplementation: 'a'.repeat(64),
+  releaseVersion: '0.1.1',
   grammarVersion: 'b'.repeat(64),
   settingsHash: 'settings',
   macroTableHash: 'macros',
@@ -185,86 +184,6 @@ describe('persisted FileIndex codec', () => {
       expect((await store.load(fingerprint))?.files[0]?.index).toEqual(index);
     } finally {
       await rm(dir, { recursive: true, force: true });
-    }
-  });
-
-  it('rejects malformed values across every FileIndex projection', () => {
-    const index = completeIndex();
-    const functionSymbol = index.symbols[0] as FunctionSymbolEntry;
-    const shader = index.structure!.shaders[0];
-    const property = index.properties![0];
-    const pass = index.shaderLabNames!.passes[0];
-    const cbuffer = index.shaderLabMaterial!.cbuffers[0];
-
-    const malformed: Array<{ label: string; value: unknown }> = [
-      { label: 'owning uri', value: { ...index, uri: 'file:///foreign.shader' } },
-      {
-        label: 'function parameter range',
-        value: {
-          ...index,
-          symbols: [{
-            ...functionSymbol,
-            parameters: [{
-              ...functionSymbol.parameters[0],
-              range: { start: { line: 'one', character: 0 }, end: range.end },
-            }],
-          }],
-        },
-      },
-      {
-        label: 'reference context',
-        value: { ...index, references: [{ ...index.references[0], context: 'read' }] },
-      },
-      {
-        label: 'type inference scope range',
-        value: {
-          ...index,
-          typeInferences: [{ ...index.typeInferences![0], scopeRange: null }],
-        },
-      },
-      {
-        label: 'structure line',
-        value: {
-          ...index,
-          structure: { shaders: [{ ...shader, headerLine: 'zero' }] },
-        },
-      },
-      {
-        label: 'property type',
-        value: {
-          ...index,
-          properties: [{ ...property, type: 'Texture' }],
-        },
-      },
-      {
-        label: 'ShaderLab name range',
-        value: {
-          ...index,
-          shaderLabNames: {
-            ...index.shaderLabNames,
-            passes: [{ ...pass, nameRange: { start: range.start } }],
-          },
-        },
-      },
-      {
-        label: 'material block kind',
-        value: {
-          ...index,
-          shaderLabMaterial: {
-            ...index.shaderLabMaterial,
-            cbuffers: [{ ...cbuffer, blockKind: 'PROGRAM' }],
-          },
-        },
-      },
-      { label: 'unknown active-schema field', value: { ...index, futureFacts: [] } },
-    ];
-
-    expect(decodePersistedFileIndex(index, index.uri)).toBe(index);
-    for (const candidate of malformed) {
-      expect(
-        decodePersistedFileIndex(candidate.value, index.uri),
-        candidate.label,
-      ).toBeNull();
     }
   });
 

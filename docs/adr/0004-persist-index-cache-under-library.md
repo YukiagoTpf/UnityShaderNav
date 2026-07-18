@@ -3,7 +3,9 @@
 ## Status
 
 Accepted; Workspace identity partitioning and persistence ordering clarified on
-2026-07-11 by [#62](https://github.com/YukiagoTpf/UnityShaderNav/issues/62).
+2026-07-11 by [#62](https://github.com/YukiagoTpf/UnityShaderNav/issues/62), and
+cache eligibility simplified on 2026-07-18 by
+[#131](https://github.com/YukiagoTpf/UnityShaderNav/issues/131).
 
 ## Context
 
@@ -37,7 +39,7 @@ Standalone 模式没有 Unity `Library/`，继续使用 VS Code `globalStorageUr
 
 每个 identity 保持一个 monolithic JSON manifest。暂不把文件记录拆成独立对象；现有 benchmark 没有证明 manifest 大小或单次原子替换是主要瓶颈。
 
-manifest 只包含已发布 revision 的 disk projection 及与每个 `FileIndex` 同一次稳定读取捕获的 source identity。Live overlay、`DocumentAnalysis`、document attempt、lifecycle state 和 source warning 不持久化。缓存格式版本只描述 schema；Index implementation identity 覆盖 server/parser runtime、grammar 和影响索引的配置。
+manifest 只包含已发布 revision 的 disk projection 及与每个 `FileIndex` 同一次稳定读取捕获的 source identity。Live overlay、`DocumentAnalysis`、document attempt、lifecycle state 和 source warning 不持久化。缓存格式版本只描述 schema；release fingerprint 由 Extension package version、parser 已捕获的 exact grammar hash、影响索引的 settings 和 macro table 构成。只有 bundled-server release 启用持久化；source、tsc-out 与 copied-server 开发布局不持久化。Manifest load 在遍历 file records 前先拒绝不兼容 fingerprint；兼容记录只做浅层 container shape 检查。
 
 Package 成员资格仍由当前 `Packages/packages-lock.json` 决定。缓存记录不能让已从 lockfile dependency graph 移除的 Package 重新进入索引：Unity root 外的缓存文件只有仍属于当前 resolved package root 时才可恢复；root 内的普通项目文件继续按用户文件边界处理。
 
@@ -50,7 +52,7 @@ Package 成员资格仍由当前 `Packages/packages-lock.json` 决定。缓存�
 1. 一个 active request；以及
 2. 一个 latest pending request。
 
-新 pending request 替换旧 pending payload，并继承被合并请求的 waiters。Active 完成后只执行保留的最新 pending payload，因此中间状态可以 coalesce，而进程内最后入队的请求不会丢失。指向同一路径的不同 `CacheManager` / `CacheStore` 实例共享这一协调边界。
+新 pending request 替换旧 pending payload，并继承被合并请求的 waiters。Active 完成后只执行保留的最新 pending payload，因此中间状态可以 coalesce，而进程内最后入队的请求不会丢失。指向同一路径的不同 `CacheManager` 实例共享这一唯一协调边界；`CacheStore` 不再维护第二层队列。
 
 `CacheStore` 继续在目标目录创建临时文件，并以 atomic rename 替换 manifest。Active failure 只拒绝该 request，随后仍然 drain latest pending request；replacement failure 保留此前完整有效的 manifest。Workspace 把保存视为 best-effort derived state，失败不回滚已发布的内存 revision，也不改变 lifecycle。
 

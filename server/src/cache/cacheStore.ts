@@ -20,8 +20,8 @@ function isFiniteNumber(value: unknown): value is number {
 
 function isCacheFingerprint(value: unknown): value is CacheFingerprint {
   return isRecord(value)
-    && typeof value.indexImplementation === 'string'
-    && /^[0-9a-f]{64}$/.test(value.indexImplementation)
+    && typeof value.releaseVersion === 'string'
+    && value.releaseVersion.length > 0
     && typeof value.grammarVersion === 'string'
     && /^[0-9a-f]{64}$/.test(value.grammarVersion)
     && typeof value.settingsHash === 'string'
@@ -41,7 +41,10 @@ function decodeCachedFile(value: unknown): CachedFile | null {
     : null;
 }
 
-function toCacheManifest(value: unknown): CacheManifest | null {
+function toCacheManifest(
+  value: unknown,
+  expectedFingerprint?: CacheFingerprint,
+): CacheManifest | null {
   if (
     !isRecord(value)
     || value.version !== CACHE_VERSION
@@ -53,6 +56,10 @@ function toCacheManifest(value: unknown): CacheManifest | null {
   ) {
     return null;
   }
+  if (
+    expectedFingerprint
+    && !fingerprintsEqual(value.fingerprint, expectedFingerprint)
+  ) return null;
 
   const files: CachedFile[] = [];
   for (const entry of value.files) {
@@ -73,8 +80,6 @@ function toCacheManifest(value: unknown): CacheManifest | null {
 }
 
 export class CacheStore {
-  private static readonly saveQueues = new Map<string, Promise<void>>();
-
   constructor(private readonly dir: string) {}
 
   private get path(): string {
@@ -101,29 +106,11 @@ export class CacheStore {
       return null;
     }
 
-    const manifest = toCacheManifest(parsed);
-    if (!manifest) return null;
-    if (expectedFingerprint && !fingerprintsEqual(manifest.fingerprint, expectedFingerprint)) {
-      return null;
-    }
-
-    return manifest;
+    return toCacheManifest(parsed, expectedFingerprint);
   }
 
   async save(manifest: CacheManifest): Promise<void> {
-    const previous = CacheStore.saveQueues.get(this.coordinationKey) ?? Promise.resolve();
-    const current = previous.then(
-      () => this.writeManifest(manifest),
-      () => this.writeManifest(manifest),
-    );
-    CacheStore.saveQueues.set(this.coordinationKey, current);
-    try {
-      await current;
-    } finally {
-      if (CacheStore.saveQueues.get(this.coordinationKey) === current) {
-        CacheStore.saveQueues.delete(this.coordinationKey);
-      }
-    }
+    await this.writeManifest(manifest);
   }
 
   private async writeManifest(manifest: CacheManifest): Promise<void> {

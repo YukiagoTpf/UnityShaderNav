@@ -30,15 +30,15 @@ export function macroTableHash(userMacros: ExtensionSettings['declarationMacros'
 export function buildFingerprint(
   settings: ExtensionSettings,
   runtimeAssets: ParserRuntimeAssets | undefined,
-  indexImplementation: string | undefined,
+  releaseVersion: string | undefined,
 ): CacheFingerprint | undefined {
   if (
     !runtimeAssets
-    || !indexImplementation
-    || !/^[0-9a-f]{64}$/.test(indexImplementation)
+    || !releaseVersion
+    || releaseVersion !== releaseVersion.trim()
   ) return undefined;
   return {
-    indexImplementation,
+    releaseVersion,
     grammarVersion: grammarVersionHash(runtimeAssets),
     settingsHash: settingsHash(settings),
     macroTableHash: macroTableHash(settings.declarationMacros),
@@ -46,7 +46,7 @@ export function buildFingerprint(
 }
 
 export function fingerprintsEqual(a: CacheFingerprint, b: CacheFingerprint): boolean {
-  return a.indexImplementation === b.indexImplementation
+  return a.releaseVersion === b.releaseVersion
     && a.grammarVersion === b.grammarVersion
     && a.settingsHash === b.settingsHash
     && a.macroTableHash === b.macroTableHash;

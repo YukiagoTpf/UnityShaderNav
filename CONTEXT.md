@@ -84,7 +84,7 @@ _Avoid_: diagnostic cache, best-effort stale Problems
 _Avoid_: staging store exposed to handlers, partial revision
 
 **Indexed revision candidate construction**:
-完整索引 transaction 的内部 Module。它负责 Unity root 检测、**PackageContext** 创建、parser readiness 与 runtime identity、cache compatibility / restore、source discovery，以及兼容的 retain-or-fail policy，并显式返回一个完成但未发布的 **Indexed revision candidate**。Cold start、warm restore、rebuild 和 recovery 由 request data 与可用 cache state 驱动，但不分叉 transaction policy。它不保存 candidate 到 `Workspace`，不拥有 open-document desired state、lifecycle、revision、publication、pointer swap 或 cache persistence。
+完整索引 transaction 的内部 Module。它负责 Unity root 检测、**PackageContext** 创建、parser readiness、release cache eligibility、cache compatibility / restore、source discovery，以及兼容的 retain-or-fail policy，并显式返回一个完成但未发布的 **Indexed revision candidate**。Cold start、warm restore、rebuild 和 recovery 由 request data 与可用 cache state 驱动，但不分叉 transaction policy。它不保存 candidate 到 `Workspace`，不拥有 open-document desired state、lifecycle、revision、publication、pointer swap 或 cache persistence。
 _Avoid_: staged candidate handoff, phase-only bootstrap, synthetic empty candidate
 
 **Open document snapshot**:
@@ -111,9 +111,9 @@ _Avoid_: grammar path guess, wasm fallback, parser asset cache
 canonical repository root 下 Extension runtime 产物的唯一装配事实。它声明 extension/server bundles、copied server、grammar/provenance/license、完整 `web-tree-sitter` runtime、watch inputs、package required entries、Electron staging roots 与四种 **Parser runtime assets** 布局。标准 build 通过它完成一次装配并写入内容寻址 manifest；current-run packaging 同时验证构建输入、磁盘输出与 VSIX 内字节。npm scripts 仍是唯一命令 Interface。
 _Avoid_: packaging file list, watch asset list, Electron runtime copy list
 
-**Index implementation identity**:
-实际生成 `FileIndex` 的 server、resolved shared/runtime packages 与成功加载的 exact grammar bytes 的内容身份。它是 cache fingerprint 的一部分；identity 不同或无法确定时只能从源码重建，不能恢复可能由另一套索引语义产生的记录。
-_Avoid_: cache version, release version, Git revision
+**Release cache fingerprint**:
+发布版持久化缓存的兼容性身份：Extension release version、parser readiness 已捕获的 exact grammar content hash、影响索引的 settings hash 与 macro table hash。只有 bundled-server release 可以创建 fingerprint；source、tsc-out 与 copied-server 属于开发布局并禁用持久化，避免源码迭代恢复旧语义。Manifest load 先比较该 fingerprint，再解码 file records；版本或任一 content fact 不同都从源码重建。
+_Avoid_: index implementation identity, runtime tree hash, Git revision, dev cache marker
 
 **Cache workspace identity**:
 用于选择和验证持久化缓存分桶的 canonical Workspace folder URI。它复用 **Canonical file identity**：Windows 完整路径的大小写变体、默认 macOS volume 的大小写与 NFC/NFD 变体命中同一 identity，Linux 仍保持区分；父子 Workspace 即使指向同一个 Unity project root 也保持不同 identity。Manifest 的 Unity root 比较和同进程保存协调使用同一平台 filesystem path identity。Unity 模式的最终 manifest 位于 `Library/UnityShaderNavCache/workspaces/<identity-hash>/index.json`；每个 identity 仍只有一个 monolithic manifest。

@@ -86,7 +86,7 @@ describe('indexed revision transaction boundaries', () => {
     await writeFile(excludedPath, 'float4 OldExcluded() { return 0; }');
     try {
       const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
-        indexImplementation: null,
+        releaseVersion: null,
         async indexDocument(uri, text, table) {
           if (gateRebuild && uri === keepUri) {
             rebuildParseStarted.resolve();
@@ -172,7 +172,7 @@ describe('indexed revision transaction boundaries', () => {
     try {
       const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
         ensureParserReady: async () => {},
-        indexImplementation: null,
+        releaseVersion: null,
         async indexDocument(indexUri, source, recognizer) {
           const indexed = await indexFile(indexUri, source, recognizer);
           tableStates.push(indexed.symbols.some((symbol) => (
@@ -225,7 +225,7 @@ describe('indexed revision transaction boundaries', () => {
     try {
       const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
         ensureParserReady: async () => {},
-        indexImplementation: null,
+        releaseVersion: null,
       });
       await workspace.initialize(connection);
       await expect(workspace.updateDocument(stale)).resolves.toBe(true);
@@ -258,7 +258,7 @@ describe('indexed revision transaction boundaries', () => {
 
     try {
       const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
-        indexImplementation: null,
+        releaseVersion: null,
         openDocuments: () => openDocuments,
         async ensureParserReady() {
           parserReadinessAttempts++;
@@ -314,7 +314,7 @@ describe('indexed revision transaction boundaries', () => {
 
     try {
       const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
-        indexImplementation: null,
+        releaseVersion: null,
       });
       await workspace.initialize(connection);
       expect(workspace.containsIndexedUri(excludedUri)).toBe(false);
@@ -378,7 +378,9 @@ describe('indexed revision transaction boundaries', () => {
     };
 
     try {
-      const workspace = new Workspace(folderUri, DEFAULT_SETTINGS);
+      const workspace = new Workspace(folderUri, DEFAULT_SETTINGS, {
+        releaseVersion: '0.1.1',
+      });
       await workspace.initialize(connection);
       const originalIdentity = await cacheRecord();
       expect(hasSymbol(workspace, 'CachedOld')).toBe(true);
@@ -409,7 +411,9 @@ describe('indexed revision transaction boundaries', () => {
       expect(retainedIdentity.size).not.toBe(changedIdentity.size);
 
       workspace.dispose();
-      const restored = new Workspace(folderUri, DEFAULT_SETTINGS);
+      const restored = new Workspace(folderUri, DEFAULT_SETTINGS, {
+        releaseVersion: '0.1.1',
+      });
       await restored.initialize(connection);
       expect(hasSymbol(restored, 'CachedOld')).toBe(false);
       expect(hasSymbol(restored, 'CachedReplacementWithLongName')).toBe(true);
@@ -430,7 +434,7 @@ describe('indexed revision transaction boundaries', () => {
 
     try {
       const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
-        indexImplementation: null,
+        releaseVersion: null,
       });
       await workspace.initialize(connection);
 
@@ -469,7 +473,7 @@ describe('indexed revision transaction boundaries', () => {
 
     try {
       const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
-        indexImplementation: null,
+        releaseVersion: null,
       });
       await workspace.initialize(connection);
       await writeFile(join(root, 'Packages', 'packages-lock.json'), '{invalid');
@@ -509,7 +513,7 @@ describe('indexed revision transaction boundaries', () => {
 
     try {
       const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
-        indexImplementation: null,
+        releaseVersion: null,
       });
       await workspace.initialize(connection);
       await workspace.updateDocument(beforeFailure);

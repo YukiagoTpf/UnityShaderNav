@@ -43,10 +43,10 @@ The implementation names that boundary directly:
   are private.
 - `IndexedRevisionCandidateConstructor` is the full-construction boundary used
   by cold start, warm cache restore, rebuild, and recovery. Its default
-  implementation resolves the root, Package context, parser runtime identity,
-  cache restore or source scan, and compatible source retention, then explicitly
-  returns one complete unpublished builder. It owns no lifecycle or publication
-  state.
+  implementation resolves the root, Package context, parser runtime assets,
+  release-cache eligibility, cache restore or source scan, and compatible source
+  retention, then explicitly returns one complete unpublished builder. It owns
+  no lifecycle or publication state.
 - `IndexedRevisionBuilder` is a one-shot mutable candidate. Full indexing starts
   with an empty builder; incremental work forks the published revision.
 - `WorkspaceIndex.fork()` shares persistent roots whose values are immutable

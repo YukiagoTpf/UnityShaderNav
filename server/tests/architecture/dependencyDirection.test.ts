@@ -219,7 +219,7 @@ describe('server dependency direction', () => {
     }
   });
 
-  it('uses one parser runtime asset fact for execution and cache compatibility', () => {
+  it('uses captured grammar and release metadata without hashing runtime trees', () => {
     const parser = readFileSync(
       resolve(SOURCE_ROOT, 'parser/hlsl/parser.ts'),
       'utf8',
@@ -235,13 +235,25 @@ describe('server dependency direction', () => {
     expect(fingerprint).toMatch(/ParserRuntimeAssets/);
     expect(fingerprint).not.toMatch(/readFile|no-wasm|wasmPath/);
 
+    const releaseVersion = readFileSync(
+      resolve(SOURCE_ROOT, 'cache/releaseVersion.ts'),
+      'utf8',
+    );
+    expect(releaseVersion).toMatch(/runtimeAssets\.layout !== 'bundled-server'/);
+    expect(releaseVersion).toMatch(/package\.json/);
+    expect(releaseVersion).not.toMatch(/readdir|createHash|web-tree-sitter/);
+    expect(existsSync(resolve(SOURCE_ROOT, 'cache/implementationIdentity.ts'))).toBe(false);
+
     const candidate = readFileSync(
       resolve(SOURCE_ROOT, 'workspace/indexedRevisionCandidate.ts'),
       'utf8',
     );
     expect(candidate).toMatch(/const runtimeAssets = await this\.preflightParser\(input\.signal\)/);
+    expect(candidate).toMatch(/runningReleaseVersion\(runtimeAssets\)/);
     expect(candidate).toMatch(/buildFingerprint\([\s\S]*?runtimeAssets/);
-    expect(candidate).not.toMatch(/resolveWasmPath|tree-sitter-hlsl\.wasm|no-wasm/);
+    expect(candidate).not.toMatch(
+      /runningIndexImplementationIdentity|resolveWasmPath|tree-sitter-hlsl\.wasm|no-wasm/,
+    );
   });
 
   it('keeps compiled macro patterns private to the recognizer boundary', () => {

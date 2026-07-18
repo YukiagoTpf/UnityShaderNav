@@ -81,7 +81,7 @@ describe('atomic indexed revision acceptance', () => {
 
     try {
       const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
-        indexImplementation: null,
+        releaseVersion: null,
       });
       await workspace.initialize(connection);
       expect(workspace.indexStatus().lifecycle).toMatchObject({ revision: 1 });
@@ -126,7 +126,7 @@ describe('atomic indexed revision acceptance', () => {
     try {
       const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
         ensureParserReady: async () => {},
-        indexImplementation: null,
+        releaseVersion: null,
         async indexDocument(uri, text, table) {
           if (text.includes('NewSecond')) {
             secondCandidateStarted.resolve();
@@ -211,7 +211,7 @@ describe('atomic indexed revision acceptance', () => {
 
     try {
       const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
-        indexImplementation: null,
+        releaseVersion: null,
       });
       await workspace.initialize(connection);
       expect(workspace.workspaceSymbols('LastKnownGood')).toHaveLength(1);
@@ -270,7 +270,7 @@ describe('atomic indexed revision acceptance', () => {
     try {
       const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
         ensureParserReady: async () => {},
-        indexImplementation: null,
+        releaseVersion: null,
         async indexDocument(uri, text, table) {
           if (gateNewPackage && uri === newUri) {
             newPackageStarted.resolve();
@@ -333,7 +333,7 @@ describe('atomic indexed revision acceptance', () => {
     try {
       const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
         ensureParserReady: async () => {},
-        indexImplementation: null,
+        releaseVersion: null,
       });
       await workspace.initialize(connection);
       const document = snapshot(sourceUri, sourceText);
@@ -446,7 +446,7 @@ describe('atomic indexed revision acceptance', () => {
 
     try {
       const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
-        indexImplementation: null,
+        releaseVersion: null,
         async ensureParserReady() {
           parserReadinessAttempts++;
           if (parserReadinessAttempts === 2) throw new Error('parser engine unavailable');

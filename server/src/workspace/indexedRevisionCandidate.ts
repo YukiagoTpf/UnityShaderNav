@@ -8,7 +8,7 @@ import type {
 } from '@unity-shader-nav/shared';
 import { CacheManager, cacheWorkspaceMatches } from '../cache';
 import { buildFingerprint } from '../cache/fingerprint';
-import { runningIndexImplementationIdentity } from '../cache/implementationIdentity';
+import { runningReleaseVersion } from '../cache/releaseVersion';
 import { PackageContext } from '../packages';
 import { ensureParserReady } from '../parser/hlsl';
 import { UnityProjectFacts } from '../project';
@@ -51,7 +51,7 @@ export interface IndexedRevisionCandidateConstructor {
 
 export interface DefaultIndexedRevisionCandidateConstructorOptions {
   readonly folderUri: string;
-  readonly indexImplementation?: string | null;
+  readonly releaseVersion?: string | null;
   readonly ensureParserReady?: () => Promise<ParserRuntimeAssets | void>;
   readonly resolveParserRuntimeAssets?: () => ParserRuntimeAssets;
   readonly indexDocument?: DocumentIndexer;
@@ -83,7 +83,7 @@ interface CacheConfiguration {
 export class DefaultIndexedRevisionCandidateConstructor
   implements IndexedRevisionCandidateConstructor {
   private readonly folderUri: string;
-  private readonly indexImplementation: string | null | undefined;
+  private readonly releaseVersion: string | null | undefined;
   private readonly parserReady: () => Promise<ParserRuntimeAssets | void>;
   private readonly resolveRuntimeAssets: () => ParserRuntimeAssets;
   private readonly indexDocument: DocumentIndexer | undefined;
@@ -91,7 +91,7 @@ export class DefaultIndexedRevisionCandidateConstructor
 
   constructor(options: DefaultIndexedRevisionCandidateConstructorOptions) {
     this.folderUri = options.folderUri;
-    this.indexImplementation = options.indexImplementation;
+    this.releaseVersion = options.releaseVersion;
     this.parserReady = options.ensureParserReady ?? ensureParserReady;
     this.resolveRuntimeAssets = options.resolveParserRuntimeAssets
       ?? resolveRunningParserRuntimeAssets;
@@ -228,19 +228,21 @@ export class DefaultIndexedRevisionCandidateConstructor
     });
     if (!cache) return { cache: undefined, fingerprint: undefined };
 
-    const indexImplementation = this.indexImplementation === undefined
-      ? runningIndexImplementationIdentity(runtimeAssets)
-      : this.indexImplementation ?? undefined;
+    const releaseVersion = this.releaseVersion === undefined
+      ? runningReleaseVersion(runtimeAssets)
+      : this.releaseVersion ?? undefined;
     const fingerprint = buildFingerprint(
       settings,
       runtimeAssets,
-      indexImplementation,
+      releaseVersion,
     );
     this.throwIfAborted(signal);
     if (!fingerprint) {
-      connection.console.warn(
-        'Index cache disabled: the running index implementation could not be identified.',
-      );
+      if (typeof connection.console.warn === 'function') {
+        connection.console.warn(
+          'Index cache disabled: persistent cache is unavailable for this development runtime.',
+        );
+      }
       cache = undefined;
     }
     return { cache, fingerprint: cache ? fingerprint : undefined };
