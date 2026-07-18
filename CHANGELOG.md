@@ -13,6 +13,14 @@ and uses semantic versioning for extension releases.
   trace messages; standard `unityShaderNav.trace.server` controls; and a
   clickable status bar that opens per-root index details or failure logs.
 
+### Fixed
+
+- Released per-document inactive-region decorations and debounce state on
+  close, rejected responses from closed document sessions, and skipped
+  debounce work for unsupported languages. Definitely inactive branches now
+  use plain dimming while variant-dependent branches also carry a
+  theme-adaptive marker.
+
 ## 0.1.1 - 2026-07-18
 
 ### Changed

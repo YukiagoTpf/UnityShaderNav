@@ -68,20 +68,24 @@ dimming 的偏向：我们只变暗能被论证的分支（确定为 false，或
 - **近似项（非精确建模）**：多 `SubShader` 的作用域，以及 include 块内部嵌套在
   条件分支里的 define，都按近似处理，不保证精确。
 
-### 合并的 inactive/variant 呈现，但协议保留 reason
+### inactive/variant 使用不同呈现
 
-第一版把 "确定不生效" 和 "variant 门控" 合并成同一种变暗呈现。但 analyzer 内部
-以及 LSP 协议（`InactiveRegion.reason: 'inactive' | 'variant'`）都**逐区间携带
-reason**，因此未来 issue 想拆分两种呈现样式时，无需重新推导。
+analyzer 与 LSP 协议（`InactiveRegion.reason: 'inactive' | 'variant'`）都**逐区间携带
+reason**，客户端直接按 reason 投递两种 decoration："确定不生效" 只使用可配置的
+不透明度；"variant 门控" 使用相同不透明度，并叠加
+`editor.wordHighlightBackground` 主题色背景。主题色随明暗主题变化，且 decoration
+不设置文字前景色，因此不会覆盖 semantic token 的着色。
 
 ### Pull request + 客户端 decoration 投递
 
 复用既有 semantic-tokens handler 的 pull 模式：客户端通过自定义 LSP 请求
 `unityShaderNav/inactiveRegions` 拉取变暗区间，服务端在文档文本上跑 analyzer
-返回结果，客户端用一个降低不透明度的 `TextEditorDecorationType` 渲染。因为自定义
+返回结果，客户端为每个 URI 懒创建一对 `TextEditorDecorationType`。同一 URI 的
+decoration、debounce timer 和请求身份归入一个文档状态；文档关闭或有效配置变化时，
+该状态会整体释放，timer 会取消，两种 decoration 都会 dispose。因为自定义
 `onRequest` 没有内置的文档版本 / 刷新处理，协议**显式携带 `textDocument.version`**，
-服务端原样回传，客户端落 decoration 前校验版本并**只允许最后一次响应生效**
-（stale-response guard）。
+服务端原样回传；客户端同时校验 version 和唯一请求身份，只允许当前文档会话的最后
+一次响应生效，因此同 URI、同 version 的关闭后重开也不会接收旧响应。
 
 ## Why not full variant evaluation / server push
 
@@ -103,7 +107,7 @@ reason**，因此未来 issue 想拆分两种呈现样式时，无需重新推�
   也不误暗。代价是某些"实际关闭"的分支不会变暗（接受这个保守取舍）。
 - `.shader` 的多 `SubShader` 作用域和 include 块内嵌套条件里的 define 是近似的，
   极端结构下可能与真实编译单元有偏差。
-- 协议已携带 `reason`，未来拆分 inactive / variant 呈现样式无需改 analyzer，只需扩展
-  客户端渲染。
-- 自定义请求依赖显式 version 回传与客户端 stale-guard 来避免快速编辑时旧响应覆盖
-  新 decoration。
+- 协议携带的 `reason` 直接驱动 inactive / variant 两种客户端呈现；analyzer 无需承担
+  编辑器主题语义。
+- 自定义请求依赖显式 version 回传、请求身份和文档关闭时的状态释放，避免快速编辑或
+  关闭后重开时旧响应覆盖新 decoration。

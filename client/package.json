@@ -137,7 +137,7 @@
           "type": "boolean",
           "scope": "resource",
           "default": true,
-          "description": "Dim inactive and variant-dependent preprocessor branches in shader/HLSL files."
+          "description": "Dim inactive preprocessor branches and distinguish variant-dependent branches with a theme-adaptive marker in shader/HLSL files."
         },
         "unityShaderNav.dimInactiveBranches.opacity": {
           "type": "number",

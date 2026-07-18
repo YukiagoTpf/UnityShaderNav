@@ -138,8 +138,9 @@ The index is intentionally pragmatic:
 - Preprocessor conditions are not evaluated for navigation, references, or
   completion. A separate presentation-only layer does apply conservative
   preprocessor branch dimming (inactive and variant-gated `#if`/`#ifdef`/
-  `#ifndef` branches are visually dimmed via client decorations), but it never
-  changes index results or `DocumentAnalysis`. See
+  `#ifndef` branches are visually dimmed via client decorations, with a
+  theme-adaptive marker distinguishing variant gates), but it never changes
+  index results or `DocumentAnalysis`. See
   [ADR-0005](adr/0005-conservative-preprocessor-branch-dimming.md).
 
 ## Live Documents and Indexed Query Boundary

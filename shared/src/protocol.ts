@@ -69,6 +69,6 @@ export interface InactiveRegionsParams {
 export interface InactiveRegionsResult {
   /** echo of the requested document version so the client can discard stale responses */
   version: number;
-  /** carries reason so a future issue can split inactive vs variant presentation */
+  /** lets the client render definitely inactive and variant-gated regions distinctly */
   regions: InactiveRegion[];
 }

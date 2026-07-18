@@ -102,8 +102,10 @@ Dim inactive and variant-dependent preprocessor branches in shader/HLSL files.
 This is a presentation-only editor aid: it visually dims `#if`/`#ifdef`/`#ifndef`
 branches that are definitely inactive (file-local `#define`/`#undef` state) or
 gated behind a Unity variant keyword from a `multi_compile*`/`shader_feature*`
-pragma. It never affects Go to Definition, Find References, or completion. Set to
-`false` to turn dimming off.
+pragma. Definitely inactive branches use plain fading; variant-dependent
+branches use the same fading plus a theme-adaptive background marker. It never
+affects Go to Definition, Find References, or completion. Set to `false` to turn
+dimming off.
 
 ## `unityShaderNav.dimInactiveBranches.opacity`
 
@@ -114,7 +116,8 @@ Default: `0.55`
 Range: `0.1`–`1`
 
 Opacity applied to dimmed preprocessor branches. Lower values fade the dimmed
-branches more strongly; `1` leaves them at full opacity.
+branches more strongly; `1` leaves their text at full opacity while retaining
+the theme-adaptive marker on variant-dependent branches.
 
 ```jsonc
 {

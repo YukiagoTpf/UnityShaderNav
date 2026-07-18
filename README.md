@@ -44,7 +44,9 @@ The extension focuses on fast code navigation:
   structs, struct members, cbuffers, macros, and globals. Package symbols are
   excluded by default and follow `findReferences.includePackages`.
 - Conservative dimming of inactive and variant-dependent `#if`/`#ifdef`
-  preprocessor branches (presentation only; navigation is unaffected).
+  preprocessor branches, with a theme-adaptive marker distinguishing variant
+  gates from definitely inactive code (presentation only; navigation is
+  unaffected).
 - Unity Package resolution through `Packages/packages-lock.json`.
 - Persistent project-local indexing under `Library/UnityShaderNavCache/`.
 
