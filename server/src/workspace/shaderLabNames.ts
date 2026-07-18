@@ -21,6 +21,7 @@ import type {
   RenamePreparationOutcome,
 } from './indexedWorkspace';
 import type { IndexStoreReader } from '../index';
+import { uriKey } from '../uriKey';
 
 export type ShaderLabNameTarget =
   | { kind: 'shader'; name: string; range: Range }
@@ -351,7 +352,7 @@ export function renameShaderLabName(
   for (const location of locations) {
     const newText = target.kind === 'pass'
       && !(definitions.some((definition) => (
-        definition.uri === location.uri
+        uriKey(definition.uri) === uriKey(location.uri)
         && definition.range.start.line === location.range.start.line
         && definition.range.start.character === location.range.start.character
       )))

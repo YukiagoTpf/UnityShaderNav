@@ -10,6 +10,7 @@ import {
   type FileIndex,
 } from '@unity-shader-nav/shared';
 import { uriKey } from '../uriKey';
+import type { FileIdentityOptions } from '../fileIdentity';
 import {
   samePath,
   type PathIdentityOptions,
@@ -56,9 +57,12 @@ interface PublicationQueue {
 
 const publicationQueues = new Map<string, PublicationQueue>();
 
-export function workspaceCacheIdentity(workspaceFolderUri: string): string {
+export function workspaceCacheIdentity(
+  workspaceFolderUri: string,
+  identityOptions: FileIdentityOptions = {},
+): string {
   return createHash('sha1')
-    .update(uriKey(workspaceFolderUri))
+    .update(uriKey(workspaceFolderUri, identityOptions))
     .digest('hex')
     .slice(0, 16);
 }
@@ -69,7 +73,10 @@ export function cacheWorkspaceMatches(
   expected: CacheWorkspaceIdentity,
   pathOptions: PathIdentityOptions = {},
 ): boolean {
-  if (uriKey(manifest.workspaceFolderUri) !== uriKey(expected.workspaceFolderUri)) {
+  if (
+    uriKey(manifest.workspaceFolderUri, pathOptions)
+    !== uriKey(expected.workspaceFolderUri, pathOptions)
+  ) {
     return false;
   }
   if (manifest.unityProjectRoot === null || expected.unityProjectRoot === null) {

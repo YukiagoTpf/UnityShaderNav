@@ -25,6 +25,7 @@ import {
   renameShaderLabName,
   shaderLabNameTargetAt,
 } from './shaderLabNames';
+import { uriKey } from '../uriKey';
 
 type RenameTarget = ActiveReferenceTargetSelection['targets'][number];
 
@@ -168,7 +169,7 @@ function collisionReason(
     !isScoped(symbol)
     && symbol.kind !== 'structMember'
     && !(
-      symbol.location.uri === target.uri
+      uriKey(symbol.location.uri) === uriKey(target.uri)
       && sameRange(symbol.location.range, target.range)
     )
   ));

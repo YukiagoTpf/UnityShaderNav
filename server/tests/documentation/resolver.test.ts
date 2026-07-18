@@ -13,6 +13,7 @@ import { PackageContext } from '../../src/packages';
 import { scanBlocks } from '../../src/parser/shaderlab/blockScanner';
 import { scanShaderLabTokens } from '../../src/parser/shaderlab/tokenScanner';
 import { UnityProjectFacts } from '../../src/project';
+import { uriKey } from '../../src/uriKey';
 
 const roots: string[] = [];
 const packageName = 'com.unity.render-pipelines.universal';
@@ -133,7 +134,7 @@ describe('DocumentationResolver', () => {
       'GetVertexPositionInputs',
       'hlsl',
       [localSymbol],
-      new Set([local.packageUri]),
+      new Set([uriKey(local.packageUri)]),
     ))?.candidates).toEqual([
       {
         source: 'project',

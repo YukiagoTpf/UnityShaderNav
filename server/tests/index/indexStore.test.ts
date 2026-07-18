@@ -41,4 +41,13 @@ describe('IndexStore', () => {
 
     expect(store.get(file.uri)).toBeUndefined();
   });
+
+  it.runIf(process.platform === 'darwin')('uses one bucket for macOS case and Unicode variants', () => {
+    const store = new IndexStore();
+    const file = idx('file:///Users/Caf%C3%A9/Project/Main.shader');
+
+    store.set(file.uri, file);
+
+    expect(store.get('file:///users/CAFE%CC%81/project/main.shader')).toBe(file);
+  });
 });

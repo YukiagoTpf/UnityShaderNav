@@ -23,6 +23,7 @@ import {
   symbolToTarget,
   uniqueLocations,
 } from './referenceMatching';
+import { uriKey } from '../uriKey';
 
 export interface ResolverContext {
   index: FileIndex;
@@ -339,7 +340,7 @@ export function findHighlights(target: CursorTarget, ctx: HighlightCollectionCon
 
   const declarations: Location[] = global
     .lookup(queryName)
-    .filter((symbol) => symbol.location.uri === index.uri)
+    .filter((symbol) => uriKey(symbol.location.uri) === uriKey(index.uri))
     .filter((symbol) =>
       activeTargets.length === 0 ||
       activeTargets.some((candidate) => sameTarget(candidate, symbolToTarget(symbol))),

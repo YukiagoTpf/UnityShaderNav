@@ -3,13 +3,14 @@ import type {
   DiagnosticWorkspaceService,
   IndexedDocumentRegistry,
 } from '../workspace/indexedWorkspace';
+import { uriKey } from '../uriKey';
 
 function sameAttempt(
   left: ReturnType<IndexedDocumentRegistry['snapshot']>,
   right: NonNullable<ReturnType<IndexedDocumentRegistry['snapshot']>>,
 ): boolean {
   return !!left
-    && left.uri === right.uri
+    && uriKey(left.uri) === uriKey(right.uri)
     && left.openId === right.openId
     && left.version === right.version
     && left.languageId === right.languageId

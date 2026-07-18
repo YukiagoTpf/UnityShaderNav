@@ -37,4 +37,16 @@ describe('workspace pathUtils', () => {
     expect(containsPath('/Unity/Project', '/unity/project/Assets/Main.shader', options))
       .toBe(false);
   });
+
+  it('uses NFC and case-insensitive identity on default macOS volumes', () => {
+    const nfc = '/Users/Café/Éclair.shader';
+    const nfdCaseVariant = '/users/CAFÉ/ÉCLAIR.shader';
+
+    expect(normalizePathForComparison(nfc, { platform: 'darwin' })).toBe(
+      normalizePathForComparison(nfdCaseVariant, { platform: 'darwin' }),
+    );
+    expect(normalizePathForComparison(nfc, { platform: 'linux' })).not.toBe(
+      normalizePathForComparison(nfdCaseVariant, { platform: 'linux' }),
+    );
+  });
 });

@@ -95,6 +95,10 @@ _Avoid_: document generation, text document reference
 每个 Workspace 内把最新 **Open document snapshot** 或 close tombstone 转换为 candidate overlay 的唯一状态转换策略。它统一拥有 `openId + version` 排序、owner 转移、stale/superseded 校验、open commit 与 close restore/remove；增量 adapter 把转换应用到 published revision 的 fork，完整 initialization/rebuild adapter 把同一转换 replay 到隔离 candidate。adapter 只决定 candidate-current guard 与何时同步发布，不复制状态转换规则。
 _Avoid_: incremental document policy, rebuild replay policy
 
+**Canonical file identity**:
+Index stores、document ownership、reference target identity 与 cache routing 共用的 file-URI / filesystem-path 比较语义。File URI 逐 path segment 解码、按平台归一化后重新编码；Windows 对完整路径做大小写折叠，默认 macOS volume 做 NFC 与大小写折叠，Linux 保持大小写和 Unicode normalization 差异。Filesystem path identity 在 resolve 后复用同一个平台归一化 primitive。该 identity 不解析 symlink，也不探测非默认的 case-sensitive macOS volume。
+_Avoid_: URI spelling, disk path key, canonical path
+
 **Live document overlay**:
 打开或未保存文档覆盖在磁盘索引之上的索引记录。edit 只允许最新 document attempt 发布；close 在 candidate 中恢复最后有效的磁盘记录，没有磁盘版本时删除该 URI，随后原子发布。等价 file URI 共用一个 identity；一个 snapshot 只属于最长路径匹配的 Workspace，根拓扑变化时在旧、新 owner 之间迁移；没有新 owner 时，下一次需要该打开文档的 index-backed 请求可以重新进入 lazy routing。
 _Avoid_: temporary index, unsaved cache
@@ -112,7 +116,7 @@ _Avoid_: packaging file list, watch asset list, Electron runtime copy list
 _Avoid_: cache version, release version, Git revision
 
 **Cache workspace identity**:
-用于选择和验证持久化缓存分桶的 canonical Workspace folder URI。它复用 Workspace ownership 的 file-URI 规范化规则：等价 Windows drive-letter URI 命中同一 identity，父子 Workspace 即使指向同一个 Unity project root 也保持不同 identity。Manifest 的 Unity root 比较和同进程保存协调使用平台 filesystem path identity，不能由 Windows 路径大小写分叉。Unity 模式的最终 manifest 位于 `Library/UnityShaderNavCache/workspaces/<identity-hash>/index.json`；每个 identity 仍只有一个 monolithic manifest。
+用于选择和验证持久化缓存分桶的 canonical Workspace folder URI。它复用 **Canonical file identity**：Windows 完整路径的大小写变体、默认 macOS volume 的大小写与 NFC/NFD 变体命中同一 identity，Linux 仍保持区分；父子 Workspace 即使指向同一个 Unity project root 也保持不同 identity。Manifest 的 Unity root 比较和同进程保存协调使用同一平台 filesystem path identity。Unity 模式的最终 manifest 位于 `Library/UnityShaderNavCache/workspaces/<identity-hash>/index.json`；每个 identity 仍只有一个 monolithic manifest。
 _Avoid_: Unity project cache identity, session id, index revision
 
 **Latest-pending cache persistence**:

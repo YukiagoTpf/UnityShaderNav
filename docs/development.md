@@ -170,9 +170,11 @@ npm run grammar:rebuild
   failed replacement. Session revisions must not be treated as a cross-process
   ordering token.
 - Cache-identity tests cover a real cold/warm restart across equivalent Windows
-  drive-letter Workspace URIs and use `node:path.win32` for filesystem path
-  comparisons; changing only `process.platform` on a POSIX path implementation
-  is not a valid Windows-path test. Package restore tests include a `source: local`
+  Workspace URIs, plus case and NFC/NFD variants for default macOS volumes.
+  Cross-platform unit tests inject both platform and the matching `node:path`
+  implementation; changing only `process.platform` on a POSIX path implementation
+  is not a valid Windows-path test. Linux cases preserve case and Unicode
+  normalization distinctions. Package restore tests include a `source: local`
   package outside the Unity root and prove that removing it from the
   lockfile removes both cached symbols and references.
 - Async lifecycle races use explicit deferred barriers and observable eventual

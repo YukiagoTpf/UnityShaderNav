@@ -8,6 +8,7 @@ import type {
 } from '@unity-shader-nav/shared';
 import type { ReferenceTarget } from './referenceResolver';
 import { containsPosition } from './positionGeometry';
+import { uriKey } from '../uriKey';
 
 function samePosition(a: Range['start'], b: Range['start']): boolean {
   return a.line === b.line && a.character === b.character;
@@ -18,7 +19,7 @@ export function sameRange(a: Range, b: Range): boolean {
 }
 
 export function sameTarget(a: ReferenceTarget, b: ReferenceTarget): boolean {
-  return a.kind === b.kind && a.uri === b.uri && sameRange(a.range, b.range);
+  return a.kind === b.kind && uriKey(a.uri) === uriKey(b.uri) && sameRange(a.range, b.range);
 }
 
 export function symbolToTarget(symbol: SymbolEntry): ReferenceTarget {
@@ -100,7 +101,7 @@ export function narrowGlobalTargetsForOccurrence(
 function locationKey(location: Location): string {
   const range = location.range;
   return [
-    location.uri,
+    uriKey(location.uri),
     range.start.line,
     range.start.character,
     range.end.line,

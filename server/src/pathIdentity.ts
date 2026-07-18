@@ -1,19 +1,20 @@
 import * as nodePath from 'node:path';
+import {
+  normalizeFileIdentity,
+  type FileIdentityOptions,
+} from './fileIdentity';
 
 type PathApi = Pick<typeof nodePath, 'resolve'>;
 
-export interface PathIdentityOptions {
+export interface PathIdentityOptions extends FileIdentityOptions {
   path?: PathApi;
-  platform?: NodeJS.Platform;
 }
 
 export function normalizePathForComparison(
   absPath: string,
   options: Pick<PathIdentityOptions, 'platform'> = {},
 ): string {
-  return (options.platform ?? process.platform) === 'win32'
-    ? absPath.toLowerCase()
-    : absPath;
+  return normalizeFileIdentity(absPath, options);
 }
 
 /** Canonical process-local identity for an absolute filesystem target. */

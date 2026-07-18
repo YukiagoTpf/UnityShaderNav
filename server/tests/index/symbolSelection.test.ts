@@ -6,6 +6,7 @@ import {
   selectScopedSymbolEntries,
   selectSymbolEntryGroups,
 } from '../../src/index/symbolSelection';
+import { uriKey } from '../../src/uriKey';
 
 const uri = 'file:///project/Main.hlsl';
 const scopeRange: Range = {
@@ -103,7 +104,7 @@ describe('symbol selection', () => {
       'Lighting',
       { line: 10, character: 0 },
       global,
-      { visibleUriKeys: new Set([uri, visibleUri]) },
+      { visibleUriKeys: new Set([uriKey(uri), uriKey(visibleUri)]) },
     );
 
     expect(selected.map((entry) => entry.location.uri)).toEqual([
@@ -140,7 +141,7 @@ describe('symbol selection', () => {
       index,
       { line: 10, character: 0 },
       otherCandidates,
-      { visibleUriKeys: new Set([uri, visibleUri]) },
+      { visibleUriKeys: new Set([uriKey(uri), uriKey(visibleUri)]) },
     );
 
     expect(groups.scoped).toEqual([index.symbols[1]]);

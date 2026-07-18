@@ -4,6 +4,7 @@ import {
   type Connection,
 } from 'vscode-languageserver/node';
 import { registerDocuments } from '../../src/handlers/documents';
+import { uriKey } from '../../src/uriKey';
 import type { IndexedWorkspace } from '../../src/workspace/indexedWorkspace';
 
 type OpenHandler = (event: {
@@ -109,6 +110,7 @@ describe('registerDocuments', () => {
     };
     const upperUri = 'file:///C:/Project/Canonical.hlsl';
     const lowerUri = 'file:///c:/Project/Canonical.hlsl';
+    const canonicalUri = uriKey(upperUri);
     const registered = registerDocuments(harness.connection, manager);
 
     harness.open({
@@ -123,10 +125,10 @@ describe('registerDocuments', () => {
 
     expect((harness.connection as unknown as { __textDocumentSync: number })
       .__textDocumentSync).toBe(TextDocumentSyncKind.Incremental);
-    expect(registered.documents.get(upperUri)?.uri).toBe(lowerUri);
+    expect(registered.documents.get(upperUri)?.uri).toBe(canonicalUri);
     expect(registered.snapshot(upperUri)).toEqual(registered.snapshot(lowerUri));
     expect(registered.snapshot(lowerUri)).toMatchObject({
-      uri: lowerUri,
+      uri: canonicalUri,
       openId: 1,
       version: 1,
     });
@@ -137,7 +139,7 @@ describe('registerDocuments', () => {
     });
     await flushPromises();
     expect(registered.snapshot(upperUri)).toMatchObject({
-      uri: lowerUri,
+      uri: canonicalUri,
       openId: 1,
       version: 2,
       text: 'float4 Changed() { return 0; }',
@@ -145,9 +147,42 @@ describe('registerDocuments', () => {
 
     harness.close({ textDocument: { uri: lowerUri } });
     await flushPromises();
-    expect(workspace.closeDocument).toHaveBeenCalledWith({ uri: lowerUri, openId: 1 });
-    expect(manager.releaseDocument).toHaveBeenCalledWith(lowerUri);
+    expect(workspace.closeDocument).toHaveBeenCalledWith({ uri: canonicalUri, openId: 1 });
+    expect(manager.releaseDocument).toHaveBeenCalledWith(canonicalUri);
     expect(registered.snapshot(upperUri)).toBeUndefined();
+  });
+
+  it.runIf(process.platform === 'darwin')('routes macOS case and Unicode variants to one open document', async () => {
+    const harness = createConnectionHarness();
+    const workspace = workspaceFixture();
+    const manager = {
+      workspaceFor: () => workspace,
+      servingWorkspaceFor: () => workspace,
+      workspaceForOrCreateFile: vi.fn(async () => workspace),
+      releaseDocument: vi.fn(async () => {}),
+      configureOpenDocumentsProvider: vi.fn(),
+    };
+    const nfcUri = 'file:///Users/Caf%C3%A9/Project/Main.hlsl';
+    const nfdCaseVariant = 'file:///users/CAFE%CC%81/project/main.hlsl';
+    const canonicalUri = uriKey(nfcUri);
+    const registered = registerDocuments(harness.connection, manager);
+
+    harness.open({
+      textDocument: {
+        uri: nfcUri,
+        languageId: 'hlsl',
+        version: 1,
+        text: 'float4 Opened() { return 0; }',
+      },
+    });
+    await flushPromises();
+
+    expect(registered.snapshot(nfdCaseVariant)).toMatchObject({ uri: canonicalUri, openId: 1 });
+
+    harness.close({ textDocument: { uri: nfdCaseVariant } });
+    await flushPromises();
+    expect(workspace.closeDocument).toHaveBeenCalledWith({ uri: canonicalUri, openId: 1 });
+    expect(registered.snapshot(nfcUri)).toBeUndefined();
   });
 
   it('deduplicates didOpen content and routes close through behavior methods', async () => {

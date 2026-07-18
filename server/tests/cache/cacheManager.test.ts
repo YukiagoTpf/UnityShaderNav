@@ -8,6 +8,7 @@ import {
   CacheManager,
   cacheWorkspaceMatches,
   chooseCacheDir,
+  workspaceCacheIdentity,
 } from '../../src/cache/cacheManager';
 import { CacheStore } from '../../src/cache/cacheStore';
 import { pathIdentity, samePath } from '../../src/pathIdentity';
@@ -157,6 +158,20 @@ describe('chooseCacheDir', () => {
         unityProjectRoot: String.raw`c:\unity\project`,
       },
       { path: win32, platform: 'win32' },
+    )).toBe(true);
+  });
+
+  it('uses one cache bucket for macOS case and Unicode URI variants', () => {
+    const nfc = pathToFileURL('/Users/Café/Project').href;
+    const nfd = pathToFileURL('/users/CAFÉ/project').href;
+
+    expect(workspaceCacheIdentity(nfc, { platform: 'darwin' })).toBe(
+      workspaceCacheIdentity(nfd, { platform: 'darwin' }),
+    );
+    expect(cacheWorkspaceMatches(
+      { workspaceFolderUri: nfc, unityProjectRoot: '/Users/Café/Project' },
+      { workspaceFolderUri: nfd, unityProjectRoot: '/users/CAFÉ/project' },
+      { platform: 'darwin' },
     )).toBe(true);
   });
 

@@ -29,7 +29,7 @@ Unity 模式下，每个 canonical Workspace identity 使用以下路径：
 <UnityRoot>/Library/UnityShaderNavCache/workspaces/<identity-hash>/index.json
 ```
 
-`identity-hash` 的输入是 canonical Workspace folder URI，并复用 Workspace ownership 的 file-URI 规范化规则。等价 Windows drive-letter URI 选择同一分桶；父子 Workspace 即使解析到同一个 Unity root，也选择不同分桶。Manifest 身份验证对 Workspace URI 使用同一规则，对 Unity root 使用平台 filesystem path identity；因此 Windows 路径大小写不会把同一 identity 误判为 cache miss。
+`identity-hash` 的输入是 canonical Workspace folder URI，并复用 Workspace ownership 的 file-URI 规范化规则。URI path segment 会先解码、应用平台 identity、再以 canonical URL spelling 编码；Windows 完整路径大小写变体与默认 macOS volume 的大小写、NFC/NFD 变体选择同一分桶，Linux 保持区分。父子 Workspace 即使解析到同一个 Unity root，也选择不同分桶。Manifest 身份验证对 Workspace URI 使用同一规则，对 Unity root 使用由相同平台 primitive 归一化的 filesystem path identity。
 
 Standalone 模式没有 Unity `Library/`，继续使用 VS Code `globalStorageUri` 下的 per-workspace 分桶。没有 Unity root 且没有 global storage 时禁用持久化缓存。
 
