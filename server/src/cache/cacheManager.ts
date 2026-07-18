@@ -126,13 +126,6 @@ export class CacheManager {
     return this.store.load(fingerprint);
   }
 
-  async save(manifest: CacheManifest): Promise<void> {
-    await enqueueLatestPublication(
-      this.store.coordinationKey,
-      () => this.store.save(manifest),
-    );
-  }
-
   /**
    * Persist one immutable revision projection. Enqueueing happens before any
    * asynchronous manifest preparation so request order, not completion order,

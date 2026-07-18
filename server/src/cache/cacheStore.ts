@@ -137,12 +137,4 @@ export class CacheStore {
       throw error;
     }
   }
-
-  async clear(): Promise<void> {
-    try {
-      await fs.rm(this.path);
-    } catch {
-      // Missing cache files are already clear.
-    }
-  }
 }

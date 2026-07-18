@@ -131,31 +131,13 @@ describe('Document analysis', () => {
       .toBe('ReplacementPass');
   });
 
-  it('deep-freezes every shared block and lexical-token value', () => {
+  it('freezes only the analysis shell and relies on readonly nested facts', () => {
     const analysis = analyzeDocument(uri, source, 'full')!;
-    const block = analysis.blocks[0];
-    const token = analysis.lexicalTokens![0];
-    const shader = analysis.structure.shaders[0];
-    const pass = shader.children[0].children[0];
 
     expect(Object.isFrozen(analysis)).toBe(true);
-    expect(Object.isFrozen(analysis.sourceLines)).toBe(true);
-    expect(Object.isFrozen(analysis.blocks)).toBe(true);
-    expect(Object.isFrozen(block)).toBe(true);
-    expect(Object.isFrozen(analysis.structure)).toBe(true);
-    expect(Object.isFrozen(analysis.structure.shaders)).toBe(true);
-    expect(Object.isFrozen(shader)).toBe(true);
-    expect(Object.isFrozen(shader.children)).toBe(true);
-    expect(Object.isFrozen(pass)).toBe(true);
-    expect(Object.isFrozen(analysis.lexicalTokens)).toBe(true);
-    expect(Object.isFrozen(token)).toBe(true);
-    expect(Object.isFrozen(token.range)).toBe(true);
-    expect(Object.isFrozen(token.range.start)).toBe(true);
-    expect(Object.isFrozen(token.range.end)).toBe(true);
-    expect(Object.isFrozen(analysis.shaderLabNames)).toBe(true);
-    expect(Object.isFrozen(analysis.shaderLabNames.shaders)).toBe(true);
-    expect(Object.isFrozen(analysis.shaderLabMaterial)).toBe(true);
-    expect(Object.isFrozen(analysis.shaderLabMaterial.programBlocks)).toBe(true);
+    expect(Object.isFrozen(analysis.sourceLines)).toBe(false);
+    expect(Object.isFrozen(analysis.blocks)).toBe(false);
+    expect(Object.isFrozen(analysis.lexicalTokens)).toBe(false);
   });
 
   it.each(equivalenceFixtures)(

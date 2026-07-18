@@ -64,7 +64,10 @@ export function analyzeDocument(
   const lexicalTokens = demand === 'full'
     ? scanShaderLabTokensFromSource(source, blocks)
     : undefined;
-  return deepFreeze({
+  // Nested projections are readonly contracts owned by their scanners. Freeze
+  // only the aggregate shell so analysis does not walk the same large graph a
+  // second time on every live edit.
+  return Object.freeze({
     sourceText: text,
     sourceLines: source.lines.map((line) => line.raw),
     blocks,
@@ -91,10 +94,4 @@ function extensionOf(uri: string): string {
   } catch {
     return extname(uri).toLowerCase();
   }
-}
-
-function deepFreeze<T>(value: T): T {
-  if (value === null || typeof value !== 'object' || Object.isFrozen(value)) return value;
-  for (const nested of Object.values(value)) deepFreeze(nested);
-  return Object.freeze(value);
 }

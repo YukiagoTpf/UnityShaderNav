@@ -354,15 +354,13 @@ function collapseFileEvents(events: readonly FileEvent[]): FileEvent[] {
   return [...byUri.values()];
 }
 
-/** FileIndex graphs are shared by candidate forks and must never mutate after ingestion. */
+/**
+ * FileIndex graphs are readonly by contract and shared by candidate forks.
+ * Freeze only the public shell: recursively walking every symbol and range at
+ * ingestion duplicated the parser's work on the latency-sensitive edit path.
+ */
 function freezeFileIndex(index: FileIndex): FileIndex {
-  return deepFreeze(index);
-}
-
-function deepFreeze<T>(value: T): T {
-  if (value === null || typeof value !== 'object' || Object.isFrozen(value)) return value;
-  for (const nested of Object.values(value)) deepFreeze(nested);
-  return Object.freeze(value);
+  return Object.freeze(index);
 }
 
 async function readStableDiskSource(

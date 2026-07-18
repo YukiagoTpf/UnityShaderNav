@@ -10,7 +10,7 @@ export interface IncludeContext {
 
 export interface ResolvedInclude {
   absolutePath: string;
-  via: 'relative' | 'assets' | 'package' | 'includeDirectories' | 'caseInsensitiveFallback';
+  via: 'relative' | 'assets' | 'package' | 'includeDirectories';
   caseInsensitive: boolean;
 }
 

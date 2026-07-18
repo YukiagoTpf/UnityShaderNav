@@ -86,6 +86,12 @@ export class Workspace implements IndexedWorkspace {
   private readonly lifecycle: IndexLifecycle;
   private readonly candidateConstructor: IndexedRevisionCandidateConstructor;
   private readonly openDocuments: OpenDocumentsProvider | undefined;
+  /**
+   * The lifecycle mutation queue for initialization, rebuilds, watcher updates,
+   * and settings changes. Once an operation starts, no peer on this tail can
+   * swap `published`; asynchronous work scheduled here only needs disposed,
+   * abort, and domain-state guards—not another revision-equality check.
+   */
   private operationTail: Promise<void> = Promise.resolve();
   private readonly documentReconciler = new OpenDocumentReconciler();
   private readonly documentReconciles = new Map<string, DocumentReconcileRun>();
@@ -508,14 +514,16 @@ export class Workspace implements IndexedWorkspace {
 
     const builder = base.fork();
     try {
-      if (!await builder.applyChanges(applicableEvents, connection, () => (
-        !this.disposed && this.published === base
-      ))) return;
-      if (this.disposed || this.published !== base) return;
+      if (!await builder.applyChanges(
+        applicableEvents,
+        connection,
+        () => !this.disposed,
+      )) return;
+      if (this.disposed) return;
       const revision = this.publishIncremental(builder);
       await this.persistRevision(revision);
     } catch (error) {
-      if (this.disposed || this.published !== base) return;
+      if (this.disposed) return;
       this.lifecycle.fail(error);
       throw error;
     }

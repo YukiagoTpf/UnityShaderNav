@@ -74,7 +74,7 @@ describe('PublishedIndexedRevision', () => {
     expect(Object.isFrozen(revision.packages.includeCtx.includeDirectories)).toBe(true);
   });
 
-  it('deep-freezes FileIndex values before candidate forks can share them', async () => {
+  it('freezes the FileIndex shell before candidate forks share readonly facts', async () => {
     const uri = 'file:///workspace/Frozen.hlsl';
     const index = await indexFile(uri, 'float4 FrozenSymbol() { return 0; }');
     const builder = IndexedRevisionBuilder.create({
@@ -90,10 +90,8 @@ describe('PublishedIndexedRevision', () => {
     const stored = revision.diskIndexEntries()[0][1];
 
     expect(Object.isFrozen(stored)).toBe(true);
-    expect(Object.isFrozen(stored.symbols)).toBe(true);
-    expect(Object.isFrozen(stored.symbols[0])).toBe(true);
-    expect(Object.isFrozen(stored.symbols[0].location.range)).toBe(true);
-    expect(() => stored.symbols.push(stored.symbols[0])).toThrow();
+    expect(Object.isFrozen(stored.symbols)).toBe(false);
+    expect(Object.isFrozen(stored.symbols[0])).toBe(false);
     expect(revision.workspaceSymbols('FrozenSymbol')).toHaveLength(1);
     expect(revision.fork().publish(2).workspaceSymbols('FrozenSymbol')).toHaveLength(1);
   });
