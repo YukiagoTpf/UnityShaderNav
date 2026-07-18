@@ -13,6 +13,13 @@ and uses semantic versioning for extension releases.
   trace messages; standard `unityShaderNav.trace.server` controls; and a
   clickable status bar that opens per-root index details or failure logs.
 
+### Changed
+
+- Coalesced rapid live edits into a 75 ms publication window and let
+  per-document reconciles publish from the serving revision while rebuild or
+  recovery constructs its candidate. Concurrent document publications now use
+  a final compare-and-swap, and full replay preserves newer edits and closes.
+
 ### Fixed
 
 - Released per-document inactive-region decorations and debounce state on

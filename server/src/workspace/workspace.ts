@@ -366,7 +366,12 @@ export class Workspace implements IndexedWorkspace {
   }
 
   private async reconcileDocumentClose(uri: string, openId: number): Promise<void> {
-    while (!this.disposed && this.documentReconciler.isDesiredClose(uri, openId)) {
+    const key = uriKey(uri);
+    while (
+      !this.disposed
+      && this.documentReconciler.isDesiredClose(uri, openId)
+      && this.documentReconciler.needsReconcile(key, this.published)
+    ) {
       await this.ensureDocumentReconcile(uri);
       if (!this.canServe()) return;
     }
@@ -382,7 +387,10 @@ export class Workspace implements IndexedWorkspace {
     const release = (): void => {
       if (this.documentReconciles.get(key) === run) this.documentReconciles.delete(key);
     };
-    run.promise = this.enqueueMutation(() => this.performDocumentReconcile(key, release))
+    const operation = this.canReconcileAlongsideFullCandidate()
+      ? this.performDocumentReconcile(key, release)
+      : this.enqueueMutation(() => this.performDocumentReconcile(key, release));
+    run.promise = operation
       .catch((error: unknown) => {
         if (!this.disposed && this.lifecycle.snapshot().state === 'ready') {
           this.lifecycle.fail(error);
@@ -390,6 +398,11 @@ export class Workspace implements IndexedWorkspace {
         throw error;
       });
     return run.promise;
+  }
+
+  private canReconcileAlongsideFullCandidate(): boolean {
+    const lifecycle = this.lifecycle.snapshot();
+    return lifecycle.state === 'indexing' && lifecycle.servingRevision !== undefined;
   }
 
   private async performDocumentReconcile(key: string, releaseRun?: () => void): Promise<void> {
@@ -406,6 +419,11 @@ export class Workspace implements IndexedWorkspace {
           () => !this.disposed && this.published === base,
         );
         if (transition.kind === 'superseded') continue;
+        if (
+          this.disposed
+          || this.published !== base
+          || this.documentReconciler.desired(key) !== desired
+        ) continue;
         this.publishIncremental(
           builder,
           transition.kind === 'closed' ? [transition.reconciled] : [],
@@ -496,6 +514,7 @@ export class Workspace implements IndexedWorkspace {
       await this.persistRevision(revision);
     } catch (error) {
       if (this.disposed) return;
+      this.documentReconciler.releasePublishedCloses();
       this.lifecycle.fail(error);
       throw error;
     }
@@ -592,6 +611,7 @@ export class Workspace implements IndexedWorkspace {
       await this.persistRevision(revision);
     } catch (error) {
       if (this.disposed) return;
+      this.documentReconciler.releasePublishedCloses();
       this.lifecycle.fail(error);
       throw error;
     }
@@ -620,7 +640,10 @@ export class Workspace implements IndexedWorkspace {
     const next = this.lifecycle.nextRevision();
     const revision = builder.publish(next);
     this.published = revision;
-    this.documentReconciler.commitPublishedCloses(reconciledCloses);
+    this.documentReconciler.commitPublishedCloses(
+      reconciledCloses,
+      this.canReconcileAlongsideFullCandidate(),
+    );
     this.statusMode = revision.mode;
     const publishedNumber = this.lifecycle.publish(revision.sourceWarningCount);
     if (publishedNumber !== revision.revision) {

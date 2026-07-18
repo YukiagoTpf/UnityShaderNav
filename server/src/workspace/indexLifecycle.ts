@@ -78,6 +78,18 @@ export class IndexLifecycle {
       this.transition({ state: 'ready', revision: this.revision, warningCount });
       return this.revision;
     }
+    if (
+      this.lifecycle.state === 'indexing'
+      && this.lifecycle.servingRevision !== undefined
+    ) {
+      this.revision++;
+      this.transition({
+        state: 'indexing',
+        operation: this.lifecycle.operation,
+        servingRevision: this.revision,
+      });
+      return this.revision;
+    }
     if (this.lifecycle.state === 'failed' && this.lifecycle.servingRevision !== undefined) {
       this.revision++;
       this.transition({

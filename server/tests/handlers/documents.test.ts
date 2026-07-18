@@ -211,6 +211,89 @@ describe('registerDocuments', () => {
     }));
   });
 
+  it('coalesces rapid editor changes while exposing the latest snapshot immediately', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createConnectionHarness();
+      const workspace = workspaceFixture();
+      const manager = {
+        workspaceFor: () => workspace,
+        servingWorkspaceFor: () => workspace,
+        workspaceForOrCreateFile: vi.fn(async () => workspace),
+        releaseDocument: vi.fn(async () => {}),
+        configureOpenDocumentsProvider: vi.fn(),
+      };
+      const registered = registerDocuments(harness.connection, manager);
+
+      harness.open(openEvent('float4 V1() { return 0; }'));
+      await flushPromises();
+      expect(workspace.updateDocument).toHaveBeenCalledTimes(1);
+
+      for (let version = 2; version <= 12; version++) {
+        harness.change(changeEvent(`float4 V${version}() { return 0; }`, version));
+      }
+      expect(registered.snapshot(uri)).toMatchObject({
+        version: 12,
+        text: 'float4 V12() { return 0; }',
+      });
+      expect(workspace.updateDocument).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(74);
+      expect(workspace.updateDocument).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      await flushPromises();
+
+      expect(workspace.updateDocument).toHaveBeenCalledTimes(2);
+      expect(workspace.updateDocument).toHaveBeenLastCalledWith(expect.objectContaining({
+        version: 12,
+        text: 'float4 V12() { return 0; }',
+      }));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('reroutes the latest edit when a lazy document update outlives the edit window', async () => {
+    vi.useFakeTimers();
+    const firstUpdate = deferred<boolean>();
+    try {
+      const harness = createConnectionHarness();
+      const updateDocument = vi.fn()
+        .mockImplementationOnce(() => firstUpdate.promise)
+        .mockResolvedValue(true);
+      const workspace = { ...workspaceFixture(), updateDocument };
+      const manager = {
+        workspaceFor: () => undefined,
+        servingWorkspaceFor: () => undefined,
+        workspaceForOrCreateFile: vi.fn(async () => workspace),
+        releaseDocument: vi.fn(async () => {}),
+        configureOpenDocumentsProvider: vi.fn(),
+      };
+      const registered = registerDocuments(harness.connection, manager);
+
+      harness.open(openEvent('float4 V1() { return 0; }'));
+      await flushPromises();
+      expect(updateDocument).toHaveBeenCalledTimes(1);
+      expect(updateDocument).toHaveBeenLastCalledWith(expect.objectContaining({ version: 1 }));
+
+      harness.change(changeEvent('float4 V2() { return 0; }', 2));
+      await vi.advanceTimersByTimeAsync(75);
+      expect(registered.snapshot(uri)).toMatchObject({ version: 2 });
+      expect(updateDocument).toHaveBeenCalledTimes(1);
+
+      firstUpdate.resolve(true);
+      await flushPromises();
+      expect(updateDocument).toHaveBeenCalledTimes(2);
+      expect(updateDocument).toHaveBeenLastCalledWith(expect.objectContaining({
+        version: 2,
+        text: 'float4 V2() { return 0; }',
+      }));
+    } finally {
+      firstUpdate.resolve(true);
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps one lazy ensure and submits only the latest edit', async () => {
     const harness = createConnectionHarness();
     const workspace = workspaceFixture();
@@ -343,12 +426,18 @@ describe('registerDocuments', () => {
       '[UnityShaderNav] document routing failed for file:///t/doc.hlsl: bootstrap failed',
     ]);
 
-    harness.change(changeEvent('float4 Retried() { return 0; }', 2));
-    await flushPromises();
-    expect(manager.workspaceForOrCreateFile).toHaveBeenCalledTimes(2);
-    expect(workspace.updateDocument).toHaveBeenCalledWith(expect.objectContaining({
-      version: 2,
-      text: 'float4 Retried() { return 0; }',
-    }));
+    vi.useFakeTimers();
+    try {
+      harness.change(changeEvent('float4 Retried() { return 0; }', 2));
+      await vi.advanceTimersByTimeAsync(75);
+      await flushPromises();
+      expect(manager.workspaceForOrCreateFile).toHaveBeenCalledTimes(2);
+      expect(workspace.updateDocument).toHaveBeenCalledWith(expect.objectContaining({
+        version: 2,
+        text: 'float4 Retried() { return 0; }',
+      }));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

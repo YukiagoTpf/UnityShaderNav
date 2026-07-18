@@ -39,6 +39,12 @@ interface CommittedDocumentView {
  */
 export class OpenDocumentReconciler {
   private readonly desiredDocuments = new Map<string, DesiredDocumentState>();
+  /**
+   * A serving-revision close can finish while a full candidate still contains
+   * the old overlay. Mark it published so its URI queue stops, but keep the
+   * desired close until that candidate replays it or is abandoned.
+   */
+  private readonly publishedCloses = new Map<string, ClosedDocumentState>();
   private readonly closedDocumentOpenIds = new Map<string, number>();
 
   acceptDocument(document: IndexedDocumentSnapshot): boolean {
@@ -60,6 +66,7 @@ export class OpenDocumentReconciler {
       if (document.openId < current.openId) return false;
       if (document.openId === current.openId && current.tombstone) return false;
     }
+    this.publishedCloses.delete(key);
     this.desiredDocuments.set(key, { kind: 'open', document });
     return true;
   }
@@ -68,10 +75,12 @@ export class OpenDocumentReconciler {
     const key = uriKey(uri);
     const current = this.desiredDocuments.get(key);
     if (current?.kind === 'closed' && current.openId === openId && !current.tombstone) {
+      this.publishedCloses.delete(key);
       this.desiredDocuments.set(key, { kind: 'closed', uri, openId, tombstone: true });
       return true;
     }
     if (current?.kind !== 'open' || openId !== current.document.openId) return false;
+    this.publishedCloses.delete(key);
     this.desiredDocuments.set(key, { kind: 'closed', uri, openId, tombstone: true });
     return true;
   }
@@ -102,6 +111,7 @@ export class OpenDocumentReconciler {
     if (!synchronizeOwnership || !provider) return;
     for (const [key, desired] of this.desiredDocuments) {
       if (desired.kind !== 'open' || ownedKeys.has(key)) continue;
+      this.publishedCloses.delete(key);
       this.desiredDocuments.set(key, {
         kind: 'closed',
         uri: desired.document.uri,
@@ -130,7 +140,7 @@ export class OpenDocumentReconciler {
     if (!desired) return false;
     return desired.kind === 'open'
       ? !committed?.hasCommittedDocument(desired.document)
-      : true;
+      : this.publishedCloses.get(key) !== desired;
   }
 
   keysNeedingReconcile(committed: CommittedDocumentView | undefined): string[] {
@@ -187,16 +197,32 @@ export class OpenDocumentReconciler {
     }
   }
 
-  commitPublishedCloses(closes: readonly ReconciledDocumentClose[]): void {
+  commitPublishedCloses(
+    closes: readonly ReconciledDocumentClose[],
+    retainDesired = false,
+  ): void {
     for (const { key, close } of closes) {
       if (this.desiredDocuments.get(key) !== close) continue;
-      this.desiredDocuments.delete(key);
+      this.publishedCloses.set(key, close);
       if (close.tombstone) {
         this.closedDocumentOpenIds.set(
           key,
           Math.max(this.closedDocumentOpenIds.get(key) ?? -1, close.openId),
         );
       }
+      if (!retainDesired) {
+        this.desiredDocuments.delete(key);
+        this.publishedCloses.delete(key);
+      }
+    }
+  }
+
+  /** Drop retained closes after an abandoned full candidate can no longer revive them. */
+  releasePublishedCloses(): void {
+    for (const [key, desired] of this.desiredDocuments) {
+      if (desired.kind !== 'closed' || this.publishedCloses.get(key) !== desired) continue;
+      this.desiredDocuments.delete(key);
+      this.publishedCloses.delete(key);
     }
   }
 

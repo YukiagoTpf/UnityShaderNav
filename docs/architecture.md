@@ -177,7 +177,11 @@ The document adapter is the only source of editor document identity. It
 projects each editor state to an immutable `IndexedDocumentSnapshot`; every
 open session receives an `openId`, and each snapshot also carries the LSP
 version. The registry coalesces edits while lazy workspace creation is pending
-and always routes the current snapshot rather than a captured stale value.
+and exposes every new snapshot to request routing immediately, but delays
+background edit routing by 75 ms so a burst of versions becomes one reconcile.
+It always routes the current snapshot rather than a captured stale value; if a
+slow lazy route outlives that window, its completion schedules any newer
+snapshot instead of consuming it.
 
 ```text
 didOpen / didChange / didClose
@@ -190,14 +194,21 @@ didOpen / didChange / didClose
   -> publish once by swapping the Workspace revision pointer
 ```
 
-`Workspace` serializes mutation transactions and coalesces document attempts per
-canonical URI. `OpenDocumentReconciler` owns the desired-state reducer,
+`Workspace` serializes full lifecycle and watcher transactions and coalesces
+document attempts per canonical URI. While rebuild or recovery constructs an
+isolated full candidate, each URI may instead fork and publish from the current
+serving revision. A synchronous compare-and-swap immediately before publication
+prevents concurrent URI candidates from replacing facts published by a peer;
+the lifecycle advances `servingRevision` without ending the full operation.
+`OpenDocumentReconciler` owns the desired-state reducer,
 `openId + version` ordering, close tombstones, and the single transition that
 prepares and commits an open snapshot or restores a closed snapshot. Immediate
 mutations apply that transition to a fork of the published revision; full
 initialization and rebuild replay apply the same transition to their isolated
 candidate. The adapters differ only in publication timing and current-candidate
-guarding. Full transactions delegate to the indexed revision candidate
+guarding. A close published beside a full candidate remains desired until that
+candidate replays or fails, so an older private overlay cannot be revived.
+Full transactions delegate to the indexed revision candidate
 constructor and receive the completed disk/package builder directly; no hidden
 Workspace staging handoff or second take operation exists. A parse that finishes
 after a newer edit, close, or close/reopen pair cannot publish. Closing restores

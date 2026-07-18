@@ -13,6 +13,8 @@ export interface RegisteredDocuments extends IndexedDocumentLifecycleRegistry {
   readonly documents: TextDocuments<TextDocument>;
 }
 
+const LIVE_EDIT_COALESCE_MS = 75;
+
 type TextDocumentConnection = Parameters<TextDocuments<TextDocument>['listen']>[0];
 type TextDocumentNotification = { readonly textDocument: { readonly uri: string } };
 
@@ -118,6 +120,7 @@ export function registerDocuments(
   const documents = new CanonicalTextDocuments(TextDocument);
   const openDocuments = new Map<string, IndexedDocumentSnapshot>();
   const pendingLazyRoutes = new Map<string, Promise<void>>();
+  const pendingEditRoutes = new Map<string, ReturnType<typeof setTimeout>>();
   const closeSnapshotHandlers = new Set<(document: IndexedDocumentSnapshot) => void>();
   let nextOpenId = 1;
 
@@ -147,7 +150,7 @@ export function registerDocuments(
     const key = uriKey(uri);
     const latest = openDocuments.get(key);
     if (!latest) return;
-    const routedOpenId = latest.openId;
+    let routedSnapshot = latest;
 
     // Existing includes an initial/rebuilding Workspace. updateDocument records
     // the desired attempt synchronously and coalesces behind its operation queue.
@@ -165,19 +168,49 @@ export function registerDocuments(
         () => openDocuments.has(key),
       );
       const current = openDocuments.get(key);
-      if (workspace && current) await workspace.updateDocument(current);
+      if (workspace && current) {
+        routedSnapshot = current;
+        await workspace.updateDocument(current);
+        if (openDocuments.get(key) === current) cancelPendingEditRoute(key);
+      }
     })()
       .catch((error: unknown) => reportFailure('document routing', latest.uri, error))
       .finally(() => {
         if (pendingLazyRoutes.get(key) !== route) return;
         pendingLazyRoutes.delete(key);
         const current = openDocuments.get(key);
-        if (current && current.openId !== routedOpenId) routeLatest(current.uri);
+        if (
+          current
+          && current !== routedSnapshot
+          && !pendingEditRoutes.has(key)
+        ) routeLatest(current.uri);
       });
     pendingLazyRoutes.set(key, route);
   };
 
-  const publish = (document: TextDocument, openId: number): void => {
+  const cancelPendingEditRoute = (key: string): void => {
+    const timer = pendingEditRoutes.get(key);
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    pendingEditRoutes.delete(key);
+  };
+
+  const routeLatestAfterEditWindow = (uri: string): void => {
+    const key = uriKey(uri);
+    cancelPendingEditRoute(key);
+    const timer = setTimeout(() => {
+      if (pendingEditRoutes.get(key) !== timer) return;
+      pendingEditRoutes.delete(key);
+      routeLatest(uri);
+    }, LIVE_EDIT_COALESCE_MS);
+    pendingEditRoutes.set(key, timer);
+  };
+
+  const publish = (
+    document: TextDocument,
+    openId: number,
+    coalesceEdit = false,
+  ): void => {
     const snapshot = snapshotDocument(document, openId);
     const key = uriKey(snapshot.uri);
     const current = openDocuments.get(key);
@@ -202,7 +235,12 @@ export function registerDocuments(
     }
 
     openDocuments.set(key, snapshot);
-    routeLatest(snapshot.uri);
+    if (coalesceEdit) {
+      routeLatestAfterEditWindow(snapshot.uri);
+    } else {
+      cancelPendingEditRoute(key);
+      routeLatest(snapshot.uri);
+    }
   };
 
   manager.configureOpenDocumentsProvider(() => openDocuments.values());
@@ -213,12 +251,13 @@ export function registerDocuments(
   documents.onDidChangeContent(({ document }) => {
     const current = openDocuments.get(uriKey(document.uri));
     if (!current) return;
-    publish(document, current.openId);
+    publish(document, current.openId, true);
   });
   documents.onDidClose(({ document }) => {
     const key = uriKey(document.uri);
     const current = openDocuments.get(key);
     if (!current) return;
+    cancelPendingEditRoute(key);
     openDocuments.delete(key);
     for (const handler of closeSnapshotHandlers) {
       try {

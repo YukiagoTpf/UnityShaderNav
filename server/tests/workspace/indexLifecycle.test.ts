@@ -88,6 +88,26 @@ describe('IndexLifecycle', () => {
     });
   });
 
+  it('advances the serving revision without ending an active rebuild', () => {
+    const lifecycle = new IndexLifecycle();
+    lifecycle.complete();
+    lifecycle.begin('rebuild');
+
+    expect(lifecycle.publish(3)).toBe(2);
+    expect(lifecycle.snapshot()).toEqual({
+      state: 'indexing',
+      operation: 'rebuild',
+      servingRevision: 2,
+    });
+
+    expect(lifecycle.complete(1)).toBe(3);
+    expect(lifecycle.snapshot()).toEqual({
+      state: 'ready',
+      revision: 3,
+      warningCount: 1,
+    });
+  });
+
   it('rejects overlapping and terminal lifecycle transitions', () => {
     const lifecycle = new IndexLifecycle();
 
