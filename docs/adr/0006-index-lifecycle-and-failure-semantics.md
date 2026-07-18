@@ -118,7 +118,7 @@ Failures fall into three classes:
 | Class | Examples | Effect |
 | --- | --- | --- |
 | Source-file failure | One discovered file cannot be read; a source-level failure is explicitly classified as local to that file | Keep a compatible last-valid record for an existing file; skip a new file; finish the transaction with a warning. If the old record is incompatible with the candidate, abort the candidate instead of mixing identities |
-| Infrastructure failure | Root traversal is incomplete; `packages-lock.json` is missing, unreadable, or malformed for a Unity root; grammar/WASM initialization fails; the parser engine throws; an index invariant fails | Abort the entire candidate, retain the last published revision, and enter `failed` |
+| Infrastructure failure | Root traversal is incomplete; `packages-lock.json` is missing, unreadable, invalid JSON, or has an invalid top-level/`dependencies` shape for a Unity root; grammar/WASM initialization fails; the parser engine throws; an index invariant fails | Abort the entire candidate, retain the last published revision, and enter `failed` |
 | Cache failure | Cache entry is invalid, cache load misses, or cache save fails | Rebuild from source or keep serving the in-memory revision; do not change index lifecycle |
 
 Tree-sitter syntax error nodes are normal input and do not by themselves make a

@@ -80,22 +80,34 @@ describe('PackageResolver', () => {
     );
   });
 
-  it('rejects incomplete fields for a recognized package source', async () => {
+  it('keeps valid packages and warns once for a malformed recognized-source entry', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-invalid-package-'));
     await mkdir(join(root, 'Packages'), { recursive: true });
     await writeFile(join(root, 'Packages', 'packages-lock.json'), JSON.stringify({
       dependencies: {
+        'com.example.valid': {
+          source: 'registry',
+          version: '1.2.3',
+          hash: 'valid-hash',
+        },
         'com.example.git': {
           source: 'git',
           version: 'https://example.com/repo.git',
         },
       },
     }));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const resolver = new PackageResolver(root);
 
-    await expect(resolver.load()).rejects.toThrow(
-      /Invalid Packages\/packages-lock\.json: dependency com\.example\.git .*non-empty hash/,
+    await resolver.load();
+
+    expect(resolver.getPath('com.example.valid')).toBe(
+      join(root, 'Library', 'PackageCache', 'com.example.valid@valid-hash'),
     );
+    expect(resolver.getPath('com.example.git')).toBeUndefined();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toContain('com.example.git');
+    expect(warn.mock.calls[0]?.[0]).toContain('non-empty hash');
   });
 
   it('skips unknown source entries and warns instead of guessing a path', async () => {

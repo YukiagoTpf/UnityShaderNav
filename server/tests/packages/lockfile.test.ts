@@ -8,7 +8,7 @@ const fixtures = (name: string): string =>
 
 describe('parsePackagesLock', () => {
   it('extracts dependency entries with source/version', () => {
-    const data = parsePackagesLock(fixtures('embedded.json'));
+    const data = parsePackagesLock(fixtures('embedded.json')).entries;
 
     expect(data['com.example.urp'].source).toBe('embedded');
     expect(data['com.unity.render-pipelines.core'].source).toBe('builtin');
@@ -16,51 +16,60 @@ describe('parsePackagesLock', () => {
   });
 
   it('extracts git+ssh dependency entries with source, version and hash', () => {
-    const data = parsePackagesLock(fixtures('git-ssh.json'));
+    const data = parsePackagesLock(fixtures('git-ssh.json')).entries;
 
     expect(data['com.example.priv'].source).toBe('git');
     expect(data['com.example.priv'].version).toBe('git+ssh://git@example.com/foo.git');
     expect(data['com.example.priv'].hash).toBe('feedface');
   });
 
+  it('rejects malformed JSON', () => {
+    expect(() => parsePackagesLock('{broken json')).toThrow(SyntaxError);
+  });
+
   it.each([
     ['a non-object root', '[]', /top-level object/],
     ['missing dependencies', '{}', /missing dependencies object/],
     ['non-object dependencies', '{"dependencies":[]}', /dependencies must be an object/],
+  ])('rejects structurally invalid lockfile: %s', (_name, content, expected) => {
+    expect(() => parsePackagesLock(content)).toThrow(expected);
+  });
+
+  it.each([
     [
       'non-object dependency entry',
       '{"dependencies":{"com.example.bad":null}}',
-      /com\.example\.bad must be an object/,
+      /must be an object/,
     ],
     [
       'missing dependency version',
       '{"dependencies":{"com.example.bad":{"source":"registry"}}}',
-      /com\.example\.bad must have a string version/,
+      /must have a string version/,
     ],
     [
       'git dependency without a hash',
       '{"dependencies":{"com.example.bad":{"source":"git","version":"https://example.com/repo.git"}}}',
-      /com\.example\.bad with source git must have a non-empty hash/,
+      /with source git must have a non-empty hash/,
     ],
     [
       'embedded dependency without a file version',
       '{"dependencies":{"com.example.bad":{"source":"embedded","version":"1.0.0"}}}',
-      /com\.example\.bad with source embedded must have a non-empty file: version/,
+      /with source embedded must have a non-empty file: version/,
     ],
     [
       'local dependency with an empty file version',
       '{"dependencies":{"com.example.bad":{"source":"local","version":"file:"}}}',
-      /com\.example\.bad with source local must have a non-empty file: version/,
+      /with source local must have a non-empty file: version/,
     ],
     [
       'embedded dependency with a whitespace-only file target',
       '{"dependencies":{"com.example.bad":{"source":"embedded","version":"file:   "}}}',
-      /com\.example\.bad with source embedded must have a non-empty file: version/,
+      /with source embedded must have a non-empty file: version/,
     ],
     [
       'builtin dependency with an empty version',
       '{"dependencies":{"com.example.bad":{"source":"builtin","version":""}}}',
-      /com\.example\.bad with source builtin must have a non-empty version/,
+      /with source builtin must have a non-empty version/,
     ],
     [
       'registry dependency with surrounding version whitespace',
@@ -82,8 +91,23 @@ describe('parsePackagesLock', () => {
       '{"dependencies":{"com.example.bad":{"source":" registry ","version":"1.0.0"}}}',
       /source without surrounding whitespace/,
     ],
-  ])('rejects %s', (_name, content, expected) => {
-    expect(() => parsePackagesLock(content)).toThrow(expected);
+  ])('skips %s and reports one named diagnostic', (_name, content, expected) => {
+    const input = JSON.parse(content) as {
+      dependencies: Record<string, unknown>;
+    };
+    input.dependencies['com.example.valid'] = {
+      source: 'registry',
+      version: '1.2.3',
+    };
+    const parsed = parsePackagesLock(JSON.stringify(input));
+
+    expect(parsed.entries).toEqual({
+      'com.example.valid': { source: 'registry', version: '1.2.3' },
+    });
+    expect(parsed.malformedEntries).toEqual([{
+      name: 'com.example.bad',
+      reason: expect.stringMatching(expected),
+    }]);
   });
 });
 

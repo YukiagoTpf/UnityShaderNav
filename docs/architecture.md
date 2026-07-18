@@ -404,10 +404,12 @@ extracts only the requested subdirectory into the cache folder, so the resolved
 path still points at the package root. Verified against Unity 2022.3.53f1c1
 lockfiles. Unknown non-empty source identifiers are skipped with a console
 warning rather than being guessed; blank or whitespace-padded identifiers are
-malformed. Entries using a recognized source are stricter: missing fields
-required to map that source (for example a git hash or a non-empty `file:`
-version) invalidate the package state and fail indexing instead of publishing a
-partial package set.
+malformed. Every dependency entry is validated independently. An entry with an
+invalid shape or missing fields required to map its source (for example a git
+hash or a non-empty `file:` version) is skipped with one console warning naming
+that package, while other valid entries remain indexable. Missing or unreadable
+lockfiles, invalid JSON, and invalid top-level or `dependencies` shapes still
+invalidate the package state and fail indexing.
 
 ## Cache
 

@@ -10,7 +10,17 @@ export interface Lockfile {
   [pkgName: string]: LockfileEntry;
 }
 
-export function parsePackagesLock(content: string): Lockfile {
+export interface MalformedLockfileEntry {
+  readonly name: string;
+  readonly reason: string;
+}
+
+export interface PackagesLockParseResult {
+  readonly entries: Lockfile;
+  readonly malformedEntries: readonly MalformedLockfileEntry[];
+}
+
+export function parsePackagesLock(content: string): PackagesLockParseResult {
   const obj: unknown = JSON.parse(content);
   if (!isRecord(obj)) {
     throw new Error('expected a top-level object');
@@ -23,31 +33,36 @@ export function parsePackagesLock(content: string): Lockfile {
     throw new Error('dependencies must be an object');
   }
   const out: Lockfile = {};
+  const malformedEntries: MalformedLockfileEntry[] = [];
 
   for (const [name, raw] of Object.entries(deps)) {
-    if (!isRecord(raw)) {
-      throw new Error(`dependency ${name} must be an object`);
+    const parsed = parseLockfileEntry(raw);
+    if (typeof parsed === 'string') {
+      malformedEntries.push({ name, reason: parsed });
+      continue;
     }
-    if (typeof raw.version !== 'string') {
-      throw new Error(`dependency ${name} must have a string version`);
-    }
-    if (raw.source !== undefined && typeof raw.source !== 'string') {
-      throw new Error(`dependency ${name} source must be a string`);
-    }
-    if (raw.hash !== undefined && typeof raw.hash !== 'string') {
-      throw new Error(`dependency ${name} hash must be a string`);
-    }
-    const entry: LockfileEntry = {
-      version: raw.version,
-      source: raw.source as string | undefined,
-      hash: raw.hash as string | undefined,
-    };
-    const semanticError = knownSourceValidationError(entry);
-    if (semanticError) throw new Error(`dependency ${name} ${semanticError}`);
-    out[name] = entry;
+    out[name] = parsed;
   }
 
-  return out;
+  return { entries: out, malformedEntries };
+}
+
+function parseLockfileEntry(raw: unknown): LockfileEntry | string {
+  if (!isRecord(raw)) return 'must be an object';
+  if (typeof raw.version !== 'string') return 'must have a string version';
+  if (raw.source !== undefined && typeof raw.source !== 'string') {
+    return 'source must be a string';
+  }
+  if (raw.hash !== undefined && typeof raw.hash !== 'string') {
+    return 'hash must be a string';
+  }
+
+  const entry: LockfileEntry = {
+    version: raw.version,
+    source: raw.source as string | undefined,
+    hash: raw.hash as string | undefined,
+  };
+  return knownSourceValidationError(entry) ?? entry;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

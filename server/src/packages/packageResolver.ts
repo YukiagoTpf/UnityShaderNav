@@ -1,6 +1,9 @@
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
-import { parsePackagesLock, resolvePackagePhysicalPath } from './lockfile';
+import {
+  parsePackagesLock,
+  resolvePackagePhysicalPath,
+} from './lockfile';
 
 export interface ResolvedPackage {
   readonly name: string;
@@ -9,6 +12,11 @@ export interface ResolvedPackage {
   readonly lockVersion: string;
   readonly version: string | undefined;
   readonly official: boolean;
+}
+
+function warnSkippedPackage(name: string, reason: string): void {
+  // eslint-disable-next-line no-console
+  console.warn(`[PackageResolver] skipping ${name}: ${reason}`);
 }
 
 export class PackageResolver {
@@ -33,20 +41,26 @@ export class PackageResolver {
       );
     }
 
-    let lockfile: ReturnType<typeof parsePackagesLock>;
+    let parsedLockfile: ReturnType<typeof parsePackagesLock>;
     try {
-      lockfile = parsePackagesLock(content);
+      parsedLockfile = parsePackagesLock(content);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       throw new Error(`Invalid Packages/packages-lock.json: ${detail}`, { cause: error });
     }
+    for (const entry of parsedLockfile.malformedEntries) {
+      warnSkippedPackage(
+        entry.name,
+        `malformed packages-lock.json entry (${entry.reason})`,
+      );
+    }
     const scopedRegistryScopes = await readScopedRegistryScopes(this.projectRoot);
-    for (const [name, entry] of Object.entries(lockfile)) {
+    for (const [name, entry] of Object.entries(parsedLockfile.entries)) {
       const physicalPath = resolvePackagePhysicalPath(name, entry, this.projectRoot);
       if (physicalPath === null) {
-        // eslint-disable-next-line no-console
-        console.warn(
-          `[PackageResolver] skipping ${name} (source=${entry.source ?? 'unknown'}): no supported path mapping`,
+        warnSkippedPackage(
+          name,
+          `(source=${entry.source ?? 'unknown'}): no supported path mapping`,
         );
         continue;
       }

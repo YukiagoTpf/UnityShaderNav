@@ -334,25 +334,12 @@ describe('Workspace candidate publication', () => {
     }
   });
 
-  it.each([
-    ['malformed JSON', '{broken json'],
-    [
-      'an incomplete known source',
-      JSON.stringify({
-        dependencies: {
-          'com.example.git': {
-            source: 'git',
-            version: 'https://example.com/repo.git',
-          },
-        },
-      }),
-    ],
-  ])('surfaces %s Unity package state with actionable context', async (_case, lockfile) => {
+  it('surfaces malformed JSON Unity package state with actionable context', async () => {
     const root = await mkdtemp(join(tmpdir(), 'usn-lifecycle-package-'));
     await mkdir(join(root, 'Assets'), { recursive: true });
     await mkdir(join(root, 'Packages'), { recursive: true });
     await mkdir(join(root, 'ProjectSettings'), { recursive: true });
-    await writeFile(join(root, 'Packages', 'packages-lock.json'), lockfile);
+    await writeFile(join(root, 'Packages', 'packages-lock.json'), '{broken json');
 
     try {
       const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
@@ -372,6 +359,49 @@ describe('Workspace candidate publication', () => {
           },
         },
       });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('indexes valid packages while warning once for a malformed sibling entry', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-lifecycle-partial-package-'));
+    const packageRoot = join(
+      root,
+      'Library',
+      'PackageCache',
+      'com.example.valid@valid-hash',
+    );
+    const packageFile = join(packageRoot, 'Valid.hlsl');
+    const packageUri = pathToFileURL(packageFile).href;
+    await mkdir(join(root, 'Assets'), { recursive: true });
+    await mkdir(join(root, 'Packages'), { recursive: true });
+    await mkdir(join(root, 'ProjectSettings'), { recursive: true });
+    await mkdir(packageRoot, { recursive: true });
+    await writeFile(packageFile, 'float4 ValidPackageSymbol() { return 0; }');
+    await writeFile(join(root, 'Packages', 'packages-lock.json'), JSON.stringify({
+      dependencies: {
+        'com.example.valid': {
+          source: 'registry',
+          version: '1.2.3',
+          hash: 'valid-hash',
+        },
+        'com.example.git': {
+          source: 'git',
+          version: 'https://example.com/repo.git',
+        },
+      },
+    }));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    try {
+      const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS);
+      await workspace.initialize(fakeConnection);
+
+      expect(await hasDocumentSymbol(workspace, packageUri, 'ValidPackageSymbol')).toBe(true);
+      expect(workspace.indexStatus().lifecycle).toMatchObject({ state: 'ready' });
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]?.[0]).toContain('com.example.git');
     } finally {
       await rm(root, { recursive: true, force: true });
     }

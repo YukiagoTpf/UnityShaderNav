@@ -99,18 +99,19 @@ Workspace mode and index readiness are independent. A root reports one mode
 A successful initial, rebuild, watcher, live-document, or settings-only
 publication increments that root's revision exactly once. An empty event batch
 or watcher transaction with no effective change does not publish; neither does
-a stale, superseded, or failed attempt. Missing, unreadable, or malformed
-`Packages/packages-lock.json` for a Unity root and shader parser initialization
-or bootstrap/rebuild/watcher indexing-engine failures are infrastructure
-failures, not valid empty indexes. Root inspection and directory traversal
-failures are also surfaced instead of being interpreted as an empty project. A
-source discovered for indexing but unreadable when processed is retained from
-the previous revision when its index identity is compatible, or skipped when no
-previous record exists; either case contributes to the candidate revision's
-warning count. An explicit delete still removes the record when its candidate
-publishes. The failed root remains present in the manager until it is removed or
-a later recovery succeeds. When a previous revision exists, rebuild and
-recovery continue serving it; a failed candidate leaves that last-known-good
+a stale, superseded, or failed attempt. Missing, unreadable, or structurally
+malformed `Packages/packages-lock.json` files (invalid JSON or invalid
+top-level/`dependencies` shapes) for a Unity root and shader parser
+initialization or bootstrap/rebuild/watcher indexing-engine failures are
+infrastructure failures, not valid empty indexes. Root inspection and directory
+traversal failures are also surfaced instead of being interpreted as an empty
+project. A source discovered for indexing but unreadable when processed is
+retained from the previous revision when its index identity is compatible, or
+skipped when no previous record exists; either case contributes to the candidate
+revision's warning count. An explicit delete still removes the record when its
+candidate publishes. The failed root remains present in the manager until it is
+removed or a later recovery succeeds. When a previous revision exists, rebuild
+and recovery continue serving it; a failed candidate leaves that last-known-good
 revision available under `failed(servingRevision)`. Each disk index is paired
 with the size and modification time from its stable source read. Retaining an
 older index retains that identity as well; cache persistence never samples new
@@ -132,8 +133,10 @@ Recognized package source kinds must contain the fields needed for deterministic
 physical-path resolution. For example, git entries require a non-empty hash and
 embedded/local entries require a non-empty `file:` version. Unknown future
 source kinds with a valid, non-empty identifier remain explicitly skipped with
-a warning; blank identifiers and malformed known sources fail the
-package-resolution lifecycle instead of silently dropping a package.
+a warning. Invalid dependency entries, including blank or whitespace-padded
+source identifiers and malformed known sources, are each skipped with one
+warning naming the package; other valid lockfile entries remain available for
+indexing.
 
 The language server provides a pull request plus full-snapshot change
 notifications on the normal client connection. Snapshots carry a session-local
