@@ -25,7 +25,7 @@ export class IndexStore implements IndexStoreReader {
     this.byUri.clear();
   }
 
-  uris(): IterableIterator<string> {
-    return this.byUri.keys();
+  *uris(): IterableIterator<string> {
+    for (const index of this.byUri.values()) yield index.uri;
   }
 }

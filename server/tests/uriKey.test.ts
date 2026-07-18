@@ -5,11 +5,11 @@ import { uriKey } from '../src/uriKey';
 
 describe('uriKey', () => {
   it('normalizes macOS case and Unicode composition before re-encoding', () => {
-    const nfc = pathToFileURL('/Users/Café/Éclair.shader').href;
-    const nfd = pathToFileURL('/users/CAFÉ/ÉCLAIR.shader').href;
+    const nfc = pathToFileURL('/project/Café/Éclair.shader').href;
+    const nfd = pathToFileURL('/PROJECT/CAFÉ/ÉCLAIR.shader').href;
 
     expect(uriKey(nfc, { platform: 'darwin' })).toBe(
-      'file:///users/caf%C3%A9/%C3%A9clair.shader',
+      'file:///project/caf%C3%A9/%C3%A9clair.shader',
     );
     expect(uriKey(nfd, { platform: 'darwin' })).toBe(uriKey(nfc, { platform: 'darwin' }));
   });
@@ -41,7 +41,7 @@ describe('uriKey', () => {
 
   it('uses the same platform normalization as filesystem path identity', () => {
     const cases = [
-      { path: '/Users/CAFE\u0301/Main.shader', platform: 'darwin' as const },
+      { path: '/project/CAFE\u0301/Main.shader', platform: 'darwin' as const },
       { path: '/Project/Mixed/Main.shader', platform: 'linux' as const },
       { path: 'C:/Unity/Mixed/Main.shader', platform: 'win32' as const },
     ];

@@ -16,8 +16,7 @@ export interface RegisteredDocuments extends IndexedDocumentRegistry {
 type TextDocumentConnection = Parameters<TextDocuments<TextDocument>['listen']>[0];
 type TextDocumentNotification = { readonly textDocument: { readonly uri: string } };
 
-function canonicalizeDocumentUri<T extends TextDocumentNotification>(event: T): T {
-  const uri = uriKey(event.textDocument.uri);
+function withDocumentUri<T extends TextDocumentNotification>(event: T, uri: string): T {
   if (uri === event.textDocument.uri) return event;
   return {
     ...event,
@@ -27,27 +26,47 @@ function canonicalizeDocumentUri<T extends TextDocumentNotification>(event: T): 
 
 function canonicalDocumentConnection(
   connection: TextDocumentConnection,
+  representatives: Map<string, string>,
 ): TextDocumentConnection {
+  const representative = (uri: string): string => (
+    representatives.get(uriKey(uri)) ?? uri
+  );
+  const forward = <T extends TextDocumentNotification>(
+    handler: (event: T) => void,
+    event: T,
+  ): void => handler(withDocumentUri(event, representative(event.textDocument.uri)));
+
   const canonical: TextDocumentConnection = {
-    onDidOpenTextDocument: (handler) => connection.onDidOpenTextDocument(
-      (event) => handler(canonicalizeDocumentUri(event)),
-    ),
+    onDidOpenTextDocument: (handler) => connection.onDidOpenTextDocument((event) => {
+      const key = uriKey(event.textDocument.uri);
+      const uri = representatives.get(key) ?? event.textDocument.uri;
+      representatives.set(key, uri);
+      handler(withDocumentUri(event, uri));
+    }),
     onDidChangeTextDocument: (handler) => connection.onDidChangeTextDocument(
-      (event) => handler(canonicalizeDocumentUri(event)),
+      (event) => forward(handler, event),
     ),
-    onDidCloseTextDocument: (handler) => connection.onDidCloseTextDocument(
-      (event) => handler(canonicalizeDocumentUri(event)),
-    ),
+    onDidCloseTextDocument: (handler) => connection.onDidCloseTextDocument((event) => {
+      const key = uriKey(event.textDocument.uri);
+      try {
+        forward(handler, event);
+      } finally {
+        representatives.delete(key);
+      }
+    }),
     onWillSaveTextDocument: (handler) => connection.onWillSaveTextDocument(
-      (event) => handler(canonicalizeDocumentUri(event)),
+      (event) => forward(handler, event),
     ),
     onWillSaveTextDocumentWaitUntil: (handler) => (
       connection.onWillSaveTextDocumentWaitUntil(
-        (event, token) => handler(canonicalizeDocumentUri(event), token),
+        (event, token) => handler(
+          withDocumentUri(event, representative(event.textDocument.uri)),
+          token,
+        ),
       )
     ),
     onDidSaveTextDocument: (handler) => connection.onDidSaveTextDocument(
-      (event) => handler(canonicalizeDocumentUri(event)),
+      (event) => forward(handler, event),
     ),
   };
 
@@ -68,12 +87,23 @@ function canonicalDocumentConnection(
 }
 
 class CanonicalTextDocuments extends TextDocuments<TextDocument> {
+  private readonly representatives = new Map<string, string>();
+
   override get(uri: string): TextDocument | undefined {
-    return super.get(uriKey(uri));
+    return super.get(this.representatives.get(uriKey(uri)) ?? uri);
   }
 
   override listen(connection: TextDocumentConnection) {
-    return super.listen(canonicalDocumentConnection(connection));
+    const disposable = super.listen(canonicalDocumentConnection(
+      connection,
+      this.representatives,
+    ));
+    return {
+      dispose: () => {
+        disposable.dispose();
+        this.representatives.clear();
+      },
+    };
   }
 }
 

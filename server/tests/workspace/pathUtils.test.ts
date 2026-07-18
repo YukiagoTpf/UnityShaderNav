@@ -39,8 +39,8 @@ describe('workspace pathUtils', () => {
   });
 
   it('uses NFC and case-insensitive identity on default macOS volumes', () => {
-    const nfc = '/Users/Café/Éclair.shader';
-    const nfdCaseVariant = '/users/CAFÉ/ÉCLAIR.shader';
+    const nfc = '/project/Café/Éclair.shader';
+    const nfdCaseVariant = '/PROJECT/CAFÉ/ÉCLAIR.shader';
 
     expect(normalizePathForComparison(nfc, { platform: 'darwin' })).toBe(
       normalizePathForComparison(nfdCaseVariant, { platform: 'darwin' }),

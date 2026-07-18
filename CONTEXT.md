@@ -96,7 +96,7 @@ _Avoid_: document generation, text document reference
 _Avoid_: incremental document policy, rebuild replay policy
 
 **Canonical file identity**:
-Index stores、document ownership、reference target identity 与 cache routing 共用的 file-URI / filesystem-path 比较语义。File URI 逐 path segment 解码、按平台归一化后重新编码；Windows 对完整路径做大小写折叠，默认 macOS volume 做 NFC 与大小写折叠，Linux 保持大小写和 Unicode normalization 差异。Filesystem path identity 在 resolve 后复用同一个平台归一化 primitive。该 identity 不解析 symlink，也不探测非默认的 case-sensitive macOS volume。
+Index stores、document ownership、reference target identity 与 cache routing 共用的 file-URI / filesystem-path 比较语义。File URI 逐 path segment 解码、按平台归一化后重新编码；Windows 对完整路径做大小写折叠，默认 macOS volume 做 NFC 与大小写折叠，Linux 保持大小写和 Unicode normalization 差异。Filesystem path identity 在 resolve 后复用同一个平台归一化 primitive。Canonical identity 只作为 Map / Set / 比较键；索引记录、LSP 响应与 filesystem I/O 始终保留一个真实输入的可访问 URI spelling，不能把折叠后的 identity key 当成文件地址。该 identity 不解析 symlink，也不探测非默认的 case-sensitive macOS volume。
 _Avoid_: URI spelling, disk path key, canonical path
 
 **Live document overlay**:

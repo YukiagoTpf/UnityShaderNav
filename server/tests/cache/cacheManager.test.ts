@@ -162,15 +162,15 @@ describe('chooseCacheDir', () => {
   });
 
   it('uses one cache bucket for macOS case and Unicode URI variants', () => {
-    const nfc = pathToFileURL('/Users/Café/Project').href;
-    const nfd = pathToFileURL('/users/CAFÉ/project').href;
+    const nfc = pathToFileURL('/project/Café/Workspace').href;
+    const nfd = pathToFileURL('/PROJECT/CAFÉ/workspace').href;
 
     expect(workspaceCacheIdentity(nfc, { platform: 'darwin' })).toBe(
       workspaceCacheIdentity(nfd, { platform: 'darwin' }),
     );
     expect(cacheWorkspaceMatches(
-      { workspaceFolderUri: nfc, unityProjectRoot: '/Users/Café/Project' },
-      { workspaceFolderUri: nfd, unityProjectRoot: '/users/CAFÉ/project' },
+      { workspaceFolderUri: nfc, unityProjectRoot: '/project/Café/Workspace' },
+      { workspaceFolderUri: nfd, unityProjectRoot: '/PROJECT/CAFÉ/workspace' },
       { platform: 'darwin' },
     )).toBe(true);
   });

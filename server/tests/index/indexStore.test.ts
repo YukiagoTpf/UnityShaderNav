@@ -36,6 +36,7 @@ describe('IndexStore', () => {
     store.set(file.uri, file);
 
     expect(store.get('file:///f%3A/Project/UnityProject/Pandora/Assets/Shader/Char_Common.shader')).toBe(file);
+    expect([...store.uris()]).toEqual([file.uri]);
 
     store.delete('file:///f%3A/Project/UnityProject/Pandora/Assets/Shader/Char_Common.shader');
 
@@ -44,10 +45,11 @@ describe('IndexStore', () => {
 
   it.runIf(process.platform === 'darwin')('uses one bucket for macOS case and Unicode variants', () => {
     const store = new IndexStore();
-    const file = idx('file:///Users/Caf%C3%A9/Project/Main.shader');
+    const file = idx('file:///project/Caf%C3%A9/Main.shader');
 
     store.set(file.uri, file);
 
-    expect(store.get('file:///users/CAFE%CC%81/project/main.shader')).toBe(file);
+    expect(store.get('file:///PROJECT/CAFE%CC%81/main.shader')).toBe(file);
+    expect([...store.uris()]).toEqual([file.uri]);
   });
 });

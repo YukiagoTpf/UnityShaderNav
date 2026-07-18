@@ -244,12 +244,13 @@ function collectVisibleProjectSuggestions(
   input: CollectProjectSuggestionsInput,
 ): ShaderSuggestion[] {
   const visibleSymbols: SymbolEntry[] = [];
-  for (const visibleKey of input.store.uris()) {
+  for (const visibleUri of input.store.uris()) {
+    const visibleKey = uriKey(visibleUri);
     if (
       visibleKey === uriKey(input.index.uri)
       || !input.visibleUriKeys.has(visibleKey)
     ) continue;
-    const visibleIndex = input.store.get(visibleKey);
+    const visibleIndex = input.store.get(visibleUri);
     if (!visibleIndex) continue;
     visibleSymbols.push(...visibleIndex.symbols);
   }
@@ -324,9 +325,10 @@ function collectMemberSuggestions(
   if (!receiverType) return [];
 
   const indexes = [index];
-  for (const key of store.uris()) {
+  for (const uri of store.uris()) {
+    const key = uriKey(uri);
     if (key === uriKey(index.uri) || !visibleUriKeys.has(key)) continue;
-    const visibleIndex = store.get(key);
+    const visibleIndex = store.get(uri);
     if (visibleIndex) indexes.push(visibleIndex);
   }
 

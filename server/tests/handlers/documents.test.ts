@@ -4,7 +4,6 @@ import {
   type Connection,
 } from 'vscode-languageserver/node';
 import { registerDocuments } from '../../src/handlers/documents';
-import { uriKey } from '../../src/uriKey';
 import type { IndexedWorkspace } from '../../src/workspace/indexedWorkspace';
 
 type OpenHandler = (event: {
@@ -110,7 +109,6 @@ describe('registerDocuments', () => {
     };
     const upperUri = 'file:///C:/Project/Canonical.hlsl';
     const lowerUri = 'file:///c:/Project/Canonical.hlsl';
-    const canonicalUri = uriKey(upperUri);
     const registered = registerDocuments(harness.connection, manager);
 
     harness.open({
@@ -125,10 +123,11 @@ describe('registerDocuments', () => {
 
     expect((harness.connection as unknown as { __textDocumentSync: number })
       .__textDocumentSync).toBe(TextDocumentSyncKind.Incremental);
-    expect(registered.documents.get(upperUri)?.uri).toBe(canonicalUri);
+    expect(registered.documents.get(upperUri)?.uri).toBe(upperUri);
+    expect(registered.documents.get(lowerUri)?.uri).toBe(upperUri);
     expect(registered.snapshot(upperUri)).toEqual(registered.snapshot(lowerUri));
     expect(registered.snapshot(lowerUri)).toMatchObject({
-      uri: canonicalUri,
+      uri: upperUri,
       openId: 1,
       version: 1,
     });
@@ -139,7 +138,7 @@ describe('registerDocuments', () => {
     });
     await flushPromises();
     expect(registered.snapshot(upperUri)).toMatchObject({
-      uri: canonicalUri,
+      uri: upperUri,
       openId: 1,
       version: 2,
       text: 'float4 Changed() { return 0; }',
@@ -147,8 +146,8 @@ describe('registerDocuments', () => {
 
     harness.close({ textDocument: { uri: lowerUri } });
     await flushPromises();
-    expect(workspace.closeDocument).toHaveBeenCalledWith({ uri: canonicalUri, openId: 1 });
-    expect(manager.releaseDocument).toHaveBeenCalledWith(canonicalUri);
+    expect(workspace.closeDocument).toHaveBeenCalledWith({ uri: upperUri, openId: 1 });
+    expect(manager.releaseDocument).toHaveBeenCalledWith(upperUri);
     expect(registered.snapshot(upperUri)).toBeUndefined();
   });
 
@@ -162,9 +161,8 @@ describe('registerDocuments', () => {
       releaseDocument: vi.fn(async () => {}),
       configureOpenDocumentsProvider: vi.fn(),
     };
-    const nfcUri = 'file:///Users/Caf%C3%A9/Project/Main.hlsl';
-    const nfdCaseVariant = 'file:///users/CAFE%CC%81/project/main.hlsl';
-    const canonicalUri = uriKey(nfcUri);
+    const nfcUri = 'file:///project/Caf%C3%A9/Main.hlsl';
+    const nfdCaseVariant = 'file:///PROJECT/CAFE%CC%81/main.hlsl';
     const registered = registerDocuments(harness.connection, manager);
 
     harness.open({
@@ -177,11 +175,12 @@ describe('registerDocuments', () => {
     });
     await flushPromises();
 
-    expect(registered.snapshot(nfdCaseVariant)).toMatchObject({ uri: canonicalUri, openId: 1 });
+    expect(registered.documents.get(nfdCaseVariant)?.uri).toBe(nfcUri);
+    expect(registered.snapshot(nfdCaseVariant)).toMatchObject({ uri: nfcUri, openId: 1 });
 
     harness.close({ textDocument: { uri: nfdCaseVariant } });
     await flushPromises();
-    expect(workspace.closeDocument).toHaveBeenCalledWith({ uri: canonicalUri, openId: 1 });
+    expect(workspace.closeDocument).toHaveBeenCalledWith({ uri: nfcUri, openId: 1 });
     expect(registered.snapshot(nfcUri)).toBeUndefined();
   });
 
