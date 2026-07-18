@@ -1,5 +1,9 @@
 import { pathToFileURL } from 'node:url';
 import type {
+  FileIndex,
+  ShaderLabPropertyEntry,
+} from '@unity-shader-nav/shared';
+import type {
   Location,
   LocationLink,
 } from 'vscode-languageserver/node';
@@ -11,9 +15,11 @@ import {
   propertyAt,
   resolveDefinition,
   uniqueLocations,
+  type CursorTarget,
   type ResolverContext,
 } from '../index';
 import { isGenericDefinitionContext } from '../parser/lexical/context';
+import { symbolToLocationLink } from '../sourceLocation';
 import type {
   DefinitionAtInput,
   ReferencesAtInput,
@@ -23,6 +29,7 @@ import {
   shaderLabNameDefinitions,
   shaderLabNameReferences,
   shaderLabNameTargetAt,
+  type ShaderLabNameTarget,
 } from './shaderLabNames';
 
 export interface WorkspaceNavigationState {
@@ -32,6 +39,11 @@ export interface WorkspaceNavigationState {
   readonly includePackages: boolean;
   readonly definitionTrace: boolean;
 }
+
+type DefinitionTrace = (event: string, data: Record<string, unknown>) => void;
+type IncludeTarget = Extract<CursorTarget, { readonly kind: 'include' }>;
+type MemberTarget = Extract<CursorTarget, { readonly kind: 'member' }>;
+type DefinitionWord = Extract<CursorTarget, { readonly kind: 'symbol' }>['word'];
 
 /** Include jumps need only the immutable request text and include context. */
 export function canNavigateDefinitionWithoutDocumentIndex(
@@ -60,27 +72,7 @@ export async function navigateDefinition(
 
   const target = cursorTargetAt(document.text, position);
   if (target.kind === 'include') {
-    const include = target.include;
-    const resolved = await state.includeChain.resolve(include.path, document.uri);
-    if (!resolved) return null;
-    if (resolved.caseInsensitive) {
-      observer?.caseInsensitiveInclude?.(include.path, resolved.absolutePath);
-    }
-    const targetUri = pathToFileURL(resolved.absolutePath).href;
-    trace('include', { path: include.path, resolvedUri: targetUri });
-    const targetRange = {
-      start: { line: 0, character: 0 },
-      end: { line: 0, character: 0 },
-    };
-    return [{
-      targetUri,
-      targetRange,
-      targetSelectionRange: targetRange,
-      originSelectionRange: {
-        start: { line: position.line, character: include.pathRange.start.character },
-        end: { line: position.line, character: include.pathRange.end.character },
-      },
-    }];
+    return navigateIncludeDefinition(state, input, target, trace);
   }
 
   const index = state.index.store.get(document.uri);
@@ -95,47 +87,104 @@ export async function navigateDefinition(
 
   const shaderLabNameTarget = shaderLabNameTargetAt(index, position);
   if (shaderLabNameTarget) {
-    const locations = shaderLabNameDefinitions(state, shaderLabNameTarget);
-    return locations.length > 0
-      ? locations.map((location) => ({
-        targetUri: location.uri,
-        targetRange: location.range,
-        targetSelectionRange: location.range,
-        originSelectionRange: shaderLabNameTarget.range,
-      }))
-      : null;
+    return navigateShaderLabNameDefinition(state, shaderLabNameTarget);
   }
 
   // ShaderLab property -> HLSL declaration intentionally precedes the generic
   // HLSL lexical gate. Properties live outside HLSL blocks.
   const propertyHit = propertyAt(index, position);
   if (propertyHit) {
-    trace('property.hit', { name: propertyHit.name });
-    const visibleUriKeys = await state.includeChain.visibleUriKeys(document.uri);
-    const symbols = resolveDefinition(
-      {
-        kind: 'symbol',
-        word: { text: propertyHit.name, range: propertyHit.nameRange },
-      },
-      {
-        index,
-        global: state.index.global,
-        position,
-        options: { visibleUriKeys, trace },
-      },
-    ).filter((symbol) => symbol.kind === 'variable' || symbol.kind === 'cbuffer');
-    if (symbols.length === 0) {
-      trace('property.forward', { links: 0 });
-      return null;
-    }
-    trace('property.forward', { links: symbols.length });
-    return symbols.map((symbol) => ({
-      targetUri: symbol.location.uri,
-      targetRange: symbol.location.range,
-      targetSelectionRange: symbol.location.range,
-      originSelectionRange: propertyHit.nameRange,
-    }));
+    return navigatePropertyDefinition(state, input, index, propertyHit, trace);
   }
+
+  return navigateCodeDefinition(state, input, index, target, trace);
+}
+
+async function navigateIncludeDefinition(
+  state: WorkspaceNavigationState,
+  input: DefinitionAtInput,
+  target: IncludeTarget,
+  trace: DefinitionTrace,
+): Promise<LocationLink[] | null> {
+  const { include } = target;
+  const resolved = await state.includeChain.resolve(include.path, input.document.uri);
+  if (!resolved) return null;
+  if (resolved.caseInsensitive) {
+    input.observer?.caseInsensitiveInclude?.(include.path, resolved.absolutePath);
+  }
+  const targetUri = pathToFileURL(resolved.absolutePath).href;
+  trace('include', { path: include.path, resolvedUri: targetUri });
+  const targetRange = {
+    start: { line: 0, character: 0 },
+    end: { line: 0, character: 0 },
+  };
+  return [{
+    targetUri,
+    targetRange,
+    targetSelectionRange: targetRange,
+    originSelectionRange: {
+      start: {
+        line: input.position.line,
+        character: include.pathRange.start.character,
+      },
+      end: {
+        line: input.position.line,
+        character: include.pathRange.end.character,
+      },
+    },
+  }];
+}
+
+function navigateShaderLabNameDefinition(
+  state: WorkspaceNavigationState,
+  target: ShaderLabNameTarget,
+): LocationLink[] | null {
+  const locations = shaderLabNameDefinitions(state, target);
+  return locations.length > 0
+    ? locations.map((location) => ({
+      targetUri: location.uri,
+      targetRange: location.range,
+      targetSelectionRange: location.range,
+      originSelectionRange: target.range,
+    }))
+    : null;
+}
+
+async function navigatePropertyDefinition(
+  state: WorkspaceNavigationState,
+  input: DefinitionAtInput,
+  index: FileIndex,
+  property: ShaderLabPropertyEntry,
+  trace: DefinitionTrace,
+): Promise<LocationLink[] | null> {
+  trace('property.hit', { name: property.name });
+  const visibleUriKeys = await state.includeChain.visibleUriKeys(input.document.uri);
+  const symbols = resolveDefinition(
+    {
+      kind: 'symbol',
+      word: { text: property.name, range: property.nameRange },
+    },
+    {
+      index,
+      global: state.index.global,
+      position: input.position,
+      options: { visibleUriKeys, trace },
+    },
+  ).filter((symbol) => symbol.kind === 'variable' || symbol.kind === 'cbuffer');
+  trace('property.forward', { links: symbols.length });
+  return symbols.length > 0
+    ? symbols.map((symbol) => symbolToLocationLink(symbol, property.nameRange))
+    : null;
+}
+
+async function navigateCodeDefinition(
+  state: WorkspaceNavigationState,
+  input: DefinitionAtInput,
+  index: FileIndex,
+  target: Exclude<CursorTarget, IncludeTarget>,
+  trace: DefinitionTrace,
+): Promise<LocationLink[] | null> {
+  const { document, position } = input;
 
   if (!isGenericDefinitionContext(
     document.text,
@@ -167,22 +216,33 @@ export async function navigateDefinition(
     receiver: target.kind === 'member' ? target.receiver.text : undefined,
   });
   if (target.kind === 'member') {
-    const memberSymbols = resolveDefinition(target, resolverContext);
-    if (memberSymbols.length > 0) {
-      trace('member.result', { links: memberSymbols.length });
-      return memberSymbols.map((symbol) => ({
-        targetUri: symbol.location.uri,
-        targetRange: symbol.location.range,
-        targetSelectionRange: symbol.location.range,
-        originSelectionRange: target.member.range,
-      }));
-    }
-    trace('member.result', { links: 0 });
+    const memberLinks = navigateMemberDefinition(target, resolverContext, trace);
+    if (memberLinks) return memberLinks;
   }
 
-  const word = memberToken;
+  return navigateSymbolDefinition(state, memberToken, resolverContext, trace);
+}
+
+function navigateMemberDefinition(
+  target: MemberTarget,
+  context: ResolverContext,
+  trace: DefinitionTrace,
+): LocationLink[] | undefined {
+  const symbols = resolveDefinition(target, context);
+  trace('member.result', { links: symbols.length });
+  return symbols.length > 0
+    ? symbols.map((symbol) => symbolToLocationLink(symbol, target.member.range))
+    : undefined;
+}
+
+function navigateSymbolDefinition(
+  state: WorkspaceNavigationState,
+  word: DefinitionWord,
+  context: ResolverContext,
+  trace: DefinitionTrace,
+): LocationLink[] | null {
   trace('word', { text: word.text, range: word.range });
-  const symbols = resolveDefinition({ kind: 'symbol', word }, resolverContext);
+  const symbols = resolveDefinition({ kind: 'symbol', word }, context);
 
   // Reverse property lookup intentionally spans the whole workspace so VS Code
   // can present every ambiguous shader property in Peek Definition.
@@ -205,12 +265,7 @@ export async function navigateDefinition(
     hlsl: symbols.length,
     properties: propertyLinks.length,
   });
-  const hlslLinks: LocationLink[] = symbols.map((symbol) => ({
-    targetUri: symbol.location.uri,
-    targetRange: symbol.location.range,
-    targetSelectionRange: symbol.location.range,
-    originSelectionRange: word.range,
-  }));
+  const hlslLinks = symbols.map((symbol) => symbolToLocationLink(symbol, word.range));
   return [...hlslLinks, ...propertyLinks];
 }
 

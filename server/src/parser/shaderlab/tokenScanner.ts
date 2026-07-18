@@ -5,6 +5,7 @@ import {
   builtinLexicalRole,
 } from '../../vocabulary';
 import { scanIncludeLine } from '../include/lineScanner';
+import { rangeKey } from '../../sourceLocation';
 import {
   interpretShaderLabSource,
   type ShaderLabSourceInterpretation,
@@ -47,17 +48,6 @@ function countChar(text: string, ch: string): number {
   return count;
 }
 
-function tokenKey(token: ShaderLabLexicalToken): string {
-  const { range } = token;
-  return [
-    range.start.line,
-    range.start.character,
-    range.end.line,
-    range.end.character,
-    token.tokenType,
-  ].join(':');
-}
-
 /** `blocks` must be the ordered, non-overlapping result for this exact source. */
 export function scanShaderLabTokens(
   text: string,
@@ -80,7 +70,7 @@ export function scanShaderLabTokensFromSource(
   function push(line: number, start: number, end: number, tokenType: ShaderLabLexicalTokenType): void {
     if (end <= start) return;
     const token = { range: makeRange(line, start, end), tokenType };
-    const key = tokenKey(token);
+    const key = `${rangeKey(token.range)}:${token.tokenType}`;
     if (seen.has(key)) return;
     seen.add(key);
     tokens.push(token);

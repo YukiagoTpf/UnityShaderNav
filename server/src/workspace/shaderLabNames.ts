@@ -21,6 +21,7 @@ import type {
   RenamePreparationOutcome,
 } from './indexedWorkspace';
 import type { IndexStoreReader } from '../index';
+import { containsPosition } from '../sourceLocation';
 import { uriKey } from '../uriKey';
 
 export type ShaderLabNameTarget =
@@ -33,13 +34,6 @@ export interface ShaderLabNameState {
   readonly includePackages?: boolean;
 }
 
-function contains(range: Range, position: Position): boolean {
-  if (position.line < range.start.line || position.line > range.end.line) return false;
-  if (position.line === range.start.line && position.character < range.start.character) return false;
-  if (position.line === range.end.line && position.character > range.end.character) return false;
-  return true;
-}
-
 export function shaderLabNameTargetAt(
   index: FileIndex,
   position: Position,
@@ -47,12 +41,12 @@ export function shaderLabNameTargetAt(
   const facts = index.shaderLabNames;
   if (!facts) return null;
   for (const shader of facts.shaders) {
-    if (contains(shader.nameRange, position)) {
+    if (containsPosition(shader.nameRange, position)) {
       return { kind: 'shader', name: shader.name, range: shader.nameRange };
     }
   }
   for (const pass of facts.passes) {
-    if (contains(pass.nameRange, position)) {
+    if (containsPosition(pass.nameRange, position)) {
       return {
         kind: 'pass',
         shaderName: pass.shaderName,
@@ -63,10 +57,10 @@ export function shaderLabNameTargetAt(
     }
   }
   for (const reference of facts.references) {
-    if (contains(reference.shaderNameRange, position)) {
+    if (containsPosition(reference.shaderNameRange, position)) {
       return { kind: 'shader', name: reference.shaderName, range: reference.shaderNameRange };
     }
-    if (reference.kind === 'usePass' && contains(reference.passNameRange, position)) {
+    if (reference.kind === 'usePass' && containsPosition(reference.passNameRange, position)) {
       return {
         kind: 'pass',
         shaderName: reference.shaderName,

@@ -8,7 +8,7 @@ import type {
   IndexedDocumentRegistry,
   IndexedWorkspaceRequestRouter,
 } from '../workspace/indexedWorkspace';
-import { workspaceForDocumentRequest } from '../workspace/indexedWorkspace';
+import { createDocumentRequestHandler } from './documentRequest';
 
 export function registerDocumentSymbolHandler(
   connection: Connection,
@@ -16,18 +16,16 @@ export function registerDocumentSymbolHandler(
   manager: IndexedWorkspaceRequestRouter,
   suspender?: Pick<RequestSuspender, 'run'>,
 ): void {
-  connection.onDocumentSymbol(async (params: DocumentSymbolParams): Promise<DocumentSymbol[] | null> => {
-    const resolveRequest = async (): Promise<DocumentSymbol[] | null> => {
-      const uri = params.textDocument.uri;
-      const document = documents.snapshot(uri);
-      const workspace = document
-        ? await workspaceForDocumentRequest(document, documents, manager)
-        : manager.servingWorkspaceFor(uri);
-      if (!workspace) return null;
-
-      return workspace.documentSymbols({ uri, document });
-    };
-
-    return suspender ? suspender.run(resolveRequest) : resolveRequest();
-  });
+  connection.onDocumentSymbol(createDocumentRequestHandler<
+    DocumentSymbolParams,
+    DocumentSymbol[] | null,
+    true
+  >(documents, manager, suspender, {
+    uri: (params) => params.textDocument.uri,
+    neutral: () => null,
+    allowClosedDocument: true,
+    resolve: (_params, { uri, document, workspace }) => (
+      workspace.documentSymbols({ uri, document })
+    ),
+  }));
 }

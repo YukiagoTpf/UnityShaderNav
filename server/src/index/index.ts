@@ -30,6 +30,6 @@ export { cursorTargetAt } from './cursorTarget';
 // include-path dedup, independent of findReferences).
 export { uniqueLocations } from './referenceMatching';
 export { propertyAt, findPropertyCandidatesForName } from './propertyBridge';
-export type { LocationLink } from './symbolResolver';
+export type { LocationLink } from '../sourceLocation';
 export type { CursorTarget, CursorTargetOptions } from './cursorTarget';
 export type { PropertyCandidate } from './propertyBridge';

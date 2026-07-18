@@ -39,6 +39,7 @@ import {
   type SuggestionCandidateSelector,
 } from '../suggestions';
 import type { PackageContext } from '../packages';
+import { rangeKey, uriBasename } from '../sourceLocation';
 import type {
   DocumentPositionInput,
   IndexedDocumentQueryInput,
@@ -347,20 +348,9 @@ export function compareWorkspaceSymbols(
     || left.location.range.start.character - right.location.range.start.character;
 }
 
-function basenameFromUri(uri: string): string | undefined {
-  const withoutQuery = uri.split('?', 1)[0].split('#', 1)[0];
-  const lastSlash = withoutQuery.lastIndexOf('/');
-  if (lastSlash === -1 || lastSlash === withoutQuery.length - 1) return undefined;
-  try {
-    return decodeURIComponent(withoutQuery.slice(lastSlash + 1));
-  } catch {
-    return withoutQuery.slice(lastSlash + 1);
-  }
-}
-
 function containerNameFor(symbol: SymbolEntry): string | undefined {
   if (symbol.kind === 'structMember' && symbol.parentType) return symbol.parentType;
-  return basenameFromUri(symbol.location.uri);
+  return uriBasename(symbol.location.uri);
 }
 
 function compareEntries(left: SymbolEntry, right: SymbolEntry): number {
@@ -467,7 +457,7 @@ function semanticTokensForIndex(
   const accepted: TokenRange[] = [];
   for (const token of tokens.sort(compareTokens)) {
     if (token.range.start.line !== token.range.end.line) continue;
-    const key = tokenKey(token);
+    const key = rangeKey(token.range);
     if (seen.has(key)) continue;
     if (accepted.some((existing) => rangesOverlap(existing.range, token.range))) continue;
     const tokenType = TOKEN_TYPE_INDEX.get(token.tokenType);
@@ -483,16 +473,6 @@ function semanticTokensForIndex(
     );
   }
   return builder.build();
-}
-
-function tokenKey(token: TokenRange): string {
-  const { range } = token;
-  return [
-    range.start.line,
-    range.start.character,
-    range.end.line,
-    range.end.character,
-  ].join(':');
 }
 
 function compareTokens(left: TokenRange, right: TokenRange): number {

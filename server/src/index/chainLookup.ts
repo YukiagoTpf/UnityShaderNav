@@ -1,11 +1,17 @@
 import type { FileIndex, FunctionSymbolEntry, Position, SymbolEntry } from '@unity-shader-nav/shared';
+import {
+  containsPosition,
+  isBeforeOrAt,
+  locationKey,
+  symbolToLocationLink,
+  type LocationLink,
+} from '../sourceLocation';
 import type { GlobalSymbolReader } from './globalIndex';
-import type { LocationLink, ResolutionOptions } from './symbolResolver';
+import type { ResolutionOptions } from './symbolResolver';
 import {
   selectGlobalSymbolEntries,
   selectNamedSymbolEntries,
 } from './symbolSelection';
-import { inRange, isBeforeOrAt } from './positionGeometry';
 
 function laterThan(a: Position, b: Position): boolean {
   return a.line > b.line || (a.line === b.line && a.character > b.character);
@@ -57,7 +63,7 @@ function inferReceiverTypeFromCallAssignment(
     (entry) =>
       entry.receiver === receiver &&
       entry.scopeRange &&
-      inRange(refPos, entry.scopeRange) &&
+      containsPosition(entry.scopeRange, refPos) &&
       isBeforeOrAt(entry.assignmentRange.end, refPos),
   ) ?? [];
   if (inferences.length === 0) return null;
@@ -75,7 +81,7 @@ function inferReceiverTypeFromCallAssignment(
   ).filter(isFunctionWithReturnType);
   const seen = new Set<string>();
   const unique = functions.filter((symbol) => {
-    const key = linkKey(symbol);
+    const key = locationKey(symbol.location.uri, symbol.location.range);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -154,25 +160,6 @@ function skipBalanced(text: string, start: number, open: string, close: string):
     }
   }
   return start;
-}
-
-function linkKey(symbol: SymbolEntry): string {
-  const range = symbol.location.range;
-  return [
-    symbol.location.uri,
-    range.start.line,
-    range.start.character,
-    range.end.line,
-    range.end.character,
-  ].join(':');
-}
-
-function toLink(symbol: SymbolEntry): LocationLink {
-  return {
-    targetUri: symbol.location.uri,
-    targetRange: symbol.location.range,
-    targetSelectionRange: symbol.location.range,
-  };
 }
 
 function structMembersFor(
@@ -259,7 +246,7 @@ export function resolveMemberSymbols(
 
   const seen = new Set<string>();
   const unique = members.filter((symbol) => {
-    const key = linkKey(symbol);
+    const key = locationKey(symbol.location.uri, symbol.location.range);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -283,5 +270,6 @@ export function resolveMember(
   refPos: Position,
   options?: ResolutionOptions,
 ): LocationLink[] {
-  return resolveMemberSymbols(index, global, receiver, member, refPos, options).map(toLink);
+  return resolveMemberSymbols(index, global, receiver, member, refPos, options)
+    .map((symbol) => symbolToLocationLink(symbol));
 }

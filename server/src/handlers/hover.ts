@@ -8,7 +8,7 @@ import type {
   IndexedDocumentRegistry,
   IndexedWorkspaceRequestRouter,
 } from '../workspace/indexedWorkspace';
-import { workspaceForDocumentRequest } from '../workspace/indexedWorkspace';
+import { createDocumentRequestHandler } from './documentRequest';
 
 export function registerHoverHandler(
   connection: Connection,
@@ -16,19 +16,17 @@ export function registerHoverHandler(
   manager: IndexedWorkspaceRequestRouter,
   suspender?: Pick<RequestSuspender, 'run'>,
 ): void {
-  connection.onHover(async (params: HoverParams): Promise<Hover | null> => {
-    const resolveRequest = async (): Promise<Hover | null> => {
-      const document = documents.snapshot(params.textDocument.uri);
-      if (!document) return null;
-      const workspace = await workspaceForDocumentRequest(document, documents, manager);
-      if (!workspace) return null;
-
-      return workspace.hoverAt({
+  connection.onHover(createDocumentRequestHandler<HoverParams, Hover | null>(
+    documents,
+    manager,
+    suspender,
+    {
+      uri: (params) => params.textDocument.uri,
+      neutral: () => null,
+      resolve: (params, { document, workspace }) => workspace.hoverAt({
         document,
         position: params.position,
-      });
-    };
-
-    return suspender ? suspender.run(resolveRequest) : resolveRequest();
-  });
+      }),
+    },
+  ));
 }

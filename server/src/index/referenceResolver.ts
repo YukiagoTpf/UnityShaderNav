@@ -9,7 +9,7 @@ import type {
 import type { GlobalSymbolReader } from './globalIndex';
 import type { CursorTarget } from './cursorTarget';
 import { resolveMemberSymbols } from './chainLookup';
-import { containsPosition } from './positionGeometry';
+import { containsPosition } from '../sourceLocation';
 import { resolveDefinitionSymbols, type ResolutionOptions } from './symbolResolver';
 import { memberAccessAt } from '../parser/lexical/cursor';
 

@@ -30,6 +30,7 @@ const QUERY_ADAPTERS = [
   'handlers/workspaceSymbol.ts',
 ] as const;
 const QUERY_ADAPTER_DEPENDENCIES = new Set([
+  'handlers/documentRequest.ts',
   'lifecycle/requestSuspender.ts',
   'workspace/indexedWorkspace.ts',
 ]);
@@ -749,7 +750,7 @@ describe('server dependency direction', () => {
       candidate !== 'handlers/workspaceSymbol.ts'
     ))) {
       const source = readFileSync(resolve(SOURCE_ROOT, adapter), 'utf8');
-      expect(source, adapter).toContain('workspaceForDocumentRequest');
+      expect(source, adapter).toContain('createDocumentRequestHandler');
     }
   });
 

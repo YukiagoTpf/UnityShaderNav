@@ -8,7 +8,7 @@ import type {
   IndexedDocumentRegistry,
   IndexedWorkspaceRequestRouter,
 } from '../workspace/indexedWorkspace';
-import { workspaceForDocumentRequest } from '../workspace/indexedWorkspace';
+import { createDocumentRequestHandler } from './documentRequest';
 
 export function registerCompletionHandler(
   connection: Connection,
@@ -16,19 +16,17 @@ export function registerCompletionHandler(
   manager: IndexedWorkspaceRequestRouter,
   suspender?: Pick<RequestSuspender, 'run'>,
 ): void {
-  connection.onCompletion(async (params: CompletionParams): Promise<CompletionItem[] | null> => {
-    const resolveRequest = async (): Promise<CompletionItem[] | null> => {
-      const document = documents.snapshot(params.textDocument.uri);
-      if (!document) return null;
-      const workspace = await workspaceForDocumentRequest(document, documents, manager);
-      if (!workspace) return null;
-
-      return workspace.completionAt({
+  connection.onCompletion(createDocumentRequestHandler<
+    CompletionParams,
+    CompletionItem[] | null
+  >(documents, manager, suspender, {
+    uri: (params) => params.textDocument.uri,
+    neutral: () => null,
+    resolve: (params, { document, workspace }) => (
+      workspace.completionAt({
         document,
         position: params.position,
-      });
-    };
-
-    return suspender ? suspender.run(resolveRequest) : resolveRequest();
-  });
+      })
+    ),
+  }));
 }

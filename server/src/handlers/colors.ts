@@ -10,7 +10,7 @@ import type {
   IndexedDocumentRegistry,
   IndexedWorkspaceRequestRouter,
 } from '../workspace/indexedWorkspace';
-import { workspaceForDocumentRequest } from '../workspace/indexedWorkspace';
+import { createDocumentRequestHandler } from './documentRequest';
 
 export function registerColorHandlers(
   connection: Connection,
@@ -18,29 +18,29 @@ export function registerColorHandlers(
   manager: IndexedWorkspaceRequestRouter,
   suspender?: Pick<RequestSuspender, 'run'>,
 ): void {
-  connection.onDocumentColor(async (params: DocumentColorParams): Promise<ColorInformation[]> => {
-    const request = async (): Promise<ColorInformation[]> => {
-      const document = documents.snapshot(params.textDocument.uri);
-      if (!document) return [];
-      const workspace = await workspaceForDocumentRequest(document, documents, manager);
-      return workspace?.documentColors({ uri: document.uri, document }) ?? [];
-    };
-    return suspender ? await suspender.run(request) ?? [] : request();
-  });
+  connection.onDocumentColor(createDocumentRequestHandler<
+    DocumentColorParams,
+    ColorInformation[]
+  >(documents, manager, suspender, {
+    uri: (params) => params.textDocument.uri,
+    neutral: () => [],
+    resolve: (_params, { uri, document, workspace }) => (
+      workspace.documentColors({ uri, document })
+    ),
+  }));
 
-  connection.onColorPresentation(async (
-    params: ColorPresentationParams,
-  ): Promise<ColorPresentation[]> => {
-    const request = async (): Promise<ColorPresentation[]> => {
-      const document = documents.snapshot(params.textDocument.uri);
-      if (!document) return [];
-      const workspace = await workspaceForDocumentRequest(document, documents, manager);
-      return workspace?.colorPresentations({
+  connection.onColorPresentation(createDocumentRequestHandler<
+    ColorPresentationParams,
+    ColorPresentation[]
+  >(documents, manager, suspender, {
+    uri: (params) => params.textDocument.uri,
+    neutral: () => [],
+    resolve: (params, { document, workspace }) => (
+      workspace.colorPresentations({
         document,
         range: params.range,
         color: params.color,
-      }) ?? [];
-    };
-    return suspender ? await suspender.run(request) ?? [] : request();
-  });
+      })
+    ),
+  }));
 }

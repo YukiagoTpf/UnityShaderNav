@@ -10,10 +10,10 @@ import {
 import type { RequestSuspender } from '../lifecycle/requestSuspender';
 import {
   isRenameFailure,
-  workspaceForDocumentRequest,
   type IndexedDocumentRegistry,
   type IndexedWorkspaceRequestRouter,
 } from '../workspace/indexedWorkspace';
+import { createDocumentRequestHandler } from './documentRequest';
 
 type PrepareResult = Range | { range: Range; placeholder: string } | null;
 
@@ -23,19 +23,15 @@ export function registerRenameHandler(
   manager: IndexedWorkspaceRequestRouter,
   suspender?: Pick<RequestSuspender, 'run'>,
 ): void {
-  const workspaceFor = async (uri: string) => {
-    const document = documents.snapshot(uri);
-    if (!document) return undefined;
-    const workspace = await workspaceForDocumentRequest(document, documents, manager);
-    return workspace ? { document, workspace } : undefined;
-  };
-
-  connection.onPrepareRename(async (params: PrepareRenameParams): Promise<PrepareResult> => {
-    const resolveRequest = async (): Promise<PrepareResult> => {
-      const context = await workspaceFor(params.textDocument.uri);
-      if (!context) return null;
-      const outcome = await context.workspace.prepareRenameAt({
-        document: context.document,
+  connection.onPrepareRename(createDocumentRequestHandler<
+    PrepareRenameParams,
+    PrepareResult
+  >(documents, manager, suspender, {
+    uri: (params) => params.textDocument.uri,
+    neutral: () => null,
+    resolve: async (params, { document, workspace }) => {
+      const outcome = await workspace.prepareRenameAt({
+        document,
         position: params.position,
       });
       if (isRenameFailure(outcome)) {
@@ -44,16 +40,18 @@ export function registerRenameHandler(
       return outcome
         ? { range: outcome.range, placeholder: outcome.placeholder }
         : null;
-    };
-    return suspender ? suspender.run(resolveRequest) : resolveRequest();
-  });
+    },
+  }));
 
-  connection.onRenameRequest(async (params: RenameParams): Promise<WorkspaceEdit | null> => {
-    const resolveRequest = async (): Promise<WorkspaceEdit | null> => {
-      const context = await workspaceFor(params.textDocument.uri);
-      if (!context) return null;
-      const outcome = await context.workspace.renameAt({
-        document: context.document,
+  connection.onRenameRequest(createDocumentRequestHandler<
+    RenameParams,
+    WorkspaceEdit | null
+  >(documents, manager, suspender, {
+    uri: (params) => params.textDocument.uri,
+    neutral: () => null,
+    resolve: async (params, { document, workspace }) => {
+      const outcome = await workspace.renameAt({
+        document,
         position: params.position,
         newName: params.newName,
       });
@@ -61,7 +59,6 @@ export function registerRenameHandler(
         throw new ResponseError(LSPErrorCodes.RequestFailed, outcome.message);
       }
       return outcome;
-    };
-    return suspender ? suspender.run(resolveRequest) : resolveRequest();
-  });
+    },
+  }));
 }

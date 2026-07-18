@@ -73,6 +73,14 @@ interface DocumentReconcileRun {
   promise: Promise<void>;
 }
 
+function isPromiseLike<T>(value: T | PromiseLike<T>): value is PromiseLike<T> {
+  if (
+    value === null
+    || (typeof value !== 'object' && typeof value !== 'function')
+  ) return false;
+  return typeof (value as { readonly then?: unknown }).then === 'function';
+}
+
 /**
  * Lifecycle owner for one root. Only `published` is request-visible; every
  * mutation builds an isolated candidate and swaps this pointer once.
@@ -163,141 +171,173 @@ export class Workspace implements IndexedWorkspace {
   }
 
   async diagnosticsAt(document: IndexedDocumentSnapshot): Promise<Diagnostic[] | null> {
-    const revision = await this.revisionForDocument(document);
-    if (!revision) return null;
-    const diagnostics = await revision.diagnostics(document.uri);
-    return !this.disposed
-      && this.published === revision
-      && revision.hasCommittedDocument(document)
-      ? diagnostics
-      : null;
+    return this.queryRevision<Diagnostic[] | null>(
+      document,
+      null,
+      (revision) => revision.diagnostics(document.uri),
+      (revision) => (
+        !this.disposed
+        && this.published === revision
+        && revision.hasCommittedDocument(document)
+      ),
+    );
   }
 
   async codeActionsAt(input: CodeActionsAtInput): Promise<CodeAction[]> {
-    const revision = await this.revisionForDocument(input.document);
-    if (!revision) return [];
-    const actions = revision.codeActions(input);
-    return !this.disposed && this.published === revision ? actions : [];
+    return this.queryRevision<CodeAction[]>(
+      input.document,
+      [],
+      (revision) => revision.codeActions(input),
+      (revision) => !this.disposed && this.published === revision,
+    );
   }
 
   async definitionAt(
     input: DefinitionAtInput,
   ): Promise<LocationLink[] | Location[] | null> {
     if (canNavigateDefinitionWithoutDocumentIndex(input)) {
-      const revision = this.captureServingRevision();
-      if (!revision) return null;
-      const result = await revision.definitionAt(input);
-      return this.disposed ? null : result;
+      return this.queryRevision(
+        undefined,
+        null,
+        (revision) => revision.definitionAt(input),
+      );
     }
-
-    try {
-      if (!await this.updateDocument(input.document)) return null;
-    } catch {
-      return null;
-    }
-    const revision = this.captureServingRevision();
-    if (!revision?.hasCommittedDocument(input.document)) return null;
-    const result = await revision.definitionAt(input);
-    return this.disposed ? null : result;
+    return this.queryRevision(
+      input.document,
+      null,
+      (revision) => revision.definitionAt(input),
+    );
   }
 
   async referencesAt(input: ReferencesAtInput): Promise<Location[] | null> {
-    try {
-      if (!await this.updateDocument(input.document)) return null;
-    } catch {
-      return null;
-    }
-    const revision = this.captureServingRevision();
-    if (!revision?.hasCommittedDocument(input.document)) return null;
-    const result = await revision.referencesAt(input);
-    return this.disposed ? null : result;
+    return this.queryRevision(
+      input.document,
+      null,
+      (revision) => revision.referencesAt(input),
+    );
   }
 
   async hoverAt(input: DocumentPositionInput): Promise<Hover | null> {
-    const revision = await this.revisionForDocument(input.document);
-    if (!revision) return null;
-    const result = await revision.hoverAt(input);
-    return this.disposed ? null : result;
+    return this.queryRevision(
+      input.document,
+      null,
+      (revision) => revision.hoverAt(input),
+    );
   }
 
   async completionAt(input: DocumentPositionInput): Promise<CompletionItem[] | null> {
     const withoutIndex = completionWithoutIndex(input);
     if (withoutIndex !== undefined) return withoutIndex;
-    const revision = await this.revisionForDocument(input.document);
-    if (!revision) return null;
-    const result = await revision.completionAt(input);
-    return this.disposed ? null : result;
+    return this.queryRevision(
+      input.document,
+      null,
+      (revision) => revision.completionAt(input),
+    );
   }
 
   async documentColors(input: IndexedDocumentQueryInput): Promise<ColorInformation[]> {
     if (!input.document) return [];
-    const revision = await this.revisionForDocument(input.document);
-    if (!revision) return [];
-    const result = revision.documentColors(input);
-    return this.disposed ? [] : result;
+    return this.queryRevision<ColorInformation[]>(
+      input.document,
+      [],
+      (revision) => revision.documentColors(input),
+    );
   }
 
   async colorPresentations(input: ColorPresentationAtInput): Promise<ColorPresentation[]> {
-    const revision = await this.revisionForDocument(input.document);
-    if (!revision) return [];
-    const result = revision.colorPresentations(input);
-    return this.disposed ? [] : result;
+    return this.queryRevision<ColorPresentation[]>(
+      input.document,
+      [],
+      (revision) => revision.colorPresentations(input),
+    );
   }
 
   async formatDocument(input: DocumentFormattingAtInput): Promise<TextEdit[] | null> {
-    const revision = await this.revisionForDocument(input.document);
-    if (!revision) return null;
-    const result = revision.formatDocument(input);
-    return this.disposed ? null : result;
+    return this.queryRevision(
+      input.document,
+      null,
+      (revision) => revision.formatDocument(input),
+    );
   }
 
   async signatureHelpAt(input: DocumentPositionInput): Promise<SignatureHelp | null> {
     if (!signatureHelpNeedsIndex(input)) return null;
-    const revision = await this.revisionForDocument(input.document);
-    if (!revision) return null;
-    const result = await revision.signatureHelpAt(input);
-    return this.disposed ? null : result;
+    return this.queryRevision(
+      input.document,
+      null,
+      (revision) => revision.signatureHelpAt(input),
+    );
   }
 
   async highlightsAt(input: DocumentPositionInput): Promise<DocumentHighlight[] | null> {
-    const revision = await this.revisionForDocument(input.document);
-    if (!revision) return null;
-    const result = await revision.highlightsAt(input);
-    return this.disposed ? null : result;
+    return this.queryRevision(
+      input.document,
+      null,
+      (revision) => revision.highlightsAt(input),
+    );
   }
 
   async prepareRenameAt(input: DocumentPositionInput): Promise<RenamePreparationOutcome> {
-    const revision = await this.revisionForDocument(input.document);
-    if (!revision) return null;
-    const result = await revision.prepareRenameAt(input);
-    return this.disposed ? null : result;
+    return this.queryRevision(
+      input.document,
+      null,
+      (revision) => revision.prepareRenameAt(input),
+    );
   }
 
   async renameAt(
     input: DocumentPositionInput & { readonly newName: string },
   ): Promise<RenameEditOutcome> {
-    const revision = await this.revisionForDocument(input.document);
-    if (!revision) return null;
-    const result = await revision.renameAt(input);
-    return this.disposed ? null : result;
+    return this.queryRevision(
+      input.document,
+      null,
+      (revision) => revision.renameAt(input),
+    );
   }
 
   async documentSymbols(input: IndexedDocumentQueryInput): Promise<DocumentSymbol[] | null> {
-    const revision = input.document
-      ? await this.revisionForDocument(input.document)
-      : this.captureServingRevision();
-    return revision?.documentSymbols(input) ?? null;
+    return this.queryRevision(
+      input.document,
+      null,
+      (revision) => revision.documentSymbols(input),
+    );
   }
 
   async semanticTokens(input: IndexedDocumentQueryInput): Promise<SemanticTokens> {
-    const revision = input.document
-      ? await this.revisionForDocument(input.document)
-      : this.captureServingRevision();
-    return revision?.semanticTokens(input) ?? { data: [] };
+    return this.queryRevision(
+      input.document,
+      { data: [] },
+      (revision) => revision.semanticTokens(input),
+    );
   }
 
   workspaceSymbols(query: string): SymbolInformation[] {
     return this.captureServingRevision()?.workspaceSymbols(query) ?? [];
+  }
+
+  /**
+   * Capture one request-visible revision, run one query against that immutable
+   * snapshot, then apply the caller's publication guard or return its neutral
+   * protocol value. Synchronous revision queries stay synchronous through the
+   * guard so disposal cannot be observed at a new microtask boundary.
+   */
+  private async queryRevision<TResult>(
+    document: IndexedDocumentSnapshot | undefined,
+    neutral: TResult,
+    query: (revision: PublishedIndexedRevision) => TResult | PromiseLike<TResult>,
+    guard: (revision: PublishedIndexedRevision) => boolean = () => !this.disposed,
+  ): Promise<TResult> {
+    const revision = document
+      ? await this.revisionForDocument(document)
+      : this.captureServingRevision();
+    if (!revision) return neutral;
+
+    const result = query(revision);
+    if (isPromiseLike(result)) {
+      const resolved = await result;
+      return guard(revision) ? resolved : neutral;
+    }
+    return guard(revision) ? result : neutral;
   }
 
   private async revisionForDocument(

@@ -4,6 +4,7 @@ import { MarkupKind, type MarkupContent } from 'vscode-languageserver/node';
 import type { FunctionSymbolEntry, SymbolEntry } from '@unity-shader-nav/shared';
 import type { BuiltinCategory, BuiltinEntry } from '../vocabulary';
 import type { PackageProvenance } from '../documentation';
+import { uriBasename } from '../sourceLocation';
 
 export interface ProjectHoverInput {
   source: 'project';
@@ -139,17 +140,6 @@ function safeFileURLToPath(uri: string): string | undefined {
   }
 }
 
-function uriBasename(uri: string): string {
-  const withoutQuery = uri.replace(/[?#].*$/, '');
-  const lastSlash = withoutQuery.lastIndexOf('/');
-  const tail = lastSlash >= 0 ? withoutQuery.slice(lastSlash + 1) : withoutQuery;
-  try {
-    return decodeURIComponent(tail);
-  } catch {
-    return tail;
-  }
-}
-
 function renderFooter(symbol: SymbolEntry, workspaceRootUri: string | undefined): string {
   const absPath = safeFileURLToPath(symbol.location.uri);
   let display: string;
@@ -157,7 +147,7 @@ function renderFooter(symbol: SymbolEntry, workspaceRootUri: string | undefined)
     // Non-file URI (or a URI that node refuses to parse on this platform):
     // fall back to a basename derived from the URI itself rather than
     // crashing the hover.
-    display = uriBasename(symbol.location.uri);
+    display = uriBasename(symbol.location.uri) ?? symbol.location.uri;
   } else if (workspaceRootUri) {
     const rootPath = safeFileURLToPath(workspaceRootUri);
     if (rootPath !== undefined) {

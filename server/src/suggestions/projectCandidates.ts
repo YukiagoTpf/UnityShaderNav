@@ -12,6 +12,7 @@ import {
   type GlobalSymbolReader,
   type IndexStoreReader,
 } from '../index';
+import { locationKey } from '../sourceLocation';
 import { uriKey } from '../uriKey';
 import {
   collectBuiltinFunctionSuggestions,
@@ -197,15 +198,8 @@ function functionSignatureKey(symbol: FunctionSymbolEntry): string {
   return symbol.parameters.map((parameter) => parameter.type).join(',');
 }
 
-function rangeKey(symbol: SymbolEntry): string {
-  const { range } = symbol.location;
-  return [
-    uriKey(symbol.location.uri),
-    range.start.line,
-    range.start.character,
-    range.end.line,
-    range.end.character,
-  ].join(':');
+function symbolLocationKey(symbol: SymbolEntry): string {
+  return locationKey(uriKey(symbol.location.uri), symbol.location.range);
 }
 
 function dedupeKey(symbol: SymbolEntry): string {
@@ -214,7 +208,7 @@ function dedupeKey(symbol: SymbolEntry): string {
       symbol.name,
       symbol.kind,
       functionSignatureKey(symbol as FunctionSymbolEntry),
-      rangeKey(symbol),
+      symbolLocationKey(symbol),
     ].join('|');
   }
   return [symbol.name, symbol.kind, symbol.parentType ?? ''].join('|');
@@ -298,7 +292,7 @@ function collectVisibleProjectFunctionSuggestions(
   const seen = new Set<string>();
   const suggestions: ShaderSuggestion[] = [];
   for (const candidate of ordered) {
-    const key = rangeKey(candidate.symbol);
+    const key = symbolLocationKey(candidate.symbol);
     if (seen.has(key)) continue;
     seen.add(key);
     suggestions.push(symbolToSuggestion(candidate.symbol, candidate.rank));

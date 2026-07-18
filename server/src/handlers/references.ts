@@ -8,7 +8,7 @@ import type {
   IndexedDocumentRegistry,
   IndexedWorkspaceRequestRouter,
 } from '../workspace/indexedWorkspace';
-import { workspaceForDocumentRequest } from '../workspace/indexedWorkspace';
+import { createDocumentRequestHandler } from './documentRequest';
 
 export function registerReferencesHandler(
   connection: Connection,
@@ -16,20 +16,18 @@ export function registerReferencesHandler(
   manager: IndexedWorkspaceRequestRouter,
   suspender?: Pick<RequestSuspender, 'run'>,
 ): void {
-  connection.onReferences(async (params: ReferenceParams): Promise<Location[] | null> => {
-    const resolveRequest = async (): Promise<Location[] | null> => {
-      const document = documents.snapshot(params.textDocument.uri);
-      if (!document) return null;
-      const workspace = await workspaceForDocumentRequest(document, documents, manager);
-      if (!workspace) return null;
-
-      return workspace.referencesAt({
+  connection.onReferences(createDocumentRequestHandler<
+    ReferenceParams,
+    Location[] | null
+  >(documents, manager, suspender, {
+    uri: (params) => params.textDocument.uri,
+    neutral: () => null,
+    resolve: (params, { document, workspace }) => (
+      workspace.referencesAt({
         document,
         position: params.position,
         includeDeclaration: params.context.includeDeclaration,
-      });
-    };
-
-    return suspender ? suspender.run(resolveRequest) : resolveRequest();
-  });
+      })
+    ),
+  }));
 }

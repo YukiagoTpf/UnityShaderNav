@@ -9,7 +9,7 @@ import type {
   IndexedDocumentRegistry,
   IndexedWorkspaceRequestRouter,
 } from '../workspace/indexedWorkspace';
-import { workspaceForDocumentRequest } from '../workspace/indexedWorkspace';
+import { createDocumentRequestHandler } from './documentRequest';
 
 export function registerDefinitionHandler(
   connection: Connection,
@@ -17,14 +17,14 @@ export function registerDefinitionHandler(
   manager: IndexedWorkspaceRequestRouter,
   suspender?: Pick<RequestSuspender, 'run'>,
 ): void {
-  connection.onDefinition(async (params: DefinitionParams): Promise<LocationLink[] | Location[] | null> => {
-    const resolveRequest = async (): Promise<LocationLink[] | Location[] | null> => {
-      const document = documents.snapshot(params.textDocument.uri);
-      if (!document) return null;
-      const workspace = await workspaceForDocumentRequest(document, documents, manager);
-      if (!workspace) return null;
-
-      return workspace.definitionAt({
+  connection.onDefinition(createDocumentRequestHandler<
+    DefinitionParams,
+    LocationLink[] | Location[] | null
+  >(documents, manager, suspender, {
+    uri: (params) => params.textDocument.uri,
+    neutral: () => null,
+    resolve: (params, { document, workspace }) => (
+      workspace.definitionAt({
         document,
         position: params.position,
         observer: {
@@ -39,9 +39,7 @@ export function registerDefinitionHandler(
             );
           },
         },
-      });
-    };
-
-    return suspender ? suspender.run(resolveRequest) : resolveRequest();
-  });
+      })
+    ),
+  }));
 }

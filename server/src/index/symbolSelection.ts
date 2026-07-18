@@ -1,7 +1,7 @@
 import type { FileIndex, Position, SymbolEntry } from '@unity-shader-nav/shared';
+import { containsPosition, isBeforeOrAt } from '../sourceLocation';
 import { uriKey } from '../uriKey';
 import type { GlobalSymbolReader } from './globalIndex';
-import { inRange, isBeforeOrAt } from './positionGeometry';
 
 export type ResolutionTrace = (event: string, data: Record<string, unknown>) => void;
 
@@ -132,7 +132,7 @@ function latestDeclaration(symbols: readonly SymbolEntry[]): SymbolEntry | undef
 function isScopedVisible(symbol: SymbolEntry, position: Position): boolean {
   return isScopedSymbol(symbol)
     && !!symbol.scopeRange
-    && inRange(position, symbol.scopeRange)
+    && containsPosition(symbol.scopeRange, position)
     && isBeforeOrAt(symbol.location.range.start, position);
 }
 

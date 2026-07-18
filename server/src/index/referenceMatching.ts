@@ -7,7 +7,7 @@ import type {
   SymbolKind,
 } from '@unity-shader-nav/shared';
 import type { ReferenceTarget } from './referenceResolver';
-import { containsPosition } from './positionGeometry';
+import { containsPosition, locationKey } from '../sourceLocation';
 import { uriKey } from '../uriKey';
 
 function samePosition(a: Range['start'], b: Range['start']): boolean {
@@ -98,21 +98,10 @@ export function narrowGlobalTargetsForOccurrence(
   return targets;
 }
 
-function locationKey(location: Location): string {
-  const range = location.range;
-  return [
-    uriKey(location.uri),
-    range.start.line,
-    range.start.character,
-    range.end.line,
-    range.end.character,
-  ].join(':');
-}
-
 export function uniqueLocations(locations: Location[]): Location[] {
   const seen = new Set<string>();
   return locations.filter((location) => {
-    const key = locationKey(location);
+    const key = locationKey(uriKey(location.uri), location.range);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;

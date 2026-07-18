@@ -8,7 +8,7 @@ import type {
   IndexedDocumentRegistry,
   IndexedWorkspaceRequestRouter,
 } from '../workspace/indexedWorkspace';
-import { workspaceForDocumentRequest } from '../workspace/indexedWorkspace';
+import { createDocumentRequestHandler } from './documentRequest';
 
 export function registerDocumentFormattingHandler(
   connection: Connection,
@@ -16,15 +16,14 @@ export function registerDocumentFormattingHandler(
   manager: IndexedWorkspaceRequestRouter,
   suspender?: Pick<RequestSuspender, 'run'>,
 ): void {
-  connection.onDocumentFormatting(async (
-    params: DocumentFormattingParams,
-  ): Promise<TextEdit[] | null> => {
-    const request = async (): Promise<TextEdit[] | null> => {
-      const document = documents.snapshot(params.textDocument.uri);
-      if (!document) return null;
-      const workspace = await workspaceForDocumentRequest(document, documents, manager);
-      return workspace?.formatDocument({ document, options: params.options }) ?? null;
-    };
-    return suspender ? await suspender.run(request) ?? null : request();
-  });
+  connection.onDocumentFormatting(createDocumentRequestHandler<
+    DocumentFormattingParams,
+    TextEdit[] | null
+  >(documents, manager, suspender, {
+    uri: (params) => params.textDocument.uri,
+    neutral: () => null,
+    resolve: (params, { document, workspace }) => (
+      workspace.formatDocument({ document, options: params.options })
+    ),
+  }));
 }

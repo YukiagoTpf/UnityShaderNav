@@ -3,6 +3,7 @@ import type {
   Position,
   ShaderLabPropertyEntry,
 } from '@unity-shader-nav/shared';
+import { containsPosition } from '../sourceLocation';
 import type { IndexStore } from './indexStore';
 
 /**
@@ -18,11 +19,7 @@ export function propertyAt(
 ): ShaderLabPropertyEntry | null {
   if (!idx.properties) return null;
   for (const entry of idx.properties) {
-    const { start, end } = entry.nameRange;
-    if (position.line !== start.line) continue;
-    if (position.character < start.character) continue;
-    if (position.character > end.character) continue;
-    return entry;
+    if (containsPosition(entry.nameRange, position)) return entry;
   }
   return null;
 }

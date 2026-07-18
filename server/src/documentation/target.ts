@@ -1,6 +1,7 @@
 import type { Position, Range } from '@unity-shader-nav/shared';
 import type { DocumentLexicalToken } from '../analysis';
 import { analyzeCursor } from '../parser/lexical/cursor';
+import { containsPosition } from '../sourceLocation';
 
 export type DocumentationTargetRole =
   | 'shaderLabTerm'
@@ -25,7 +26,7 @@ export function documentationTargetAt(
 ): DocumentationTarget | undefined {
   const cursor = analyzeCursor(text, position, languageId, uri);
   if (cursor.lexical !== 'code') return undefined;
-  const token = lexicalTokens?.find((candidate) => contains(candidate.range, position));
+  const token = lexicalTokens?.find((candidate) => containsPosition(candidate.range, position));
   if (token) {
     const name = textInRange(text, token.range);
     if (!name) return undefined;
@@ -53,13 +54,6 @@ export function documentationTargetAt(
     return { role: 'hlslIdentifier', name: cursor.word.text, range: cursor.word.range };
   }
   return undefined;
-}
-
-function contains(range: Range, position: Position): boolean {
-  return range.start.line === position.line
-    && range.end.line === position.line
-    && range.start.character <= position.character
-    && position.character < range.end.character;
 }
 
 function textInRange(text: string, range: Range): string {

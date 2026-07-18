@@ -8,7 +8,7 @@ import type {
   IndexedDocumentRegistry,
   IndexedWorkspaceRequestRouter,
 } from '../workspace/indexedWorkspace';
-import { workspaceForDocumentRequest } from '../workspace/indexedWorkspace';
+import { createDocumentRequestHandler } from './documentRequest';
 
 export function registerSignatureHelpHandler(
   connection: Connection,
@@ -16,19 +16,17 @@ export function registerSignatureHelpHandler(
   manager: IndexedWorkspaceRequestRouter,
   suspender?: Pick<RequestSuspender, 'run'>,
 ): void {
-  connection.onSignatureHelp(async (params: SignatureHelpParams): Promise<SignatureHelp | null> => {
-    const resolveRequest = async (): Promise<SignatureHelp | null> => {
-      const document = documents.snapshot(params.textDocument.uri);
-      if (!document) return null;
-      const workspace = await workspaceForDocumentRequest(document, documents, manager);
-      if (!workspace) return null;
-
-      return workspace.signatureHelpAt({
+  connection.onSignatureHelp(createDocumentRequestHandler<
+    SignatureHelpParams,
+    SignatureHelp | null
+  >(documents, manager, suspender, {
+    uri: (params) => params.textDocument.uri,
+    neutral: () => null,
+    resolve: (params, { document, workspace }) => (
+      workspace.signatureHelpAt({
         document,
         position: params.position,
-      });
-    };
-
-    return suspender ? suspender.run(resolveRequest) : resolveRequest();
-  });
+      })
+    ),
+  }));
 }

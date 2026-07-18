@@ -8,7 +8,7 @@ import type {
   IndexedDocumentRegistry,
   IndexedWorkspaceRequestRouter,
 } from '../workspace/indexedWorkspace';
-import { workspaceForDocumentRequest } from '../workspace/indexedWorkspace';
+import { createDocumentRequestHandler } from './documentRequest';
 
 export { SEMANTIC_TOKEN_TYPES } from '../workspace/semanticTokenLegend';
 
@@ -18,19 +18,16 @@ export function registerSemanticTokensHandler(
   manager: IndexedWorkspaceRequestRouter,
   suspender?: Pick<RequestSuspender, 'run'>,
 ): void {
-  connection.languages.semanticTokens.on(async (params: SemanticTokensParams): Promise<SemanticTokens> => {
-    const resolveRequest = async (): Promise<SemanticTokens> => {
-      const uri = params.textDocument.uri;
-      const document = documents.snapshot(uri);
-      const workspace = document
-        ? await workspaceForDocumentRequest(document, documents, manager)
-        : manager.servingWorkspaceFor(uri);
-      if (!workspace) return { data: [] };
-
-      return workspace.semanticTokens({ uri, document });
-    };
-
-    if (!suspender) return resolveRequest();
-    return await suspender.run(resolveRequest) ?? { data: [] };
-  });
+  connection.languages.semanticTokens.on(createDocumentRequestHandler<
+    SemanticTokensParams,
+    SemanticTokens,
+    true
+  >(documents, manager, suspender, {
+    uri: (params) => params.textDocument.uri,
+    neutral: () => ({ data: [] }),
+    allowClosedDocument: true,
+    resolve: (_params, { uri, document, workspace }) => (
+      workspace.semanticTokens({ uri, document })
+    ),
+  }));
 }

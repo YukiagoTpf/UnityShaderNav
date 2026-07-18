@@ -1,6 +1,7 @@
 import type { Position } from '@unity-shader-nav/shared';
 import { scanIncludes, type IncludeDirective } from '../parser/include/lineScanner';
 import { memberAccessAt, type WordAt } from '../parser/lexical/cursor';
+import { containsPosition } from '../sourceLocation';
 
 export type CursorTarget =
   | { kind: 'include'; include: IncludeDirective }
@@ -17,10 +18,9 @@ export function cursorTargetAt(
 ): CursorTarget {
   const { detectIncludes = true } = options;
   if (detectIncludes) {
-    const include = scanIncludes(text).find((d) =>
-      d.line === position.line
-      && position.character >= d.pathRange.start.character
-      && position.character <= d.pathRange.end.character);
+    const include = scanIncludes(text).find((directive) => (
+      containsPosition(directive.pathRange, position)
+    ));
     if (include) return { kind: 'include', include };
   }
   const ma = memberAccessAt(text, position);

@@ -8,7 +8,7 @@ import type {
   IndexedDocumentRegistry,
   IndexedWorkspaceRequestRouter,
 } from '../workspace/indexedWorkspace';
-import { workspaceForDocumentRequest } from '../workspace/indexedWorkspace';
+import { createDocumentRequestHandler } from './documentRequest';
 
 export function registerDocumentHighlightHandler(
   connection: Connection,
@@ -16,21 +16,17 @@ export function registerDocumentHighlightHandler(
   manager: IndexedWorkspaceRequestRouter,
   suspender?: Pick<RequestSuspender, 'run'>,
 ): void {
-  connection.onDocumentHighlight(async (
-    params: DocumentHighlightParams,
-  ): Promise<DocumentHighlight[] | null> => {
-    const resolveRequest = async (): Promise<DocumentHighlight[] | null> => {
-      const document = documents.snapshot(params.textDocument.uri);
-      if (!document) return null;
-      const workspace = await workspaceForDocumentRequest(document, documents, manager);
-      if (!workspace) return null;
-
-      return workspace.highlightsAt({
+  connection.onDocumentHighlight(createDocumentRequestHandler<
+    DocumentHighlightParams,
+    DocumentHighlight[] | null
+  >(documents, manager, suspender, {
+    uri: (params) => params.textDocument.uri,
+    neutral: () => null,
+    resolve: (params, { document, workspace }) => (
+      workspace.highlightsAt({
         document,
         position: params.position,
-      });
-    };
-
-    return suspender ? suspender.run(resolveRequest) : resolveRequest();
-  });
+      })
+    ),
+  }));
 }
