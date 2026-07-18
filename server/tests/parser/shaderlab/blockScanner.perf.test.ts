@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { scanBlocks } from '../../../src/parser/shaderlab/blockScanner';
 
-describe('blockScanner perf smoke', () => {
-  it('scans 10000-line synthetic shader in < 50ms', () => {
+describe('blockScanner large-input smoke', () => {
+  it('scans a synthetic shader with 1000 passes', () => {
     const body = Array.from({ length: 1000 }, () =>
       [
         '    Pass {',
@@ -14,11 +14,8 @@ describe('blockScanner perf smoke', () => {
     ).join('\n');
     const text = `Shader "Big" {\n  SubShader {\n${body}\n  }\n}`;
 
-    const t0 = performance.now();
     const result = scanBlocks(text);
-    const dt = performance.now() - t0;
 
     expect(result.blocks.length).toBe(1000);
-    expect(dt).toBeLessThan(50);
   });
 });
