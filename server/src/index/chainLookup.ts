@@ -80,7 +80,11 @@ function inferReceiverTypeFromCallAssignment(
     seen.add(key);
     return true;
   });
-  if (unique.length !== 1) {
+  const inferredReturnType = unique[0]?.returnType;
+  if (
+    inferredReturnType === undefined
+    || unique.some((symbol) => symbol.returnType !== inferredReturnType)
+  ) {
     options?.trace?.('member.callAssignmentAmbiguous', {
       receiver,
       callName: best.callName,
@@ -89,7 +93,7 @@ function inferReceiverTypeFromCallAssignment(
     return null;
   }
 
-  return unique[0].returnType;
+  return inferredReturnType;
 }
 
 function isFunctionWithReturnType(symbol: SymbolEntry): symbol is FunctionSymbolEntry {

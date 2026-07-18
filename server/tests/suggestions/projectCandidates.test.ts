@@ -444,6 +444,50 @@ describe('SuggestionCandidateSelector', () => {
     }
   });
 
+  it('completes members when call-assignment overloads agree on the receiver type', async () => {
+    const uri = 'file:///project/Main.hlsl';
+    const index: FileIndex = {
+      uri,
+      references: [],
+      symbols: [
+        symbol('positionWS', 'structMember', uri, 0, {
+          parentType: 'Surface',
+          declaredType: 'float3',
+        }),
+        { ...fn('MakeSurface', uri, 1), returnType: 'Surface' },
+        {
+          ...fn('MakeSurface', uri, 2, [{ type: 'float3', name: 'position' }]),
+          returnType: 'Surface',
+        },
+      ],
+      typeInferences: [{
+        receiver: 'surface',
+        callName: 'MakeSurface',
+        assignmentRange: {
+          start: { line: 8, character: 2 },
+          end: { line: 8, character: 25 },
+        },
+        scope: 'frag',
+        scopeRange,
+      }],
+    };
+    const selector = selectorFor([index]);
+
+    const selection = await selector.select({
+      uri,
+      position: { line: 10, character: 0 },
+      query: { kind: 'member', receiver: 'surface', prefix: 'pos' },
+    });
+
+    expect(selection?.suggestions).toEqual([
+      expect.objectContaining({
+        name: 'positionWS',
+        source: 'project',
+        parentType: 'Surface',
+      }),
+    ]);
+  });
+
   it('distinguishes a missing current index from an indexed query with no candidates', async () => {
     const uri = 'file:///project/Main.hlsl';
     const selector = selectorFor([{ uri, references: [], symbols: [] }]);

@@ -439,7 +439,7 @@ describe('resolveMember', () => {
     expect(links).toEqual([]);
   });
 
-  it('does not infer receiver type from an ambiguous call assignment target', () => {
+  it('infers receiver type when overloaded call targets agree on their return type', () => {
     const idx: FileIndex = {
       uri,
       references: [],
@@ -464,6 +464,57 @@ describe('resolveMember', () => {
 
     const links = resolveMember(idx, globalWithSurface(), 'surface', 'positionWS', { line: 10, character: 22 });
 
-    expect(links).toEqual([]);
+    expect(links).toHaveLength(1);
+    expect(links[0].targetRange).toEqual(memberRange);
+  });
+
+  it('keeps call-assignment receiver inference neutral when overload return types diverge', () => {
+    const otherMemberRange: Range = {
+      start: { line: 2, character: 8 },
+      end: { line: 2, character: 18 },
+    };
+    const idx: FileIndex = {
+      uri,
+      references: [],
+      symbols: [
+        sym({
+          name: 'positionWS',
+          kind: 'structMember',
+          parentType: 'Other',
+          location: { uri, range: otherMemberRange },
+        }),
+        {
+          name: 'MakeSurface',
+          kind: 'function',
+          returnType: 'Other',
+          parameters: [],
+          location: {
+            uri,
+            range: { start: { line: 3, character: 0 }, end: { line: 3, character: 11 } },
+          },
+        },
+      ],
+      typeInferences: [{
+        receiver: 'surface',
+        callName: 'MakeSurface',
+        assignmentRange: { start: { line: 8, character: 2 }, end: { line: 8, character: 25 } },
+        scope: 'frag',
+        scopeRange: functionScope,
+      }],
+    };
+
+    expect(inferReceiverTypeForCompletion(
+      idx,
+      globalWithSurface(),
+      'surface',
+      { line: 10, character: 22 },
+    )).toBeNull();
+    expect(resolveMember(
+      idx,
+      globalWithSurface(),
+      'surface',
+      'positionWS',
+      { line: 10, character: 22 },
+    )).toEqual([]);
   });
 });
