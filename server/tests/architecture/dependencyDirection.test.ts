@@ -334,6 +334,27 @@ describe('server dependency direction', () => {
     expect(candidate).not.toMatch(/\bIndexLifecycle\b|\.publish\(|persistPublication/);
   });
 
+  it('routes both open-document adapters through one reconciliation transition core', () => {
+    const workspace = readFileSync(
+      resolve(SOURCE_ROOT, 'workspace/workspace.ts'),
+      'utf8',
+    );
+    const reconciler = readFileSync(
+      resolve(SOURCE_ROOT, 'workspace/openDocumentReconciler.ts'),
+      'utf8',
+    );
+
+    expect(workspace.match(/this\.documentReconciler\.apply\s*\(/g)).toHaveLength(2);
+    expect(workspace).not.toMatch(/builder\.(?:prepareDocument|commitDocument|closeDocument)\s*\(/);
+    expect(reconciler.match(/builder\.prepareDocument\s*\(/g)).toHaveLength(1);
+    expect(reconciler.match(/builder\.commitDocument\s*\(/g)).toHaveLength(1);
+    expect(reconciler.match(/builder\.closeDocument\s*\(/g)).toHaveLength(1);
+    expect(reconciler).toMatch(/class OpenDocumentReconciler/);
+    expect(reconciler).toMatch(/closedDocumentOpenIds/);
+    expect(reconciler).toMatch(/openId[\s\S]*version|version[\s\S]*openId/);
+    expect(reconciler).toMatch(/tombstone/);
+  });
+
   it('keeps indexed source membership policy in one revision-bound module', () => {
     const membership = readFileSync(
       resolve(SOURCE_ROOT, 'workspace/indexedSourceMembership.ts'),

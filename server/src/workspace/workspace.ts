@@ -41,6 +41,10 @@ import { canNavigateDefinitionWithoutDocumentIndex } from './navigation';
 import { containsPath } from './pathUtils';
 import { IndexLifecycle } from './indexLifecycle';
 import {
+  OpenDocumentReconciler,
+  type ReconciledDocumentClose,
+} from './openDocumentReconciler';
+import {
   createDefaultIndexedRevisionCandidateConstructor,
   createStandalonePackageContext,
   type DefaultIndexedRevisionCandidateConstructorOptions,
@@ -65,22 +69,6 @@ export interface WorkspaceRuntimeOptions
   candidateConstructor?: IndexedRevisionCandidateConstructor;
 }
 
-type DesiredDocumentState =
-  | { readonly kind: 'open'; readonly document: IndexedDocumentSnapshot }
-  | {
-    readonly kind: 'closed';
-    readonly uri: string;
-    readonly openId: number;
-    readonly tombstone: boolean;
-  };
-
-type ClosedDocumentState = Extract<DesiredDocumentState, { readonly kind: 'closed' }>;
-
-interface ReconciledClose {
-  readonly key: string;
-  readonly close: ClosedDocumentState;
-}
-
 interface DocumentReconcileRun {
   promise: Promise<void>;
 }
@@ -99,8 +87,7 @@ export class Workspace implements IndexedWorkspace {
   private readonly candidateConstructor: IndexedRevisionCandidateConstructor;
   private readonly openDocuments: OpenDocumentsProvider | undefined;
   private operationTail: Promise<void> = Promise.resolve();
-  private readonly desiredDocuments = new Map<string, DesiredDocumentState>();
-  private readonly closedDocumentOpenIds = new Map<string, number>();
+  private readonly documentReconciler = new OpenDocumentReconciler();
   private readonly documentReconciles = new Map<string, DocumentReconcileRun>();
   private readonly abortController = new AbortController();
   private disposed = false;
@@ -156,14 +143,14 @@ export class Workspace implements IndexedWorkspace {
     if (
       this.disposed
       || !this.ownsProvidedDocument(document)
-      || !this.acceptDocument(document)
+      || !this.documentReconciler.acceptDocument(document)
     ) return Promise.resolve(false);
     if (this.published?.hasCommittedDocument(document)) return Promise.resolve(true);
     return this.reconcileDocumentAttempt(document);
   }
 
   closeDocument(input: { readonly uri: string; readonly openId: number }): Promise<void> {
-    if (this.disposed || !this.acceptDocumentClose(input.uri, input.openId)) {
+    if (this.disposed || !this.documentReconciler.acceptClose(input.uri, input.openId)) {
       return Promise.resolve();
     }
     return this.reconcileDocumentClose(input.uri, input.openId);
@@ -323,43 +310,8 @@ export class Workspace implements IndexedWorkspace {
     return this.canServe() ? this.published : undefined;
   }
 
-  private acceptDocument(document: IndexedDocumentSnapshot): boolean {
-    const key = uriKey(document.uri);
-    const closedOpenId = this.closedDocumentOpenIds.get(key);
-    if (closedOpenId !== undefined && document.openId <= closedOpenId) return false;
-    const current = this.desiredDocuments.get(key);
-    if (current?.kind === 'open') {
-      const previous = current.document;
-      if (document.openId < previous.openId) return false;
-      if (document.openId === previous.openId) {
-        if (document.version < previous.version) return false;
-        if (document.version === previous.version) {
-          return document.languageId === previous.languageId
-            && document.text === previous.text;
-        }
-      }
-    } else if (current?.kind === 'closed') {
-      if (document.openId < current.openId) return false;
-      if (document.openId === current.openId && current.tombstone) return false;
-    }
-    this.desiredDocuments.set(key, { kind: 'open', document });
-    return true;
-  }
-
-  private acceptDocumentClose(uri: string, openId: number): boolean {
-    const key = uriKey(uri);
-    const current = this.desiredDocuments.get(key);
-    if (current?.kind === 'closed' && current.openId === openId && !current.tombstone) {
-      this.desiredDocuments.set(key, { kind: 'closed', uri, openId, tombstone: true });
-      return true;
-    }
-    if (current?.kind !== 'open' || openId !== current.document.openId) return false;
-    this.desiredDocuments.set(key, { kind: 'closed', uri, openId, tombstone: true });
-    return true;
-  }
-
   private async reconcileDocumentAttempt(document: IndexedDocumentSnapshot): Promise<boolean> {
-    while (this.isCurrentDocument(document)) {
+    while (!this.disposed && this.documentReconciler.isCurrentDocument(document)) {
       if (this.published?.hasCommittedDocument(document)) return true;
       await this.ensureDocumentReconcile(document.uri);
       if (!this.canServe()) return false;
@@ -368,10 +320,7 @@ export class Workspace implements IndexedWorkspace {
   }
 
   private async reconcileDocumentClose(uri: string, openId: number): Promise<void> {
-    const key = uriKey(uri);
-    while (true) {
-      const desired = this.desiredDocuments.get(key);
-      if (desired?.kind !== 'closed' || desired.openId !== openId) return;
+    while (!this.disposed && this.documentReconciler.isDesiredClose(uri, openId)) {
       await this.ensureDocumentReconcile(uri);
       if (!this.canServe()) return;
     }
@@ -399,104 +348,38 @@ export class Workspace implements IndexedWorkspace {
 
   private async performDocumentReconcile(key: string, releaseRun?: () => void): Promise<void> {
     try {
-      while (!this.disposed && this.documentNeedsReconcile(key)) {
+      while (!this.disposed && this.documentReconciler.needsReconcile(key, this.published)) {
         const base = this.published;
-        const desired = this.desiredDocuments.get(key);
+        const desired = this.documentReconciler.desired(key);
         if (!base || !desired || !this.lifecycle.canServe()) return;
         const builder = base.fork();
-
-        if (desired.kind === 'closed') {
-          const isCurrent = (): boolean => (
-            this.published === base && this.isCurrentClose(desired)
-          );
-          try {
-            if (await builder.closeDocument(desired.uri, desired.openId, isCurrent)) {
-              if (!isCurrent()) continue;
-              this.publishIncremental(builder, [{ key, close: desired }]);
-            }
-          } catch (error) {
-            if (!isCurrent()) continue;
-            throw error;
-          }
-          continue;
-        }
-
-        const document = desired.document;
-        const isCurrent = (): boolean => (
-          this.published === base && this.isCurrentDocument(document)
+        const transition = await this.documentReconciler.apply(
+          builder,
+          key,
+          desired,
+          () => !this.disposed && this.published === base,
         );
-        try {
-          const candidate = await builder.prepareDocument(document, isCurrent);
-          if (!candidate) continue;
-          if (builder.commitDocument(document, candidate, isCurrent)) {
-            if (!isCurrent()) continue;
-            this.publishIncremental(builder);
-          }
-        } catch (error) {
-          if (!isCurrent()) continue;
-          throw error;
-        }
+        if (transition.kind === 'superseded') continue;
+        this.publishIncremental(
+          builder,
+          transition.kind === 'closed' ? [transition.reconciled] : [],
+        );
       }
     } finally {
       releaseRun?.();
     }
   }
 
-  private documentNeedsReconcile(key: string): boolean {
-    const desired = this.desiredDocuments.get(key);
-    if (!desired) return false;
-    return desired.kind === 'open'
-      ? !this.published?.hasCommittedDocument(desired.document)
-      : true;
-  }
-
-  private isCurrentDocument(document: IndexedDocumentSnapshot): boolean {
-    if (this.disposed) return false;
-    const desired = this.desiredDocuments.get(uriKey(document.uri));
-    return desired?.kind === 'open'
-      && desired.document.openId === document.openId
-      && desired.document.version === document.version
-      && desired.document.text === document.text
-      && desired.document.languageId === document.languageId;
-  }
-
-  private isCurrentClose(close: Extract<DesiredDocumentState, { kind: 'closed' }>): boolean {
-    if (this.disposed) return false;
-    return this.desiredDocuments.get(uriKey(close.uri)) === close;
-  }
-
   private captureOpenDocuments(synchronizeOwnership = false): void {
-    const ownedKeys = new Set<string>();
-    for (const document of this.openDocuments?.() ?? []) {
-      if (!this.containsDocument(document.uri)) continue;
-      ownedKeys.add(uriKey(document.uri));
-      this.acceptDocument(document);
-    }
-
-    if (!synchronizeOwnership || !this.openDocuments) return;
-    for (const [key, desired] of this.desiredDocuments) {
-      if (desired.kind !== 'open' || ownedKeys.has(key)) continue;
-      this.desiredDocuments.set(key, {
-        kind: 'closed',
-        uri: desired.document.uri,
-        openId: desired.document.openId,
-        tombstone: false,
-      });
-    }
+    this.documentReconciler.captureProvider(
+      this.openDocuments,
+      (uri) => this.containsDocument(uri),
+      synchronizeOwnership,
+    );
   }
 
   private ownsProvidedDocument(document: IndexedDocumentSnapshot): boolean {
-    if (!this.openDocuments) return true;
-    for (const current of this.openDocuments()) {
-      if (
-        uriKey(current.uri) === uriKey(document.uri)
-        && current.openId === document.openId
-        && current.version === document.version
-        && current.languageId === document.languageId
-        && current.text === document.text
-      ) return true;
-    }
-    return false;
+    return this.documentReconciler.ownsSnapshot(document, this.openDocuments);
   }
 
   private containsDocument(uri: string): boolean {
@@ -509,35 +392,23 @@ export class Workspace implements IndexedWorkspace {
 
   private async reconcileOpenDocumentsBeforePublish(
     builder: IndexedRevisionBuilder,
-  ): Promise<readonly ReconciledClose[]> {
-    const reconciledCloses = new Map<string, ReconciledClose>();
+  ): Promise<readonly ReconciledDocumentClose[]> {
+    const reconciledCloses = new Map<string, ReconciledDocumentClose>();
     while (!this.disposed) {
       this.captureOpenDocuments(true);
-      for (const [key, reconciled] of reconciledCloses) {
-        if (this.desiredDocuments.get(key) !== reconciled.close) {
-          reconciledCloses.delete(key);
-        }
-      }
-      const pending = [...this.desiredDocuments.entries()]
-        .filter(([key, desired]) => desired.kind === 'closed'
-          ? reconciledCloses.get(key)?.close !== desired
-          : !builder.hasCommittedDocument(desired.document));
+      const pending = this.documentReconciler.pendingTransitions(builder, reconciledCloses);
       if (pending.length === 0) return [...reconciledCloses.values()];
 
       for (const [key, desired] of pending) {
-        if (desired.kind === 'closed') {
-          const isCurrent = () => this.isCurrentClose(desired);
-          if (await builder.closeDocument(desired.uri, desired.openId, isCurrent)) {
-            if (isCurrent()) reconciledCloses.set(key, { key, close: desired });
-          }
-          continue;
+        const transition = await this.documentReconciler.apply(
+          builder,
+          key,
+          desired,
+          () => !this.disposed,
+        );
+        if (transition.kind === 'closed') {
+          reconciledCloses.set(key, transition.reconciled);
         }
-
-        const document = desired.document;
-        const isCurrent = () => this.isCurrentDocument(document);
-        const candidate = await builder.prepareDocument(document, isCurrent);
-        if (!candidate) continue;
-        builder.commitDocument(document, candidate, isCurrent);
       }
     }
     return [];
@@ -549,8 +420,8 @@ export class Workspace implements IndexedWorkspace {
     return this.enqueueMutation(async () => {
       if (this.disposed || !this.lifecycle.canServe()) return;
       this.captureOpenDocuments(true);
-      for (const key of [...this.desiredDocuments.keys()]) {
-        if (this.documentNeedsReconcile(key)) await this.performDocumentReconcile(key);
+      for (const key of this.documentReconciler.keysNeedingReconcile(this.published)) {
+        await this.performDocumentReconcile(key);
       }
     });
   }
@@ -680,12 +551,12 @@ export class Workspace implements IndexedWorkspace {
 
   private publishComplete(
     builder: IndexedRevisionBuilder,
-    reconciledCloses: readonly ReconciledClose[] = [],
+    reconciledCloses: readonly ReconciledDocumentClose[] = [],
   ): PublishedIndexedRevision {
     const next = this.lifecycle.nextRevision();
     const revision = builder.publish(next);
     this.published = revision;
-    this.commitReconciledCloses(reconciledCloses);
+    this.documentReconciler.commitPublishedCloses(reconciledCloses);
     this.statusMode = revision.mode;
     const publishedNumber = this.lifecycle.complete(revision.sourceWarningCount);
     if (publishedNumber !== revision.revision) {
@@ -696,31 +567,18 @@ export class Workspace implements IndexedWorkspace {
 
   private publishIncremental(
     builder: IndexedRevisionBuilder,
-    reconciledCloses: readonly ReconciledClose[] = [],
+    reconciledCloses: readonly ReconciledDocumentClose[] = [],
   ): PublishedIndexedRevision {
     const next = this.lifecycle.nextRevision();
     const revision = builder.publish(next);
     this.published = revision;
-    this.commitReconciledCloses(reconciledCloses);
+    this.documentReconciler.commitPublishedCloses(reconciledCloses);
     this.statusMode = revision.mode;
     const publishedNumber = this.lifecycle.publish(revision.sourceWarningCount);
     if (publishedNumber !== revision.revision) {
       throw new Error('Index lifecycle revision diverged from the published candidate');
     }
     return revision;
-  }
-
-  private commitReconciledCloses(reconciledCloses: readonly ReconciledClose[]): void {
-    for (const { key, close } of reconciledCloses) {
-      if (this.desiredDocuments.get(key) !== close) continue;
-      this.desiredDocuments.delete(key);
-      if (close.tombstone) {
-        this.closedDocumentOpenIds.set(
-          key,
-          Math.max(this.closedDocumentOpenIds.get(key) ?? -1, close.openId),
-        );
-      }
-    }
   }
 
   persist(): Promise<void> {

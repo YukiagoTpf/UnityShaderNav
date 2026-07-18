@@ -91,6 +91,10 @@ _Avoid_: staged candidate handoff, phase-only bootstrap, synthetic empty candida
 一次编辑器文档状态的不可变值：`uri + languageId + text + openId + version`。`openId` 标识一次 `didOpen → didClose` 会话；`version` 只在同一 `openId` 内排序。两者共同构成 document attempt identity。
 _Avoid_: document generation, text document reference
 
+**Open document reconciliation**:
+每个 Workspace 内把最新 **Open document snapshot** 或 close tombstone 转换为 candidate overlay 的唯一状态转换策略。它统一拥有 `openId + version` 排序、owner 转移、stale/superseded 校验、open commit 与 close restore/remove；增量 adapter 把转换应用到 published revision 的 fork，完整 initialization/rebuild adapter 把同一转换 replay 到隔离 candidate。adapter 只决定 candidate-current guard 与何时同步发布，不复制状态转换规则。
+_Avoid_: incremental document policy, rebuild replay policy
+
 **Live document overlay**:
 打开或未保存文档覆盖在磁盘索引之上的索引记录。edit 只允许最新 document attempt 发布；close 在 candidate 中恢复最后有效的磁盘记录，没有磁盘版本时删除该 URI，随后原子发布。等价 file URI 共用一个 identity；一个 snapshot 只属于最长路径匹配的 Workspace，根拓扑变化时在旧、新 owner 之间迁移；没有新 owner 时，下一次需要该打开文档的 index-backed 请求可以重新进入 lazy routing。
 _Avoid_: temporary index, unsaved cache

@@ -161,7 +161,13 @@ didOpen / didChange / didClose
 ```
 
 `Workspace` serializes mutation transactions and coalesces document attempts per
-canonical URI. Full transactions delegate to the indexed revision candidate
+canonical URI. `OpenDocumentReconciler` owns the desired-state reducer,
+`openId + version` ordering, close tombstones, and the single transition that
+prepares and commits an open snapshot or restores a closed snapshot. Immediate
+mutations apply that transition to a fork of the published revision; full
+initialization and rebuild replay apply the same transition to their isolated
+candidate. The adapters differ only in publication timing and current-candidate
+guarding. Full transactions delegate to the indexed revision candidate
 constructor and receive the completed disk/package builder directly; no hidden
 Workspace staging handoff or second take operation exists. A parse that finishes
 after a newer edit, close, or close/reopen pair cannot publish. Closing restores
