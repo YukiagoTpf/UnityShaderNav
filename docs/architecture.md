@@ -362,12 +362,15 @@ effort.
 Build-time runtime assembly is owned by the current
 `scripts/runtime-artifacts.cjs` graph. The root build materializes copied-server
 and bundled-server layouts once, copies the complete grammar and
-`web-tree-sitter` runtime trees, and records content hashes for every build
-input and executable artifact. Watch, current-run VSIX packaging,
-package-layout tests, and Electron
-short-path staging derive their paths from that graph. Packaging rejects stale
-inputs, changed local outputs, missing VSIX entries, or packaged bytes that do
-not match the build manifest; an older valid VSIX cannot satisfy the check.
+`web-tree-sitter` runtime trees, and requires critical paths to be
+repository-internal regular files that meet graph-declared minimum sizes.
+Watch, current-run VSIX packaging, package-layout tests, and Electron short-path
+staging derive their paths from that graph. Packaging removes the versioned
+output from any earlier run, checks required disk files and the VSCE public file
+plan before and after packaging, and rejects a missing or trivially small VSIX;
+direct VSCE prepublish applies the same file and plan checks. A failed attempt
+restores staged metadata before removing only its exact versioned output. The
+workflow does not parse ZIP bytes or emit a runtime verification manifest.
 
 Lifecycle state is observable through the same LSP connection used by editor
 features. The server exposes both an index-status pull request and a changed

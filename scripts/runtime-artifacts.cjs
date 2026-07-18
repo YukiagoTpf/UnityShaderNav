@@ -1,11 +1,10 @@
 'use strict';
 
-const { createHash } = require('node:crypto');
-const { existsSync } = require('node:fs');
-const { access, cp, lstat, readFile, readdir, rm, stat, writeFile } = require('node:fs/promises');
-const { dirname, relative, resolve, sep } = require('node:path');
+const { access, cp, lstat, realpath, rm } = require('node:fs/promises');
+const { isAbsolute, relative, resolve, sep } = require('node:path');
 
-const SCHEMA_VERSION = 1;
+const MINIMUM_EXECUTABLE_BYTES = 1_024;
+const MINIMUM_METADATA_BYTES = 32;
 
 function createRuntimeArtifactGraph(repositoryRoot) {
   const root = resolve(repositoryRoot);
@@ -39,52 +38,40 @@ function createRuntimeArtifactGraph(repositoryRoot) {
       required: ['package.json', 'tree-sitter.js', 'tree-sitter.wasm'],
     },
   ];
-  const freshnessChecks = [
-    {
-      output: bundles[0].output,
-      inputs: [
-        'client/src',
-        'client/package.json',
-        'shared/src',
-        'tsconfig.base.json',
-        'client/tsconfig.json',
-        'scripts/build.mjs',
-        'scripts/runtime-artifacts.cjs',
-      ],
-    },
-    {
-      output: bundles[1].output,
-      inputs: [
-        'server/src',
-        'server/out',
-        'server/package.json',
-        'shared/src',
-        'shared/package.json',
-        'tsconfig.base.json',
-        'server/tsconfig.json',
-        'scripts/build.mjs',
-        'scripts/runtime-artifacts.cjs',
-      ],
-    },
-    ...supportTrees.flatMap((tree) => tree.required.map((entry) => ({
-      output: `${tree.output}/${entry}`,
-      inputs: [`${tree.source}/${entry}`, 'scripts/runtime-artifacts.cjs'],
-    }))),
+  const runtimeFiles = [
+    ...bundles.map((bundle) => ({
+      path: bundle.output,
+      packagePath: packagePathForClientFile(bundle.output),
+      minBytes: MINIMUM_EXECUTABLE_BYTES,
+    })),
+    ...supportTrees.flatMap((tree) => tree.required.map((entry) => {
+      const path = `${tree.output}/${entry}`;
+      return {
+        path,
+        packagePath: packagePathForClientFile(path),
+        minBytes: entry.endsWith('.wasm') || entry.endsWith('.js')
+          ? MINIMUM_EXECUTABLE_BYTES
+          : MINIMUM_METADATA_BYTES,
+      };
+    })),
   ];
-  const requiredOutputFiles = [
-    ...bundles.map((bundle) => bundle.output),
-    ...supportTrees.flatMap((tree) => (
-      tree.required.map((entry) => `${tree.output}/${entry}`)
-    )),
-    'client/out/runtime-artifacts.json',
+  const packageFiles = [
+    ...runtimeFiles,
+    ...[
+      'client/package.json',
+      'client/README.md',
+      'client/CHANGELOG.md',
+      'client/LICENSE',
+      'client/language-configuration/shader.json',
+      'client/language-configuration/hlsl.json',
+    ].map((path) => ({
+      path,
+      packagePath: packagePathForClientFile(path),
+      minBytes: MINIMUM_METADATA_BYTES,
+    })),
   ];
-  const requiredVsixEntries = [
-    'extension/package.json',
-    'extension/README.md',
-    'extension/CHANGELOG.md',
-    'extension/LICENSE.txt',
-    ...requiredOutputFiles.map(vsixEntryForOutput),
-  ];
+  const requiredOutputFiles = runtimeFiles.map((file) => file.path);
+  const requiredPackagePaths = packageFiles.map((file) => file.packagePath);
   const watchInputs = [
     'shared/src',
     'server/src',
@@ -100,17 +87,10 @@ function createRuntimeArtifactGraph(repositoryRoot) {
     'scripts/build.mjs',
     'scripts/runtime-artifacts.cjs',
   ];
-  const manifestInputs = [...new Set([
-    ...freshnessChecks.flatMap((check) => check.inputs),
-    ...supportTrees.map((tree) => tree.source),
-    ...watchInputs,
-  ])];
-
   return Object.freeze({
     repositoryRoot: root,
     copiedServerSource: 'server/out',
     copiedServerOutput: 'client/out/server',
-    manifest: 'client/out/runtime-artifacts.json',
     bundles: Object.freeze(bundles.map(Object.freeze)),
     extensionStagingPaths: Object.freeze([
       'package.json',
@@ -128,15 +108,116 @@ function createRuntimeArtifactGraph(repositoryRoot) {
       ...tree,
       required: Object.freeze([...tree.required]),
     }))),
-    freshnessChecks: Object.freeze(freshnessChecks.map((check) => Object.freeze({
-      output: check.output,
-      inputs: Object.freeze([...check.inputs]),
-    }))),
-    manifestInputs: Object.freeze(manifestInputs),
+    runtimeFiles: Object.freeze(runtimeFiles.map(Object.freeze)),
+    packageFiles: Object.freeze(packageFiles.map(Object.freeze)),
     watchInputs: Object.freeze(watchInputs),
     requiredOutputFiles: Object.freeze(requiredOutputFiles),
-    requiredVsixEntries: Object.freeze(requiredVsixEntries),
+    requiredPackagePaths: Object.freeze(requiredPackagePaths),
   });
+}
+
+async function assertRuntimeArtifacts(graph) {
+  await assertSizedFiles(graph, graph.runtimeFiles);
+}
+
+async function assertPackageFiles(graph) {
+  await assertSizedFiles(graph, graph.packageFiles);
+}
+
+async function assertPackagePlan(graph, plannedFiles) {
+  const canonicalClientRoot = await realpath(absolute(graph, 'client'));
+  const packagePaths = [...plannedFiles];
+  const plannedPaths = new Set();
+
+  for (const packagePath of packagePaths) {
+    if (!isCanonicalPackagePath(packagePath)) {
+      throw new Error(`VSCE package plan path is not canonical: ${String(packagePath)}`);
+    }
+    if (plannedPaths.has(packagePath)) {
+      throw new Error(`VSCE package plan contains duplicate path ${packagePath}`);
+    }
+    plannedPaths.add(packagePath);
+  }
+
+  for (const packagePath of packagePaths) {
+    const declaredPath = resolve(canonicalClientRoot, packagePath);
+    let fileStat;
+    let canonicalPath;
+    try {
+      fileStat = await lstat(declaredPath);
+      canonicalPath = await realpath(declaredPath);
+    } catch (error) {
+      if (error && typeof error === 'object' && ['ENOENT', 'ENOTDIR'].includes(error.code)) {
+        throw new Error(`VSCE package plan file ${packagePath} is missing`);
+      }
+      throw new Error(`VSCE package plan file ${packagePath} could not be inspected`, {
+        cause: error,
+      });
+    }
+    if (!fileStat.isFile()) {
+      throw new Error(`VSCE package plan file ${packagePath} must be a regular file`);
+    }
+    if (!isWithin(canonicalClientRoot, canonicalPath)) {
+      throw new Error(`VSCE package plan file ${packagePath} escapes the extension root`);
+    }
+    if (packagePath.endsWith('.tsbuildinfo')) {
+      throw new Error(`VSCE package plan must not include generated file ${packagePath}`);
+    }
+  }
+
+  for (const packagePath of graph.requiredPackagePaths) {
+    if (!plannedPaths.has(packagePath)) {
+      throw new Error(`VSCE package plan is missing required file ${packagePath}`);
+    }
+  }
+}
+
+async function assertSizedFiles(graph, files) {
+  const canonicalRoot = await realpath(graph.repositoryRoot);
+  for (const file of files) {
+    const declaredPath = absolute(graph, file.path);
+    let fileStat;
+    let canonicalPath;
+    try {
+      [fileStat, canonicalPath] = await Promise.all([
+        lstat(declaredPath),
+        realpath(declaredPath),
+      ]);
+    } catch (error) {
+      if (error && typeof error === 'object' && ['ENOENT', 'ENOTDIR'].includes(error.code)) {
+        throw new Error(`${file.path} is missing`);
+      }
+      throw new Error(`${file.path} could not be inspected`, { cause: error });
+    }
+    if (!fileStat.isFile()) throw new Error(`${file.path} must be a regular file`);
+    if (!isWithin(canonicalRoot, canonicalPath)) {
+      throw new Error(`${file.path} escapes the repository root`);
+    }
+    if (fileStat.size < file.minBytes) {
+      throw new Error(
+        `${file.path} is truncated: ${fileStat.size} bytes; expected at least ${file.minBytes}`,
+      );
+    }
+  }
+}
+
+function isWithin(root, candidate) {
+  const pathFromRoot = relative(root, candidate);
+  return pathFromRoot === ''
+    || (!isAbsolute(pathFromRoot)
+      && pathFromRoot !== '..'
+      && !pathFromRoot.startsWith(`..${sep}`));
+}
+
+function isCanonicalPackagePath(packagePath) {
+  if (typeof packagePath !== 'string' || packagePath.length === 0) return false;
+  if (packagePath.startsWith('/') || packagePath.includes('\\') || packagePath.includes('\0')) {
+    return false;
+  }
+  if (/^[A-Za-z]:/.test(packagePath)) return false;
+  return packagePath.split('/').every((segment) => (
+    segment.length > 0 && segment !== '.' && segment !== '..'
+  ));
 }
 
 async function assembleCopiedServerRuntime(graph) {
@@ -159,201 +240,13 @@ async function assembleRuntimeSupport(graph) {
   }
 }
 
-async function writeRuntimeArtifactManifest(graph) {
-  const artifacts = await snapshotArtifactOutputs(graph);
-  const manifest = {
-    schemaVersion: SCHEMA_VERSION,
-    inputs: await snapshotPaths(graph, graph.manifestInputs),
-    artifacts,
-    packagedArtifacts: Object.fromEntries(
-      Object.entries(artifacts).filter(([path]) => isPackagedOutput(path)),
-    ),
-  };
-  await writeFile(
-    absolute(graph, graph.manifest),
-    `${JSON.stringify(manifest, null, 2)}\n`,
-  );
-  return manifest;
-}
-
-async function assertFreshRuntimeArtifacts(graph) {
-  await assertFreshOutputs(graph);
-  return verifyRuntimeArtifactManifest(graph);
-}
-
-async function verifyRuntimeArtifactManifest(graph) {
-  const manifest = parseManifest(await readFile(absolute(graph, graph.manifest), 'utf8'));
-  const currentInputs = await snapshotPaths(graph, graph.manifestInputs);
-  const currentArtifacts = await snapshotArtifactOutputs(graph);
-  assertSnapshotEqual(manifest.inputs, currentInputs, 'runtime artifact input');
-  assertSnapshotEqual(manifest.artifacts, currentArtifacts, 'runtime artifact output');
-  return manifest;
-}
-
-async function assertFreshOutputs(graph) {
-  for (const check of graph.freshnessChecks) {
-    const outputPath = absolute(graph, check.output);
-    const outputStat = await statOrThrow(
-      outputPath,
-      `${check.output} is missing; run npm run build before packaging`,
-    );
-    const newest = await newestInput(graph, check.inputs);
-    if (outputStat.mtimeMs < newest.mtimeMs) {
-      throw new Error(`${check.output} is stale; newest input ${newest.relativePath} is newer`);
-    }
-  }
-}
-
-async function snapshotArtifactOutputs(graph) {
-  const paths = (await relativeFiles(graph, 'client/out'))
-    .filter((path) => path !== graph.manifest);
-  return snapshotPaths(graph, paths);
-}
-
-async function snapshotPaths(graph, inputPaths) {
-  const files = new Set();
-  for (const input of inputPaths) {
-    const inputPath = absolute(graph, input);
-    const inputStat = await lstat(inputPath);
-    if (inputStat.isFile()) files.add(toPosix(relative(graph.repositoryRoot, inputPath)));
-    else if (inputStat.isDirectory()) {
-      for (const file of await relativeFiles(graph, input)) files.add(file);
-    } else throw new Error(`runtime artifact inputs must not be symbolic links: ${input}`);
-  }
-  const snapshot = {};
-  for (const file of [...files].sort()) {
-    snapshot[file] = sha256(await readFile(absolute(graph, file)));
-  }
-  return snapshot;
-}
-
-async function relativeFiles(graph, rootRelative) {
-  const root = absolute(graph, rootRelative);
-  const files = [];
-  async function visit(current) {
-    const entries = await readdir(current, { withFileTypes: true });
-    for (const entry of entries) {
-      const candidate = resolve(current, entry.name);
-      if (entry.isDirectory()) await visit(candidate);
-      else if (entry.isFile()) files.push(toPosix(relative(graph.repositoryRoot, candidate)));
-      else throw new Error(
-        `runtime artifact trees must not contain symbolic links: ${toPosix(relative(graph.repositoryRoot, candidate))}`,
-      );
-    }
-  }
-  await visit(root);
-  return files.sort();
-}
-
-async function newestInput(graph, inputPaths) {
-  let newest = { mtimeMs: 0, relativePath: '' };
-  for (const input of inputPaths) {
-    const inputPath = absolute(graph, input);
-    if (!existsSync(inputPath)) continue;
-    const candidates = (await lstat(inputPath)).isFile()
-      ? [toPosix(relative(graph.repositoryRoot, inputPath))]
-      : await relativeFiles(graph, input);
-    for (const file of candidates) {
-      const fileStat = await stat(absolute(graph, file));
-      if (fileStat.mtimeMs > newest.mtimeMs) {
-        newest = { mtimeMs: fileStat.mtimeMs, relativePath: file };
-      }
-    }
-  }
-  if (!newest.relativePath) throw new Error(`No freshness inputs found for ${inputPaths.join(', ')}`);
-  return newest;
-}
-
-function parseManifest(text) {
-  let value;
-  try {
-    value = JSON.parse(text);
-  } catch (error) {
-    throw new Error('runtime artifact manifest is invalid JSON', { cause: error });
-  }
-  if (
-    !value
-    || value.schemaVersion !== SCHEMA_VERSION
-    || !isHashRecord(value.inputs)
-    || !isHashRecord(value.artifacts)
-    || !isHashRecord(value.packagedArtifacts)
-  ) throw new Error('runtime artifact manifest has an unsupported shape');
-  for (const [path, hash] of Object.entries(value.packagedArtifacts)) {
-    if (value.artifacts[path] !== hash || !isPackagedOutput(path)) {
-      throw new Error('runtime artifact manifest has invalid packaged artifacts');
-    }
-  }
-  const expectedPackagedArtifacts = Object.fromEntries(
-    Object.entries(value.artifacts).filter(([path]) => isPackagedOutput(path)),
-  );
-  assertSnapshotEqual(
-    expectedPackagedArtifacts,
-    value.packagedArtifacts,
-    'runtime artifact packaged output',
-  );
-  return value;
-}
-
-function isHashRecord(value) {
-  return !!value
-    && typeof value === 'object'
-    && !Array.isArray(value)
-    && Object.entries(value).every(([path, hash]) => (
-      isCanonicalRepositoryPath(path)
-      && typeof hash === 'string'
-      && /^[0-9a-f]{64}$/.test(hash)
-    ));
-}
-
-function isCanonicalRepositoryPath(path) {
-  return path.length > 0
-    && !path.startsWith('/')
-    && !path.includes('\\')
-    && path.split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..');
-}
-
-function assertSnapshotEqual(expected, actual, label) {
-  const expectedPaths = Object.keys(expected).sort();
-  const actualPaths = Object.keys(actual).sort();
-  if (JSON.stringify(expectedPaths) !== JSON.stringify(actualPaths)) {
-    throw new Error(`${label} file set differs from the build manifest`);
-  }
-  for (const path of expectedPaths) {
-    if (expected[path] !== actual[path]) {
-      throw new Error(`${label} bytes differ from the build manifest: ${path}`);
-    }
-  }
-}
-
-function assertRuntimeArtifactManifestsEqual(expected, actual) {
-  assertSnapshotEqual(expected.inputs, actual.inputs, 'runtime artifact manifest input');
-  assertSnapshotEqual(expected.artifacts, actual.artifacts, 'runtime artifact manifest output');
-  assertSnapshotEqual(
-    expected.packagedArtifacts,
-    actual.packagedArtifacts,
-    'runtime artifact manifest packaged output',
-  );
-}
-
-function vsixEntryForOutput(output) {
-  if (!output.startsWith('client/')) throw new Error(`Not a client output path: ${output}`);
-  return `extension/${output.slice('client/'.length)}`;
-}
-
-function isPackagedOutput(path) {
-  return !path.endsWith('.ts') && !path.endsWith('.map');
-}
-
-function sha256(bytes) {
-  return createHash('sha256').update(bytes).digest('hex');
+function packagePathForClientFile(path) {
+  if (!path.startsWith('client/')) throw new Error(`Not a client path: ${path}`);
+  return path.slice('client/'.length);
 }
 
 function absolute(graph, path) {
   return resolve(graph.repositoryRoot, path);
-}
-
-function toPosix(value) {
-  return value.split(sep).join('/');
 }
 
 async function assertFile(path, label) {
@@ -364,23 +257,11 @@ async function assertFile(path, label) {
   }
 }
 
-async function statOrThrow(path, message) {
-  try {
-    return await stat(path);
-  } catch {
-    throw new Error(message);
-  }
-}
-
 module.exports = {
   assembleCopiedServerRuntime,
   assembleRuntimeSupport,
-  assertFreshRuntimeArtifacts,
-  assertRuntimeArtifactManifestsEqual,
+  assertPackageFiles,
+  assertPackagePlan,
+  assertRuntimeArtifacts,
   createRuntimeArtifactGraph,
-  parseRuntimeArtifactManifest: parseManifest,
-  sha256RuntimeArtifact: sha256,
-  verifyRuntimeArtifactManifest,
-  vsixEntryForOutput,
-  writeRuntimeArtifactManifest,
 };

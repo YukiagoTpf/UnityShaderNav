@@ -1,119 +1,147 @@
-import { copyFile, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { copyFile, lstat, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, relative, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { inflateRawSync } from 'node:zlib';
+import { listFiles, PackageManager } from '@vscode/vsce';
 import runtimeArtifacts from './runtime-artifacts.cjs';
 
+const MINIMUM_VSIX_BYTES = 1_024;
 const defaultRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = parseArgs(process.argv.slice(2));
 const monorepoRoot = resolve(args.monorepoRoot ?? defaultRoot);
 const clientRoot = resolve(monorepoRoot, 'client');
 const artifactGraph = runtimeArtifacts.createRuntimeArtifactGraph(monorepoRoot);
-const requiredVsixEntries = artifactGraph.requiredVsixEntries;
-const forbiddenVsixEntryPatterns = [
-  /^extension\/.*\.tsbuildinfo$/,
-];
 
 try {
-  if (args.verifyVsix) {
-    await assertVsixContents(resolve(args.verifyVsix));
-    process.exit(0);
-  }
-
   if (args.buildAndVerify) {
     await removeVersionedVsix();
     await runNpmScript('clean');
     await runNpmScript('build');
   }
 
-  const trustedManifest = await runtimeArtifacts.assertFreshRuntimeArtifacts(artifactGraph);
+  await runtimeArtifacts.assertRuntimeArtifacts(artifactGraph);
   if (args.prepareExtensionRoot) {
-    await stageExtensionRootFiles();
+    await prepareExtensionRoot();
     console.log('[package-vsix] staged README.md, CHANGELOG.md, and LICENSE for VSCE packaging');
     process.exit(0);
   }
   if (args.checkOutput) process.exit(0);
 
-  const vsixPath = await packageVsix();
-  await assertVsixContents(vsixPath, trustedManifest);
+  const { vsixPath, vsixStat } = await packageVsix();
 
-  console.log(`[package-vsix] verified ${relative(monorepoRoot, vsixPath)}`);
-  for (const entry of requiredVsixEntries) console.log(`[package-vsix] contains ${entry}`);
+  console.log(
+    `[package-vsix] verified ${relative(monorepoRoot, vsixPath)} (${vsixStat.size} bytes)`,
+  );
+  for (const packagePath of artifactGraph.requiredPackagePaths) {
+    console.log(`[package-vsix] package plan contains ${packagePath}`);
+  }
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
-}
-
-async function assertVsixContents(vsixPath, trustedManifest) {
-  const entries = await listZipEntries(vsixPath);
-  for (const entry of requiredVsixEntries) {
-    if (!entries.has(entry)) {
-      throw new Error(`VSIX is missing required file ${entry}`);
-    }
-  }
-  for (const entry of entries) {
-    if (forbiddenVsixEntryPatterns.some((pattern) => pattern.test(entry))) {
-      throw new Error(`VSIX must not include generated file ${entry}`);
-    }
-  }
-  const embeddedManifest = runtimeArtifacts.parseRuntimeArtifactManifest(
-    (await readZipEntry(vsixPath, 'extension/out/runtime-artifacts.json')).toString('utf8'),
-  );
-  if (trustedManifest) {
-    runtimeArtifacts.assertRuntimeArtifactManifestsEqual(
-      trustedManifest,
-      embeddedManifest,
-    );
-  }
-  const expectedManifest = trustedManifest ?? embeddedManifest;
-  const expectedOutEntries = new Set([
-    'extension/out/runtime-artifacts.json',
-    ...Object.keys(expectedManifest.packagedArtifacts)
-      .map(runtimeArtifacts.vsixEntryForOutput),
-  ]);
-  for (const entry of entries) {
-    if (
-      entry.startsWith('extension/out/')
-      && !entry.endsWith('/')
-      && !expectedOutEntries.has(entry)
-    ) throw new Error(`VSIX contains runtime file outside the artifact graph: ${entry}`);
-  }
-  for (const [output, expectedHash] of Object.entries(expectedManifest.packagedArtifacts)) {
-    const entry = runtimeArtifacts.vsixEntryForOutput(output);
-    if (!entries.has(entry)) throw new Error(`VSIX is missing assembled runtime file ${entry}`);
-    const actualHash = runtimeArtifacts.sha256RuntimeArtifact(
-      await readZipEntry(vsixPath, entry),
-    );
-    if (actualHash !== expectedHash) {
-      throw new Error(`VSIX runtime bytes differ from the build manifest: ${entry}`);
-    }
-  }
 }
 
 async function packageVsix() {
   const vsixPath = await versionedVsixPath();
   await rm(vsixPath, { force: true });
   const restoreExtensionRootFiles = await stageExtensionRootFiles();
+  let failure;
+  let vsixStat;
 
-  const npxArgs = [
-    '--no-install',
-    'vsce',
-    'package',
-    '--no-dependencies',
-    '--no-yarn',
-    '--out',
-    vsixPath,
-  ];
-  const command = process.platform === 'win32' ? process.env.ComSpec ?? 'cmd.exe' : 'npx';
-  const commandArgs = process.platform === 'win32' ? ['/d', '/s', '/c', 'npx.cmd', ...npxArgs] : npxArgs;
   try {
+    await assertPackageReady();
+    const npxArgs = [
+      '--no-install',
+      'vsce',
+      'package',
+      '--no-dependencies',
+      '--no-yarn',
+      '--out',
+      vsixPath,
+    ];
+    const command = process.platform === 'win32' ? process.env.ComSpec ?? 'cmd.exe' : 'npx';
+    const commandArgs = process.platform === 'win32'
+      ? ['/d', '/s', '/c', 'npx.cmd', ...npxArgs]
+      : npxArgs;
     await run(command, commandArgs, clientRoot);
-    return vsixPath;
-  } finally {
-    await restoreExtensionRootFiles();
+    await assertPackageReady();
+    vsixStat = await assertVsixFile(vsixPath);
+  } catch (error) {
+    failure = asError(error);
   }
+
+  try {
+    await restoreExtensionRootFiles();
+  } catch (error) {
+    failure = mergeFailures(
+      failure,
+      asError(error),
+      'VSIX packaging and extension-root restoration failed',
+    );
+  }
+
+  if (failure) {
+    try {
+      await rm(vsixPath, { force: true });
+    } catch (error) {
+      failure = mergeFailures(
+        failure,
+        asError(error),
+        `VSIX packaging failed and ${relative(monorepoRoot, vsixPath)} could not be removed`,
+      );
+    }
+    throw failure;
+  }
+
+  return { vsixPath, vsixStat };
+}
+
+async function prepareExtensionRoot() {
+  const restoreExtensionRootFiles = await stageExtensionRootFiles();
+  try {
+    await assertPackageReady();
+  } catch (error) {
+    let failure = asError(error);
+    try {
+      await restoreExtensionRootFiles();
+    } catch (restoreError) {
+      failure = mergeFailures(
+        failure,
+        asError(restoreError),
+        'VSCE prepublish verification and extension-root restoration failed',
+      );
+    }
+    throw failure;
+  }
+}
+
+async function assertPackageReady() {
+  await runtimeArtifacts.assertPackageFiles(artifactGraph);
+  await assertPackagePlan();
+}
+
+async function assertPackagePlan() {
+  const plannedFiles = await listFiles({
+    cwd: clientRoot,
+    packageManager: PackageManager.None,
+  });
+  await runtimeArtifacts.assertPackagePlan(artifactGraph, plannedFiles);
+}
+
+async function assertVsixFile(vsixPath) {
+  let fileStat;
+  try {
+    fileStat = await lstat(vsixPath);
+  } catch {
+    throw new Error(`VSIX was not created: ${vsixPath}`);
+  }
+  if (!fileStat.isFile()) throw new Error(`VSIX output must be a regular file: ${vsixPath}`);
+  if (fileStat.size < MINIMUM_VSIX_BYTES) {
+    throw new Error(
+      `VSIX output is truncated: ${fileStat.size} bytes; expected at least ${MINIMUM_VSIX_BYTES}`,
+    );
+  }
+  return fileStat;
 }
 
 async function versionedVsixPath() {
@@ -136,25 +164,49 @@ async function runNpmScript(script) {
 }
 
 async function stageExtensionRootFiles() {
-  const restoreReadme = await stageFile(repoFile('README.md'), resolve(clientRoot, 'README.md'));
-  const restoreChangelog = await stageFile(
-    repoFile('CHANGELOG.md'),
-    resolve(clientRoot, 'CHANGELOG.md'),
-  );
-  const restoreLicense = await stageFile(repoFile('LICENSE'), resolve(clientRoot, 'LICENSE'));
+  const restorers = [];
+  try {
+    for (const name of ['README.md', 'CHANGELOG.md', 'LICENSE']) {
+      restorers.unshift(await stageFile(repoFile(name), resolve(clientRoot, name)));
+    }
+  } catch (error) {
+    let failure = asError(error);
+    try {
+      await restoreAll(restorers);
+    } catch (restoreError) {
+      failure = mergeFailures(
+        failure,
+        asError(restoreError),
+        'Extension-root staging and restoration failed',
+      );
+    }
+    throw failure;
+  }
+  return () => restoreAll(restorers);
+}
 
-  return async () => {
-    await restoreReadme();
-    await restoreChangelog();
-    await restoreLicense();
-  };
+async function restoreAll(restorers) {
+  let failure;
+  for (const restore of restorers) {
+    try {
+      await restore();
+    } catch (error) {
+      failure = mergeFailures(
+        failure,
+        asError(error),
+        'Multiple extension-root files could not be restored',
+      );
+    }
+  }
+  if (failure) throw failure;
 }
 
 async function stageFile(source, target) {
   let previous;
   try {
     previous = await readFile(target);
-  } catch {
+  } catch (error) {
+    if (!(error && typeof error === 'object' && error.code === 'ENOENT')) throw error;
     previous = undefined;
   }
 
@@ -192,86 +244,19 @@ function run(command, commandArgs, cwd) {
   });
 }
 
-async function listZipEntries(zipPath) {
-  const buffer = await readFile(zipPath);
-  const eocdOffset = findEndOfCentralDirectory(buffer);
-  const centralDirectorySize = buffer.readUInt32LE(eocdOffset + 12);
-  const centralDirectoryOffset = buffer.readUInt32LE(eocdOffset + 16);
-  const end = centralDirectoryOffset + centralDirectorySize;
-  const entries = new Set();
-  let offset = centralDirectoryOffset;
-
-  while (offset < end) {
-    if (buffer.readUInt32LE(offset) !== 0x02014b50) {
-      throw new Error(`Invalid ZIP central directory in ${zipPath}`);
-    }
-    const nameLength = buffer.readUInt16LE(offset + 28);
-    const extraLength = buffer.readUInt16LE(offset + 30);
-    const commentLength = buffer.readUInt16LE(offset + 32);
-    const nameStart = offset + 46;
-    const name = buffer.toString('utf8', nameStart, nameStart + nameLength);
-    if (entries.has(name)) throw new Error(`VSIX contains duplicate entry ${name}`);
-    entries.add(name);
-    offset = nameStart + nameLength + extraLength + commentLength;
-  }
-
-  return entries;
+function asError(value) {
+  return value instanceof Error ? value : new Error(String(value));
 }
 
-async function readZipEntry(zipPath, targetName) {
-  const buffer = await readFile(zipPath);
-  const eocdOffset = findEndOfCentralDirectory(buffer);
-  const centralDirectorySize = buffer.readUInt32LE(eocdOffset + 12);
-  const centralDirectoryOffset = buffer.readUInt32LE(eocdOffset + 16);
-  const end = centralDirectoryOffset + centralDirectorySize;
-  let offset = centralDirectoryOffset;
-
-  while (offset < end) {
-    if (buffer.readUInt32LE(offset) !== 0x02014b50) {
-      throw new Error(`Invalid ZIP central directory in ${zipPath}`);
-    }
-    const compression = buffer.readUInt16LE(offset + 10);
-    const compressedSize = buffer.readUInt32LE(offset + 20);
-    const uncompressedSize = buffer.readUInt32LE(offset + 24);
-    const nameLength = buffer.readUInt16LE(offset + 28);
-    const extraLength = buffer.readUInt16LE(offset + 30);
-    const commentLength = buffer.readUInt16LE(offset + 32);
-    const localHeaderOffset = buffer.readUInt32LE(offset + 42);
-    const nameStart = offset + 46;
-    const name = buffer.toString('utf8', nameStart, nameStart + nameLength);
-    if (name === targetName) {
-      if (buffer.readUInt32LE(localHeaderOffset) !== 0x04034b50) {
-        throw new Error(`Invalid ZIP local header for ${targetName}`);
-      }
-      const localNameLength = buffer.readUInt16LE(localHeaderOffset + 26);
-      const localExtraLength = buffer.readUInt16LE(localHeaderOffset + 28);
-      const dataStart = localHeaderOffset + 30 + localNameLength + localExtraLength;
-      const compressed = buffer.subarray(dataStart, dataStart + compressedSize);
-      const contents = compression === 0
-        ? Buffer.from(compressed)
-        : compression === 8
-          ? inflateRawSync(compressed)
-          : undefined;
-      if (!contents) {
-        throw new Error(`Unsupported ZIP compression ${compression} for ${targetName}`);
-      }
-      if (contents.byteLength !== uncompressedSize) {
-        throw new Error(`Invalid ZIP entry size for ${targetName}`);
-      }
-      return contents;
-    }
-    offset = nameStart + nameLength + extraLength + commentLength;
-  }
-
-  throw new Error(`VSIX is missing required file ${targetName}`);
-}
-
-function findEndOfCentralDirectory(buffer) {
-  const minOffset = Math.max(0, buffer.length - 65557);
-  for (let offset = buffer.length - 22; offset >= minOffset; offset--) {
-    if (buffer.readUInt32LE(offset) === 0x06054b50) return offset;
-  }
-  throw new Error('Invalid VSIX: missing ZIP end of central directory');
+function mergeFailures(primary, secondary, message) {
+  if (!primary) return secondary;
+  const errors = primary instanceof AggregateError
+    ? [...primary.errors, secondary]
+    : [primary, secondary];
+  return new AggregateError(
+    errors,
+    `${message}: ${errors.map((error) => asError(error).message).join('; ')}`,
+  );
 }
 
 function parseArgs(rawArgs) {
@@ -280,7 +265,6 @@ function parseArgs(rawArgs) {
     checkOutput: false,
     monorepoRoot: undefined,
     prepareExtensionRoot: false,
-    verifyVsix: undefined,
   };
   for (let i = 0; i < rawArgs.length; i++) {
     const arg = rawArgs[i];
@@ -292,8 +276,6 @@ function parseArgs(rawArgs) {
       parsed.prepareExtensionRoot = true;
     } else if (arg === '--monorepo-root') {
       parsed.monorepoRoot = rawArgs[++i];
-    } else if (arg === '--verify-vsix') {
-      parsed.verifyVsix = rawArgs[++i];
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }

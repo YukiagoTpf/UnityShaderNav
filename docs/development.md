@@ -122,11 +122,19 @@ npm run grammar:rebuild
   `CacheStore`; compatible records receive only shallow container checks.
 - `npm run test:package` is the authoritative package check. One invocation
   removes generated output, rebuilds current source, creates the versioned VSIX,
-  verifies its content-addressed input/output manifest and every packaged
-  server/grammar/runtime byte, then runs package-layout tests. The
-  package-layout gate resolves the shipped grammar through the same runtime
-  adapter as the bundled server, loads it, and verifies bundled release-cache
-  eligibility while development layouts remain non-persistable.
+  and then runs package-layout tests. Immediately before and after VSCE packaging,
+  the shared runtime graph requires every bundle, grammar/runtime support file,
+  language configuration, and staged metadata file to resolve to a repository-
+  internal regular file and meet its declared minimum size. Every path returned
+  by VSCE's public file plan must be a unique canonical relative path resolving
+  to a regular file inside the Extension root, and the plan must include every
+  required package path. Direct VSCE prepublish applies the same checks, and the
+  resulting VSIX must itself be a non-trivial file. The
+  package-layout gate also proves that a failed attempt restores staged metadata
+  and removes only that attempt's exact versioned VSIX. It resolves the shipped
+  grammar through the same runtime adapter as the bundled server, loads it, and
+  verifies bundled release-cache eligibility while development layouts remain
+  non-persistable.
 - Thin LSP adapter behavior belongs in server handler tests. Every index-backed
   query adapter and the document lifecycle fake only Indexed Workspace behavior;
   tests must not reconstruct `store/global/globalRefs` Workspace shapes or

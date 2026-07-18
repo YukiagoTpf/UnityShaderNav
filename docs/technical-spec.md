@@ -478,12 +478,20 @@ root is eligible only while it belongs to a currently resolved external package.
 The Extension runtime is assembled from one artifact graph at the canonical
 repository root. It drives the extension/server bundles, copied server modules,
 grammar provenance/license, complete `web-tree-sitter` runtime, watch inputs,
-VSIX requirements, package-layout assertions, and Electron staging. A standard
-build writes a content-addressed manifest over build inputs and executable
-outputs. Current-run packaging verifies that manifest against the working tree
-and then verifies every packaged artifact byte against the manifest embedded in
-the VSIX. Source, tsc-out, copied-server, and bundled-server parser layouts
-remain distinct runtime interpretations of this one assembled graph.
+package requirements, package-layout assertions, and Electron staging. Each
+runtime-critical or package-required file has a graph-owned minimum size. A
+standard build and current-run packaging reject missing, truncated, non-regular,
+or repository-escaping files; parent-directory symlinks cannot move a critical
+path outside the canonical repository root. Packaging and direct VSCE prepublish
+also require every path in VSCE's public file plan to be unique, canonical,
+regular, and contained by the Extension root, and require that plan to contain
+every graph-owned package path. Current-run packaging checks that VSCE produced
+a non-trivial VSIX file.
+Packaging does not parse ZIP bytes or maintain a parallel content manifest. A
+failed attempt restores staged metadata before deleting its exact versioned
+VSIX; unrelated package files are untouched. Source, tsc-out, copied-server,
+and bundled-server parser layouts remain distinct runtime interpretations of
+this one assembled graph.
 
 Persistence contains only an immutable published revision's disk indexes and
 the source identities captured with them. It excludes live overlays, document

@@ -6,13 +6,19 @@ import * as os from 'node:os';
 import { spawnSync } from 'node:child_process';
 
 interface RuntimeArtifactGraph {
-  readonly freshnessChecks: ReadonlyArray<{
-    readonly output: string;
-    readonly inputs: readonly string[];
+  readonly runtimeFiles: ReadonlyArray<{
+    readonly path: string;
+    readonly packagePath: string;
+    readonly minBytes: number;
+  }>;
+  readonly packageFiles: ReadonlyArray<{
+    readonly path: string;
+    readonly packagePath: string;
+    readonly minBytes: number;
   }>;
   readonly parserRuntimeLayouts: ReadonlyArray<readonly [string, string]>;
   readonly requiredOutputFiles: readonly string[];
-  readonly requiredVsixEntries: readonly string[];
+  readonly requiredPackagePaths: readonly string[];
 }
 
 const runtimeArtifacts = require(path.resolve(
@@ -22,7 +28,10 @@ const runtimeArtifacts = require(path.resolve(
   createRuntimeArtifactGraph(root: string): RuntimeArtifactGraph;
 };
 const ARTIFACT_GRAPH = runtimeArtifacts.createRuntimeArtifactGraph(monorepoRoot());
-const REQUIRED_VSIX_ENTRIES = ARTIFACT_GRAPH.requiredVsixEntries;
+const vsce = require('@vscode/vsce') as {
+  readonly PackageManager: { readonly None: number };
+  listFiles(options: { cwd: string; packageManager: number }): Promise<string[]>;
+};
 
 interface ParserRuntimeAssets {
   readonly layout: 'source' | 'tsc-out' | 'copied-server' | 'bundled-server';
@@ -177,28 +186,17 @@ suite('packaged server layout', () => {
     }
   });
 
-  test('packaging guard rejects stale server output', () => {
+  test('packaging guard rejects a truncated runtime output', () => {
     const root = monorepoRoot();
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'unity-shader-nav-stale-'));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'unity-shader-nav-truncated-'));
     try {
-      const oldTime = new Date('2024-01-01T00:00:01.000Z');
-      const newTime = new Date('2024-01-01T00:00:01.500Z');
       const tempGraph = runtimeArtifacts.createRuntimeArtifactGraph(tempRoot);
-      const files = [...new Set(tempGraph.freshnessChecks.flatMap((check) => (
-        [check.output, ...check.inputs]
-      )))];
-
-      for (const file of files) {
-        const absolute = path.join(tempRoot, file);
+      for (const file of tempGraph.runtimeFiles) {
+        const absolute = path.join(tempRoot, file.path);
         fs.mkdirSync(path.dirname(absolute), { recursive: true });
-        fs.writeFileSync(absolute, file);
-        fs.utimesSync(absolute, oldTime, oldTime);
+        fs.writeFileSync(absolute, Buffer.alloc(file.minBytes, 'x'));
       }
-      const serverInput = path.join(tempRoot, 'server/src');
-      fs.rmSync(serverInput, { force: true });
-      fs.mkdirSync(serverInput, { recursive: true });
-      fs.writeFileSync(path.join(serverInput, 'server.ts'), 'new server input');
-      fs.utimesSync(path.join(serverInput, 'server.ts'), newTime, newTime);
+      fs.writeFileSync(path.join(tempRoot, 'client/out/server/server.js'), 'truncated');
 
       const result = spawnSync(
         process.execPath,
@@ -207,7 +205,78 @@ suite('packaged server layout', () => {
       );
 
       assert.notStrictEqual(result.status, 0);
-      assert.match(result.stderr, /client[\\/]out[\\/]server[\\/]server\.js is stale/);
+      assert.match(
+        result.stderr,
+        /client\/out\/server\/server\.js is truncated: 9 bytes; expected at least 1024/,
+      );
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('direct VSCE packaging rejects a truncated language config and restores staging', function () {
+    this.timeout(60000);
+    const root = monorepoRoot();
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'unity-shader-nav-direct-vsce-'));
+    try {
+      const tempGraph = runtimeArtifacts.createRuntimeArtifactGraph(tempRoot);
+      const clientRoot = path.join(tempRoot, 'client');
+      const originalReadme = 'original client readme';
+      const stagedNames = new Set(['README.md', 'CHANGELOG.md', 'LICENSE']);
+
+      for (const file of tempGraph.packageFiles) {
+        if (stagedNames.has(file.packagePath)) continue;
+        const absolute = path.join(tempRoot, file.path);
+        fs.mkdirSync(path.dirname(absolute), { recursive: true });
+        fs.writeFileSync(absolute, Buffer.alloc(file.minBytes, 'x'));
+      }
+      const packageScript = path.resolve(root, 'scripts/package-vsix.mjs');
+      const prepublish = [
+        quoteShellArgument(process.execPath),
+        quoteShellArgument(packageScript),
+        '--prepare-extension-root',
+        '--monorepo-root',
+        quoteShellArgument(tempRoot),
+      ].join(' ');
+      fs.writeFileSync(
+        path.join(clientRoot, 'package.json'),
+        `${JSON.stringify({
+          name: 'fixture-extension',
+          version: '1.2.3',
+          publisher: 'fixture',
+          engines: { vscode: '^1.85.0' },
+          scripts: { 'vscode:prepublish': prepublish },
+        })}${' '.repeat(64)}`,
+      );
+      fs.writeFileSync(path.join(clientRoot, 'README.md'), originalReadme);
+      fs.writeFileSync(path.join(clientRoot, 'language-configuration/hlsl.json'), '{}');
+      for (const name of stagedNames) {
+        fs.writeFileSync(path.join(tempRoot, name), 'x'.repeat(64));
+      }
+
+      const vsixPath = path.join(tempRoot, 'direct.vsix');
+      const result = spawnSync(
+        process.execPath,
+        [
+          path.join(root, 'node_modules/@vscode/vsce/vsce'),
+          'package',
+          '--no-dependencies',
+          '--no-yarn',
+          '--out',
+          vsixPath,
+        ],
+        { cwd: clientRoot, encoding: 'utf8', timeout: 60000 },
+      );
+
+      assert.notStrictEqual(result.status, 0);
+      assert.match(
+        `${result.stdout}\n${result.stderr}`,
+        /language-configuration\/hlsl\.json is truncated: 2 bytes; expected at least 32/,
+      );
+      assert.strictEqual(fs.readFileSync(path.join(clientRoot, 'README.md'), 'utf8'), originalReadme);
+      assert.strictEqual(fs.existsSync(path.join(clientRoot, 'CHANGELOG.md')), false);
+      assert.strictEqual(fs.existsSync(path.join(clientRoot, 'LICENSE')), false);
+      assert.strictEqual(fs.existsSync(vsixPath), false);
     } finally {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }
@@ -254,116 +323,158 @@ suite('packaged server layout', () => {
     }
   });
 
-  test('VSIX verifier rejects generated TypeScript build cache entries', () => {
+  test('failed post-package verification rejects unsafe VSIX files and restores staging', () => {
     const root = monorepoRoot();
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'unity-shader-nav-vsix-check-'));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'unity-shader-nav-package-fail-'));
     try {
-      const vsixPath = path.join(tempRoot, 'extension.vsix');
-      fs.writeFileSync(vsixPath, zipWithCentralDirectoryEntries([
-        ...REQUIRED_VSIX_ENTRIES,
-        'extension/tsconfig.tsbuildinfo',
-      ]));
+      const tempGraph = runtimeArtifacts.createRuntimeArtifactGraph(tempRoot);
+      const clientRoot = path.join(tempRoot, 'client');
+      const originalReadme = 'original client readme';
+      const version = '1.2.3';
+      const vsixPath = path.join(clientRoot, `fixture-extension-${version}.vsix`);
+      const unrelatedVsixPath = path.join(clientRoot, 'keep-this.vsix');
+      const stagedNames = new Set(['README.md', 'CHANGELOG.md', 'LICENSE']);
 
-      const result = spawnSync(
-        process.execPath,
-        [path.resolve(root, 'scripts/package-vsix.mjs'), '--verify-vsix', vsixPath],
-        { encoding: 'utf8' },
-      );
-
-      assert.notStrictEqual(result.status, 0);
-      assert.match(result.stderr, /VSIX must not include generated file extension\/tsconfig\.tsbuildinfo/);
-    } finally {
-      fs.rmSync(tempRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('VSIX verifier rejects duplicate central-directory entries', () => {
-    const root = monorepoRoot();
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'unity-shader-nav-vsix-duplicate-'));
-    try {
-      const duplicate = REQUIRED_VSIX_ENTRIES[0];
-      const vsixPath = path.join(tempRoot, 'extension.vsix');
-      fs.writeFileSync(vsixPath, zipWithCentralDirectoryEntries([
-        ...REQUIRED_VSIX_ENTRIES,
-        duplicate,
-      ]));
-
-      const result = spawnSync(
-        process.execPath,
-        [path.resolve(root, 'scripts/package-vsix.mjs'), '--verify-vsix', vsixPath],
-        { encoding: 'utf8' },
-      );
-
-      assert.notStrictEqual(result.status, 0);
-      assert.match(result.stderr, new RegExp(`duplicate entry ${duplicate}`));
-    } finally {
-      fs.rmSync(tempRoot, { recursive: true, force: true });
-    }
-  });
-
-  for (const requiredEntry of REQUIRED_VSIX_ENTRIES) {
-    test(`VSIX verifier requires ${requiredEntry}`, () => {
-      const root = monorepoRoot();
-      const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'unity-shader-nav-vsix-required-'));
-      try {
-        const vsixPath = path.join(tempRoot, 'extension.vsix');
-        fs.writeFileSync(
-          vsixPath,
-          zipWithCentralDirectoryEntries(
-            REQUIRED_VSIX_ENTRIES.filter((entry) => entry !== requiredEntry),
-          ),
-        );
-
-        const result = spawnSync(
-          process.execPath,
-          [path.resolve(root, 'scripts/package-vsix.mjs'), '--verify-vsix', vsixPath],
-          { encoding: 'utf8' },
-        );
-
-        assert.notStrictEqual(result.status, 0);
-        assert.strictEqual(
-          result.stderr.trim(),
-          `VSIX is missing required file ${requiredEntry}`,
-        );
-      } finally {
-        fs.rmSync(tempRoot, { recursive: true, force: true });
+      for (const file of tempGraph.packageFiles) {
+        if (stagedNames.has(file.packagePath)) continue;
+        const absolute = path.join(tempRoot, file.path);
+        fs.mkdirSync(path.dirname(absolute), { recursive: true });
+        fs.writeFileSync(absolute, Buffer.alloc(file.minBytes, 'x'));
       }
-    });
-  }
+      fs.writeFileSync(
+        path.join(clientRoot, 'package.json'),
+        `${JSON.stringify({
+          name: 'fixture-extension',
+          version,
+          publisher: 'fixture',
+          engines: { vscode: '^1.85.0' },
+        })}${' '.repeat(64)}`,
+      );
+      fs.writeFileSync(path.join(clientRoot, 'README.md'), originalReadme);
+      fs.writeFileSync(unrelatedVsixPath, 'unrelated artifact');
+      for (const name of stagedNames) {
+        fs.writeFileSync(path.join(tempRoot, name), 'x'.repeat(64));
+      }
 
-  test('direct VSCE package from client includes the extension documentation', function () {
+      const fakeBin = path.join(tempRoot, 'fake-bin');
+      fs.mkdirSync(fakeBin);
+      const fakeNpxScript = path.join(fakeBin, 'fake-npx.cjs');
+      fs.writeFileSync(fakeNpxScript, [
+        "const { writeFileSync } = require('node:fs');",
+        'const args = process.argv.slice(2);',
+        "const outIndex = args.indexOf('--out');",
+        "if (outIndex < 0 || !args[outIndex + 1]) throw new Error('missing --out');",
+        "writeFileSync(args[outIndex + 1], 'tiny');",
+      ].join('\n'));
+      if (process.platform === 'win32') {
+        fs.writeFileSync(
+          path.join(fakeBin, 'npx.cmd'),
+          `@"${process.execPath}" "%~dp0fake-npx.cjs" %*\r\n`,
+        );
+      } else {
+        const fakeNpx = path.join(fakeBin, 'npx');
+        fs.writeFileSync(
+          fakeNpx,
+          `#!/usr/bin/env node\nrequire(${JSON.stringify(fakeNpxScript)});\n`,
+        );
+        fs.chmodSync(fakeNpx, 0o755);
+      }
+
+      const runPackage = (extraEnv: NodeJS.ProcessEnv = {}) => spawnSync(
+        process.execPath,
+        [path.resolve(root, 'scripts/package-vsix.mjs'), '--monorepo-root', tempRoot],
+        {
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            PATH: `${fakeBin}${path.delimiter}${process.env.PATH ?? ''}`,
+            ...extraEnv,
+          },
+        },
+      );
+      const result = runPackage();
+
+      assert.notStrictEqual(result.status, 0);
+      assert.match(result.stderr, /VSIX output is truncated: 4 bytes; expected at least 1024/);
+      assert.strictEqual(fs.readFileSync(path.join(clientRoot, 'README.md'), 'utf8'), originalReadme);
+      assert.strictEqual(fs.existsSync(path.join(clientRoot, 'CHANGELOG.md')), false);
+      assert.strictEqual(fs.existsSync(path.join(clientRoot, 'LICENSE')), false);
+      assert.strictEqual(fs.existsSync(vsixPath), false);
+      assert.strictEqual(fs.readFileSync(unrelatedVsixPath, 'utf8'), 'unrelated artifact');
+
+      if (process.platform !== 'win32') {
+        const symlinkTarget = path.join(tempRoot, 'symlink-target.vsix');
+        fs.writeFileSync(symlinkTarget, Buffer.alloc(2_048, 'v'));
+        fs.writeFileSync(fakeNpxScript, [
+          "const { symlinkSync } = require('node:fs');",
+          'const args = process.argv.slice(2);',
+          "const outIndex = args.indexOf('--out');",
+          "if (outIndex < 0 || !args[outIndex + 1]) throw new Error('missing --out');",
+          "symlinkSync(process.env.FAKE_VSIX_TARGET, args[outIndex + 1], 'file');",
+        ].join('\n'));
+
+        const symlinkResult = runPackage({ FAKE_VSIX_TARGET: symlinkTarget });
+
+        assert.notStrictEqual(symlinkResult.status, 0);
+        assert.match(symlinkResult.stderr, /VSIX output must be a regular file/);
+        assert.strictEqual(fs.existsSync(vsixPath), false);
+        assert.strictEqual(fs.statSync(symlinkTarget).size, 2_048);
+        assert.strictEqual(
+          fs.readFileSync(path.join(clientRoot, 'README.md'), 'utf8'),
+          originalReadme,
+        );
+        assert.strictEqual(fs.readFileSync(unrelatedVsixPath, 'utf8'), 'unrelated artifact');
+      }
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('VSCE package plan includes every graph-owned package file', async function () {
     this.timeout(60000);
 
     const root = monorepoRoot();
     const clientRoot = path.resolve(root, 'client');
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'unity-shader-nav-direct-vsce-'));
-    const vsixPath = path.join(tempRoot, 'direct.vsix');
+    const stagedFiles = ['README.md', 'CHANGELOG.md', 'LICENSE'];
+    const previousFiles = new Map<string, Buffer | undefined>();
+    for (const name of stagedFiles) {
+      const target = path.join(clientRoot, name);
+      previousFiles.set(name, fs.existsSync(target) ? fs.readFileSync(target) : undefined);
+    }
     try {
-      const npx = npxInvocation();
-      const packageResult = spawnSync(
-        npx.command,
-        [...npx.argsPrefix, '--no-install', 'vsce', 'package', '--no-dependencies', '--no-yarn', '--out', vsixPath],
-        { cwd: clientRoot, encoding: 'utf8' },
-      );
-
-      assert.strictEqual(
-        packageResult.status,
-        0,
-        packageResult.error?.message || packageResult.stderr || packageResult.stdout,
-      );
-
-      const verifyResult = spawnSync(
+      const prepareResult = spawnSync(
         process.execPath,
-        [path.resolve(root, 'scripts/package-vsix.mjs'), '--verify-vsix', vsixPath],
-        { encoding: 'utf8' },
+        [path.resolve(root, 'scripts/package-vsix.mjs'), '--prepare-extension-root'],
+        { encoding: 'utf8', timeout: 60000 },
+      );
+      assert.strictEqual(
+        prepareResult.status,
+        0,
+        prepareResult.error?.message || prepareResult.stderr || prepareResult.stdout,
       );
 
-      assert.strictEqual(verifyResult.status, 0, verifyResult.stderr);
+      const plannedFiles = new Set(await vsce.listFiles({
+        cwd: clientRoot,
+        packageManager: vsce.PackageManager.None,
+      }));
+      for (const requiredPath of ARTIFACT_GRAPH.requiredPackagePaths) {
+        assert.ok(plannedFiles.has(requiredPath), `VSCE must package ${requiredPath}`);
+      }
+      assert.ok(
+        [...plannedFiles].every((packagePath) => !packagePath.endsWith('.tsbuildinfo')),
+        'VSCE package plan must exclude TypeScript build caches',
+      );
+      assert.strictEqual(
+        plannedFiles.has('out/runtime-artifacts.json'),
+        false,
+        'VSCE package plan must exclude obsolete runtime manifests',
+      );
     } finally {
-      fs.rmSync(path.resolve(clientRoot, 'README.md'), { force: true });
-      fs.rmSync(path.resolve(clientRoot, 'CHANGELOG.md'), { force: true });
-      fs.rmSync(path.resolve(clientRoot, 'LICENSE'), { force: true });
-      fs.rmSync(tempRoot, { recursive: true, force: true });
+      for (const [name, previous] of previousFiles) {
+        const target = path.join(clientRoot, name);
+        if (previous) fs.writeFileSync(target, previous);
+        else fs.rmSync(target, { force: true });
+      }
     }
   });
 });
@@ -493,32 +604,6 @@ suite('verification command contract', () => {
   });
 });
 
-function zipWithCentralDirectoryEntries(entries: string[]): Buffer {
-  const records = entries.map((entry) => {
-    const name = Buffer.from(entry, 'utf8');
-    const header = Buffer.alloc(46);
-    header.writeUInt32LE(0x02014b50, 0);
-    header.writeUInt16LE(20, 4);
-    header.writeUInt16LE(20, 6);
-    header.writeUInt16LE(name.length, 28);
-    return Buffer.concat([header, name]);
-  });
-  const centralDirectory = Buffer.concat(records);
-  const endOfCentralDirectory = Buffer.alloc(22);
-  endOfCentralDirectory.writeUInt32LE(0x06054b50, 0);
-  endOfCentralDirectory.writeUInt16LE(entries.length, 8);
-  endOfCentralDirectory.writeUInt16LE(entries.length, 10);
-  endOfCentralDirectory.writeUInt32LE(centralDirectory.length, 12);
-  endOfCentralDirectory.writeUInt32LE(0, 16);
-  return Buffer.concat([centralDirectory, endOfCentralDirectory]);
-}
-
-function npxInvocation(): { command: string; argsPrefix: string[] } {
-  if (process.platform === 'win32') {
-    return {
-      command: process.env.ComSpec ?? 'cmd.exe',
-      argsPrefix: ['/d', '/s', '/c', 'npx.cmd'],
-    };
-  }
-  return { command: 'npx', argsPrefix: [] };
+function quoteShellArgument(value: string): string {
+  return `"${value.replace(/"/g, '\\"')}"`;
 }

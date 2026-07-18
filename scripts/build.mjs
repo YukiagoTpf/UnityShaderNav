@@ -29,6 +29,6 @@ await build({
   entryPoints: [resolve(monorepoRoot, serverBundle.entry)],
   outfile: resolve(monorepoRoot, serverBundle.output),
 });
-await runtimeArtifacts.writeRuntimeArtifactManifest(graph);
+await runtimeArtifacts.assertRuntimeArtifacts(graph);
 
 console.log('[runtime-artifacts] bundle and runtime assembly complete');

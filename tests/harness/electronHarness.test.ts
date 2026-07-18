@@ -242,7 +242,6 @@ async function createFakeRepository(): Promise<FakeRepository> {
   const files: Array<[string, string]> = [
     ['client/package.json', '{"name":"fixture-extension","main":"./out/extension.js"}\n'],
     ['client/out/extension.js', 'module.exports = {};\n'],
-    ['client/out/runtime-artifacts.json', '{}\n'],
     ['client/out/grammars/tree-sitter-hlsl.wasm', 'grammar'],
     ['client/out/server/node_modules/web-tree-sitter/tree-sitter.js', 'runtime'],
     ['client/out/server/node_modules/web-tree-sitter/tree-sitter.wasm', 'runtime wasm'],
