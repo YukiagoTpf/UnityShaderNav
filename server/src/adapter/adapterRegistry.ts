@@ -3,6 +3,7 @@ import {
   SHADER_MESSAGES_CAPABILITY,
   MATERIAL_USAGES_ADAPTER_FEATURE,
   VARIANT_BUILD_EVIDENCE_CAPABILITY,
+  SHADER_GRAPH_CUSTOM_FUNCTIONS_CAPABILITY,
   type AdapterDiagnostic,
   type AdapterHandshake,
   type AdapterStatus,
@@ -29,6 +30,15 @@ import {
   validateVariantBuildEvidence,
   type VariantBuildEvidenceSource,
 } from './variantBuildEvidenceSource';
+import type {
+  ShaderGraphSource,
+  ShaderGraphUsageResult,
+} from './shaderGraphSource';
+import {
+  cloneShaderGraphNode,
+  unknownShaderGraphUsage,
+  validShaderGraphSnapshot,
+} from './shaderGraphSource';
 
 const DEFAULT_HANDSHAKE_MAX_AGE_MS = 30_000;
 
@@ -50,6 +60,7 @@ interface ConnectedAdapter {
   readonly expectedProjectId: string;
   readonly handshake: AdapterHandshake;
   readonly materialSource?: MaterialSource;
+  readonly shaderGraphSource?: ShaderGraphSource;
 }
 
 interface DisconnectedAdapter {
@@ -57,6 +68,12 @@ interface DisconnectedAdapter {
 }
 
 type RegisteredAdapter = ConnectedAdapter | DisconnectedAdapter;
+
+/** Feature transports negotiated by one handshake, extensible without positional arguments. */
+export interface AdapterFeatureSources {
+  readonly materialUsages?: MaterialSource;
+  readonly shaderGraph?: ShaderGraphSource;
+}
 
 export interface AdapterRegistryOptions {
   readonly now?: () => number;
@@ -92,8 +109,9 @@ export class AdapterRegistry {
   registerHandshake(
     expectedProjectId: string,
     handshake: AdapterHandshake,
-    materialSource?: MaterialSource,
+    sources?: MaterialSource | AdapterFeatureSources,
   ): AdapterStatus {
+    const featureSources = normalizeFeatureSources(sources);
     this.registered = {
       state: 'connected',
       expectedProjectId,
@@ -104,7 +122,12 @@ export class AdapterRegistry {
           supportedFeatures: [...handshake.capabilities.supportedFeatures],
         },
       },
-      ...(materialSource ? { materialSource } : {}),
+      ...(featureSources.materialUsages
+        ? { materialSource: featureSources.materialUsages }
+        : {}),
+      ...(featureSources.shaderGraph
+        ? { shaderGraphSource: featureSources.shaderGraph }
+        : {}),
     };
     const status = this.computeStatus();
     this.publishStatusChange(status, true);
@@ -531,6 +554,103 @@ export class AdapterRegistry {
       })),
     };
   }
+
+  /** Return only complete, connection-bound logical Shader Graph facts. */
+  async shaderGraphCustomFunctions(): Promise<ShaderGraphUsageResult> {
+    const registered = this.registered;
+    const currentStatus = this.status();
+    if (currentStatus.mode === 'standalone') {
+      return unknownShaderGraphUsage(currentStatus.reason);
+    }
+    if (!registered || registered.state !== 'connected') {
+      return unknownShaderGraphUsage('source-unavailable');
+    }
+    if (!currentStatus.capabilities.supportedFeatures.includes(
+      SHADER_GRAPH_CUSTOM_FUNCTIONS_CAPABILITY,
+    )) {
+      return unknownShaderGraphUsage('capability-unavailable');
+    }
+
+    const source = registered.shaderGraphSource;
+    if (!source) return unknownShaderGraphUsage('source-unavailable');
+    const { expectedProjectId, handshake } = registered;
+    if (
+      source.identity.projectId !== expectedProjectId
+      || source.identity.projectId !== handshake.capabilities.projectId
+      || source.identity.instanceId !== handshake.instanceId
+    ) {
+      return unknownShaderGraphUsage('source-identity-mismatch');
+    }
+
+    let snapshot: Awaited<ReturnType<ShaderGraphSource['customFunctionNodes']>>;
+    try {
+      snapshot = await source.customFunctionNodes();
+    } catch {
+      return unknownShaderGraphUsage('source-unavailable');
+    }
+    if (this.registered !== registered) {
+      const latest = this.status();
+      return unknownShaderGraphUsage(
+        latest.mode === 'standalone' ? latest.reason : 'connection-changed',
+      );
+    }
+    const latest = this.status();
+    if (latest.mode === 'standalone') {
+      return unknownShaderGraphUsage(latest.reason);
+    }
+    if (
+      !snapshot
+      || typeof snapshot !== 'object'
+      || !validNonEmptyString(snapshot.shaderGraphVersion)
+    ) {
+      return unknownShaderGraphUsage('invalid-evidence');
+    }
+    if (snapshot.status === 'unsupported-version') {
+      return unknownShaderGraphUsage(
+        'shader-graph-version-unsupported',
+        snapshot.shaderGraphVersion,
+      );
+    }
+    if (!validShaderGraphSnapshot(snapshot, this.now())) {
+      return unknownShaderGraphUsage('invalid-evidence');
+    }
+
+    const provenanceBase = {
+      capability: SHADER_GRAPH_CUSTOM_FUNCTIONS_CAPABILITY,
+      projectId: source.identity.projectId,
+      instanceId: source.identity.instanceId,
+      adapterVersion: handshake.capabilities.adapterVersion,
+      unityVersion: handshake.capabilities.unityVersion,
+      collectedAt: snapshot.collectedAt,
+      shaderGraphVersion: snapshot.shaderGraphVersion,
+    } as const;
+    return {
+      availability: 'available',
+      assetScope: 'complete',
+      shaderGraphVersion: snapshot.shaderGraphVersion,
+      revision: snapshot.revision,
+      usages: snapshot.assets.flatMap((asset) => asset.nodes.map((node) => ({
+        ...cloneShaderGraphNode(node),
+        provenance: {
+          ...provenanceBase,
+          sourceRevision: { ...asset.sourceRevision },
+        },
+      }))),
+    };
+  }
+}
+
+function normalizeFeatureSources(
+  sources: MaterialSource | AdapterFeatureSources | undefined,
+): AdapterFeatureSources {
+  if (!sources) return {};
+  return 'materialsUsingShader' in sources
+    ? { materialUsages: sources }
+    : sources;
+}
+
+function validNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
 }
 
 function standalone(reason: AdapterUnavailableReason): AdapterStatus {

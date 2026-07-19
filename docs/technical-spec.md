@@ -33,6 +33,9 @@ UnityShaderNav provides practical VS Code navigation for Unity shader projects:
   Declared/static, Compile candidates, Kept, and unavailable evidence classes,
   tied to the exact Shader source and Unity build provenance.
 - Cross-file navigation through `#include` chains and resolved Unity Packages.
+- Adapter-backed Definition, References, and focused contract diagnostics for
+  File-mode Shader Graph Custom Function nodes, without parsing graph
+  serialization in the language server.
 
 The project optimizes for useful editor behavior over full shader compilation
 semantics.
@@ -57,6 +60,7 @@ semantics.
 | `.cginc` | Unity CG includes, with pragmatic legacy declaration support |
 | `.hlslinc` | HLSL include files |
 | `.compute` | Compute shader files, including `#pragma kernel` references |
+| `.shadergraph` | File-mode Custom Function navigation from logical facts supplied by a compatible Unity Editor Adapter; never source-indexed |
 
 ## High-Level Architecture
 
@@ -72,6 +76,8 @@ Language server
     warm-cache, rebuild, and recovery paths
   - derives exact-source ShaderLab document analysis and parses HLSL syntax
   - builds symbol/reference indexes
+  - overlays validated, versioned Shader Graph node facts supplied by the Unity
+    Editor Adapter without decoding `.shadergraph` serialization
   - publishes only through the Workspace lifecycle boundary
   - answers LSP definition, references, symbols, highlight, CodeLens, and semantic-token requests
   - validates and compares optional aggregate Unity Variant build evidence

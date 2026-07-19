@@ -91,10 +91,11 @@ handling. Important modules:
   Documentation compatibility checks and presentation-only predefined macro
   Hover values.
 - `adapter`: owns the Unity Editor Adapter handshake trust boundary plus the
-  optional `MaterialSource` and bounded Variant build-evidence query surfaces.
-  Project, instance, producer version, capability, source revision, freshness,
-  disconnect, reconnect, and payload-limit checks run before Adapter facts can
-  reach Workspace behavior; unavailable facts stay explicitly unknown.
+  optional `MaterialSource`, bounded Variant build-evidence, and versioned
+  `ShaderGraphSource` query surfaces. Project, instance, producer version,
+  capability, source revision, freshness, disconnect, reconnect, and
+  payload-limit checks run before Adapter facts can reach Workspace behavior;
+  unavailable facts stay explicitly unknown.
 - `handlers`: adapts LSP messages to domain behavior. The document adapter owns
   the open-document registry; `handlers/documentRequest.ts` centralizes
   snapshot routing, suspension, and neutral-result policy. Every index-backed
@@ -332,6 +333,18 @@ keyword-set gaps. Failed and incomplete build status is carried alongside any
 validated partial rows; no unavailable count is converted to zero. The client
 presents this through an explicit report command, while the existing
 Declared/static CodeLens remains source-only.
+
+File-mode Shader Graph Custom Function usages are another Adapter-supplied
+overlay. Adapter-owned version decoders emit one serialization-neutral logical
+node contract: graph/source identities, source ranges, precision, ordered
+ports, and provenance. `.shadergraph` assets never enter source membership or
+the persistent cache. Definition validates the exact open graph content hash
+before matching the precision-suffixed HLSL declaration; HLSL References
+validate each saved graph hash before returning node locations. Both directions
+require an exact `void` function signature, including ordered parameter names,
+types, and output directions. An unadvertised capability or unsupported Shader
+Graph version remains an explicit unknown status, so the language server never
+decodes or guesses Unity-owned serialization fields.
 
 Push diagnostics are another revision-owned projection. Every lifecycle status
 transition requests one coalesced refresh over current open-document attempts.

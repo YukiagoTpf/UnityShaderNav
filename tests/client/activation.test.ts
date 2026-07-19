@@ -38,7 +38,7 @@ suite('UnityShaderNav activation', () => {
     }
   });
 
-  test('manifest declares onLanguage activation for shaderlab and hlsl', () => {
+  test('manifest declares onLanguage activation for shaderlab, hlsl, and shadergraph', () => {
     const ext = findExt();
     assert.ok(ext, 'extension manifest must be loaded');
     const events: string[] = ext.packageJSON.activationEvents ?? [];
@@ -49,6 +49,10 @@ suite('UnityShaderNav activation', () => {
     assert.ok(
       events.includes('onLanguage:hlsl'),
       `expected onLanguage:hlsl in activationEvents, got ${JSON.stringify(events)}`,
+    );
+    assert.ok(
+      events.includes('onLanguage:shadergraph'),
+      `expected onLanguage:shadergraph in activationEvents, got ${JSON.stringify(events)}`,
     );
   });
 

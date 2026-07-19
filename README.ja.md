@@ -8,6 +8,10 @@ UnityShaderNav は、Unity Shader プロジェクト向けの Visual Studio Code
 
 - 関数、ローカル変数、引数、struct、struct メンバー、マクロ、`#include` パス、shader エントリポイントへの Go to Definition。
 - インデックス済みのユーザーファイル内での Find References。必要に応じて package 内の参照も含められます。
+- Unity Editor Adapter を介した File モード Shader Graph Custom Function
+  ノードと HLSL のナビゲーション。F12 は精度サフィックス付き宣言を開き、
+  Find References は graph ノードへ戻り、Problems は include の欠落、
+  無効なサフィックス、port/signature の不一致を報告します。
 - ShaderLab の `Shader`、`Fallback`、Pass `Name`、`UsePass` に対するプロジェクト横断の Definition、References、Hover、Completion、Workspace Symbols、および保守的な Rename。`UsePass` の Pass 部分は Unity の大文字の正規形に従います。
 - 宣言が一意な HLSL/CG シンボルと、同じ `.shader` ファイル内の ShaderLab Property contract を対象とする保守的な Workspace Rename。オーバーロード、プリプロセッサ、Package など安全性を証明できない場合は変更を拒否します。
 - 解決できない vertex、fragment、geometry、hull、domain、surface、compute kernel エントリポイントを VS Code Problems に表示し、ライブドキュメントとプロジェクトインデックスに追従して更新します。
@@ -48,6 +52,8 @@ UnityShaderNav は次のファイルで有効になります。
 - `.cginc`
 - `.hlslinc`
 - `.compute`
+- `.shadergraph`（File モード Custom Function のナビゲーションには互換性の
+  ある Unity Editor Adapter が必要です）
 
 単独の HLSL ファイルでは同一ファイル内のナビゲーションが使えます。完全なクロスファイルナビゲーションには、`Assets/` と `ProjectSettings/` を含む Unity project root が必要です。
 
@@ -66,7 +72,8 @@ UnityShaderNav は次のファイルで有効になります。
 4. `...` -> `Install from VSIX...` を選びます。
 5. ダウンロードした VSIX ファイルを選択します。
 
-インストール後、Unity プロジェクトを開き、`.shader`、`.hlsl`、`.cginc`、`.hlslinc`、または `.compute` ファイルを開いてください。
+インストール後、Unity プロジェクトを開き、`.shader`、`.hlsl`、`.cginc`、
+`.hlslinc`、`.compute`、または `.shadergraph` ファイルを開いてください。
 
 ### 方法 3: ソースからビルドする
 
@@ -89,7 +96,8 @@ npm run build
 2. ターミナルで `npm run watch` を実行し、`[watch-runtime] build ok` が表示されるまで待ちます。
 3. F5 を押し、拡張機能の起動構成を選択します。
 4. Extension Development Host で Unity プロジェクトを開きます。
-5. `.shader`、`.hlsl`、`.cginc`、`.hlslinc`、または `.compute` ファイルを開きます。
+5. `.shader`、`.hlsl`、`.cginc`、`.hlslinc`、`.compute`、または
+   `.shadergraph` ファイルを開きます。
 6. ソースを編集したら、次の `[watch-runtime] build ok` を待ってから Extension Development Host のウィンドウを再読み込みします。
 
 ローカルで VSIX をパッケージする場合:
@@ -128,7 +136,11 @@ npm run package:vsix
 
 - 既定ではプリプロセッサ条件を評価しません。複数の有効な定義がある場合は、VS Code の Peek Definition に複数候補として返します。オプションのバリアントコンテキストピッカーは、ディム表示とナビゲーションのために宣言済みの `multi_compile` / `shader_feature` キーワードを解決できますが、これはユーザー駆動のものであり、コンパイラー精度のバリアント解決を構成するものではありません。
 - マクロ本体は展開しません。組み込みおよびユーザー設定の declaration patterns により、一般的な Unity マクロ宣言を扱います。
-- Surface Shader の暗黙パラメータや ShaderGraph 生成コードは、特別なソースとしてインデックスしません。
+- Surface Shader の暗黙パラメータや Shader Graph 生成コードは、特別な
+  ソースとしてインデックスしません。File モード Custom Function の
+  ナビゲーションは、対応バージョンについて Unity Editor Adapter が提供する
+  論理的な事実だけを使用します。Adapter または capability が利用できない場合、
+  `.shadergraph` のシリアライズ形式を推測せず、中立のままです。
 - 組み込み補完とシグネチャヘルプは厳選された非網羅的な語彙です。プロジェクトシンボルと組み込み名が衝突する場合は、プロジェクトシンボルを優先します。
 - Quick Documentation も非網羅的です。Package 固有のフォールバックは、互換バージョンで include から可視な Unity built-in または既定 registry Package にだけ適用されます。Unity 向け文書は現在 Editor 2022.3 で検証済みで、それ以外または不明な Editor バージョンでも検証範囲の注記付きで表示されます。scoped registry、fork、ローカル由来、非互換の Package 情報は、実際のインデックス済み宣言がない限り中立のままです。
 - Color presentation は HDR、Vector、式、範囲外の成分を扱いません。整形は ShaderLab の行頭インデントだけを変更し、埋め込み program/include block 全体のバイトを保持します。構造が不正な場合は拒否し、HLSL 整形は対象外です。

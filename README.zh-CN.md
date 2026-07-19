@@ -8,6 +8,9 @@ UnityShaderNav 是一个用于 Unity Shader 项目的 Visual Studio Code 扩展�
 
 - 为函数、局部变量、参数、struct、struct 成员、宏、`#include` 路径和 shader 入口函数提供 Go to Definition。
 - 在已索引的用户文件中查找引用，并可选择是否包含 package 引用。
+- 通过 Unity Editor Adapter 连接 File 模式的 Shader Graph Custom Function
+  节点与 HLSL：F12 跳到带精度后缀的声明，Find References 回到 graph 节点，
+  Problems 聚焦报告 include 缺失、后缀无效和 port/signature 不匹配。
 - 为 ShaderLab 的 `Shader`、`Fallback`、Pass `Name` 与 `UsePass` 提供跨项目的定义、引用、悬浮、补全、Workspace 符号和保守重命名；`UsePass` 的 Pass 段遵循 Unity 的大写规范形式。
 - 为声明身份唯一的 HLSL/CG 符号及同一 `.shader` 文件内的 ShaderLab Property 契约提供保守的 Workspace Rename，并在重载、预处理或 Package 等不安全场景拒绝修改。
 - 在 VS Code Problems 中报告无法解析的 vertex、fragment、geometry、hull、domain、surface 与 compute kernel 入口，并随实时文档和项目索引更新。
@@ -43,6 +46,8 @@ UnityShaderNav 会在这些文件中激活：
 - `.cginc`
 - `.hlslinc`
 - `.compute`
+- `.shadergraph`（File 模式 Custom Function 导航需要兼容的 Unity Editor
+  Adapter）
 
 独立 HLSL 文件可以使用同文件导航。完整跨文件导航需要 Unity project root 中同时包含 `Assets/` 和 `ProjectSettings/`。
 
@@ -61,7 +66,8 @@ UnityShaderNav 会在这些文件中激活：
 4. 点击 `...` -> `Install from VSIX...`。
 5. 选择刚下载的 VSIX 文件。
 
-安装后，打开一个 Unity 项目，然后打开 `.shader`、`.hlsl`、`.cginc`、`.hlslinc` 或 `.compute` 文件即可使用。
+安装后，打开一个 Unity 项目，然后打开 `.shader`、`.hlsl`、`.cginc`、
+`.hlslinc`、`.compute` 或 `.shadergraph` 文件即可使用。
 
 ### 方法三：从源码构建
 
@@ -84,7 +90,8 @@ npm run build
 2. 在终端运行 `npm run watch`，等待出现 `[watch-runtime] build ok`。
 3. 按 F5，并选择扩展启动配置。
 4. 在 Extension Development Host 中打开 Unity 项目。
-5. 打开 `.shader`、`.hlsl`、`.cginc`、`.hlslinc` 或 `.compute` 文件。
+5. 打开 `.shader`、`.hlsl`、`.cginc`、`.hlslinc`、`.compute` 或
+   `.shadergraph` 文件。
 6. 修改源码后，等待下一次 `[watch-runtime] build ok`，然后重新加载 Extension Development Host 窗口。
 
 本地打包 VSIX：
@@ -123,7 +130,10 @@ npm run package:vsix
 
 - 默认不求值预处理条件；多个有效定义会通过 VS Code Peek Definition 一并返回。可选的变体上下文选择器可以为变暗和导航消解已声明的 `multi_compile` / `shader_feature` 关键字，但这是用户驱动的，不构成编译器级别的变体求值。
 - 不展开宏体。内置和用户配置的 declaration patterns 会覆盖常见 Unity 宏声明。
-- 不把 Surface Shader 隐式参数和 ShaderGraph 生成代码作为特殊来源索引。
+- 不把 Surface Shader 隐式参数和 Shader Graph 生成代码作为特殊来源索引。
+  File 模式 Custom Function 导航只消费 Unity Editor Adapter 为受支持版本
+  提供的逻辑事实；Adapter 或 capability 不可用时不会猜测 `.shadergraph`
+  序列化布局，功能保持中性。
 - 内置补全和签名帮助是精选词表，不保证穷尽；当项目符号与内置名称冲突时，优先使用项目符号。
 - Quick Documentation 是精选内容，不保证穷尽。Package 专属兜底只会用于版本兼容、include 可见的 Unity built-in 或默认 registry Package；Unity 范围文档目前以 Editor 2022.3 验证，其他或未知 Editor 版本仍会显示并附带验证范围提示。scoped registry、fork、本地来源或版本不兼容的 Package 事实保持中性，除非存在已索引的真实声明。
 - Color presentation 不处理 HDR、Vector、表达式或越界分量。格式化只修改 ShaderLab 行首缩进，完整保留嵌入 program/include block 的原始字节；结构畸形时拒绝格式化。HLSL 格式化不在范围内。

@@ -32,6 +32,8 @@ export interface FunctionParameter {
   name: string;
   type: string;
   range: Range;
+  /** Omitted for ordinary input parameters, including explicit `in`. */
+  direction?: 'out' | 'inout';
 }
 
 export interface FunctionSymbolEntry extends SymbolEntry {

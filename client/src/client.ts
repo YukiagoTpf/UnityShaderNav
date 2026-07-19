@@ -24,6 +24,7 @@ export function createLanguageClient(
     documentSelector: [
       { scheme: 'file', language: 'shaderlab' },
       { scheme: 'file', language: 'hlsl' },
+      { scheme: 'file', language: 'shadergraph' },
     ],
     initializationOptions: {
       globalStorageDir: context.globalStorageUri.fsPath,

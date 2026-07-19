@@ -13,6 +13,10 @@ The extension focuses on fast code navigation:
   macros, `#include` paths, and shader entry points.
 - Find References across indexed user files, with an option to include package
   references.
+- Adapter-backed navigation for File-mode Shader Graph Custom Function nodes:
+  F12 opens the precision-suffixed HLSL declaration, Find References returns to
+  graph nodes, and Problems identifies missing includes, invalid suffixes, and
+  port/signature mismatches.
 - Workspace Rename for unambiguous indexed HLSL/CG symbols, including pragma
   entry-point references and same-file ShaderLab Property contracts, with
   conservative refusal for overload-like or preprocessor ambiguity.
@@ -88,6 +92,8 @@ UnityShaderNav activates for:
 - `.cginc`
 - `.hlslinc`
 - `.compute`
+- `.shadergraph` (File-mode Custom Function navigation requires a compatible
+  Unity Editor Adapter)
 
 Standalone HLSL files get same-file navigation. Full cross-file navigation
 requires a Unity project root containing `Assets/` and `ProjectSettings/`.
@@ -108,7 +114,7 @@ requires a Unity project root containing `Assets/` and `ProjectSettings/`.
 5. Select the downloaded VSIX file.
 
 After installation, open a Unity project and then open a `.shader`, `.hlsl`,
-`.cginc`, `.hlslinc`, or `.compute` file.
+`.cginc`, `.hlslinc`, `.compute`, or `.shadergraph` file.
 
 ### Option 3: Build from Source
 
@@ -131,7 +137,8 @@ To run the extension from source:
 2. In a terminal, run `npm run watch` and wait for `[watch-runtime] build ok`.
 3. Press F5 and choose the extension launch configuration.
 4. In the Extension Development Host, open a Unity project.
-5. Open a `.shader`, `.hlsl`, `.cginc`, `.hlslinc`, or `.compute` file.
+5. Open a `.shader`, `.hlsl`, `.cginc`, `.hlslinc`, `.compute`, or
+   `.shadergraph` file.
 6. After source edits, wait for `[watch-runtime] build ok`, then reload the Extension Development Host window.
 
 To package a local VSIX:
@@ -181,8 +188,11 @@ See [Configuration](docs/configuration.md) for the full explanation and examples
   changes the Declared/static CodeLens or the source index.
 - Macro bodies are not expanded. Built-in and user-configured declaration
   patterns cover common Unity macro declarations.
-- Surface Shader implicit parameters and ShaderGraph generated code are not
-  indexed as special sources.
+- Surface Shader implicit parameters and Shader Graph generated code are not
+  indexed as special sources. File-mode Custom Function navigation consumes
+  only version-supported logical facts from the Unity Editor Adapter; when the
+  Adapter or capability is unavailable, raw `.shadergraph` serialization is
+  never guessed and the feature stays neutral.
 - Built-in completion and signature help are curated and non-exhaustive.
   Receiver members are offered only when an indexed declaration supplies a
   supported type; project symbols are preferred when names collide with

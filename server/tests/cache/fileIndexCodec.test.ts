@@ -68,7 +68,7 @@ function completeIndex(
     scopeRange: range,
     declaredType: 'float4',
     returnType: 'float4',
-    parameters: [{ name: 'uv', type: 'float2', range }],
+    parameters: [{ name: 'uv', type: 'float2', range, direction: 'out' }],
   };
   return {
     uri,
@@ -351,6 +351,7 @@ describe('persisted FileIndex codec', () => {
         name: mutate(['symbols', 0, 'parameters', 0, 'name'], 1),
         type: mutate(['symbols', 0, 'parameters', 0, 'type'], 1),
         range: mutate(['symbols', 0, 'parameters', 0, 'range'], null),
+        direction: mutate(['symbols', 0, 'parameters', 0, 'direction'], 'input'),
       }),
       ...fieldCases<ReferenceEntry>('ReferenceEntry', {
         name: mutate(['references', 0, 'name'], 1),

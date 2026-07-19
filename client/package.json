@@ -39,7 +39,8 @@
   "main": "./out/extension.js",
   "activationEvents": [
     "onLanguage:shaderlab",
-    "onLanguage:hlsl"
+    "onLanguage:hlsl",
+    "onLanguage:shadergraph"
   ],
   "contributes": {
     "commands": [
@@ -89,6 +90,16 @@
           ".compute"
         ],
         "configuration": "./language-configuration/hlsl.json"
+      },
+      {
+        "id": "shadergraph",
+        "aliases": [
+          "Unity Shader Graph",
+          "Shader Graph"
+        ],
+        "extensions": [
+          ".shadergraph"
+        ]
       }
     ],
     "configuration": {

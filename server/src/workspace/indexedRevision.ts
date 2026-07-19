@@ -6,6 +6,7 @@ import type {
   FileIndex,
   IncludePointContextsResult,
   InactiveRegion,
+  ShaderGraphCustomFunctionUsage,
 } from '@unity-shader-nav/shared';
 import { normalizeSettings } from '@unity-shader-nav/shared';
 import {
@@ -99,6 +100,11 @@ import {
 import { IncludePointContextMatrix } from './includePointContexts';
 import { includePointContextStore } from './includePointContextStore';
 import { variantContextStore } from './variantContextStore';
+import {
+  shaderGraphDefinition,
+  shaderGraphDiagnostics,
+  shaderGraphReferences,
+} from './shaderGraphNavigation';
 
 const PUBLICATION_SESSION_ID = randomUUID();
 let nextPublicationIdentity = 1;
@@ -282,6 +288,33 @@ export class PublishedIndexedRevision {
     return navigateDefinition(
       this.navigationState(),
       input,
+      facts,
+      await this.preprocessorContext(input.document.uri),
+    );
+  }
+
+  shaderGraphDefinitionAt(
+    input: DefinitionAtInput,
+    usages: readonly ShaderGraphCustomFunctionUsage[],
+  ): LocationLink[] | null {
+    return shaderGraphDefinition(this.navigationState(), input, usages);
+  }
+
+  shaderGraphDiagnostics(
+    usages: readonly ShaderGraphCustomFunctionUsage[],
+  ): Diagnostic[] {
+    return shaderGraphDiagnostics(this.navigationState(), usages);
+  }
+
+  async shaderGraphReferencesAt(
+    input: ReferencesAtInput,
+    usages: readonly ShaderGraphCustomFunctionUsage[],
+    facts?: CursorRequestFacts,
+  ): Promise<Location[]> {
+    return shaderGraphReferences(
+      this.navigationState(),
+      input,
+      usages,
       facts,
       await this.preprocessorContext(input.document.uri),
     );

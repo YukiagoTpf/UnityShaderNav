@@ -204,6 +204,7 @@ const functionParameterFields = {
   name: stringValue,
   type: stringValue,
   range: rangeValue,
+  direction: optional(enumValue({ out: true, inout: true })),
 } satisfies FieldValidators<FunctionParameter>;
 
 const functionParameterValue: Validator<FunctionParameter> = (

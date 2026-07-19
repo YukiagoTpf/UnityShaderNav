@@ -47,7 +47,10 @@ import { throwIfRequestCancelled } from './lifecycle/requestCancellation';
 
 const connection = getConnection();
 const adapterRegistry = new AdapterRegistry();
-const manager = new WorkspaceManager({ materialUsages: adapterRegistry });
+const manager = new WorkspaceManager({
+  materialUsages: adapterRegistry,
+  shaderGraphUsages: adapterRegistry,
+});
 const suspender = new RequestSuspender({ timeoutMs: 5000 });
 let globalStorageDir: string | undefined;
 
@@ -130,6 +133,7 @@ registerDiagnosticsPublisher(
   manager,
   [adapterDiagnosticOverlay],
 );
+adapterRegistry.onDidChangeStatus(() => manager.requestDiagnosticsRefresh());
 manager.configureSettingsResolver((scopeUri) => loadSettings(connection, scopeUri));
 
 connection.onInitialized(async () => {

@@ -9,6 +9,13 @@ and uses semantic versioning for extension releases.
 
 ### Added
 
+- Added Adapter-backed navigation for File-mode Shader Graph Custom Function
+  nodes. Definition opens the matching precision-suffixed HLSL declaration,
+  HLSL References return exact current graph node locations, and focused
+  diagnostics cover missing includes, invalid suffixes, and port/signature
+  mismatches. Version-specific graph decoding remains behind the Adapter with
+  provenance, explicit unsupported-version status, and a fact-free unavailable
+  fallback. (#97)
 - Added an Adapter-backed Variant comparison report for saved Shader assets.
   It compares Declared/static stage upper bounds with Unity Compile candidates
   and Kept Variants per Pass, Stage, build target, and graphics API, ranks the

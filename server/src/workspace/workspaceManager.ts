@@ -28,6 +28,7 @@ import {
   throwIfRequestCancelled,
 } from '../lifecycle/requestCancellation';
 import type { MaterialUsageProvider } from '../adapter/materialSource';
+import type { ShaderGraphUsageProvider } from '../adapter/shaderGraphSource';
 
 const MAX_WORKSPACE_SYMBOLS = 1000;
 
@@ -58,6 +59,7 @@ export interface WorkspaceManagerRuntimeOptions {
     folderUri: string,
   ) => IndexedRevisionCandidateConstructor;
   readonly materialUsages?: MaterialUsageProvider;
+  readonly shaderGraphUsages?: ShaderGraphUsageProvider;
 }
 
 export class WorkspaceManager implements DiagnosticWorkspaceService {
@@ -314,6 +316,7 @@ export class WorkspaceManager implements DiagnosticWorkspaceService {
         )
         : undefined,
       materialUsages: this.runtimeOptions.materialUsages,
+      shaderGraphUsages: this.runtimeOptions.shaderGraphUsages,
     });
     let resolveRetired!: () => void;
     const retired = new Promise<void>((resolve) => {

@@ -78,6 +78,12 @@ import {
   type MaterialPropertyTarget,
 } from './materialReferences';
 import type { MaterialUsageProvider } from '../adapter/materialSource';
+import type { ShaderGraphUsageProvider } from '../adapter/shaderGraphSource';
+import {
+  isShaderGraphUri,
+  currentShaderGraphUsages,
+  shaderGraphUsagesForDocument,
+} from './shaderGraphNavigation';
 
 export type { FileEvent } from './workspaceIndex';
 
@@ -88,6 +94,7 @@ export interface WorkspaceRuntimeOptions
   candidateConstructor?: IndexedRevisionCandidateConstructor;
   createLiveDocumentTreeSession?: LiveDocumentTreeSessionFactory;
   materialUsages?: MaterialUsageProvider;
+  shaderGraphUsages?: ShaderGraphUsageProvider;
 }
 
 interface DocumentReconcileRun {
@@ -116,6 +123,7 @@ export class Workspace implements IndexedWorkspace {
   private readonly candidateConstructor: IndexedRevisionCandidateConstructor;
   private readonly openDocuments: OpenDocumentsProvider | undefined;
   private readonly materialUsages: MaterialUsageProvider | undefined;
+  private readonly shaderGraphUsages: ShaderGraphUsageProvider | undefined;
   /**
    * The lifecycle mutation queue for initialization, rebuilds, watcher updates,
    * and settings changes. Once an operation starts, no peer on this tail can
@@ -142,6 +150,7 @@ export class Workspace implements IndexedWorkspace {
       ?? createDefaultIndexedRevisionCandidateConstructor(folderUri, options);
     this.openDocuments = options.openDocuments;
     this.materialUsages = options.materialUsages;
+    this.shaderGraphUsages = options.shaderGraphUsages;
     this.liveDocumentTrees = new LiveDocumentTreeSessions(
       options.createLiveDocumentTreeSession,
     );
@@ -187,14 +196,19 @@ export class Workspace implements IndexedWorkspace {
     if (
       this.disposed
       || !this.ownsProvidedDocument(document)
-      || !this.documentReconciler.acceptDocument(document, source)
     ) return Promise.resolve(false);
+    if (isShaderGraphUri(document.uri)) return Promise.resolve(true);
+    if (!this.documentReconciler.acceptDocument(document, source)) {
+      return Promise.resolve(false);
+    }
     if (this.published?.hasCommittedDocument(document)) return Promise.resolve(true);
     return this.reconcileDocumentAttempt(document);
   }
 
   closeDocument(input: { readonly uri: string; readonly openId: number }): Promise<void> {
-    if (this.disposed || !this.documentReconciler.acceptClose(input.uri, input.openId)) {
+    if (this.disposed) return Promise.resolve();
+    if (isShaderGraphUri(input.uri)) return Promise.resolve();
+    if (!this.documentReconciler.acceptClose(input.uri, input.openId)) {
       return Promise.resolve();
     }
     this.liveDocumentTrees.close(input.uri, input.openId);
@@ -202,6 +216,24 @@ export class Workspace implements IndexedWorkspace {
   }
 
   async diagnosticsAt(document: IndexedDocumentSnapshot): Promise<Diagnostic[] | null> {
+    if (isShaderGraphUri(document.uri)) {
+      if (!this.shaderGraphUsages) return [];
+      return this.queryRevision(
+        undefined,
+        [],
+        async (revision) => {
+          const result = await this.shaderGraphUsages!.shaderGraphCustomFunctions();
+          return revision.shaderGraphDiagnostics(
+            shaderGraphUsagesForDocument(result, document),
+          );
+        },
+        undefined,
+        undefined,
+        (revision) => !this.disposed
+          && this.published === revision
+          && this.ownsProvidedDocument(document),
+      );
+    }
     return this.queryRevision<Diagnostic[] | null>(
       document,
       null,
@@ -252,6 +284,25 @@ export class Workspace implements IndexedWorkspace {
     input: DefinitionAtInput,
   ): Promise<LocationLink[] | Location[] | null> {
     throwIfRequestCancelled(input.cancellation);
+    if (isShaderGraphUri(input.document.uri)) {
+      if (!this.shaderGraphUsages) return null;
+      return this.queryRevision(
+        undefined,
+        null,
+        async (revision) => {
+          const result = await this.shaderGraphUsages!.shaderGraphCustomFunctions();
+          return revision.shaderGraphDefinitionAt(
+            input,
+            shaderGraphUsagesForDocument(result, input.document),
+          );
+        },
+        input.cancellation,
+        undefined,
+        (revision) => !this.disposed
+          && this.published === revision
+          && this.ownsProvidedDocument(input.document),
+      );
+    }
     const facts = createCursorRequestFacts(
       input.document,
       input.position,
@@ -285,18 +336,35 @@ export class Workspace implements IndexedWorkspace {
     const result = await this.queryRevision<{
       readonly sourceLocations: Location[] | null;
       readonly materialTarget: MaterialPropertyTarget | undefined;
+      readonly graphLocations: Location[];
     }>(
       input.document,
-      { sourceLocations: null, materialTarget: undefined },
-      async (revision) => ({
-        sourceLocations: await revision.referencesAt(input, facts),
-        materialTarget: revision.materialPropertyTargetAt(input),
-      }),
+      { sourceLocations: null, materialTarget: undefined, graphLocations: [] },
+      async (revision) => {
+        const graphResult = this.shaderGraphUsages
+          ? await this.shaderGraphUsages.shaderGraphCustomFunctions()
+          : undefined;
+        const graphUsages = graphResult
+          ? await currentShaderGraphUsages(
+            graphResult,
+            this.openDocuments,
+            input.cancellation,
+          )
+          : [];
+        return {
+          sourceLocations: await revision.referencesAt(input, facts),
+          materialTarget: revision.materialPropertyTargetAt(input),
+          graphLocations: await revision.shaderGraphReferencesAt(input, graphUsages, facts),
+        };
+      },
       input.cancellation,
       facts.source,
     );
+    const sourceAndGraphLocations = result.graphLocations.length > 0
+      ? [...(result.sourceLocations ?? []), ...result.graphLocations]
+      : result.sourceLocations;
     if (!this.materialUsages || !result.materialTarget || this.disposed) {
-      return result.sourceLocations;
+      return sourceAndGraphLocations;
     }
     const materialLocations = await materialPropertyReferences(
       input.document.uri,
@@ -304,8 +372,8 @@ export class Workspace implements IndexedWorkspace {
       this.materialUsages,
       input.cancellation,
     );
-    if (this.disposed || materialLocations.length === 0) return result.sourceLocations;
-    return [...(result.sourceLocations ?? []), ...materialLocations];
+    if (this.disposed || materialLocations.length === 0) return sourceAndGraphLocations;
+    return [...(sourceAndGraphLocations ?? []), ...materialLocations];
   }
 
   async hoverAt(input: DocumentPositionInput): Promise<Hover | null> {
@@ -614,7 +682,9 @@ export class Workspace implements IndexedWorkspace {
   }
 
   private captureOpenDocuments(synchronizeOwnership = false): void {
-    const documents = this.openDocuments ? [...this.openDocuments()] : undefined;
+    const documents = this.openDocuments
+      ? [...this.openDocuments()].filter((document) => !isShaderGraphUri(document.uri))
+      : undefined;
     this.documentReconciler.captureProvider(
       documents ? () => documents : undefined,
       (uri) => this.containsDocument(uri),

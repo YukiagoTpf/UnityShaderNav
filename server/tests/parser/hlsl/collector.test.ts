@@ -22,6 +22,25 @@ describe('collector: functions', () => {
     expect((add as any).parameters.map((p: any) => p.name)).toEqual(['a', 'b']);
     expect((add as any).parameters.map((p: any) => p.type)).toEqual(['float4', 'float4']);
   });
+
+  it('retains output direction for Custom Function signature validation', async () => {
+    const text = 'void Apply(float3 Input, out half3 Output, inout float Weight) {}';
+    const tree = await parseHlsl(text);
+    const result = collect(tree.rootNode, text, 'file:///test/directions.hlsl', 0);
+
+    const apply = result.symbols.find(
+      (symbol) => symbol.kind === 'function' && symbol.name === 'Apply',
+    );
+    expect(apply).toMatchObject({
+      parameters: [
+        { name: 'Input', type: 'float3' },
+        { name: 'Output', type: 'half3', direction: 'out' },
+        { name: 'Weight', type: 'float', direction: 'inout' },
+      ],
+    });
+    expect((apply as { parameters: Array<{ direction?: string }> }).parameters
+      .map((parameter) => parameter.direction)).toEqual([undefined, 'out', 'inout']);
+  });
 });
 
 describe('collector: struct', () => {

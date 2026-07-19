@@ -50,6 +50,7 @@ export * from './adapter';
 export * from './cache';
 export * from './materials';
 export * from './settings';
+export * from './shaderGraph';
 export * from './structure';
 export * from './symbols';
 export * from './variants';

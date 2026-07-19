@@ -1,0 +1,44 @@
+{
+  "status": "available",
+  "shaderGraphVersion": "10.8.0",
+  "revision": "shader-graphs-10.8-r1",
+  "collectedAt": 1000,
+  "assets": [
+    {
+      "sourceRevision": {
+        "uri": "file:///project/Assets/Graphs/Waves.shadergraph",
+        "assetGuid": "graph-guid-10",
+        "contentHash": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "nodes": [
+        {
+          "nodeId": "node-10",
+          "displayName": "Build Waves",
+          "functionName": "BuildWaves",
+          "precision": "float",
+          "source": {
+            "uri": "file:///project/Assets/Shaders/Waves.hlsl",
+            "assetGuid": "hlsl-guid-10",
+            "path": "Assets/Shaders/Waves.hlsl"
+          },
+          "ports": [
+            { "name": "UV", "direction": "input", "type": "float2" },
+            { "name": "Out", "direction": "output", "type": "float3" }
+          ],
+          "nodeRange": {
+            "start": { "line": 4, "character": 0 },
+            "end": { "line": 18, "character": 1 }
+          },
+          "functionNameRange": {
+            "start": { "line": 8, "character": 20 },
+            "end": { "line": 8, "character": 30 }
+          },
+          "sourceRange": {
+            "start": { "line": 9, "character": 18 },
+            "end": { "line": 9, "character": 49 }
+          }
+        }
+      ]
+    }
+  ]
+}

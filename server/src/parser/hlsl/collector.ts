@@ -132,10 +132,15 @@ function collectParameters(
     const nameNode = declaratorNameNode(p.childForFieldName('declarator'));
     if (!nameNode) continue;
     markDecl(st, nameNode);
+    const direction = /\b(inout|out)\b/.exec(textOf(p))?.[1] as
+      | 'out'
+      | 'inout'
+      | undefined;
     out.push({
       name: textOf(nameNode),
       type: textOf(typeNode),
       range: offsetRange(rangeOf(nameNode), st.lineOffset),
+      ...(direction ? { direction } : {}),
     });
   }
   return out;

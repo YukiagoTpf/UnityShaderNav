@@ -18,6 +18,9 @@ Use F12 or VS Code's `Go to Definition` command on:
 - Symbols declared through supported Unity declaration macros.
 - Shader names referenced by `Fallback` or the shader segment of `UsePass`.
 - Pass names referenced by the final segment of `UsePass`.
+- File-mode Custom Function nodes in `.shadergraph` assets, when a compatible
+  Unity Editor Adapter supplies the node's logical source, precision, and port
+  facts.
 
 When multiple definitions are valid, UnityShaderNav returns all candidates and
 lets VS Code show Peek Definition. This is expected for preprocessor branches,
@@ -29,6 +32,12 @@ current shader. F12 on the HLSL declaration or reference also surfaces the
 matching property entry. When several declarations share the name, VS Code's
 Peek menu lists every candidate without picking one — the resolver remains
 conservative (see [ADR-0001](adr/0001-multi-candidate-peek-for-ambiguous-symbols.md)).
+
+For an Adapter-backed File-mode Custom Function node, F12 opens the exact HLSL
+include declaration named `<Function>_float` or `<Function>_half`. The
+declaration must match the node's ordered input/output port signature. The
+language server hashes the current graph text to validate the Adapter's saved
+asset revision, but never interprets `.shadergraph` serialization itself.
 
 ### Hover
 
@@ -66,7 +75,9 @@ Use Shift+F12 to find references in indexed user files. Package references are
 disabled by default because they can be noisy in large URP/HDRP projects.
 Shader declarations are connected to `Fallback` and the shader segment of
 `UsePass`; Pass `Name` declarations are connected to the final `UsePass`
-segment.
+segment. References on a matching precision-suffixed HLSL Custom Function also
+include Adapter-reported graph node positions whose saved graph revision is
+still current.
 
 Enable package references with:
 
@@ -91,6 +102,24 @@ preprocessor variants. Multiple candidates, a branch-dependent declaration,
 or a visible same-name macro suppresses the diagnostic rather than risking a
 false error. The diagnostic source is `UnityShaderNav` and its stable code is
 `unresolved-entry-point`.
+
+#### Shader Graph Custom Function contracts
+
+For each supported File-mode Custom Function fact, UnityShaderNav reports:
+
+- `shader-graph-source-missing` when the Adapter-resolved include is absent from
+  the published source index;
+- `shader-graph-invalid-precision-suffix` when the configured base name is not
+  a valid unsuffixed HLSL identifier or the include has no `_float` / `_half`
+  declaration selected by the node precision;
+- `shader-graph-signature-mismatch` when the declaration's return type, ordered
+  parameter names/types, or input/output directions differ from the node ports.
+
+These diagnostics identify the Unity and Shader Graph versions from Adapter
+provenance. An unavailable Adapter, an unadvertised capability, a stale graph
+revision, or an unsupported Shader Graph version produces no guessed graph
+facts or speculative diagnostics. Static ShaderLab/HLSL navigation remains
+unchanged.
 
 #### SRP Batcher material contracts
 

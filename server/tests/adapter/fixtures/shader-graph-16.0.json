@@ -1,0 +1,45 @@
+{
+  "status": "available",
+  "shaderGraphVersion": "16.0.6",
+  "revision": "shader-graphs-16.0-r1",
+  "collectedAt": 1000,
+  "assets": [
+    {
+      "sourceRevision": {
+        "uri": "file:///project/Assets/Graphs/Fog.shadergraph",
+        "assetGuid": "graph-guid-16",
+        "contentHash": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "nodes": [
+        {
+          "nodeId": "node-16",
+          "displayName": "Apply Fog",
+          "functionName": "ApplyFog",
+          "precision": "half",
+          "source": {
+            "uri": "file:///project/Assets/Shaders/Fog.hlsl",
+            "assetGuid": "hlsl-guid-16",
+            "path": "Assets/Shaders/Fog.hlsl"
+          },
+          "ports": [
+            { "name": "Color", "direction": "input", "type": "half3" },
+            { "name": "Density", "direction": "input", "type": "half" },
+            { "name": "Out", "direction": "output", "type": "half3" }
+          ],
+          "nodeRange": {
+            "start": { "line": 21, "character": 0 },
+            "end": { "line": 38, "character": 1 }
+          },
+          "functionNameRange": {
+            "start": { "line": 27, "character": 17 },
+            "end": { "line": 27, "character": 25 }
+          },
+          "sourceRange": {
+            "start": { "line": 28, "character": 17 },
+            "end": { "line": 28, "character": 46 }
+          }
+        }
+      ]
+    }
+  ]
+}
