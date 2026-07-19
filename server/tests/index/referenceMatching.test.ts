@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Range } from '@unity-shader-nav/shared';
 import type { ReferenceTarget } from '../../src/index/referenceResolver';
 import {
+  isReferenceContextCompatible,
   sameMethodOverload,
   sameTarget,
   uniqueLocations,
@@ -17,6 +18,19 @@ function target(uri: string): ReferenceTarget {
 }
 
 describe('reference identity matching', () => {
+  it('matches reference contexts to the symbol kinds that can own them', () => {
+    const functionTarget = { ...target('file:///project/Functions.hlsl'), kind: 'function' } as const;
+    const structTarget = { ...target('file:///project/Types.hlsl'), kind: 'struct' } as const;
+    const variableTarget = target('file:///project/Variables.hlsl');
+
+    expect(isReferenceContextCompatible(functionTarget, 'call')).toBe(true);
+    expect(isReferenceContextCompatible(functionTarget, 'pragma')).toBe(true);
+    expect(isReferenceContextCompatible(functionTarget, 'identifier')).toBe(false);
+    expect(isReferenceContextCompatible(structTarget, 'type')).toBe(true);
+    expect(isReferenceContextCompatible(structTarget, 'call')).toBe(false);
+    expect(isReferenceContextCompatible(variableTarget, 'member')).toBe(true);
+  });
+
   it('keeps method locations distinct while recognizing their shared overload', () => {
     const declaration: ReferenceTarget = {
       name: 'Shade',

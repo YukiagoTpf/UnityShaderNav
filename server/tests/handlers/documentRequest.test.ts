@@ -116,6 +116,34 @@ describe('createDocumentRequestHandler', () => {
     cancellation.dispose();
   });
 
+  it('rejects cancellation delivered after the workspace query settles', async () => {
+    const query = deferred<string>();
+    const queryStarted = deferred<void>();
+    const cancellation = new CancellationTokenSource();
+    const handler = createDocumentRequestHandler(
+      { snapshot: () => document },
+      { servingWorkspaceFor: () => workspace },
+      undefined,
+      {
+        uri: (params: { uri: string }) => params.uri,
+        neutral: () => 'neutral',
+        resolve: () => {
+          queryStarted.resolve();
+          return query.promise;
+        },
+      },
+    );
+
+    const request = handler({ uri: document.uri }, cancellation.token);
+    await queryStarted.promise;
+    const cancelAfterQuery = query.promise.then(() => cancellation.cancel());
+    query.resolve('completed result');
+
+    await cancelAfterQuery;
+    await expect(request).rejects.toMatchObject({ code: LSPErrorCodes.RequestCancelled });
+    cancellation.dispose();
+  });
+
   it('captures an open snapshot, routes it, and resolves the request', async () => {
     const documents = { snapshot: vi.fn(() => document) };
     const manager = { servingWorkspaceFor: vi.fn(() => workspace) };

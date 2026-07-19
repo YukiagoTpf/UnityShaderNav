@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import type { FileIndex, Range, SymbolEntry } from '@unity-shader-nav/shared';
+import type {
+  FileIndex,
+  FunctionSymbolEntry,
+  Range,
+  SymbolEntry,
+} from '@unity-shader-nav/shared';
 import { GlobalSymbolIndex } from '../../src/index';
-import { resolveReferenceTargets } from '../../src/index/referenceResolver';
+import {
+  resolveReferenceTargets,
+  symbolToTarget,
+} from '../../src/index/referenceResolver';
 
 const uri = 'file:///project/Assets/Main.hlsl';
 
@@ -28,6 +36,42 @@ function sym(overrides: Partial<SymbolEntry> & Pick<SymbolEntry, 'name' | 'kind'
     ...overrides,
   } as SymbolEntry;
 }
+
+describe('reference target projection', () => {
+  it('preserves scope and member overload identity from indexed symbols', () => {
+    const scopeRange = scope(0, 0, 3, 1);
+    const local = sym({
+      name: 'value',
+      kind: 'localVariable',
+      scopeRange,
+      location: { uri, range: range(1, 8, 13) },
+    });
+    const method: FunctionSymbolEntry = {
+      name: 'Shade',
+      kind: 'function',
+      parentType: 'Surface',
+      returnType: 'float4',
+      parameters: [{ name: 'normal', type: 'float3', range: range(0, 13, 19) }],
+      location: { uri, range: range(0, 7, 12) },
+    };
+
+    expect(symbolToTarget(local)).toEqual({
+      name: 'value',
+      kind: 'localVariable',
+      uri,
+      range: local.location.range,
+      scopeRange,
+    });
+    expect(symbolToTarget(method)).toEqual({
+      name: 'Shade',
+      kind: 'function',
+      uri,
+      range: method.location.range,
+      parentType: 'Surface',
+      methodSignature: 'float4|float3',
+    });
+  });
+});
 
 describe('resolveReferenceTargets', () => {
   it('targets a local variable without merging another function local with the same name', () => {

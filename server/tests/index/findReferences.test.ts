@@ -111,6 +111,26 @@ describe('findReferences', () => {
     }
   });
 
+  it('uses the declaration kind to disambiguate same-name global symbols', async () => {
+    const uri = 'file:///t/KindAwareRefs.hlsl';
+    const text = [
+      'float Shared;',
+      'float Shared() { return 0; }',
+      'float UseVariable() { return Shared; }',
+      'float UseFunction() { return Shared(); }',
+    ].join('\n');
+    const base = await setup(uri, text);
+
+    const refs = await referencesAt(
+      base,
+      tokenPosition(text, 0, 'Shared'),
+      true,
+      text,
+    );
+
+    expect(refs.map((location) => location.range.start.line)).toEqual([0, 2]);
+  });
+
   it('narrows scoped locals to the active function scope', async () => {
     const uri = 'file:///t/ScopedRefs.hlsl';
     const text = [
