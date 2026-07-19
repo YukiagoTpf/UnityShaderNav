@@ -1,9 +1,11 @@
 import { commands, env, ExtensionContext, Uri, window } from 'vscode';
 import {
+  ADAPTER_STATUS_REQUEST,
   INDEX_STATUS_NOTIFICATION,
   INDEX_STATUS_REQUEST,
   OPEN_VARIANT_COST_DOCUMENTATION_COMMAND,
   VARIANT_COST_DOCUMENTATION_URL,
+  type AdapterStatus,
   type IndexStatusSnapshot,
 } from '@unity-shader-nav/shared';
 import { LanguageClient, State } from 'vscode-languageclient/node';
@@ -12,7 +14,11 @@ import { setupInactiveRegions } from './inactiveRegions';
 import { createVariantContextPicker } from './variantContextPicker';
 import { IndexStatusController, indexStatusDetails } from './indexStatus';
 import { IndexStatusSession } from './indexStatusSession';
-import { reportClientError, reportIndexStatus } from './output';
+import {
+  reportAdapterStatus,
+  reportClientError,
+  reportIndexStatus,
+} from './output';
 import { StatusBar } from './statusBar';
 import {
   SHOW_INDEX_STATUS_COMMAND,
@@ -72,6 +78,12 @@ export async function activate(context: ExtensionContext): Promise<void> {
     () => env.openExternal(Uri.parse(VARIANT_COST_DOCUMENTATION_URL)),
   ));
   await client.start();
+  try {
+    const adapterStatus = await client.sendRequest<AdapterStatus>(ADAPTER_STATUS_REQUEST);
+    reportAdapterStatus(outputChannel, adapterStatus);
+  } catch (error) {
+    reportError('Failed to query Adapter status', error);
+  }
   setupFileWatchers(client, context, reportError);
   setupInactiveRegions(client, context, reportError);
   const picker = createVariantContextPicker(client, () => {

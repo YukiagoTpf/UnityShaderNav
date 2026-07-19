@@ -1,3 +1,7 @@
+import type {
+  AdapterStatus,
+  AdapterUnavailableReason,
+} from '@unity-shader-nav/shared';
 import type { IndexStatusDetail } from './indexStatus';
 
 export interface ClientOutput {
@@ -29,4 +33,34 @@ export function reportIndexStatus(
       status.detail,
     ].filter((part): part is string => part !== undefined).join(' · '));
   }
+}
+
+const ADAPTER_UNAVAILABLE_LABELS: Readonly<Record<AdapterUnavailableReason, string>> = {
+  'no-adapter': 'no Adapter available',
+  stale: 'stale handshake rejected',
+  'foreign-project': 'foreign project rejected',
+  disconnected: 'Adapter disconnected',
+  'version-incompatible': 'incompatible interface version rejected',
+};
+
+export function reportAdapterStatus(
+  output: ClientOutput,
+  status: AdapterStatus,
+): void {
+  if (status.mode === 'standalone') {
+    output.appendLine(`[Adapter] Standalone · ${ADAPTER_UNAVAILABLE_LABELS[status.reason]}`);
+    return;
+  }
+
+  const capabilities = status.capabilities;
+  const supportedFeatures = capabilities.supportedFeatures.length > 0
+    ? capabilities.supportedFeatures.join(', ')
+    : 'none';
+  output.appendLine([
+    '[Adapter] Connected',
+    `Unity ${capabilities.unityVersion}`,
+    `project ${capabilities.projectId}`,
+    `Adapter ${capabilities.adapterVersion}`,
+    `features: ${supportedFeatures}`,
+  ].join(' · '));
 }

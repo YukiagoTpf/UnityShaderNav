@@ -46,6 +46,7 @@ export interface IndexStatusSnapshot {
   readonly workspaces: readonly WorkspaceIndexStatus[];
 }
 
+export * from './adapter';
 export * from './cache';
 export * from './settings';
 export * from './structure';

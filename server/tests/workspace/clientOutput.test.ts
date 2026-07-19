@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  reportAdapterStatus,
   reportClientError,
   reportIndexStatus,
 } from '../../../client/src/output';
@@ -29,5 +30,36 @@ describe('client output reporting', () => {
       '[Index Status]',
       'Failed · package-resolution · file:///project · Packages/packages-lock.json is malformed',
     ]);
+  });
+
+  it('writes every Adapter capability reported by the server', () => {
+    const output = { appendLine: vi.fn() };
+
+    reportAdapterStatus(output, {
+      mode: 'adapter',
+      capabilities: {
+        unityVersion: '2022.3.62f1',
+        projectId: 'project-a',
+        adapterVersion: '0.1.0',
+        supportedFeatures: ['adapter-status'],
+      },
+    });
+
+    expect(output.appendLine).toHaveBeenCalledWith(
+      '[Adapter] Connected · Unity 2022.3.62f1 · project project-a · Adapter 0.1.0 · features: adapter-status',
+    );
+  });
+
+  it('writes the Standalone fallback reason', () => {
+    const output = { appendLine: vi.fn() };
+
+    reportAdapterStatus(output, {
+      mode: 'standalone',
+      reason: 'no-adapter',
+    });
+
+    expect(output.appendLine).toHaveBeenCalledWith(
+      '[Adapter] Standalone · no Adapter available',
+    );
   });
 });

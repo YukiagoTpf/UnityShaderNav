@@ -9,11 +9,13 @@ import {
   type VariantContextParams,
   type VariantContextResult,
 } from '@unity-shader-nav/shared';
+import { AdapterRegistry } from './adapter/adapterRegistry';
 import { loadSettings, onSettingsChanged } from './config';
-import { registerCompletionHandler } from './handlers/completion';
+import { registerAdapterStatusHandler } from './handlers/adapterStatus';
 import { registerCodeActionHandler } from './handlers/codeActions';
 import { registerCodeLensHandler } from './handlers/codeLens';
 import { registerColorHandlers } from './handlers/colors';
+import { registerCompletionHandler } from './handlers/completion';
 import { registerDefinitionHandler } from './handlers/definition';
 import { registerDocumentHighlightHandler } from './handlers/documentHighlight';
 import { registerDocumentSymbolHandler } from './handlers/documentSymbol';
@@ -39,8 +41,11 @@ import { throwIfRequestCancelled } from './lifecycle/requestCancellation';
 
 const connection = getConnection();
 const manager = new WorkspaceManager();
+const adapterRegistry = new AdapterRegistry();
 const suspender = new RequestSuspender({ timeoutMs: 5000 });
 let globalStorageDir: string | undefined;
+
+registerAdapterStatusHandler(connection, adapterRegistry);
 
 // Status remains queryable during the bounded cold-start request gate.
 connection.onRequest(
