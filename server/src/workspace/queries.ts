@@ -57,7 +57,8 @@ import type {
 import type { CursorRequestFacts } from './requestFacts';
 import type { WorkspaceIndexReadView } from './workspaceIndex';
 import { SEMANTIC_TOKEN_TYPES } from './semanticTokenLegend';
-import { variantContextStore } from './variantContextStore';
+import type { PreprocessorContext } from '../parser/preproc/context';
+import { analyzeInactiveRegions } from '../parser/preproc/analyzeInactiveRegions';
 import {
   completeShaderLabName,
   shaderLabNameDefinitions,
@@ -216,6 +217,7 @@ export async function queryCompletion(
   input: DocumentPositionInput,
   analysis?: DocumentAnalysis,
   facts?: CursorRequestFacts,
+  preprocessorContext?: PreprocessorContext,
 ): Promise<CompletionItem[] | null> {
   throwIfRequestCancelled(input.cancellation);
   const { document, position } = input;
@@ -241,6 +243,8 @@ export async function queryCompletion(
     uri: document.uri,
     position,
     cancellation: input.cancellation,
+    preprocessorContext,
+    text: document.text,
     query: context.member
       ? {
         kind: 'member',
@@ -339,9 +343,6 @@ export async function queryHighlights(
     global: state.index.global,
     options: { visibleUriKeys },
     cancellation: input.cancellation,
-    variantContext: variantContextStore.get(document.uri) ?? undefined,
-    getText: (uri: string) => (uri === document.uri ? document.text : undefined),
-    isShaderLab: isShaderLabUri(document.uri),
   }).map((location): DocumentHighlight => ({
     range: location.range,
     kind: DocumentHighlightKind.Text,
@@ -364,11 +365,29 @@ export async function querySemanticTokens(
   state: WorkspaceQueryState,
   input: IndexedDocumentQueryInput,
   lexicalTokens?: readonly DocumentLexicalToken[],
+  preprocessorContext?: PreprocessorContext,
 ): Promise<SemanticTokens> {
   throwIfRequestCancelled(input.cancellation);
   const index = state.index.store.get(input.uri);
+  const inactive = preprocessorContext && input.document
+    ? analyzeInactiveRegions(input.document.text, {
+      isShaderLab: isShaderLabUri(input.uri),
+      context: preprocessorContext,
+    }).filter((region) => region.reason === 'inactive')
+    : [];
+  const isActiveLine = inactive.length > 0
+    ? (line: number): boolean => !inactive.some((region) => (
+      region.range.start.line <= line && line <= region.range.end.line
+    ))
+    : undefined;
   return index
-    ? await semanticTokensForIndex(index, state.index.global, lexicalTokens, input.cancellation)
+    ? await semanticTokensForIndex(
+      index,
+      state.index.global,
+      lexicalTokens,
+      input.cancellation,
+      isActiveLine,
+    )
     : { data: [] };
 }
 
@@ -557,6 +576,7 @@ async function semanticTokensForIndex(
   global?: SymbolLookup,
   lexicalTokens?: readonly DocumentLexicalToken[],
   cancellation?: CancellationToken,
+  isActiveLine?: (line: number) => boolean,
 ): Promise<SemanticTokens> {
   const macroNames = new Set<string>();
   const progress = { processed: 0 };
@@ -584,18 +604,23 @@ async function semanticTokensForIndex(
   for (const symbol of index.symbols) {
     const checkpoint = semanticTokenCheckpoint(progress, cancellation);
     if (checkpoint) await checkpoint;
+    if (isActiveLine?.(symbol.location.range.start.line) === false) continue;
     tokens.push({ range: symbol.location.range, tokenType: symbolTokenType(symbol.kind) });
   }
   for (const reference of index.references) {
     const checkpoint = semanticTokenCheckpoint(progress, cancellation);
     if (checkpoint) await checkpoint;
     const tokenType = referenceTokenType(reference, macroNames);
-    if (tokenType) tokens.push({ range: reference.location.range, tokenType });
+    if (
+      tokenType
+      && isActiveLine?.(reference.location.range.start.line) !== false
+    ) tokens.push({ range: reference.location.range, tokenType });
   }
   if (lexicalTokens) {
     for (const token of lexicalTokens) {
       const checkpoint = semanticTokenCheckpoint(progress, cancellation);
       if (checkpoint) await checkpoint;
+      if (isActiveLine?.(token.range.start.line) === false) continue;
       tokens.push({ range: token.range, tokenType: token.tokenType });
     }
   }

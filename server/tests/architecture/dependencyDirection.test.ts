@@ -660,6 +660,7 @@ describe('server dependency direction', () => {
     for (const moduleId of [
       'workspace/navigation.ts',
       'workspace/queries.ts',
+      'workspace/includePointContexts.ts',
       'suggestions/projectCandidates.ts',
       'index/resolution.ts',
     ]) {
@@ -791,6 +792,7 @@ describe('server dependency direction', () => {
       indexedRevisionId,
       'workspace/navigation.ts',
       'workspace/queries.ts',
+      'workspace/includePointContexts.ts',
     ]);
 
     const workspaceIndex = readFileSync(resolve(SOURCE_ROOT, workspaceIndexId), 'utf8');

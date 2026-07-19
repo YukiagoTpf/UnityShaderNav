@@ -1,9 +1,11 @@
 import { getConnection, createInitializeResult } from './connection';
 import {
   INDEX_STATUS_REQUEST,
+  INCLUDE_POINT_CONTEXT_CHANGED_NOTIFICATION,
   VARIANT_CONTEXT_CHANGED_NOTIFICATION,
   VARIANT_CONTEXT_REQUEST,
   type IndexStatusSnapshot,
+  type IncludePointContextChangedParams,
   type VariantContext,
   type VariantContextChangedParams,
   type VariantContextParams,
@@ -25,6 +27,7 @@ import { registerDocuments } from './handlers/documents';
 import { registerHoverHandler } from './handlers/hover';
 import { registerDocumentFormattingHandler } from './handlers/formatting';
 import { registerInactiveRegionsHandler } from './handlers/inactiveRegions';
+import { registerIncludePointContextsHandler } from './handlers/includePointContexts';
 import { registerVariantKeywordsHandler } from './handlers/variantKeywords';
 import { registerReferencesHandler } from './handlers/references';
 import { registerRenameHandler } from './handlers/rename';
@@ -37,6 +40,7 @@ import { RequestSuspender } from './lifecycle/requestSuspender';
 import { initializeWorkspaceFolders } from './lifecycle/workspaceFolderCoordinator';
 import { WorkspaceManager } from './workspace';
 import { variantContextStore } from './workspace/variantContextStore';
+import { includePointContextStore } from './workspace/includePointContextStore';
 import type { CancellationToken } from 'vscode-languageserver/node';
 import { throwIfRequestCancelled } from './lifecycle/requestCancellation';
 
@@ -66,6 +70,22 @@ connection.onNotification(
       ? { activeKeywords: new Set(params.context.activeKeywords) }
       : null;
     variantContextStore.set(params.textDocument.uri, ctx);
+  },
+);
+
+connection.onNotification(
+  INCLUDE_POINT_CONTEXT_CHANGED_NOTIFICATION,
+  (params: IncludePointContextChangedParams) => {
+    includePointContextStore.set(params.folderUri, params.selection);
+    manager.requestDiagnosticsRefresh();
+    void Promise.resolve().then(
+      () => connection.languages.semanticTokens.refresh(),
+    ).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      connection.console.error(
+        `[UnityShaderNav] semantic-token Context refresh failed: ${message}`,
+      );
+    });
   },
 );
 
@@ -170,6 +190,7 @@ registerInactiveRegionsHandler(
   (uri) => loadSettings(connection, uri),
   suspender,
 );
+registerIncludePointContextsHandler(connection, manager, suspender);
 registerVariantKeywordsHandler(connection, documents);
 registerCodeLensHandler(connection, documents);
 registerFileWatchers(

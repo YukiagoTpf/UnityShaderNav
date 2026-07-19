@@ -1,6 +1,6 @@
 import type { CancellationToken, Location } from 'vscode-languageserver/node';
 import type { FileIndex, Position, SymbolEntry } from '@unity-shader-nav/shared';
-import type { VariantContext } from '@unity-shader-nav/shared';
+import type { PreprocessorContext } from '../parser/preproc/context';
 import type { GlobalSymbolReader } from './globalIndex';
 import type { GlobalReferenceReader } from './globalReferences';
 import type { IndexStoreReader } from './indexStore';
@@ -39,7 +39,7 @@ export interface ResolverContext {
   global: GlobalSymbolReader | null;
   position: Position;
   options?: ResolutionOptions;
-  variantContext?: VariantContext;
+  variantContext?: PreprocessorContext;
   getText?: (uri: string) => string | undefined;
   isShaderLab?: boolean;
 }
@@ -75,13 +75,14 @@ export function resolveDefinition(target: CursorTarget, ctx: ResolverContext): S
 function filterByVariantContext(
   candidates: SymbolEntry[],
   ctx: {
-    variantContext?: VariantContext;
+    variantContext?: PreprocessorContext;
     getText?: (uri: string) => string | undefined;
     isShaderLab?: boolean;
   },
 ): SymbolEntry[] {
   if (!ctx.variantContext || !ctx.getText) return candidates;
   const active: SymbolEntry[] = [];
+  const inactive: SymbolEntry[] = [];
   for (const c of candidates) {
     const text = ctx.getText(c.location.uri);
     if (!text) {
@@ -90,9 +91,12 @@ function filterByVariantContext(
     }
     if (isLineActive(text, c.location.range.start.line, ctx.variantContext, ctx.isShaderLab)) {
       active.push(c);
+    } else {
+      inactive.push(c);
     }
   }
-  return active.length > 0 ? active : candidates;
+  // Context ranks but never deletes a conservative navigation candidate.
+  return [...active, ...inactive];
 }
 
 export interface ReferenceCollectionContext {
@@ -106,7 +110,7 @@ export interface ReferenceCollectionContext {
   includePackages: boolean;
   includeDeclaration: boolean;
   cancellation?: CancellationToken;
-  variantContext?: VariantContext;
+  variantContext?: PreprocessorContext;
   getText?: (uri: string) => string | undefined;
   isShaderLab?: boolean;
 }
@@ -357,13 +361,14 @@ function uniqueReferenceTargetsByLocation(
 function filterLocationsByVariantContext(
   locations: Location[],
   ctx: {
-    variantContext?: VariantContext;
+    variantContext?: PreprocessorContext;
     getText?: (uri: string) => string | undefined;
     isShaderLab?: boolean;
   },
 ): Location[] {
   if (!ctx.variantContext || !ctx.getText) return locations;
   const active: Location[] = [];
+  const inactive: Location[] = [];
   for (const loc of locations) {
     const text = ctx.getText(loc.uri);
     if (!text) {
@@ -372,9 +377,11 @@ function filterLocationsByVariantContext(
     }
     if (isLineActive(text, loc.range.start.line, ctx.variantContext, ctx.isShaderLab)) {
       active.push(loc);
+    } else {
+      inactive.push(loc);
     }
   }
-  return active.length > 0 ? active : locations;
+  return [...active, ...inactive];
 }
 
 export interface HighlightCollectionContext {
@@ -383,7 +390,7 @@ export interface HighlightCollectionContext {
   global: GlobalSymbolReader;
   options?: ResolutionOptions;
   cancellation?: CancellationToken;
-  variantContext?: VariantContext;
+  variantContext?: PreprocessorContext;
   getText?: (uri: string) => string | undefined;
   isShaderLab?: boolean;
 }

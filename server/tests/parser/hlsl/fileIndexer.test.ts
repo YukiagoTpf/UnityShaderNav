@@ -155,6 +155,44 @@ describe('fileIndexer: .shader multi-pass', () => {
     expect(macro?.location.range.start).toEqual({ line: 4, character: 14 });
   });
 
+  it('captures program stages and kernel defines for include-point Context facts', async () => {
+    const text = [
+      'Shader "T/Contexts" {',
+      '  HLSLINCLUDE',
+      '  #define SHARED_CONTEXT',
+      '  ENDHLSL',
+      '  SubShader {',
+      '    Pass {',
+      '      Name "ContextPass"',
+      '      HLSLPROGRAM',
+      '      #pragma raytracing RayGen',
+      '      #pragma kernel ComputeMain FEATURE_ON VALUE=1',
+      '      #include "Shared.hlsl"',
+      '      ENDHLSL',
+      '    }',
+      '  }',
+      '}',
+    ].join('\n');
+
+    const idx = await indexFile('file:///t/contexts.shader', text);
+
+    expect(idx.shaderContext?.programs).toEqual([
+      expect.objectContaining({
+        shaderName: 'T/Contexts',
+        passName: 'ContextPass',
+        sharedBlockIndices: [0],
+        stages: [
+          expect.objectContaining({ stage: 'raytracing', entryPoint: 'RayGen' }),
+          expect.objectContaining({
+            stage: 'kernel',
+            entryPoint: 'ComputeMain',
+            defines: ['FEATURE_ON', 'VALUE'],
+          }),
+        ],
+      }),
+    ]);
+  });
+
   it('ignores pragma references inside block comments in shader HLSL blocks', async () => {
     const text = [
       'Shader "T" {',

@@ -9,6 +9,13 @@ and uses semantic versioning for extension releases.
 
 ### Added
 
+- Added a session-only Shader include-point Context picker for shared HLSL/CG
+  files. Each published revision derives known Shader, Pass, stage, source
+  location, and deterministic macro state; selecting one sharpens inactive
+  regions, semantic tokens, completion, and diagnostics while Definition,
+  References, and Highlights retain every conservative candidate. Stale or
+  deleted include points fall back to Auto without rebuilding unrelated roots
+  or persisting the selection in the index/cache. (#88)
 - Added declared/static Variant cost CodeLens for explicit `multi_compile` and
   `shader_feature` keyword sets. Each supported pragma shows its normalized set
   multiplier, scope/stage, and program contribution; each program marker shows
@@ -19,9 +26,8 @@ and uses semantic versioning for extension releases.
   let the user toggle active `multi_compile` / `shader_feature` keywords for the
   current `.shader` / `.hlsl` document. With a context selected, variant-gated
   branches resolve to active (bright) or inactive (dimmed), and F12 / Find
-  References / Highlights prefer the active variant — jumping directly when the
-  context makes it unique. The default (no context) behaviour is unchanged;
-  ambiguity always falls back to the conservative multi-candidate Peek.
+  References / Highlights prefer active candidates without removing any
+  conservative result. The default (no context) behaviour is unchanged.
   (Epic #77, slices #154–#158.)
 - Added a presentation-only `UNITY_VERSION` Hover derived from the captured
   project Editor version. Unknown projects stay neutral, and indexed macro

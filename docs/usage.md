@@ -244,10 +244,9 @@ active keywords for the current document:
 - **Dimming**: branches gated by an active keyword brighten (no longer dimmed);
   branches gated by an inactive keyword dim as "inactive" (definitely off in
   this context). Branches gated by unknown macros stay visible (conservative).
-- **F12 / Find References / Highlights**: when the context makes exactly one
-  branch active, navigation jumps directly to it (no Peek). When several
-  branches remain active, all are returned. When the context rules out every
-  candidate, all are returned (never an empty result).
+- **F12 / Find References / Highlights**: every conservative candidate remains
+  available. Candidates active in the selected context rank first; a context
+  never removes valid navigation results.
 - **Clear (conservative)**: removes the context and restores the default
   behaviour.
 
@@ -255,11 +254,31 @@ The selection is kept in memory for the editor session; it is not persisted
 across restarts. No settings are required. The feature is purely opt-in —
 opening the picker is never required, and the default behaviour is unchanged.
 
-This is a user-driven, presentation/navigation-narrowing aid, not a
+This is a user-driven presentation and candidate-ordering aid, not a
 compiler-accurate variant resolver. It covers only the keywords the document
 itself declares; platform defines and material/global keyword state are out of
 scope. The selection does not enumerate the combinations shown by the separate
 declared-cost presentation below.
+
+### Shader Include-point Context
+
+A shared `.hlsl`, `.cginc`, or `.hlslinc` file can be reached from several
+Shader programs with different macro state. When the published index knows at
+least one such route, the **Context: Auto** status-bar item opens a QuickPick of
+known Shader, Pass, stage, entry-point, and include-location combinations.
+
+Selecting one Context applies the deterministic `#define` / `#undef` state
+accumulated along that concrete include chain to inactive-region dimming,
+semantic coloring, completion ordering, and static diagnostics. Nested include
+chains are supported. Definition, References, and Highlights deliberately keep
+all conservative candidates; active candidates may rank first, and the status
+bar keeps the selected Context visible.
+
+The selection belongs to the client session and is never written to the index
+or cache. It is tied to the exact published revision that supplied the list, so
+a live edit, rebuild, deletion, or newly invisible include point switches the
+selection back to **Auto** instead of combining facts from two revisions.
+Choosing a Context does not rebuild the Workspace or unrelated roots.
 
 ### Declared Variant Cost
 

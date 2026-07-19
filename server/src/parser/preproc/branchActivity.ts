@@ -1,5 +1,5 @@
-import type { VariantContext } from '@unity-shader-nav/shared';
 import { analyzeInactiveRegions } from './analyzeInactiveRegions';
+import type { PreprocessorContext } from './context';
 
 /**
  * Returns true if the code at `line` (0-based) is inside an active branch given
@@ -16,7 +16,7 @@ import { analyzeInactiveRegions } from './analyzeInactiveRegions';
 export function isLineActive(
   text: string,
   line: number,
-  context?: VariantContext,
+  context?: PreprocessorContext,
   isShaderLab = false,
 ): boolean {
   const regions = analyzeInactiveRegions(text, { isShaderLab, context });

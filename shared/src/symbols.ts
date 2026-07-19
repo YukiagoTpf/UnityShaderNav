@@ -1,4 +1,5 @@
 import type {
+  ShaderContextSourceFacts,
   ShaderLabMaterialFacts,
   ShaderLabNameFacts,
   StructureResult,
@@ -84,4 +85,6 @@ export interface FileIndex {
   shaderLabNames?: ShaderLabNameFacts;
   /** SRP evidence and exact UnityPerMaterial layouts for `.shader`. */
   shaderLabMaterial?: ShaderLabMaterialFacts;
+  /** Revision-grounded source facts for include-point Shader Contexts. */
+  shaderContext?: ShaderContextSourceFacts;
 }

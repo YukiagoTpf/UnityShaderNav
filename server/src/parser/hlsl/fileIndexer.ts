@@ -18,6 +18,7 @@ import type { LiveDocumentTreeSession } from './liveDocumentTreeSession';
 import { collect } from './collector';
 import { scanIncludes } from '../include/lineScanner';
 import { scanDefines } from '../preproc/scanDefines';
+import { scanShaderContextSource } from '../preproc/scanShaderContext';
 
 const HLSL_EXTS = new Set(['.hlsl', '.cginc', '.hlslinc', '.compute']);
 
@@ -183,6 +184,7 @@ export async function indexFileWithTreeProvider(
     idx.references.push(...scanIncludeReferences(source, 0, uri));
     pushDefines(source, 0, uri, idx.symbols);
     if (recognizer) idx.references.push(...scanPragmas(source, 0, recognizer, uri));
+    idx.shaderContext = scanShaderContextSource(source);
     return idx;
   }
 
@@ -221,6 +223,7 @@ export async function indexFileWithTreeProvider(
     merged.structure = structure;
     merged.shaderLabNames = analysis.shaderLabNames;
     merged.shaderLabMaterial = analysis.shaderLabMaterial;
+    merged.shaderContext = scanShaderContextSource(source, blocks, structure);
     const properties = analysis.shaderLabProperties.entries;
     if (properties.length > 0) merged.properties = [...properties];
     return merged;

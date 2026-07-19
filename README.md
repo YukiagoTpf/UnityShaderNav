@@ -54,8 +54,13 @@ The extension focuses on fast code navigation:
   unaffected).
 - Optional variant-context picker (status bar + QuickPick) to resolve
   `multi_compile` / `shader_feature` ambiguity: active branches brighten,
-  inactive ones dim, and F12 jumps directly to the active variant when the
-  context makes it unique. Opt-in; default behaviour is unchanged.
+  inactive ones dim, and active navigation candidates rank first while every
+  conservative candidate remains available. Opt-in; default behaviour is
+  unchanged.
+- Session-only Shader Context picker for shared HLSL/CG includes. Known
+  Shader, Pass, stage, and include-point combinations come from one published
+  index revision; selecting one sharpens dimming, semantic coloring,
+  completion, and diagnostics without narrowing navigation results.
 - Declared/static Variant cost CodeLens for explicit `multi_compile` and
   `shader_feature` keyword sets, including per-program upper bounds, scope,
   stage, and largest-multiplier facts without claiming Unity build counts.
@@ -162,8 +167,10 @@ See [Configuration](docs/configuration.md) for the full explanation and examples
 - Preprocessor conditions are not evaluated by default; multiple valid
   definitions can be returned through VS Code Peek Definition. The optional
   Variant Context picker can resolve declared `multi_compile` / `shader_feature`
-  keywords for dimming and navigation, but this is user-driven and does not
-  constitute compiler-accurate variant resolution.
+  keywords for presentation and candidate ordering, but this is user-driven
+  and does not constitute compiler-accurate variant resolution. Shared include
+  files can additionally select one known Shader include-point Context; it is
+  revision-bound, session-only, and falls back to Auto after publication.
 - Macro bodies are not expanded. Built-in and user-configured declaration
   patterns cover common Unity macro declarations.
 - Surface Shader implicit parameters and ShaderGraph generated code are not

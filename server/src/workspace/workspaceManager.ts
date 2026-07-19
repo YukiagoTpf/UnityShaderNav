@@ -8,6 +8,8 @@ import type {
 import {
   INDEX_STATUS_NOTIFICATION,
   type ExtensionSettings,
+  type IncludePointContextsResult,
+  type InactiveRegion,
   type IndexStatusSnapshot,
 } from '@unity-shader-nav/shared';
 import { detectUnityRoot } from './detectUnityRoot';
@@ -93,11 +95,32 @@ export class WorkspaceManager implements DiagnosticWorkspaceService {
     this.diagnosticsRefresh = refresh;
   }
 
+  requestDiagnosticsRefresh(): void {
+    this.diagnosticsRefresh?.();
+  }
+
   openDocumentSnapshot(uri: string): IndexedDocumentSnapshot | undefined {
     for (const document of this.openDocumentSnapshots()) {
       if (uriKey(document.uri) === uriKey(uri)) return document;
     }
     return undefined;
+  }
+
+  async knownIncludePointContextsFor(uri: string): Promise<IncludePointContextsResult> {
+    const document = this.openDocumentSnapshot(uri);
+    const workspace = this.workspaceFor(uri);
+    if (!document || !workspace?.canServe()) return { contexts: [] };
+    return workspace.knownIncludePointContextsAt(document);
+  }
+
+  async inactiveRegionsFor(
+    uri: string,
+    version: number,
+  ): Promise<InactiveRegion[] | undefined> {
+    const document = this.openDocumentSnapshot(uri);
+    const workspace = this.workspaceFor(uri);
+    if (!document || document.version !== version || !workspace?.canServe()) return undefined;
+    return workspace.inactiveRegionsAt(document);
   }
 
   // Raw snapshot: may include workspaces whose bootstrap is still in flight.

@@ -28,6 +28,7 @@ import {
   isGenericDefinitionCursor,
 } from '../parser/lexical/context';
 import { isShaderLabUri, symbolToLocationLink } from '../sourceLocation';
+import type { PreprocessorContext } from '../parser/preproc/context';
 import type {
   DefinitionAtInput,
   ReferencesAtInput,
@@ -40,7 +41,6 @@ import {
   shaderLabNameTargetAt,
   type ShaderLabNameTarget,
 } from './shaderLabNames';
-import { variantContextStore } from './variantContextStore';
 
 export interface WorkspaceNavigationState {
   readonly index: WorkspaceIndexReadView;
@@ -71,6 +71,7 @@ export async function navigateDefinition(
   state: WorkspaceNavigationState,
   input: DefinitionAtInput,
   facts?: CursorRequestFacts,
+  context?: PreprocessorContext,
 ): Promise<LocationLink[] | null> {
   throwIfRequestCancelled(input.cancellation);
   const { document, position, observer } = input;
@@ -110,7 +111,7 @@ export async function navigateDefinition(
     return navigatePropertyDefinition(state, input, index, propertyHit, trace);
   }
 
-  return navigateCodeDefinition(state, input, index, target, trace, facts);
+  return navigateCodeDefinition(state, input, index, target, trace, facts, context);
 }
 
 async function navigateIncludeDefinition(
@@ -203,6 +204,7 @@ async function navigateCodeDefinition(
   target: Exclude<CursorTarget, IncludeTarget>,
   trace: DefinitionTrace,
   facts?: CursorRequestFacts,
+  context?: PreprocessorContext,
 ): Promise<LocationLink[] | null> {
   const { document, position } = input;
 
@@ -228,7 +230,7 @@ async function navigateCodeDefinition(
     global: state.index.global,
     position,
     options: { visibleUriKeys, trace },
-    variantContext: variantContextStore.get(document.uri) ?? undefined,
+    variantContext: context,
     getText: (uri: string) => (uri === document.uri ? document.text : undefined),
     isShaderLab: isShaderLabUri(document.uri),
   };
@@ -303,6 +305,7 @@ export async function navigateReferences(
   state: WorkspaceNavigationState,
   input: ReferencesAtInput,
   facts?: CursorRequestFacts,
+  context?: PreprocessorContext,
 ): Promise<Location[] | null> {
   throwIfRequestCancelled(input.cancellation);
   const { document, position } = input;
@@ -376,7 +379,7 @@ export async function navigateReferences(
     includePackages: state.includePackages,
     includeDeclaration: input.includeDeclaration,
     cancellation: input.cancellation,
-    variantContext: variantContextStore.get(document.uri) ?? undefined,
+    variantContext: context,
     getText: (uri: string) => (uri === document.uri ? document.text : undefined),
     isShaderLab: isShaderLabUri(document.uri),
   });

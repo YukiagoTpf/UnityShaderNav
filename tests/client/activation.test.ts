@@ -95,6 +95,7 @@ suite('UnityShaderNav activation', () => {
     const registered = await vscode.commands.getCommands(true);
     assert.ok(registered.includes('unityShaderNav.showIndexStatus'));
     assert.ok(registered.includes('unityShaderNav.showOutput'));
+    assert.ok(registered.includes('unityShaderNav.pickIncludePointContext'));
     assert.ok(registered.includes(OPEN_VARIANT_COST_DOCUMENTATION_COMMAND));
   });
 });

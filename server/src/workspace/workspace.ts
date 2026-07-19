@@ -21,6 +21,8 @@ import {
   normalizeSettings,
   settingsRequireReindex,
   type ExtensionSettings,
+  type IncludePointContextsResult,
+  type InactiveRegion,
   type WorkspaceIndexStatus,
 } from '@unity-shader-nav/shared';
 import { uriKey } from '../uriKey';
@@ -203,7 +205,7 @@ export class Workspace implements IndexedWorkspace {
     return this.queryRevision<Diagnostic[] | null>(
       document,
       null,
-      (revision) => revision.diagnostics(document.uri),
+      (revision) => revision.diagnostics(document),
       undefined,
       undefined,
       (revision) => (
@@ -211,6 +213,26 @@ export class Workspace implements IndexedWorkspace {
         && this.published === revision
         && revision.hasCommittedDocument(document)
       ),
+    );
+  }
+
+  async knownIncludePointContextsAt(
+    document: IndexedDocumentSnapshot,
+  ): Promise<IncludePointContextsResult> {
+    return this.queryRevision(
+      document,
+      { contexts: [] },
+      (revision) => revision.knownIncludePointContexts(document.uri),
+    );
+  }
+
+  async inactiveRegionsAt(
+    document: IndexedDocumentSnapshot,
+  ): Promise<InactiveRegion[]> {
+    return this.queryRevision(
+      document,
+      [],
+      (revision) => revision.inactiveRegions(document.uri, document.text),
     );
   }
 

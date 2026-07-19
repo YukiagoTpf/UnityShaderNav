@@ -7,6 +7,10 @@ import type {
   Range,
   ReferenceContext,
   ReferenceEntry,
+  ShaderContextDirectiveEntry,
+  ShaderContextSourceFacts,
+  ShaderContextStageEntry,
+  ShaderContextVariantPragmaEntry,
   ShaderLabFallbackReference,
   ShaderLabMaterialCbufferEntry,
   ShaderLabMaterialFacts,
@@ -20,6 +24,8 @@ import type {
   ShaderLabShaderNameEntry,
   ShaderLabStructureNode,
   ShaderLabUsePassReference,
+  ShaderProgramContextEntry,
+  ShaderStage,
   StructureResult,
   SymbolEntry,
   SymbolKind,
@@ -91,6 +97,23 @@ const SHADERLAB_LINE_ENDINGS = {
   '\n': true,
   '\r\n': true,
 } satisfies Record<ShaderLabMaterialFacts['lineEnding'], true>;
+
+const SHADER_STAGES = {
+  vertex: true,
+  fragment: true,
+  geometry: true,
+  hull: true,
+  domain: true,
+  surface: true,
+  kernel: true,
+  raytracing: true,
+} satisfies Record<ShaderStage, true>;
+
+const SHADER_CONTEXT_DIRECTIVE_KINDS = {
+  include: true,
+  define: true,
+  undef: true,
+} satisfies Record<ShaderContextDirectiveEntry['kind'], true>;
 
 type ShaderLabNameReference = ShaderLabNameFacts['references'][number];
 
@@ -427,6 +450,78 @@ const shaderLabMaterialFactsValue: Validator<ShaderLabMaterialFacts> = (
   validateRecord(value, shaderLabMaterialFactsFields, context)
 );
 
+const shaderContextDirectiveEntryFields = {
+  kind: enumValue(SHADER_CONTEXT_DIRECTIVE_KINDS),
+  name: stringValue,
+  range: rangeValue,
+  conditional: booleanValue,
+  blockIndex: optional(finiteNumber),
+} satisfies FieldValidators<ShaderContextDirectiveEntry>;
+
+const shaderContextDirectiveEntryValue: Validator<ShaderContextDirectiveEntry> = (
+  value,
+  context,
+): value is ShaderContextDirectiveEntry => (
+  validateRecord(value, shaderContextDirectiveEntryFields, context)
+);
+
+const shaderContextVariantPragmaEntryFields = {
+  keywords: arrayOf(stringValue),
+  stage: optional(enumValue(SHADER_STAGES)),
+  conditional: booleanValue,
+  blockIndex: optional(finiteNumber),
+} satisfies FieldValidators<ShaderContextVariantPragmaEntry>;
+
+const shaderContextVariantPragmaEntryValue: Validator<ShaderContextVariantPragmaEntry> = (
+  value,
+  context,
+): value is ShaderContextVariantPragmaEntry => (
+  validateRecord(value, shaderContextVariantPragmaEntryFields, context)
+);
+
+const shaderContextStageEntryFields = {
+  stage: enumValue(SHADER_STAGES),
+  entryPoint: stringValue,
+  defines: arrayOf(stringValue),
+} satisfies FieldValidators<ShaderContextStageEntry>;
+
+const shaderContextStageEntryValue: Validator<ShaderContextStageEntry> = (
+  value,
+  context,
+): value is ShaderContextStageEntry => (
+  validateRecord(value, shaderContextStageEntryFields, context)
+);
+
+const shaderProgramContextEntryFields = {
+  blockIndex: finiteNumber,
+  shaderName: stringValue,
+  subShaderIndex: finiteNumber,
+  passIndex: optional(finiteNumber),
+  passName: optional(stringValue),
+  stages: arrayOf(shaderContextStageEntryValue),
+  sharedBlockIndices: arrayOf(finiteNumber),
+} satisfies FieldValidators<ShaderProgramContextEntry>;
+
+const shaderProgramContextEntryValue: Validator<ShaderProgramContextEntry> = (
+  value,
+  context,
+): value is ShaderProgramContextEntry => (
+  validateRecord(value, shaderProgramContextEntryFields, context)
+);
+
+const shaderContextSourceFactsFields = {
+  directives: arrayOf(shaderContextDirectiveEntryValue),
+  variantPragmas: arrayOf(shaderContextVariantPragmaEntryValue),
+  programs: optional(arrayOf(shaderProgramContextEntryValue)),
+} satisfies FieldValidators<ShaderContextSourceFacts>;
+
+const shaderContextSourceFactsValue: Validator<ShaderContextSourceFacts> = (
+  value,
+  context,
+): value is ShaderContextSourceFacts => (
+  validateRecord(value, shaderContextSourceFactsFields, context)
+);
+
 // This mapped type is the schema-drift gate: adding any required or optional
 // FileIndex fact without its persisted decoder fails the server build.
 const fileIndexFields = {
@@ -440,6 +535,7 @@ const fileIndexFields = {
   properties: optional(arrayOf(shaderLabPropertyEntryValue)),
   shaderLabNames: optional(shaderLabNameFactsValue),
   shaderLabMaterial: optional(shaderLabMaterialFactsValue),
+  shaderContext: optional(shaderContextSourceFactsValue),
 } satisfies FieldValidators<FileIndex>;
 
 /** Decode one untrusted persisted FileIndex for the owning CachedFile URI. */

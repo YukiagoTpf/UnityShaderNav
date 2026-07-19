@@ -65,6 +65,13 @@ export const VARIANT_CONTEXT_REQUEST = 'unityShaderNav/getVariantContext';
 /** Client → server: fetch the variant keywords declared in a document. */
 export const GET_VARIANT_KEYWORDS_REQUEST = 'unityShaderNav/getVariantKeywords';
 
+/** Client → server: list revision-grounded include-point Contexts for a shared file. */
+export const INCLUDE_POINT_CONTEXTS_REQUEST = 'unityShaderNav/includePointContexts';
+
+/** Client → server: mirror the client-owned, session-only Context selection. */
+export const INCLUDE_POINT_CONTEXT_CHANGED_NOTIFICATION =
+  'unityShaderNav/includePointContextChanged';
+
 /** CodeLens action: open the user-facing contract for declared Variant cost. */
 export const OPEN_VARIANT_COST_DOCUMENTATION_COMMAND =
   'unityShaderNav.openVariantCostDocumentation';
@@ -97,6 +104,44 @@ export interface GetVariantKeywordsParams {
 
 export interface GetVariantKeywordsResult {
   readonly keywords: string[];
+}
+
+export interface IncludePointContext {
+  readonly id: string;
+  readonly shaderName: string;
+  readonly shaderUri: string;
+  readonly subShaderIndex: number;
+  readonly passIndex?: number;
+  readonly passName?: string;
+  readonly stage: import('./structure').ShaderStage;
+  readonly entryPoint: string;
+  /** The concrete directive that reaches the requested shared file. */
+  readonly includeLocation: { readonly uri: string; readonly range: Range };
+  /** Number of include directives from the Shader program to this file. */
+  readonly chainDepth: number;
+}
+
+export interface IncludePointContextsParams {
+  readonly textDocument: { readonly uri: string };
+}
+
+export interface IncludePointContextsResult {
+  /** Absent while no Published indexed revision owns the document. */
+  readonly folderUri?: string;
+  readonly revision?: number;
+  /** Opaque identity; changes for every publication, including live edits. */
+  readonly publicationId?: string;
+  readonly contexts: IncludePointContext[];
+}
+
+export interface IncludePointContextSelection {
+  readonly publicationId: string;
+  readonly contextId: string;
+}
+
+export interface IncludePointContextChangedParams {
+  readonly folderUri: string;
+  readonly selection: IncludePointContextSelection | null;
 }
 
 export interface InactiveRegion {

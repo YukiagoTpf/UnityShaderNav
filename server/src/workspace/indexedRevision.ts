@@ -1,8 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import type {
   CacheFingerprint,
   ExtensionSettings,
   FileIndex,
+  IncludePointContextsResult,
+  InactiveRegion,
 } from '@unity-shader-nav/shared';
 import { normalizeSettings } from '@unity-shader-nav/shared';
 import {
@@ -37,8 +40,10 @@ import { createIncludeChain, type IncludeChain } from '../include';
 import { DocumentationResolver } from '../documentation';
 import { UnityProjectFacts } from '../project';
 import { uriKey } from '../uriKey';
-import type { ExactSource } from '../sourceLocation';
+import { isShaderLabUri, type ExactSource } from '../sourceLocation';
 import type { PackageContext } from '../packages';
+import { analyzeInactiveRegions } from '../parser/preproc/analyzeInactiveRegions';
+import type { PreprocessorContext } from '../parser/preproc/context';
 import {
   createSuggestionCandidateSelector,
   type SuggestionCandidateSelector,
@@ -91,6 +96,12 @@ import {
   materialPropertyTargetAt,
   type MaterialPropertyTarget,
 } from './materialReferences';
+import { IncludePointContextMatrix } from './includePointContexts';
+import { includePointContextStore } from './includePointContextStore';
+import { variantContextStore } from './variantContextStore';
+
+const PUBLICATION_SESSION_ID = randomUUID();
+let nextPublicationIdentity = 1;
 
 export interface CommittedDocumentAttempt {
   readonly openId: number;
@@ -125,6 +136,7 @@ type IndexedRevisionConfigurationInput = Omit<
  */
 export class PublishedIndexedRevision {
   readonly revision: number;
+  readonly publicationId: string;
   readonly folderUri: string;
   readonly settings: ExtensionSettings;
   readonly unityRoot: string | undefined;
@@ -136,6 +148,7 @@ export class PublishedIndexedRevision {
   readonly sourceWarningCount: number;
   private readonly index: WorkspaceIndex;
   private readonly includeChain: IncludeChain;
+  private readonly includePointContexts: IncludePointContextMatrix;
   private readonly suggestionCandidates: SuggestionCandidateSelector;
   private readonly documentation: DocumentationResolver;
   private readonly committedDocuments: ReadonlyMap<string, CommittedDocumentAttempt>;
@@ -149,6 +162,7 @@ export class PublishedIndexedRevision {
     sourceWarnings: ReadonlySet<string>,
   ) {
     this.revision = revision;
+    this.publicationId = `${PUBLICATION_SESSION_ID}:${nextPublicationIdentity++}`;
     this.folderUri = configuration.folderUri;
     this.settings = configuration.settings;
     this.unityRoot = configuration.unityRoot;
@@ -166,6 +180,7 @@ export class PublishedIndexedRevision {
         includeDirectories: configuration.settings.includeDirectories,
       },
     );
+    this.includePointContexts = new IncludePointContextMatrix(index.read, this.includeChain);
     this.suggestionCandidates = createSuggestionCandidateSelector(
       index.read,
       this.includeChain,
@@ -194,11 +209,57 @@ export class PublishedIndexedRevision {
     return this.index.hasDiskIndex(uri) || this.membership.containsUri(uri);
   }
 
-  diagnostics(uri: string): Promise<Diagnostic[]> {
-    return workspaceDiagnostics({
+  diagnostics(uri: string): Promise<Diagnostic[]>;
+  diagnostics(document: IndexedDocumentSnapshot): Promise<Diagnostic[]>;
+  async diagnostics(document: string | IndexedDocumentSnapshot): Promise<Diagnostic[]> {
+    const uri = typeof document === 'string' ? document : document.uri;
+    const diagnostics = await workspaceDiagnostics({
       index: this.index.read,
       includeChain: this.includeChain,
     }, uri);
+    if (typeof document === 'string') return diagnostics;
+    const context = await this.preprocessorContext(uri);
+    if (!context || diagnostics.length === 0) return diagnostics;
+    const inactive = analyzeInactiveRegions(document.text, {
+      isShaderLab: isShaderLabUri(uri),
+      context,
+    }).filter((region) => region.reason === 'inactive');
+    return diagnostics.filter((diagnostic) => !inactive.some((region) => (
+      region.range.start.line <= diagnostic.range.start.line
+      && diagnostic.range.start.line <= region.range.end.line
+    )));
+  }
+
+  async knownIncludePointContexts(uri: string): Promise<IncludePointContextsResult> {
+    const records = await this.includePointContexts.recordsFor(uri);
+    return {
+      folderUri: this.folderUri,
+      revision: this.revision,
+      publicationId: this.publicationId,
+      contexts: records.map(({ presentation }) => presentation),
+    };
+  }
+
+  async preprocessorContext(uri: string): Promise<PreprocessorContext | undefined> {
+    const variant = variantContextStore.get(uri);
+    const selection = includePointContextStore.get(this.folderUri);
+    const includePoint = selection?.publicationId === this.publicationId
+      ? await this.includePointContexts.recordFor(uri, selection.contextId)
+      : undefined;
+    if (!variant && !includePoint) return undefined;
+    return {
+      activeKeywords: variant?.activeKeywords ?? new Set(),
+      definedMacros: includePoint?.preprocessor.definedMacros ?? new Set(),
+      undefinedMacros: includePoint?.preprocessor.undefinedMacros ?? new Set(),
+      variantKeywords: includePoint?.preprocessor.variantKeywords ?? new Set(),
+    };
+  }
+
+  async inactiveRegions(uri: string, text: string): Promise<InactiveRegion[]> {
+    return analyzeInactiveRegions(text, {
+      isShaderLab: isShaderLabUri(uri),
+      context: await this.preprocessorContext(uri),
+    });
   }
 
   codeActions(input: CodeActionsAtInput): CodeAction[] {
@@ -214,18 +275,28 @@ export class PublishedIndexedRevision {
       : [];
   }
 
-  definitionAt(
+  async definitionAt(
     input: DefinitionAtInput,
     facts?: CursorRequestFacts,
   ): Promise<LocationLink[] | Location[] | null> {
-    return navigateDefinition(this.navigationState(), input, facts);
+    return navigateDefinition(
+      this.navigationState(),
+      input,
+      facts,
+      await this.preprocessorContext(input.document.uri),
+    );
   }
 
-  referencesAt(
+  async referencesAt(
     input: ReferencesAtInput,
     facts?: CursorRequestFacts,
   ): Promise<Location[] | null> {
-    return navigateReferences(this.navigationState(), input, facts);
+    return navigateReferences(
+      this.navigationState(),
+      input,
+      facts,
+      await this.preprocessorContext(input.document.uri),
+    );
   }
 
   materialPropertyTargetAt(input: DocumentPositionInput): MaterialPropertyTarget | undefined {
@@ -247,7 +318,7 @@ export class PublishedIndexedRevision {
     );
   }
 
-  completionAt(
+  async completionAt(
     input: DocumentPositionInput,
     facts?: CursorRequestFacts,
   ): Promise<CompletionItem[] | null> {
@@ -256,6 +327,7 @@ export class PublishedIndexedRevision {
       input,
       this.documentAnalysis({ uri: input.document.uri, document: input.document }),
       facts,
+      await this.preprocessorContext(input.document.uri),
     );
   }
 
@@ -322,11 +394,12 @@ export class PublishedIndexedRevision {
     return queryDocumentSymbols(this.queryState(), input);
   }
 
-  semanticTokens(input: IndexedDocumentQueryInput): Promise<SemanticTokens> {
+  async semanticTokens(input: IndexedDocumentQueryInput): Promise<SemanticTokens> {
     return querySemanticTokens(
       this.queryState(),
       input,
       this.documentAnalysis(input)?.lexicalTokens,
+      input.document ? await this.preprocessorContext(input.uri) : undefined,
     );
   }
 

@@ -531,6 +531,16 @@ keeps filesystem failures and test setup below the rules without adding I/O
 capabilities to Workspace query interfaces or changing the resolver's result
 contract.
 
+The same revision owns a lazy include-point Context Matrix for shared HLSL/CG
+analysis. It derives concrete Shader program, Pass, stage, source location, and
+macro state from indexed structural facts and that revision's Include chain.
+The client owns the session-scoped selection; the server keeps only an
+ephemeral mirror whose publication identity must match before any request can
+consume it. Every new publication therefore invalidates the selection to Auto,
+and no Context state crosses into the persistent index or cache. Context can
+rank navigation candidates but never removes the conservative Definition,
+References, or Highlight result set.
+
 Package include candidates consume the physical-path map already captured by
 the Workspace revision's `PackageContext`. The same context captures package
 version and source facts, preferring each resolved package's manifest version

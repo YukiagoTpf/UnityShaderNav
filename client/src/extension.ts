@@ -12,6 +12,7 @@ import { LanguageClient, State } from 'vscode-languageclient/node';
 import { createLanguageClient } from './client';
 import { setupInactiveRegions } from './inactiveRegions';
 import { createVariantContextPicker } from './variantContextPicker';
+import { createIncludePointContextPicker } from './includePointContextPicker';
 import { IndexStatusController, indexStatusDetails } from './indexStatus';
 import { IndexStatusSession } from './indexStatusSession';
 import {
@@ -90,6 +91,10 @@ export async function activate(context: ExtensionContext): Promise<void> {
     commands.executeCommand('unityShaderNav.refreshInactiveRegions');
   });
   context.subscriptions.push(picker);
+  const includePointPicker = createIncludePointContextPicker(client, () => {
+    commands.executeCommand('unityShaderNav.refreshInactiveRegions');
+  });
+  context.subscriptions.push(includePointPicker);
 }
 
 export async function deactivate(): Promise<void> {

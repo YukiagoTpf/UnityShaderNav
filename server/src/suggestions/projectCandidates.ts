@@ -28,6 +28,8 @@ import {
 } from './builtins';
 import type { SuggestionContext } from './context';
 import type { ShaderSuggestion } from './types';
+import type { PreprocessorContext } from '../parser/preproc/context';
+import { isLineActive } from '../parser/preproc/branchActivity';
 
 export type SuggestionCandidateQuery =
   | {
@@ -55,6 +57,9 @@ export interface SuggestionCandidateInput {
   readonly position: Position;
   readonly query: SuggestionCandidateQuery;
   readonly cancellation?: CancellationToken;
+  readonly preprocessorContext?: PreprocessorContext;
+  /** Exact current-document text used only for Context ranking. */
+  readonly text?: string;
 }
 
 export interface SuggestionCandidateSelection {
@@ -105,6 +110,8 @@ class PublishedSuggestionCandidateSelector implements SuggestionCandidateSelecto
           input.position,
           input.query.context,
           input.cancellation,
+          input.preprocessorContext,
+          input.text,
         );
       case 'member':
         return this.selectMembers(
@@ -131,6 +138,8 @@ class PublishedSuggestionCandidateSelector implements SuggestionCandidateSelecto
     position: Position,
     context: SuggestionContext,
     cancellation?: CancellationToken,
+    preprocessorContext?: PreprocessorContext,
+    text?: string,
   ): Promise<SuggestionCandidateSelection> {
     const projectSuggestions = context.kind === 'hlslCode'
       ? await collectVisibleProjectSuggestions({
@@ -139,6 +148,8 @@ class PublishedSuggestionCandidateSelector implements SuggestionCandidateSelecto
         global: this.index.global,
         visibleUriKeys: await this.visibleUriKeys(current.uri, cancellation),
         position,
+        preprocessorContext,
+        text,
       }, context.prefix.text, cancellation)
       : [];
 
@@ -247,6 +258,8 @@ interface CollectProjectSuggestionsInput {
   readonly global: GlobalSymbolReader;
   readonly visibleUriKeys: ReadonlySet<string>;
   readonly position: Position;
+  readonly preprocessorContext?: PreprocessorContext;
+  readonly text?: string;
 }
 
 function isGlobalSuggestion(symbol: SymbolEntry): boolean {
@@ -276,12 +289,18 @@ function dedupeKey(symbol: SymbolEntry): string {
   return [symbol.name, symbol.kind, symbol.parentType ?? ''].join('|');
 }
 
-function symbolToSuggestion(symbol: SymbolEntry, sourceRank: number): ShaderSuggestion {
+function symbolToSuggestion(
+  symbol: SymbolEntry,
+  sourceRank: number,
+  activityRank?: number,
+): ShaderSuggestion {
   const suggestion: ShaderSuggestion = {
     name: symbol.name,
     kind: symbol.kind,
     source: 'project',
-    sortText: `${sourceRank}_${symbol.name}`,
+    sortText: activityRank === undefined
+      ? `${sourceRank}_${symbol.name}`
+      : `${activityRank}_${sourceRank}_${symbol.name}`,
     declaredType: symbol.declaredType,
     parentType: symbol.parentType,
   };
@@ -312,15 +331,17 @@ async function collectVisibleProjectSuggestions(
     matching.visible,
     { visibleUriKeys: input.visibleUriKeys },
   );
-  const ordered: Array<{ symbol: SymbolEntry; rank: number }> = [
-    ...groups.scoped.map((symbol) => ({ symbol, rank: 0 })),
+  const ordered: Array<{ symbol: SymbolEntry; rank: number; activity?: number }> = [
+    ...rankForContext(groups.scoped, input, 0),
     ...groups.currentGlobals
       .filter(isGlobalSuggestion)
-      .map((symbol) => ({ symbol, rank: 1 })),
+      .flatMap((symbol) => rankForContext([symbol], input, 1)),
     ...groups.visibleGlobals
       .filter(isGlobalSuggestion)
-      .map((symbol) => ({ symbol, rank: 2 })),
-  ];
+      .flatMap((symbol) => rankForContext([symbol], input, 2)),
+  ].sort((left, right) => (
+    (left.activity ?? 0) - (right.activity ?? 0) || left.rank - right.rank
+  ));
 
   const seen = new Set<string>();
   const suggestions: ShaderSuggestion[] = [];
@@ -331,10 +352,34 @@ async function collectVisibleProjectSuggestions(
     const key = dedupeKey(candidate.symbol);
     if (seen.has(key)) continue;
     seen.add(key);
-    suggestions.push(symbolToSuggestion(candidate.symbol, candidate.rank));
+    suggestions.push(symbolToSuggestion(candidate.symbol, candidate.rank, candidate.activity));
   }
   throwIfRequestCancelled(cancellation);
   return suggestions;
+}
+
+function rankForContext(
+  symbols: readonly SymbolEntry[],
+  input: CollectProjectSuggestionsInput,
+  rank: number,
+): Array<{ symbol: SymbolEntry; rank: number; activity?: number }> {
+  return symbols.map((symbol) => ({
+    symbol,
+    rank,
+    ...(input.preprocessorContext
+      ? {
+        activity: input.text !== undefined
+          && uriKey(symbol.location.uri) === uriKey(input.index.uri)
+          && !isLineActive(
+            input.text,
+            symbol.location.range.start.line,
+            input.preprocessorContext,
+          )
+          ? 1
+          : 0,
+      }
+      : {}),
+  }));
 }
 
 async function collectMatchingCompletionSymbols(

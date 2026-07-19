@@ -52,6 +52,11 @@
         "command": "unityShaderNav.showOutput",
         "title": "Show Output",
         "category": "UnityShaderNav"
+      },
+      {
+        "command": "unityShaderNav.pickIncludePointContext",
+        "title": "Select Shader Include-point Context",
+        "category": "UnityShaderNav"
       }
     ],
     "languages": [

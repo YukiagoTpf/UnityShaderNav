@@ -184,7 +184,7 @@ describe('resolveDefinition with VariantContext', () => {
   const idx: FileIndex = { uri, references: [], symbols: [symA, symB] };
   const target: CursorTarget = { kind: 'symbol', word: word('gColor') };
 
-  it('returns only the active candidate when context makes one branch active', () => {
+  it('ranks the active candidate first without deleting the conservative sibling', () => {
     const ctx: ResolverContext = {
       index: idx,
       global: null,
@@ -193,11 +193,10 @@ describe('resolveDefinition with VariantContext', () => {
       getText: () => text,
     };
     const result = resolveDefinition(target, ctx);
-    expect(result).toHaveLength(1);
-    expect(result[0]).toBe(symA);
+    expect(result).toEqual([symA, symB]);
   });
 
-  it('returns only the else-branch candidate when FOO is inactive', () => {
+  it('ranks the else-branch candidate first when FOO is inactive', () => {
     const ctx: ResolverContext = {
       index: idx,
       global: null,
@@ -206,8 +205,7 @@ describe('resolveDefinition with VariantContext', () => {
       getText: () => text,
     };
     const result = resolveDefinition(target, ctx);
-    expect(result).toHaveLength(1);
-    expect(result[0]).toBe(symB);
+    expect(result).toEqual([symB, symA]);
   });
 
   it('returns all candidates when context rules out every branch (conservative fallback)', () => {

@@ -1,5 +1,65 @@
 export type BlockKind = 'HLSLPROGRAM' | 'CGPROGRAM' | 'HLSLINCLUDE' | 'CGINCLUDE';
 
+export type ShaderStage =
+  | 'vertex'
+  | 'fragment'
+  | 'geometry'
+  | 'hull'
+  | 'domain'
+  | 'surface'
+  | 'kernel'
+  | 'raytracing';
+
+/**
+ * Source-order preprocessor fact retained specifically for revision-bound
+ * include-point Context derivation. Conditional directives are kept as known
+ * include edges, but never promoted to deterministic macro state.
+ */
+export interface ShaderContextDirectiveEntry {
+  kind: 'include' | 'define' | 'undef';
+  /** Include path or macro name, depending on kind. */
+  name: string;
+  range: import('./symbols').Range;
+  conditional: boolean;
+  /** ShaderLab block index; absent for a standalone HLSL/CG source. */
+  blockIndex?: number;
+}
+
+export interface ShaderContextVariantPragmaEntry {
+  keywords: string[];
+  stage?: ShaderStage;
+  conditional: boolean;
+  /** ShaderLab block index; absent for a standalone HLSL/CG source. */
+  blockIndex?: number;
+}
+
+export interface ShaderContextStageEntry {
+  stage: ShaderStage;
+  entryPoint: string;
+  /** Extra deterministic defines authored on a `#pragma kernel` line. */
+  defines: string[];
+}
+
+/** One real ShaderLab program block from which include chains may originate. */
+export interface ShaderProgramContextEntry {
+  blockIndex: number;
+  shaderName: string;
+  subShaderIndex: number;
+  passIndex?: number;
+  passName?: string;
+  stages: ShaderContextStageEntry[];
+  /** Applicable HLSLINCLUDE/CGINCLUDE blocks, in source order. */
+  sharedBlockIndices: number[];
+}
+
+/** Optional cache-compatible facts used to derive the Context Matrix. */
+export interface ShaderContextSourceFacts {
+  directives: ShaderContextDirectiveEntry[];
+  variantPragmas: ShaderContextVariantPragmaEntry[];
+  /** Present only for `.shader` sources. */
+  programs?: ShaderProgramContextEntry[];
+}
+
 export interface ShaderLabBlock {
   kind: BlockKind;
   /** Line on which the HLSLPROGRAM/CGPROGRAM directive appears (0-based). */

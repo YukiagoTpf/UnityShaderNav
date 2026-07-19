@@ -133,7 +133,7 @@ export function analyzeDeclaredVariantCosts(
   return { pragmas, programs };
 }
 
-function parseVariantPragma(
+export function parseVariantPragma(
   code: string,
   line: number,
   conditional: boolean,

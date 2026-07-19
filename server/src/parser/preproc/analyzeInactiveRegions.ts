@@ -1,8 +1,9 @@
-import type { Range, VariantContext } from '@unity-shader-nav/shared';
+import type { Range } from '@unity-shader-nav/shared';
 import { scanBlocks } from '../shaderlab/blockScanner';
 import { scanVariantKeywords } from './scanVariantKeywords';
 import { stripComments } from './stripComments';
 import { evalCondition, type CondKind, type CondValue } from './evalCondition';
+import type { PreprocessorContext } from './context';
 
 export interface DimmedRegion {
   /** whole-line range covering the dimmed body */
@@ -14,7 +15,7 @@ export interface AnalyzeOptions {
   /** true for .shader (analyze only inside HLSL/CG blocks); false = whole file. */
   isShaderLab: boolean;
   /** optional active variant context; when absent, behaviour is identical to today */
-  context?: VariantContext;
+  context?: PreprocessorContext;
 }
 
 type ChainState = 'NONE_TAKEN' | 'DEFINITELY_TAKEN' | 'VARIANT_PENDING' | 'UNKNOWN_PENDING';
@@ -121,7 +122,7 @@ function analyzeLines(
   variants: ReadonlySet<string>,
   seedDefined: ReadonlySet<string>,
   seedUndefed: ReadonlySet<string>,
-  context?: VariantContext,
+  context?: PreprocessorContext,
 ): RegionAnalysis {
   const regions: DimmedRegion[] = [];
   const defined = new Set<string>(seedDefined);
@@ -397,18 +398,31 @@ export function analyzeInactiveRegions(text: string, options: AnalyzeOptions): D
   const lines = text.split(/\r?\n/);
 
   if (!options.isShaderLab) {
-    const variants = scanVariantKeywords(text);
-    return analyzeLines(lines, 0, variants, new Set(), new Set(), options.context).regions;
+    const variants = new Set([
+      ...scanVariantKeywords(text),
+      ...(options.context?.variantKeywords ?? []),
+    ]);
+    return analyzeLines(
+      lines,
+      0,
+      variants,
+      options.context?.definedMacros ?? new Set(),
+      options.context?.undefinedMacros ?? new Set(),
+      options.context,
+    ).regions;
   }
 
   // .shader: variants are file-wide; program blocks seed from preceding includes.
-  const variants = scanVariantKeywords(text);
+  const variants = new Set([
+    ...scanVariantKeywords(text),
+    ...(options.context?.variantKeywords ?? []),
+  ]);
   const { blocks } = scanBlocks(text);
 
   const regions: DimmedRegion[] = [];
   // shared base accumulated from include blocks (definite top-level defines)
-  const baseDefined = new Set<string>();
-  const baseUndefed = new Set<string>();
+  const baseDefined = new Set<string>(options.context?.definedMacros);
+  const baseUndefed = new Set<string>(options.context?.undefinedMacros);
 
   for (const block of blocks) {
     if (block.contentEndLine < block.contentStartLine) continue; // empty body

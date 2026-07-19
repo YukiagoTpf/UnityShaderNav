@@ -43,8 +43,9 @@ export function registerInactiveRegionsHandler(
         const text = documents.get(uri)?.getText();
         if (text === undefined) return empty;
 
+        const revisionRegions = await _manager.inactiveRegionsFor?.(uri, version);
         const context = variantContextStore.get(uri);
-        const regions = analyzeInactiveRegions(text, {
+        const regions = revisionRegions ?? analyzeInactiveRegions(text, {
           isShaderLab: isShaderLabUri(uri),
           context: context ?? undefined,
         });
