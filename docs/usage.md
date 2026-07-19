@@ -236,18 +236,18 @@ every candidate from every branch for you to pick from in Peek Definition.
 The **Variant Context** status-bar item lets you opt into a specific set of
 active keywords for the current document:
 
-- Click the `Variants: N/off` status-bar item (shown for `.shader` / `.hlsl`
-  files) to open a QuickPick listing every `multi_compile` / `shader_feature`
-  keyword the document declares.
+- Click the `Variants: N/off` status-bar item (shown for `.shader`, `.hlsl`,
+  `.cginc`, `.hlslinc`, and `.compute` files) to open a QuickPick listing
+  every `multi_compile` / `shader_feature` keyword the document declares.
 - Toggle keywords on/off. The chosen set is sent to the server as the active
   `VariantContext`.
 - **Dimming**: branches gated by an active keyword brighten (no longer dimmed);
   branches gated by an inactive keyword dim as "inactive" (definitely off in
   this context). Branches gated by unknown macros stay visible (conservative).
-- **F12 / Find References**: when the context makes exactly one branch active,
-  navigation jumps directly to it (no Peek). When several branches remain
-  active, all are returned. When the context rules out every candidate, all are
-  returned (never an empty result).
+- **F12 / Find References / Highlights**: when the context makes exactly one
+  branch active, navigation jumps directly to it (no Peek). When several
+  branches remain active, all are returned. When the context rules out every
+  candidate, all are returned (never an empty result).
 - **Clear (conservative)**: removes the context and restores the default
   behaviour.
 
@@ -264,19 +264,26 @@ declared-cost presentation below.
 ### Declared Variant Cost
 
 VS Code shows a CodeLens above each supported `#pragma multi_compile` or
-`#pragma shader_feature` keyword set. The lens labels the value as
-**Declared/static**, shows the normalized set multiplier, global/local scope,
-all-stage or stage-specific suffix, and the containing program's upper bound.
+`#pragma shader_feature` keyword set. In a `.shader` source, only pragmas
+inside `HLSLPROGRAM` / `CGPROGRAM` / `HLSLINCLUDE` / `CGINCLUDE` blocks are
+counted; ShaderLab text outside those blocks stays neutral. The lens labels
+the value as **Declared/static**, shows the normalized set multiplier,
+global/local scope, all-stage or stage-specific suffix, and the containing
+program's upper bound. Repeated options, conditional declarations, and
+duplicate sets contributing `×1` are flagged on the lens where they apply.
 An additional lens on each `HLSLPROGRAM` / `CGPROGRAM` marker shows that
-program's upper bound, number of unique sets, and largest multiplier. In a raw
-HLSL or Compute document, the file is the one document-local program. Every
-lens is clickable and opens this explanation.
+program's upper bound, number of unique sets, and largest multiplier; a
+program with no declared set gets no lens. In a raw HLSL or Compute document,
+the file is the one document-local program and its summary lens sits on the
+first line. Every lens is clickable and opens this explanation.
 
 The estimate has one deterministic contract:
 
 - Exact `multi_compile`, `shader_feature`, their `_local` forms, and the
   `_vertex`, `_fragment`, `_hull`, `_domain`, `_geometry`, and `_raytracing`
-  suffixes are supported. Built-in `multi_compile_*` shortcuts are not expanded.
+  suffixes are supported; `_local` can combine with one stage suffix (for
+  example `shader_feature_local_fragment`). Built-in `multi_compile_*`
+  shortcuts are not expanded.
 - A `multi_compile` multiplier is its number of unique declared options. One or
   more underscores are one blank/off option. A single-named-option
   `shader_feature` has Unity's implicit blank/off option; sets with two or more
