@@ -47,12 +47,13 @@ export class RequestSuspender {
         cleanup();
         resolve(value);
       };
-      const cancel = (): void => {
+      const fail = (error: unknown): void => {
         if (settled) return;
         settled = true;
         cleanup();
-        reject(requestCancelledError());
+        reject(error);
       };
+      const cancel = (): void => fail(requestCancelledError());
       const resume = (): void => {
         if (settled) return;
         void work().then(settle, (error: unknown) => {
@@ -60,7 +61,7 @@ export class RequestSuspender {
             cancel();
             return;
           }
-          settle(null);
+          fail(error);
         });
       };
 

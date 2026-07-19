@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { LSPErrorCodes } from 'vscode-languageserver/node';
+import { LSPErrorCodes, ResponseError } from 'vscode-languageserver/node';
 import { CancellationTokenSource } from 'vscode-jsonrpc/node';
+import { RequestSuspender } from '../../src/lifecycle/requestSuspender';
 import type {
   IndexedDocumentSnapshot,
   IndexedWorkspace,
@@ -185,5 +186,28 @@ describe('createDocumentRequestHandler', () => {
     );
 
     await expect(handler({ uri: document.uri })).resolves.toEqual({ request: 1 });
+  });
+
+  it('propagates the same request failure before and after startup suspension', async () => {
+    const suspender = new RequestSuspender({ timeoutMs: 1000 });
+    const failure = new ResponseError(LSPErrorCodes.RequestFailed, 'rename is ambiguous');
+    const handler = createDocumentRequestHandler(
+      { snapshot: () => document },
+      { servingWorkspaceFor: () => workspace },
+      suspender,
+      {
+        uri: (params: { uri: string }) => params.uri,
+        neutral: () => 'neutral',
+        resolve: async () => { throw failure; },
+      },
+    );
+
+    await expect(handler({ uri: document.uri })).rejects.toBe(failure);
+
+    suspender.suspend();
+    const suspended = handler({ uri: document.uri });
+    suspender.release();
+
+    await expect(suspended).rejects.toBe(failure);
   });
 });
