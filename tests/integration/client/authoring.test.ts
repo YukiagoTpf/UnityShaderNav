@@ -43,12 +43,26 @@ suite('ShaderLab authoring assistance', () => {
       const pass = (await completionItems(uri, atEnd('pass'), 'pass'))
         .map((item) => String(item.label));
       assert.ok(!pass.includes('property-color'));
+      assert.ok(pass.includes('vfpass'));
       const programItems = await completionItems(
         uri,
         atEnd('vertex'),
         'vertex-fragment-program',
       );
       assert.ok(!programItems.map((item) => String(item.label)).includes('pass'));
+      assert.ok(programItems.some((item) => item.label === 'blend'));
+      const protectedItems = (await vscode.commands.executeCommand<vscode.CompletionList>(
+        'vscode.executeCompletionItemProvider',
+        uri,
+        atEnd('blendinside'),
+      ))?.items ?? [];
+      const protectedLabels = protectedItems.map((item) => String(item.label));
+      assert.ok(!protectedLabels.some((label) => (
+        label === 'surf'
+        || label === 'vfshader'
+        || label === 'vfpass'
+        || label.startsWith('blend')
+      )));
       const program = programItems.find((item) => item.label === 'vertex-fragment-program');
       assert.ok(program, 'expected program snippet completion item');
       const snippet = program.insertText instanceof vscode.SnippetString
@@ -64,6 +78,21 @@ suite('ShaderLab authoring assistance', () => {
       assert.ok(document.getText().includes('#pragma vertex vert'));
       assert.ok(document.getText().includes('ENDHLSL'));
       assert.ok(!document.getText().includes('${'));
+
+      const rootUri = vscode.Uri.file(fixturePath('Assets', 'RootSnippets.shader'));
+      const rootDocument = await vscode.workspace.openTextDocument(rootUri);
+      await vscode.window.showTextDocument(rootDocument);
+      const rootPosition = new vscode.Position(0, 'surf'.length);
+      const rootItems = await completionItems(rootUri, rootPosition, 'surf');
+      assert.ok(rootItems.some((item) => item.label === 'vfshader'));
+      const surface = rootItems.find((item) => item.label === 'surf');
+      const surfaceBody = surface?.insertText instanceof vscode.SnippetString
+        ? surface.insertText.value
+        : surface?.textEdit?.newText;
+      assert.ok(
+        surfaceBody?.includes('#pragma surface ${2:surf} Standard'),
+        'expected complete Surface Shader snippet body',
+      );
     });
   });
 

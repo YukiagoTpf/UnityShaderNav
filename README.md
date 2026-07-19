@@ -38,9 +38,10 @@ The extension focuses on fast code navigation:
   results include texture methods and overload signatures, vector swizzles,
   non-square matrix components, and explicitly typed texture declarations such
   as `Texture2D<float4>`.
-- Context-scoped ShaderLab snippets for common Material Properties, Passes, and
-  a pipeline-neutral vertex/fragment program; editable presentations for
-  normalized literal Color defaults; and safe ShaderLab indentation formatting.
+- Context-scoped ShaderLab snippets for complete Surface and vertex/fragment
+  Shaders, common Material Properties, Pass/program structures, and Blend
+  states; editable presentations for normalized literal Color defaults; and
+  safe ShaderLab indentation formatting.
 - Document Symbols and semantic coloring for ShaderLab wrappers, Properties,
   Tags, render states, preprocessor lines, and HLSL symbols.
 - Workspace symbol search (Ctrl+T / Cmd+T) across indexed shader functions,

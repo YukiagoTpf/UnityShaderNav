@@ -11,5 +11,11 @@ Shader "Authoring/Snippets"
         {
             vertex
         }
+        Pass
+        {
+            HLSLPROGRAM
+            blendinside
+            ENDHLSL
+        }
     }
 }

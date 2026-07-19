@@ -27,7 +27,34 @@ function completions(text: string, needle: string, offset: number) {
   );
 }
 
+function materializeSnippet(text: string): string {
+  return text
+    .replace(/\$\{\d+:([^}]*)\}/g, '$1')
+    .replace(/\$\{0\}/g, '');
+}
+
 describe('ShaderLab snippets', () => {
+  it('offers complete shader templates only in an otherwise empty document', () => {
+    const root = completions('surf', 'surf', 4);
+    expect(root.map((item) => item.label)).toEqual(['surf', 'vfshader']);
+    expect(root.find((item) => item.label === 'surf')?.textEdit).toEqual(expect.objectContaining({
+      newText: expect.stringContaining('#pragma surface ${2:surf} Standard'),
+    }));
+    expect(root.find((item) => item.label === 'vfshader')?.textEdit).toEqual(
+      expect.objectContaining({
+        newText: expect.stringContaining('#pragma fragment ${4:frag}'),
+      }),
+    );
+    for (const item of root) {
+      const body = item.textEdit && 'newText' in item.textEdit
+        ? item.textEdit.newText
+        : '';
+      expect(analyzeDocument(uri, materializeSnippet(body))?.layout.safe).toBe(true);
+    }
+
+    expect(completions('// keep\nsurf', 'surf', 4)).toEqual([]);
+  });
+
   it('offers only the structures valid for the direct ShaderLab scope', () => {
     const text = [
       'Shader "Authoring/Test" {',
@@ -50,21 +77,39 @@ describe('ShaderLab snippets', () => {
       'property-vector',
       'property-texture2d',
     ]);
-    expect(completions(text, 'pass', 4).map((item) => item.label)).toEqual(['pass']);
+    expect(completions(text, 'pass', 4).map((item) => item.label)).toEqual([
+      'pass',
+      'vfpass',
+    ]);
     const program = completions(text, 'vertex', 6);
-    expect(program.map((item) => item.label)).toEqual(['vertex-fragment-program']);
+    expect(program.map((item) => item.label)).toEqual([
+      'vertex-fragment-program',
+      'blend',
+      'blend-additive',
+      'blend-premultiplied',
+      'blend-multiply',
+    ]);
     expect(program[0].textEdit && 'newText' in program[0].textEdit
       ? program[0].textEdit.newText
       : '').toContain('#pragma fragment ${2:frag}');
+    const vfpass = completions(text, 'pass', 4).find((item) => item.label === 'vfpass');
+    expect(vfpass?.textEdit).toEqual(expect.objectContaining({
+      newText: expect.stringContaining('HLSLPROGRAM'),
+    }));
+    const blend = program.find((item) => item.label === 'blend');
+    expect(blend?.textEdit).toEqual(expect.objectContaining({
+      newText: 'Blend ${1:SrcAlpha} ${2:OneMinusSrcAlpha}',
+    }));
   });
 
-  it('refuses comments, wrong scopes, malformed layout, and Passes with a program', () => {
+  it('refuses comments, wrong scopes, malformed layout, and protected program lines', () => {
     const existing = [
       'Shader "Authoring/Test" {',
       '  // prop',
       '  SubShader {',
       '    Pass {',
       '      HLSLPROGRAM',
+      '      blend',
       '      float4 frag() : SV_Target { return 1; }',
       '      ENDHLSL',
       '      vertex',
@@ -73,7 +118,13 @@ describe('ShaderLab snippets', () => {
       '}',
     ].join('\n');
     expect(completions(existing, 'prop', 4)).toEqual([]);
-    expect(completions(existing, 'vertex', 6)).toEqual([]);
+    expect(completions(existing, 'blend', 5)).toEqual([]);
+    expect(completions(existing, 'vertex', 6).map((item) => item.label)).toEqual([
+      'blend',
+      'blend-additive',
+      'blend-premultiplied',
+      'blend-multiply',
+    ]);
     expect(completions('Shader "X" {\n  Properties {\n    prop', 'prop', 4)).toEqual([]);
   });
 
@@ -90,9 +141,9 @@ describe('ShaderLab snippets', () => {
       '  }',
       '}',
     ].join('\n');
-    expect(completions(text, 'vertex', 6).map((item) => item.label)).toEqual([
+    expect(completions(text, 'vertex', 6).map((item) => item.label)).toContain(
       'vertex-fragment-program',
-    ]);
+    );
   });
 });
 

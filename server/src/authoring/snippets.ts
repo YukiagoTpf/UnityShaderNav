@@ -41,51 +41,125 @@ const PROPERTY_SNIPPETS: readonly SnippetDefinition[] = [
   ),
 ];
 
+const FINAL_TABSTOP = '${0}';
+
 const PASS_SNIPPET: SnippetDefinition = {
   label: 'pass',
   detail: 'ShaderLab Pass skeleton',
-  body: (base, unit) => [
+  body: (base, unit) => renderAtCursor([
     'Pass',
-    `${base}{`,
-    `${base}${unit}Name "\${1:PASS}"`,
-    `${base}${unit}\${0}`,
-    `${base}}`,
-  ].join('\n'),
+    '{',
+    `${unit}Name "${placeholder(1, 'PASS')}"`,
+    `${unit}${FINAL_TABSTOP}`,
+    '}',
+  ], base),
 };
 
 const PROGRAM_SNIPPET: SnippetDefinition = {
   label: 'vertex-fragment-program',
   detail: 'Pipeline-neutral HLSL vertex/fragment skeleton; choose the clip-space transform explicitly',
-  body: (base, unit) => [
-    'HLSLPROGRAM',
-    `${base}#pragma vertex \${1:vert}`,
-    `${base}#pragma fragment \${2:frag}`,
-    '',
-    `${base}struct \${3:Attributes}`,
-    `${base}{`,
-    `${base}${unit}float4 positionOS : POSITION;`,
-    `${base}};`,
-    '',
-    `${base}struct \${4:Varyings}`,
-    `${base}{`,
-    `${base}${unit}float4 positionCS : SV_POSITION;`,
-    `${base}};`,
-    '',
-    `${base}\${4:Varyings} \${1:vert}(\${3:Attributes} input)`,
-    `${base}{`,
-    `${base}${unit}\${4:Varyings} output;`,
-    `${base}${unit}output.positionCS = \${5:input.positionOS};`,
-    `${base}${unit}return output;`,
-    `${base}}`,
-    '',
-    `${base}half4 \${2:frag}(\${4:Varyings} input) : SV_Target`,
-    `${base}{`,
-    `${base}${unit}return \${6:half4(1, 1, 1, 1)};`,
-    `${base}}`,
-    `${base}ENDHLSL`,
-    `${base}\${0}`,
-  ].join('\n'),
+  body: (base, unit) => renderAtCursor([
+    ...vertexFragmentProgramLines(unit, 1),
+    FINAL_TABSTOP,
+  ], base),
 };
+
+const VF_PASS_SNIPPET: SnippetDefinition = {
+  label: 'vfpass',
+  detail: 'ShaderLab Pass with a pipeline-neutral HLSL vertex/fragment program',
+  body: (base, unit) => renderAtCursor(
+    vertexFragmentPassLines(unit, 1, 2),
+    base,
+  ),
+};
+
+const SURFACE_SHADER_SNIPPET: SnippetDefinition = {
+  label: 'surf',
+  detail: 'Complete Built-in Render Pipeline Surface Shader',
+  body: (base, unit) => {
+    const shaderName = placeholder(1, 'Custom/SurfaceShader');
+    const surfaceFunction = placeholder(2, 'surf');
+    const texture = placeholder(3, '_MainTex');
+    const tint = placeholder(4, '_Color');
+    return renderAtCursor([
+      `Shader "${shaderName}"`,
+      '{',
+      `${unit}Properties`,
+      `${unit}{`,
+      `${unit.repeat(2)}${texture} ("Albedo", 2D) = "white" {}`,
+      `${unit.repeat(2)}${tint} ("Color", Color) = (1, 1, 1, 1)`,
+      `${unit}}`,
+      `${unit}SubShader`,
+      `${unit}{`,
+      `${unit.repeat(2)}Tags { "RenderType" = "Opaque" }`,
+      `${unit.repeat(2)}LOD 200`,
+      '',
+      `${unit.repeat(2)}CGPROGRAM`,
+      `${unit.repeat(2)}#pragma surface ${surfaceFunction} Standard fullforwardshadows`,
+      `${unit.repeat(2)}#pragma target 3.0`,
+      '',
+      `${unit.repeat(2)}sampler2D ${texture};`,
+      `${unit.repeat(2)}fixed4 ${tint};`,
+      '',
+      `${unit.repeat(2)}struct Input`,
+      `${unit.repeat(2)}{`,
+      `${unit.repeat(3)}float2 uv${texture};`,
+      `${unit.repeat(2)}};`,
+      '',
+      `${unit.repeat(2)}void ${surfaceFunction}(Input input, inout SurfaceOutputStandard output)`,
+      `${unit.repeat(2)}{`,
+      `${unit.repeat(3)}fixed4 color = tex2D(${texture}, input.uv${texture}) * ${tint};`,
+      `${unit.repeat(3)}output.Albedo = color.rgb;`,
+      `${unit.repeat(3)}output.Alpha = color.a;`,
+      `${unit.repeat(2)}}`,
+      `${unit.repeat(2)}ENDCG`,
+      `${unit}}`,
+      `${unit}Fallback "Diffuse"`,
+      '}',
+      FINAL_TABSTOP,
+    ], base);
+  },
+};
+
+const VF_SHADER_SNIPPET: SnippetDefinition = {
+  label: 'vfshader',
+  detail: 'Complete pipeline-neutral ShaderLab vertex/fragment Shader',
+  body: (base, unit) => {
+    const pass = vertexFragmentPassLines(unit, 2, 3)
+      .map((line) => `${unit.repeat(2)}${line}`);
+    return renderAtCursor([
+      `Shader "${placeholder(1, 'Custom/VertexFragment')}"`,
+      '{',
+      `${unit}SubShader`,
+      `${unit}{`,
+      ...pass,
+      `${unit}}`,
+      '}',
+    ], base);
+  },
+};
+
+const ROOT_SNIPPETS: readonly SnippetDefinition[] = [
+  SURFACE_SHADER_SNIPPET,
+  VF_SHADER_SNIPPET,
+];
+
+const BLEND_SNIPPETS: readonly SnippetDefinition[] = [
+  blendSnippet(
+    'blend',
+    'ShaderLab alpha Blend state',
+    'SrcAlpha',
+    'OneMinusSrcAlpha',
+  ),
+  blendSnippet('blend-additive', 'ShaderLab additive Blend state', 'One', 'One'),
+  blendSnippet(
+    'blend-premultiplied',
+    'ShaderLab premultiplied-alpha Blend state',
+    'One',
+    'OneMinusSrcAlpha',
+  ),
+  blendSnippet('blend-multiply', 'ShaderLab multiply Blend state', 'DstColor', 'Zero'),
+];
 
 export function shaderLabSnippetCompletions(
   analysis: DocumentAnalysis | undefined,
@@ -96,7 +170,7 @@ export function shaderLabSnippetCompletions(
   cursorFacts?: CursorContext,
 ): CompletionItem[] {
   if (
-    !analysis?.layout.safe
+    !analysis
     || analysis.sourceText !== text
     || languageId !== 'shaderlab'
   ) return [];
@@ -112,13 +186,25 @@ export function shaderLabSnippetCompletions(
 
   const lineLayout = analysis.layout.lines[position.line];
   if (!lineLayout || lineLayout.protected) return [];
-  const definitions = lineLayout.directScope === 'properties'
-    ? PROPERTY_SNIPPETS
-    : lineLayout.directScope === 'subshader'
-      ? [PASS_SNIPPET]
-      : lineLayout.directScope === 'pass' && !passHasProgram(analysis, position.line)
-        ? [PROGRAM_SNIPPET]
-        : [];
+  const rootOnly = documentContainsOnlyCurrentPrefix(
+    analysis.sourceLines,
+    position.line,
+    base.length,
+    position.character,
+  );
+  if (!rootOnly && !analysis.layout.safe) return [];
+  const definitions = rootOnly
+    ? ROOT_SNIPPETS
+    : lineLayout.directScope === 'properties'
+      ? PROPERTY_SNIPPETS
+      : lineLayout.directScope === 'subshader'
+        ? [PASS_SNIPPET, VF_PASS_SNIPPET]
+        : lineLayout.directScope === 'pass'
+          ? [
+            ...(passHasProgram(analysis, position.line) ? [] : [PROGRAM_SNIPPET]),
+            ...BLEND_SNIPPETS,
+          ]
+          : [];
   const unit = inferIndentUnit(base, analysis.layout.lines[position.line].indentDepth);
   return definitions.map((definition) => ({
     label: definition.label,
@@ -138,6 +224,92 @@ export function shaderLabSnippetCompletions(
 
 function propertySnippet(label: string, detail: string, body: string): SnippetDefinition {
   return { label, detail, body: () => body };
+}
+
+function blendSnippet(
+  label: string,
+  detail: string,
+  source: string,
+  destination: string,
+): SnippetDefinition {
+  return {
+    label,
+    detail,
+    body: () => `Blend ${placeholder(1, source)} ${placeholder(2, destination)}`,
+  };
+}
+
+function placeholder(index: number, value: string): string {
+  return `\${${index}:${value}}`;
+}
+
+function renderAtCursor(lines: readonly string[], base: string): string {
+  return lines.map((line, index) => index === 0 ? line : `${base}${line}`).join('\n');
+}
+
+function vertexFragmentProgramLines(unit: string, firstTab: number): string[] {
+  const vertex = placeholder(firstTab, 'vert');
+  const fragment = placeholder(firstTab + 1, 'frag');
+  const attributes = placeholder(firstTab + 2, 'Attributes');
+  const varyings = placeholder(firstTab + 3, 'Varyings');
+  const position = placeholder(firstTab + 4, 'input.positionOS');
+  const color = placeholder(firstTab + 5, 'half4(1, 1, 1, 1)');
+  return [
+    'HLSLPROGRAM',
+    `#pragma vertex ${vertex}`,
+    `#pragma fragment ${fragment}`,
+    '',
+    `struct ${attributes}`,
+    '{',
+    `${unit}float4 positionOS : POSITION;`,
+    '};',
+    '',
+    `struct ${varyings}`,
+    '{',
+    `${unit}float4 positionCS : SV_POSITION;`,
+    '};',
+    '',
+    `${varyings} ${vertex}(${attributes} input)`,
+    '{',
+    `${unit}${varyings} output;`,
+    `${unit}output.positionCS = ${position};`,
+    `${unit}return output;`,
+    '}',
+    '',
+    `half4 ${fragment}(${varyings} input) : SV_Target`,
+    '{',
+    `${unit}return ${color};`,
+    '}',
+    'ENDHLSL',
+  ];
+}
+
+function vertexFragmentPassLines(
+  unit: string,
+  nameTab: number,
+  programTab: number,
+): string[] {
+  return [
+    'Pass',
+    '{',
+    `${unit}Name "${placeholder(nameTab, 'PASS')}"`,
+    ...vertexFragmentProgramLines(unit, programTab).map((line) => `${unit}${line}`),
+    `${unit}${FINAL_TABSTOP}`,
+    '}',
+  ];
+}
+
+function documentContainsOnlyCurrentPrefix(
+  lines: readonly string[],
+  line: number,
+  prefixStart: number,
+  prefixEnd: number,
+): boolean {
+  return lines.every((text, index) => (
+    index === line
+      ? `${text.slice(0, prefixStart)}${text.slice(prefixEnd)}`.trim().length === 0
+      : text.trim().length === 0
+  ));
 }
 
 function passHasProgram(analysis: DocumentAnalysis, line: number): boolean {

@@ -9,6 +9,9 @@ and uses semantic versioning for extension releases.
 
 ### Added
 
+- Added `surf` and `vfshader` complete-file ShaderLab snippets, a `vfpass`
+  SubShader snippet, and editable alpha, additive, premultiplied, and multiply
+  `Blend` states. Their structural gates keep them out of HLSL/CG blocks.
 - Added file-local ShaderLab Property Rename from either the Property or its
   matching HLSL/CG declaration/reference. The edit stays inside one `.shader`
   file and refuses include-supplied or ambiguous contracts.

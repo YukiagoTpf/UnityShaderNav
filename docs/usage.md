@@ -168,16 +168,22 @@ participate in Workspace Symbols (Ctrl+T / Cmd+T).
 Completion also exposes snippets only in their direct, structurally valid
 ShaderLab scope:
 
+- complete `surf` (Built-in Surface Shader) and `vfshader` templates when the
+  document otherwise contains only whitespace;
 - Color, Float, Range, Vector, and 2D texture Material Properties inside
   `Properties`;
-- a Pass skeleton directly inside `SubShader`;
+- `pass` and vertex/fragment `vfpass` skeletons directly inside `SubShader`;
 - one pipeline-neutral `HLSLPROGRAM` vertex/fragment skeleton directly inside
-  a Pass that does not already contain a program block.
+  a Pass that does not already contain a program block;
+- editable alpha, additive, premultiplied-alpha, and multiply `Blend` states
+  directly inside a Pass, whether or not the Pass already has a program block.
 
 Property snippets declare only the Material-facing Property; they do not claim
-to synchronize an HLSL variable or `UnityPerMaterial` field. The program
-snippet deliberately leaves the object-to-clip expression editable rather than
-guessing Built-in, URP, or HDRP ownership.
+to synchronize an HLSL variable or `UnityPerMaterial` field. `surf` explicitly
+targets the Built-in Render Pipeline. The vertex/fragment templates deliberately
+leave the object-to-clip expression editable rather than guessing Built-in,
+URP, or HDRP ownership. Structural and lexical gates prevent every ShaderLab
+snippet from appearing inside HLSL/CG program blocks.
 
 VS Code shows a color decoration and picker for a `Color` Property default only
 when it is an exact, non-HDR four-number tuple with every component in `[0, 1]`.
