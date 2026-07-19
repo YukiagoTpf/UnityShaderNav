@@ -116,11 +116,13 @@ npm run grammar:rebuild
   live lifetimes. `FileIndex.structure` is a durable projection; disk/cache
   records must remain free of the analysis container, source, and lexical facts.
 - Cache tests are behavior-oriented: cover complete `FileIndex` round-trip,
-  invalidation on release/settings/grammar changes, development-layout disable,
+  typed malformed-value matrices for every persisted nested field, invalidation
+  on release/settings/grammar changes, development-layout disable,
   fingerprint-first rejection of incompatible payloads, manager-level latest
   publication coordination, and atomic-rename crash safety. Do not restore
-  per-field codec matrices, historical-schema inventories, or a second queue in
-  `CacheStore`; compatible records receive only shallow container checks.
+  historical-schema inventories or a second queue in `CacheStore`. The runtime
+  decoder's mapped field validators are the active-schema drift gate; compatible
+  records still require exact recursive validation before candidate restore.
 - `npm run test:package` is the authoritative package check. One invocation
   removes generated output, rebuilds current source, creates the versioned VSIX,
   and then runs package-layout tests. Immediately before and after VSCE packaging,

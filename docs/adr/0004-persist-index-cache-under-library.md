@@ -3,9 +3,11 @@
 ## Status
 
 Accepted; Workspace identity partitioning and persistence ordering clarified on
-2026-07-11 by [#62](https://github.com/YukiagoTpf/UnityShaderNav/issues/62), and
+2026-07-11 by [#62](https://github.com/YukiagoTpf/UnityShaderNav/issues/62),
 cache eligibility simplified on 2026-07-18 by
-[#131](https://github.com/YukiagoTpf/UnityShaderNav/issues/131).
+[#131](https://github.com/YukiagoTpf/UnityShaderNav/issues/131), and authoritative
+runtime decoding restored on 2026-07-19 by
+[#105](https://github.com/YukiagoTpf/UnityShaderNav/issues/105).
 
 ## Context
 
@@ -39,7 +41,7 @@ Standalone 模式没有 Unity `Library/`，继续使用 VS Code `globalStorageUr
 
 每个 identity 保持一个 monolithic JSON manifest。暂不把文件记录拆成独立对象；现有 benchmark 没有证明 manifest 大小或单次原子替换是主要瓶颈。
 
-manifest 只包含已发布 revision 的 disk projection 及与每个 `FileIndex` 同一次稳定读取捕获的 source identity。Live overlay、`DocumentAnalysis`、document attempt、lifecycle state 和 source warning 不持久化。缓存格式版本只描述 schema；release fingerprint 由 Extension package version、parser 已捕获的 exact grammar hash、影响索引的 settings 和 macro table 构成。只有 bundled-server release 启用持久化；source、tsc-out 与 copied-server 开发布局不持久化。Manifest load 在遍历 file records 前先拒绝不兼容 fingerprint；兼容记录只做浅层 container shape 检查。
+manifest 只包含已发布 revision 的 disk projection 及与每个 `FileIndex` 同一次稳定读取捕获的 source identity。Live overlay、`DocumentAnalysis`、document attempt、lifecycle state 和 source warning 不持久化。缓存格式版本只描述 schema；release fingerprint 由 Extension package version、parser 已捕获的 exact grammar hash、影响索引的 settings 和 macro table 构成。只有 bundled-server release 启用持久化；source、tsc-out 与 copied-server 开发布局不持久化。Manifest load 在遍历 file records 前先拒绝不兼容 fingerprint；兼容 fingerprint 只证明 producer 语义一致，每个 untrusted `FileIndex` 仍必须按 active schema 递归解码全部 required/optional 字段、enum、range 和 ShaderLab projection。未知或畸形 file record 在 candidate restore 前丢弃，仍符合 membership 的磁盘源随后重新索引；缓存损坏不会进入 Published revision，也不会改变 lifecycle。
 
 Package 成员资格仍由当前 `Packages/packages-lock.json` 决定。缓存记录不能让已从 lockfile dependency graph 移除的 Package 重新进入索引：Unity root 外的缓存文件只有仍属于当前 resolved package root 时才可恢复；root 内的普通项目文件继续按用户文件边界处理。
 

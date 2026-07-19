@@ -489,8 +489,12 @@ consumes that same grammar snapshot plus the Extension release version,
 index-affecting settings, and macro table. No component independently
 searches for or reopens the grammar. An unknown layout, missing grammar, or
 missing release version cannot produce a persistable fingerprint or
-restore a manifest. A different identity is a cache miss and triggers source
-indexing; it never changes source files. Restored Package files must still belong to the dependency graph resolved
+restore a manifest. After fingerprint acceptance, the persisted `FileIndex`
+decoder recursively validates every active-schema field and nested projection;
+malformed per-file records are excluded and re-indexed from eligible disk sources
+before publication. A different identity is a cache miss and triggers source
+indexing; it never changes source files. Restored Package files must still belong
+to the dependency graph resolved
 from the current `Packages/packages-lock.json`. A cached file outside the Unity
 root is eligible only while it belongs to a currently resolved external package.
 

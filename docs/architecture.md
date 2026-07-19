@@ -576,11 +576,15 @@ not read or hash the server, shared, or `web-tree-sitter` runtime trees. Source,
 tsc-out, and copied-server layouts do not create a persistable fingerprint; a
 different release or content fact forces a source rebuild. CacheStore validates
 the manifest envelope and expected fingerprint before walking file records.
-Compatible records receive only shallow JSON-container checks because the
-fingerprint owns semantic compatibility. Cache contents are limited to the
-published revision's disk projection and source identities. Live overlays,
-document analysis, lifecycle state, source warnings, and document attempts are
-not persisted. Package entries are restored only while the current
+The compatible fingerprint owns producer semantics, while an exact recursive
+runtime decoder separately validates every required and optional `FileIndex`
+field, enum, nested range, and ShaderLab projection against the active schema.
+Unknown or malformed per-file records are omitted before candidate restore and
+eligible disk sources are re-indexed; untrusted values never enter a published
+revision. Cache contents are limited to the published revision's disk projection
+and source identities. Live overlays, document analysis, lifecycle state, source
+warnings, and document attempts are not persisted. Package entries are restored
+only while the current
 `Packages/packages-lock.json` still admits them. In particular, a cached file
 outside the Unity root must still belong to a currently resolved external
 package; removing a local package cannot turn its old record into a user file.

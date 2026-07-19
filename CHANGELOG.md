@@ -70,6 +70,10 @@ and uses semantic versioning for extension releases.
 
 ### Fixed
 
+- Rejected malformed persisted `FileIndex` fields recursively before cache
+  restore, including ShaderLab Properties, names, material layouts, and nested
+  ranges. Eligible files now re-index from disk without publishing untrusted
+  cache facts or changing the index lifecycle.
 - Released per-document inactive-region decorations and debounce state on
   close, rejected responses from closed document sessions, and skipped
   debounce work for unsupported languages. Definitely inactive branches now
