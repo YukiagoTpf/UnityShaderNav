@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import {
   DiagnosticSeverity,
   type Connection,
@@ -24,6 +23,7 @@ import {
   type ContextDiagnosticFinding,
   type DiagnosticShaderContext,
 } from '../workspace/diagnosticAggregation';
+import { sourceHash } from '../sourceHash';
 
 const SUPPORTED_ASSET_URI = /\.(?:shader|compute)(?:$|[?#])/i;
 const PROFILE_DISCOVERY_KEY = '\u0000known-compile-profiles';
@@ -60,7 +60,7 @@ export interface AdapterDiagnosticOverlay extends DiagnosticOverlay {
 }
 
 export function shaderSourceHash(source: string): string {
-  return createHash('sha256').update(source, 'utf8').digest('hex');
+  return sourceHash(source);
 }
 
 function sameAttempt(

@@ -74,6 +74,15 @@ _Avoid_: standard library, compiler symbols
 函数调用位置的参数提示。UnityShaderNav 只在能保守识别单行 free-function call 和候选函数元数据时返回；存在 overload-like 或预处理歧义时可以展示多个候选，而不会为得到唯一答案猜测分支状态。
 _Avoid_: hover, function docs
 
+**Material Context**:
+连接的 Unity Editor 中当前选中持久化 Material 的资产级证据，包含其 Shader、可用时的
+SubShader/Pass、序列化 Properties、textures、Material keywords 与 Adapter
+provenance。证据同时绑定 project、Editor instance、Material/Shader content hash
+和 Published indexed revision；它可以标注或排序候选，但不删除保守结果，也不进入索引或缓存。
+Material Context 不是最终 draw Context；在真实 draw 证据到达前，global 与
+engine-added keywords 必须保持 `UNKNOWN`。
+_Avoid_: draw Context, runtime variant
+
 **Declared Variant estimate**:
 由当前 Shader 源码中的显式 keyword sets 静态计算出的 Variant 数量上界。它是理论估计，不是 Unity 编译或构建测量值；用户界面必须标为 `Declared/static`。
 _Avoid_: compiled variants, build variants

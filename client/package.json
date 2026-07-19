@@ -60,6 +60,11 @@
         "category": "UnityShaderNav"
       },
       {
+        "command": "unityShaderNav.showMaterialContext",
+        "title": "Show Selected Material Context",
+        "category": "UnityShaderNav"
+      },
+      {
         "command": "unityShaderNav.showVariantComparison",
         "title": "Show Variant Build Comparison",
         "category": "UnityShaderNav"

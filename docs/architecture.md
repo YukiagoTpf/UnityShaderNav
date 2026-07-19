@@ -91,11 +91,12 @@ handling. Important modules:
   Documentation compatibility checks and presentation-only predefined macro
   Hover values.
 - `adapter`: owns the Unity Editor Adapter handshake trust boundary plus the
-  optional `MaterialSource`, bounded Variant build-evidence, and versioned
-  `ShaderGraphSource` query surfaces. Project, instance, producer version,
-  capability, source revision, freshness, disconnect, reconnect, and
-  payload-limit checks run before Adapter facts can reach Workspace behavior;
-  unavailable facts stay explicitly unknown.
+  optional `MaterialSource`, bounded Variant build-evidence, versioned
+  `ShaderGraphSource`, and `MaterialContextSource` query surfaces. Project,
+  instance, producer version, capability, source revision, freshness,
+  disconnect, reconnect, selection-generation, and payload-limit checks run
+  before Adapter facts can reach Workspace behavior; unavailable facts stay
+  explicitly unknown.
 - `handlers`: adapts LSP messages to domain behavior. The document adapter owns
   the open-document registry; `handlers/documentRequest.ts` centralizes
   snapshot routing, suspension, and neutral-result policy. Every index-backed
@@ -345,6 +346,20 @@ require an exact `void` function signature, including ordered parameter names,
 types, and output directions. An unadvertised capability or unsupported Shader
 Graph version remains an explicit unknown status, so the language server never
 decodes or guesses Unity-owned serialization fields.
+
+Selected Material Context is a separate Adapter overlay. The registry stamps
+one selection with project/instance/producer provenance and forces global plus
+engine-added keywords to `unknown`. Workspace then resolves both reported
+asset paths under the current Unity project, matches their canonical URIs,
+checks the selected Shader declaration, and hashes the current Material and
+published/live Shader source before binding the evidence to one publication
+ID. The ephemeral store is ignored after any publication and cleared on
+Adapter selection/reconnect events or Workspace disposal. Completion metadata
+annotates matching Property, texture, and keyword names; Definition and
+Completion use stable ranking partitions that retain every conservative
+candidate. No Material Context fact enters `FileIndex`, source membership,
+cache, or index lifecycle state, and no asset selection is treated as final
+draw evidence.
 
 Push diagnostics are another revision-owned projection. Every lifecycle status
 transition requests one coalesced refresh over current open-document attempts.

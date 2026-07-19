@@ -73,6 +73,7 @@ suite('UnityShaderNav activation', () => {
     const ids = commands.map(({ command }) => command);
     assert.ok(ids.includes('unityShaderNav.showIndexStatus'));
     assert.ok(ids.includes('unityShaderNav.showOutput'));
+    assert.ok(ids.includes('unityShaderNav.showMaterialContext'));
     assert.ok(ids.includes(SHOW_VARIANT_COMPARISON_COMMAND));
   });
 
@@ -104,6 +105,7 @@ suite('UnityShaderNav activation', () => {
     assert.ok(registered.includes('unityShaderNav.showIndexStatus'));
     assert.ok(registered.includes('unityShaderNav.showOutput'));
     assert.ok(registered.includes('unityShaderNav.pickIncludePointContext'));
+    assert.ok(registered.includes('unityShaderNav.showMaterialContext'));
     assert.ok(registered.includes(OPEN_VARIANT_COST_DOCUMENTATION_COMMAND));
     assert.ok(registered.includes(SHOW_VARIANT_COMPARISON_COMMAND));
   });

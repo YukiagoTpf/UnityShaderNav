@@ -79,11 +79,17 @@ import {
 } from './materialReferences';
 import type { MaterialUsageProvider } from '../adapter/materialSource';
 import type { ShaderGraphUsageProvider } from '../adapter/shaderGraphSource';
+import type { MaterialContextProvider } from '../adapter/materialContextSource';
 import {
   isShaderGraphUri,
   currentShaderGraphUsages,
   shaderGraphUsagesForDocument,
 } from './shaderGraphNavigation';
+import {
+  unavailableMaterialContext,
+  validateMaterialContext,
+} from './materialContext';
+import { materialContextStore } from './materialContextStore';
 
 export type { FileEvent } from './workspaceIndex';
 
@@ -95,6 +101,7 @@ export interface WorkspaceRuntimeOptions
   createLiveDocumentTreeSession?: LiveDocumentTreeSessionFactory;
   materialUsages?: MaterialUsageProvider;
   shaderGraphUsages?: ShaderGraphUsageProvider;
+  materialContext?: MaterialContextProvider;
 }
 
 interface DocumentReconcileRun {
@@ -124,6 +131,7 @@ export class Workspace implements IndexedWorkspace {
   private readonly openDocuments: OpenDocumentsProvider | undefined;
   private readonly materialUsages: MaterialUsageProvider | undefined;
   private readonly shaderGraphUsages: ShaderGraphUsageProvider | undefined;
+  private readonly materialContext: MaterialContextProvider | undefined;
   /**
    * The lifecycle mutation queue for initialization, rebuilds, watcher updates,
    * and settings changes. Once an operation starts, no peer on this tail can
@@ -151,6 +159,7 @@ export class Workspace implements IndexedWorkspace {
     this.openDocuments = options.openDocuments;
     this.materialUsages = options.materialUsages;
     this.shaderGraphUsages = options.shaderGraphUsages;
+    this.materialContext = options.materialContext;
     this.liveDocumentTrees = new LiveDocumentTreeSessions(
       options.createLiveDocumentTreeSession,
     );
@@ -259,6 +268,40 @@ export class Workspace implements IndexedWorkspace {
       { contexts: [] },
       (revision) => revision.knownIncludePointContexts(document.uri),
     );
+  }
+
+  async materialContextAt(uri: string): Promise<import('@unity-shader-nav/shared').MaterialContextResult> {
+    const revision = this.captureServingRevision();
+    if (
+      !revision
+      || !revision.containsIndexedUri(uri)
+      || !this.materialContext
+      || this.disposed
+    ) {
+      materialContextStore.set(this.folderUri, null);
+      return unavailableMaterialContext('source-unavailable');
+    }
+    const trusted = await this.materialContext.selectedMaterialContext();
+    if (this.disposed || this.published !== revision) {
+      materialContextStore.set(this.folderUri, null);
+      return unavailableMaterialContext('stale-source');
+    }
+    if (trusted.availability === 'unknown') {
+      materialContextStore.set(this.folderUri, null);
+      return unavailableMaterialContext(trusted.reason);
+    }
+    const result = await validateMaterialContext(revision, trusted.context);
+    if (this.disposed || this.published !== revision) {
+      materialContextStore.set(this.folderUri, null);
+      return unavailableMaterialContext('stale-source');
+    }
+    materialContextStore.set(
+      this.folderUri,
+      result.status === 'available'
+        ? { publicationId: revision.publicationId, context: result.context }
+        : null,
+    );
+    return result;
   }
 
   async inactiveRegionsAt(
@@ -754,6 +797,7 @@ export class Workspace implements IndexedWorkspace {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    materialContextStore.set(this.folderUri, null);
     this.liveDocumentTrees.dispose();
     this.abortController.abort(new WorkspaceDisposedError(this.folderUri));
   }

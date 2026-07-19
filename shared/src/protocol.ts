@@ -48,6 +48,7 @@ export interface IndexStatusSnapshot {
 
 export * from './adapter';
 export * from './cache';
+export * from './materialContext';
 export * from './materials';
 export * from './settings';
 export * from './shaderGraph';

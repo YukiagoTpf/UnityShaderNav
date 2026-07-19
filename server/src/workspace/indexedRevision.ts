@@ -4,10 +4,12 @@ import type {
   CacheFingerprint,
   ExtensionSettings,
   FileIndex,
+  IncludePointContext,
   IncludePointContextsResult,
   InactiveRegion,
   ShaderGraphCustomFunctionUsage,
   VariantContext,
+  SelectedMaterialContext,
 } from '@unity-shader-nav/shared';
 import { normalizeSettings } from '@unity-shader-nav/shared';
 import {
@@ -115,6 +117,11 @@ import {
   analyzeKnownDiagnosticContexts,
   type DiagnosticShaderContext,
 } from './diagnosticAggregation';
+import { materialContextStore } from './materialContextStore';
+import {
+  annotateMaterialCompletions,
+  rankMaterialDefinitionCandidates,
+} from './materialContextOverlay';
 
 const PUBLICATION_SESSION_ID = randomUUID();
 let nextPublicationIdentity = 1;
@@ -223,6 +230,14 @@ export class PublishedIndexedRevision {
 
   containsIndexedUri(uri: string): boolean {
     return this.index.hasDiskIndex(uri) || this.membership.containsUri(uri);
+  }
+
+  sourceTextFor(uri: string): string | undefined {
+    return this.committedDocuments.get(uriKey(uri))?.source.sourceText;
+  }
+
+  indexedFile(uri: string): FileIndex | undefined {
+    return this.index.read.store.get(uri);
   }
 
   diagnostics(uri: string): Promise<Diagnostic[]>;
@@ -341,12 +356,18 @@ export class PublishedIndexedRevision {
     input: DefinitionAtInput,
     facts?: CursorRequestFacts,
   ): Promise<LocationLink[] | Location[] | null> {
-    return navigateDefinition(
+    const candidates = await navigateDefinition(
       this.navigationState(),
       input,
       facts,
       await this.preprocessorContext(input.document.uri),
     );
+    const material = candidates
+      ? await this.materialContextForUri(input.document.uri)
+      : undefined;
+    return candidates && material
+      ? rankMaterialDefinitionCandidates(candidates, material)
+      : candidates;
   }
 
   shaderGraphDefinitionAt(
@@ -411,13 +432,17 @@ export class PublishedIndexedRevision {
     input: DocumentPositionInput,
     facts?: CursorRequestFacts,
   ): Promise<CompletionItem[] | null> {
-    return queryCompletion(
+    const items = await queryCompletion(
       this.queryState(),
       input,
       this.documentAnalysis({ uri: input.document.uri, document: input.document }),
       facts,
       await this.preprocessorContext(input.document.uri),
     );
+    const material = await this.materialContextForUri(input.document.uri);
+    return items && material
+      ? annotateMaterialCompletions(items, material)
+      : items;
   }
 
   requestSource(document: IndexedDocumentSnapshot): ExactSource | undefined {
@@ -526,6 +551,20 @@ export class PublishedIndexedRevision {
     source: DiskSourceIdentity;
   }> {
     return this.index.diskCacheEntries();
+  }
+
+  private async materialContextForUri(
+    uri: string,
+  ): Promise<SelectedMaterialContext | undefined> {
+    const stored = materialContextStore.get(this.folderUri);
+    if (!stored || stored.publicationId !== this.publicationId) return undefined;
+    const context = stored.context;
+    if (uriKey(context.shader.revision.uri) === uriKey(uri)) return context;
+    const records = await this.includePointContexts.recordsFor(uri);
+    return records.some(({ presentation }) => (
+      uriKey(presentation.shaderUri) === uriKey(context.shader.revision.uri)
+      && programMatchesMaterialContext(presentation, context)
+    )) ? context : undefined;
   }
 
   fork(settings: ExtensionSettings = this.settings): IndexedRevisionBuilder {
@@ -670,6 +709,24 @@ function filterDiagnosticsForContext(
     region.range.start.line <= diagnostic.range.start.line
     && diagnostic.range.start.line <= region.range.end.line
   )));
+}
+
+function programMatchesMaterialContext(
+  includePoint: IncludePointContext,
+  context: SelectedMaterialContext,
+): boolean {
+  const selected = context.selectedProgram;
+  if (!selected) return true;
+  return includePoint.subShaderIndex === selected.subShaderIndex
+    && (
+      selected.passIndex === undefined
+      || includePoint.passIndex === selected.passIndex
+    )
+    && (
+      !selected.passName
+      || !includePoint.passName
+      || includePoint.passName === selected.passName
+    );
 }
 
 /** One-shot mutable candidate. It becomes inaccessible after publish(). */

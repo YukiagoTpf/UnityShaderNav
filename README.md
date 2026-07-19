@@ -65,6 +65,12 @@ The extension focuses on fast code navigation:
   Shader, Pass, stage, and include-point combinations come from one published
   index revision; selecting one sharpens dimming, semantic coloring,
   completion, and diagnostics without narrowing navigation results.
+- Selected Material Context from a connected Unity Editor Adapter. The status
+  bar exposes the Material's Shader, optional SubShader/Pass, serialized
+  Properties, textures, Material keywords, and provenance; matching source
+  candidates rank first while every conservative result remains available.
+  This is asset/editor evidence, not the final draw Context, so global and
+  engine-added keyword state stays explicitly unknown.
 - Declared/static Variant cost CodeLens for explicit `multi_compile` and
   `shader_feature` keyword sets, including per-program upper bounds, scope,
   stage, and largest-multiplier facts without claiming Unity build counts.
@@ -182,6 +188,11 @@ See [Configuration](docs/configuration.md) for the full explanation and examples
   and does not constitute compiler-accurate variant resolution. Shared include
   files can additionally select one known Shader include-point Context; it is
   revision-bound, session-only, and falls back to Auto after publication.
+- Material Context requires a connected Adapter and a selected persistent
+  Material asset. It is invalidated on reconnect, selection changes, asset
+  deletion, or source/content-hash mismatch. It does not claim renderer,
+  camera, platform, graphics API, global keyword, or engine-added keyword state
+  without actual draw evidence.
 - Variant build comparison requires a connected Editor Adapter advertising the
   versioned `variant-build-evidence` capability. Missing, oversized, foreign,
   stale, or source-drifted evidence remains explicitly unavailable; it never

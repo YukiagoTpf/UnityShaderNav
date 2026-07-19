@@ -332,6 +332,38 @@ a live edit, rebuild, deletion, or newly invisible include point switches the
 selection back to **Auto** instead of combining facts from two revisions.
 Choosing a Context does not rebuild the Workspace or unrelated roots.
 
+### Selected Material Context
+
+When a connected Unity Editor Adapter reports a selected persistent Material,
+the **Material: _name_** status-bar item opens a read-only evidence list. The
+same list is available through **UnityShaderNav: Show Selected Material
+Context** and includes:
+
+- the Material asset and its Shader;
+- selected SubShader and Pass identity when Unity can supply it;
+- serialized Material Property values and texture bindings;
+- enabled and disabled Material keywords, including whether the Adapter
+  identified a LocalKeyword or only legacy keyword evidence; and
+- the producing project, Editor instance, Unity version, Adapter version,
+  selection identity, asset revisions, and published source revision.
+
+The server accepts this overlay only when the Adapter handshake, feature
+capability, project, Editor instance, Material GUID/path/content hash, Shader
+GUID/path/content hash, and current published source all agree. A reconnect,
+rapidly superseded selection response, deleted asset, live source edit, or
+changed saved file clears the overlay instead of reusing stale facts.
+
+Matching Property/keyword completion entries are annotated and ranked first;
+Definition candidates in the selected Shader rank first. These are stable
+partitions of the conservative results: Material Context never removes a
+completion or navigation candidate and never enters the index or cache.
+
+Material Context is **not the final draw Context**. A Material selection does
+not prove which renderer, camera, platform, graphics API, dynamic pass, global
+keyword, or engine-added keyword participates in a real draw. Global and
+engine-added keyword state therefore remains visibly **unknown** until a later
+source supplies actual draw evidence.
+
 ### Declared Variant Cost
 
 VS Code shows a CodeLens above each supported `#pragma multi_compile` or

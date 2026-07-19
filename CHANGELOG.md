@@ -9,6 +9,14 @@ and uses semantic versioning for extension releases.
 
 ### Added
 
+- Added selected Material Context from the connected Unity Editor Adapter. The
+  status bar and detail command show the Material, Shader, optional
+  SubShader/Pass, serialized Properties, textures, Material keywords, and
+  Adapter provenance. Evidence is bound to the current project, Editor
+  instance, asset content hashes, and published source revision; matching
+  completion and Definition candidates rank first without removing any
+  conservative result. Global and engine-added keywords remain explicitly
+  unknown because Material Context is not the final draw Context. (#101)
 - Added bounded diagnostics aggregation across known Shader Contexts. Auto
   groups equivalent static and Unity compiler findings with affected/analyzed
   counts, expandable exact Context and provenance details, explicit unverified

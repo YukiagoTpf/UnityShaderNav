@@ -4,6 +4,7 @@ import {
   MATERIAL_USAGES_ADAPTER_FEATURE,
   VARIANT_BUILD_EVIDENCE_CAPABILITY,
   SHADER_GRAPH_CUSTOM_FUNCTIONS_CAPABILITY,
+  MATERIAL_CONTEXT_ADAPTER_FEATURE,
   type AdapterDiagnostic,
   type AdapterHandshake,
   type AdapterStatus,
@@ -16,6 +17,7 @@ import {
   type VariantBuildEvidence,
   type VariantBuildEvidenceResult,
   type VariantKeywordSetBuildEvidence,
+  type SelectedMaterialContext,
 } from '@unity-shader-nav/shared';
 import { uriKey } from '../uriKey';
 import type { CompileProfileSource } from './compileProfileSource';
@@ -39,6 +41,12 @@ import {
   unknownShaderGraphUsage,
   validShaderGraphSnapshot,
 } from './shaderGraphSource';
+import type {
+  MaterialContextSource,
+  MaterialContextSourceSnapshot,
+  TrustedMaterialContextResult,
+} from './materialContextSource';
+import { unknownMaterialContext } from './materialContextSource';
 
 const DEFAULT_HANDSHAKE_MAX_AGE_MS = 30_000;
 
@@ -61,6 +69,8 @@ interface ConnectedAdapter {
   readonly handshake: AdapterHandshake;
   readonly materialSource?: MaterialSource;
   readonly shaderGraphSource?: ShaderGraphSource;
+  readonly materialContextSource?: MaterialContextSource;
+  readonly materialContextSubscription?: { dispose(): void };
 }
 
 interface DisconnectedAdapter {
@@ -73,6 +83,7 @@ type RegisteredAdapter = ConnectedAdapter | DisconnectedAdapter;
 export interface AdapterFeatureSources {
   readonly materialUsages?: MaterialSource;
   readonly shaderGraph?: ShaderGraphSource;
+  readonly materialContext?: MaterialContextSource;
 }
 
 export interface AdapterRegistryOptions {
@@ -82,6 +93,9 @@ export interface AdapterRegistryOptions {
   readonly profileSource?: CompileProfileSource;
   readonly variantBuildSource?: VariantBuildEvidenceSource;
 }
+
+/** Feature payload boundaries attached atomically to one handshake instance. */
+export type AdapterConnectionSources = AdapterFeatureSources;
 
 /**
  * Trust boundary for Adapter handshake evidence. A later transport can feed
@@ -96,6 +110,8 @@ export class AdapterRegistry {
   private readonly statusListeners = new Set<(status: AdapterStatus) => void>();
   private publishedStatusKey = 'standalone:no-adapter';
   private registered: RegisteredAdapter | undefined;
+  private readonly materialContextListeners = new Set<() => void>();
+  private materialContextGeneration = 0;
 
   constructor(options: AdapterRegistryOptions = {}) {
     this.now = options.now ?? Date.now;
@@ -109,9 +125,31 @@ export class AdapterRegistry {
   registerHandshake(
     expectedProjectId: string,
     handshake: AdapterHandshake,
-    sources?: MaterialSource | AdapterFeatureSources,
+    sources: AdapterConnectionSources | MaterialSource = {},
   ): AdapterStatus {
-    const featureSources = normalizeFeatureSources(sources);
+    // Keep the pre-#101 MaterialSource argument compatible while all new
+    // capabilities use the extensible source bag.
+    const materialSource = 'materialsUsingShader' in sources
+      ? sources
+      : sources.materialUsages;
+    const shaderGraphSource = 'materialsUsingShader' in sources
+      ? undefined
+      : sources.shaderGraph;
+    const materialContextSource = 'materialsUsingShader' in sources
+      ? undefined
+      : sources.materialContext;
+    this.disposeMaterialContextSubscription();
+    this.materialContextGeneration++;
+    const materialContextSubscription = materialContextSource?.onDidChangeSelection?.(
+      () => {
+        if (
+          this.registered?.state !== 'connected'
+          || this.registered.materialContextSource !== materialContextSource
+        ) return;
+        this.materialContextGeneration++;
+        this.publishMaterialContextChange();
+      },
+    );
     this.registered = {
       state: 'connected',
       expectedProjectId,
@@ -122,21 +160,28 @@ export class AdapterRegistry {
           supportedFeatures: [...handshake.capabilities.supportedFeatures],
         },
       },
-      ...(featureSources.materialUsages
-        ? { materialSource: featureSources.materialUsages }
-        : {}),
-      ...(featureSources.shaderGraph
-        ? { shaderGraphSource: featureSources.shaderGraph }
-        : {}),
+      ...(materialSource ? { materialSource } : {}),
+      ...(shaderGraphSource ? { shaderGraphSource } : {}),
+      ...(materialContextSource ? { materialContextSource } : {}),
+      ...(materialContextSubscription ? { materialContextSubscription } : {}),
     };
     const status = this.computeStatus();
     this.publishStatusChange(status, true);
+    this.publishMaterialContextChange();
     return status;
   }
 
   disconnect(): void {
+    this.disposeMaterialContextSubscription();
+    this.materialContextGeneration++;
     this.registered = { state: 'disconnected' };
     this.publishStatusChange(this.computeStatus(), true);
+    this.publishMaterialContextChange();
+  }
+
+  onDidChangeMaterialContext(listener: () => void): { dispose(): void } {
+    this.materialContextListeners.add(listener);
+    return { dispose: () => { this.materialContextListeners.delete(listener); } };
   }
 
   onDidChangeStatus(listener: (status: AdapterStatus) => void): { dispose(): void } {
@@ -664,15 +709,214 @@ export class AdapterRegistry {
       }))),
     };
   }
+
+  async selectedMaterialContext(): Promise<TrustedMaterialContextResult> {
+    const registered = this.registered;
+    const currentStatus = this.status();
+    if (currentStatus.mode === 'standalone') {
+      return unknownMaterialContext(currentStatus.reason);
+    }
+    if (!registered || registered.state !== 'connected') {
+      return unknownMaterialContext('source-unavailable');
+    }
+    if (!currentStatus.capabilities.supportedFeatures.includes(
+      MATERIAL_CONTEXT_ADAPTER_FEATURE,
+    )) {
+      return unknownMaterialContext('capability-unavailable');
+    }
+
+    const source = registered.materialContextSource;
+    if (!source) return unknownMaterialContext('source-unavailable');
+    const { expectedProjectId, handshake } = registered;
+    if (
+      source.identity.projectId !== expectedProjectId
+      || source.identity.projectId !== handshake.capabilities.projectId
+      || source.identity.instanceId !== handshake.instanceId
+    ) {
+      return unknownMaterialContext('source-identity-mismatch');
+    }
+
+    const generation = this.materialContextGeneration;
+    let snapshot: unknown;
+    try {
+      snapshot = await source.selectedMaterialContext();
+    } catch {
+      return unknownMaterialContext('source-unavailable');
+    }
+    if (this.registered !== registered) {
+      return unknownMaterialContext('connection-changed');
+    }
+    if (generation !== this.materialContextGeneration) {
+      return unknownMaterialContext('selection-changed');
+    }
+    if (this.status().mode === 'standalone') {
+      return unknownMaterialContext('connection-changed');
+    }
+    if (isNoMaterialSelection(snapshot)) {
+      return unknownMaterialContext('no-selection');
+    }
+    if (!validMaterialContextSnapshot(snapshot, this.now())) {
+      return unknownMaterialContext('invalid-evidence');
+    }
+
+    const context: SelectedMaterialContext = {
+      selectionId: snapshot.selectionId,
+      material: cloneContextAsset(snapshot.material),
+      shader: cloneContextAsset(snapshot.shader),
+      ...(snapshot.selectedProgram
+        ? { selectedProgram: { ...snapshot.selectedProgram } }
+        : {}),
+      properties: snapshot.properties.map((property) => ({
+        name: property.name,
+        type: property.type,
+        serializedValue: cloneSerializedValue(property.serializedValue),
+      })),
+      textures: snapshot.textures.map((binding) => ({
+        propertyName: binding.propertyName,
+        texture: binding.texture ? { ...binding.texture } : null,
+      })),
+      keywords: {
+        material: snapshot.materialKeywords.map((keyword) => ({ ...keyword })),
+        global: { status: 'unknown', reason: 'draw-evidence-required' },
+        engineAdded: { status: 'unknown', reason: 'draw-evidence-required' },
+      },
+      provenance: {
+        capability: MATERIAL_CONTEXT_ADAPTER_FEATURE,
+        projectId: source.identity.projectId,
+        instanceId: source.identity.instanceId,
+        adapterVersion: handshake.capabilities.adapterVersion,
+        unityVersion: handshake.capabilities.unityVersion,
+        collectedAt: snapshot.collectedAt,
+        sourceRevision: snapshot.selectionId,
+      },
+    };
+    return { availability: 'available', context };
+  }
+
+  private disposeMaterialContextSubscription(): void {
+    if (this.registered?.state === 'connected') {
+      this.registered.materialContextSubscription?.dispose();
+    }
+  }
+
+  private publishMaterialContextChange(): void {
+    for (const listener of [...this.materialContextListeners]) listener();
+  }
 }
 
-function normalizeFeatureSources(
-  sources: MaterialSource | AdapterFeatureSources | undefined,
-): AdapterFeatureSources {
-  if (!sources) return {};
-  return 'materialsUsingShader' in sources
-    ? { materialUsages: sources }
-    : sources;
+function cloneContextAsset(
+  asset: import('@unity-shader-nav/shared').MaterialContextAsset,
+): import('@unity-shader-nav/shared').MaterialContextAsset {
+  return { ...asset, revision: { ...asset.revision } };
+}
+
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function validAssetGuid(value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-f]{32}$/i.test(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function validAsset(asset: unknown): boolean {
+  if (!isRecord(asset) || !isRecord(asset.revision)) return false;
+  return nonEmptyString(asset.name)
+    && nonEmptyString(asset.path)
+    && nonEmptyString(asset.revision.uri)
+    && validAssetGuid(asset.revision.assetGuid)
+    && nonEmptyString(asset.revision.contentHash);
+}
+
+function validSerializedValue(
+  value: unknown,
+  ancestors: ReadonlySet<object> = new Set(),
+): boolean {
+  if (
+    value === null
+    || typeof value === 'boolean'
+    || typeof value === 'string'
+  ) return true;
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (typeof value !== 'object') return false;
+  if (ancestors.has(value)) return false;
+  const nestedAncestors = new Set(ancestors);
+  nestedAncestors.add(value);
+  return Array.isArray(value)
+    ? value.every((nested) => validSerializedValue(nested, nestedAncestors))
+    : Object.values(value).every((nested) => (
+      validSerializedValue(nested, nestedAncestors)
+    ));
+}
+
+function validSelectedProgram(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  return Number.isSafeInteger(value.subShaderIndex)
+    && Number(value.subShaderIndex) >= 0
+    && (
+      value.passIndex === undefined
+      || (Number.isSafeInteger(value.passIndex) && Number(value.passIndex) >= 0)
+    )
+    && (value.passName === undefined || nonEmptyString(value.passName));
+}
+
+function validProperty(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  return nonEmptyString(value.name)
+    && ['float', 'integer', 'vector', 'texture'].includes(String(value.type))
+    && validSerializedValue(value.serializedValue);
+}
+
+function validTexture(value: unknown): boolean {
+  if (!isRecord(value) || !nonEmptyString(value.propertyName)) return false;
+  return value.texture === null
+    || (
+      isRecord(value.texture)
+      && nonEmptyString(value.texture.name)
+      && validAssetGuid(value.texture.guid)
+      && nonEmptyString(value.texture.path)
+    );
+}
+
+function validKeyword(value: unknown): boolean {
+  return isRecord(value)
+    && nonEmptyString(value.name)
+    && typeof value.enabled === 'boolean'
+    && (value.scope === 'local' || value.scope === 'legacy');
+}
+
+function isNoMaterialSelection(snapshot: unknown): boolean {
+  return isRecord(snapshot) && snapshot.status === 'none';
+}
+
+function validMaterialContextSnapshot(
+  snapshot: unknown,
+  now: number,
+): snapshot is Extract<
+  MaterialContextSourceSnapshot,
+  { readonly status: 'selected' }
+> {
+  if (!isRecord(snapshot)) return false;
+  return snapshot.status === 'selected'
+    && nonEmptyString(snapshot.selectionId)
+    && Number.isFinite(snapshot.collectedAt)
+    && Number(snapshot.collectedAt) >= 0
+    && Number(snapshot.collectedAt) <= now
+    && validAsset(snapshot.material)
+    && validAsset(snapshot.shader)
+    && (
+      snapshot.selectedProgram === undefined
+      || validSelectedProgram(snapshot.selectedProgram)
+    )
+    && Array.isArray(snapshot.properties)
+    && snapshot.properties.every(validProperty)
+    && Array.isArray(snapshot.textures)
+    && snapshot.textures.every(validTexture)
+    && Array.isArray(snapshot.materialKeywords)
+    && snapshot.materialKeywords.every(validKeyword);
 }
 
 function validNonEmptyString(value: unknown): value is string {

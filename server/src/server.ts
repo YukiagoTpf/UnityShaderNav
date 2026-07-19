@@ -28,6 +28,7 @@ import { registerHoverHandler } from './handlers/hover';
 import { registerDocumentFormattingHandler } from './handlers/formatting';
 import { registerInactiveRegionsHandler } from './handlers/inactiveRegions';
 import { registerIncludePointContextsHandler } from './handlers/includePointContexts';
+import { registerMaterialContextHandler } from './handlers/materialContext';
 import { registerVariantKeywordsHandler } from './handlers/variantKeywords';
 import { registerVariantComparisonHandler } from './handlers/variantComparison';
 import { registerReferencesHandler } from './handlers/references';
@@ -50,6 +51,7 @@ const adapterRegistry = new AdapterRegistry();
 const manager = new WorkspaceManager({
   materialUsages: adapterRegistry,
   shaderGraphUsages: adapterRegistry,
+  materialContext: adapterRegistry,
 });
 const suspender = new RequestSuspender({ timeoutMs: 5000 });
 let globalStorageDir: string | undefined;
@@ -196,6 +198,7 @@ registerInactiveRegionsHandler(
   suspender,
 );
 registerIncludePointContextsHandler(connection, manager, suspender);
+registerMaterialContextHandler(connection, manager, adapterRegistry, suspender);
 registerVariantKeywordsHandler(connection, documents);
 registerCodeLensHandler(connection, documents);
 registerVariantComparisonHandler(connection, documents, adapterRegistry);

@@ -11,6 +11,7 @@ import {
   type IncludePointContextsResult,
   type InactiveRegion,
   type IndexStatusSnapshot,
+  type MaterialContextResult,
 } from '@unity-shader-nav/shared';
 import { detectUnityRoot } from './detectUnityRoot';
 import { uriKey } from '../uriKey';
@@ -29,6 +30,8 @@ import {
 } from '../lifecycle/requestCancellation';
 import type { MaterialUsageProvider } from '../adapter/materialSource';
 import type { ShaderGraphUsageProvider } from '../adapter/shaderGraphSource';
+import type { MaterialContextProvider } from '../adapter/materialContextSource';
+import { materialContextStore } from './materialContextStore';
 
 const MAX_WORKSPACE_SYMBOLS = 1000;
 
@@ -60,6 +63,7 @@ export interface WorkspaceManagerRuntimeOptions {
   ) => IndexedRevisionCandidateConstructor;
   readonly materialUsages?: MaterialUsageProvider;
   readonly shaderGraphUsages?: ShaderGraphUsageProvider;
+  readonly materialContext?: MaterialContextProvider;
 }
 
 export class WorkspaceManager implements DiagnosticWorkspaceService {
@@ -113,6 +117,18 @@ export class WorkspaceManager implements DiagnosticWorkspaceService {
     const workspace = this.workspaceFor(uri);
     if (!document || !workspace?.canServe()) return { contexts: [] };
     return workspace.knownIncludePointContextsAt(document);
+  }
+
+  async materialContextFor(uri: string): Promise<MaterialContextResult> {
+    const workspace = this.workspaceFor(uri);
+    if (!workspace?.canServe()) {
+      return { status: 'unavailable', reason: 'source-unavailable' };
+    }
+    return workspace.materialContextAt(uri);
+  }
+
+  invalidateMaterialContexts(): void {
+    materialContextStore.clear();
   }
 
   async inactiveRegionsFor(
@@ -317,6 +333,7 @@ export class WorkspaceManager implements DiagnosticWorkspaceService {
         : undefined,
       materialUsages: this.runtimeOptions.materialUsages,
       shaderGraphUsages: this.runtimeOptions.shaderGraphUsages,
+      materialContext: this.runtimeOptions.materialContext,
     });
     let resolveRetired!: () => void;
     const retired = new Promise<void>((resolve) => {
