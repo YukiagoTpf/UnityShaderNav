@@ -1,7 +1,12 @@
 import { getConnection, createInitializeResult } from './connection';
 import {
   INDEX_STATUS_REQUEST,
+  VARIANT_CONTEXT_CHANGED_NOTIFICATION,
+  VARIANT_CONTEXT_REQUEST,
   type IndexStatusSnapshot,
+  type VariantContextChangedParams,
+  type VariantContextParams,
+  type VariantContextResult,
 } from '@unity-shader-nav/shared';
 import { loadSettings, onSettingsChanged } from './config';
 import { registerCompletionHandler } from './handlers/completion';
@@ -25,6 +30,7 @@ import { applyScopedSettingsAndRebuild } from './lifecycle/rebuild';
 import { RequestSuspender } from './lifecycle/requestSuspender';
 import { initializeWorkspaceFolders } from './lifecycle/workspaceFolderCoordinator';
 import { WorkspaceManager } from './workspace';
+import { variantContextStore } from './workspace/variantContextStore';
 import type { CancellationToken } from 'vscode-languageserver/node';
 import { throwIfRequestCancelled } from './lifecycle/requestCancellation';
 
@@ -42,6 +48,20 @@ connection.onRequest(
   },
 );
 
+connection.onNotification(
+  VARIANT_CONTEXT_CHANGED_NOTIFICATION,
+  (params: VariantContextChangedParams) => {
+    variantContextStore.set(params.textDocument.uri, params.context);
+  },
+);
+
+connection.onRequest(
+  VARIANT_CONTEXT_REQUEST,
+  (params: VariantContextParams): VariantContextResult => ({
+    context: variantContextStore.get(params.textDocument.uri),
+  }),
+);
+
 connection.onInitialize((params) => {
   const options = params.initializationOptions as { globalStorageDir?: unknown } | undefined;
   globalStorageDir = typeof options?.globalStorageDir === 'string'
@@ -54,6 +74,9 @@ connection.onInitialize((params) => {
 });
 
 const documentRegistry = registerDocuments(connection, manager);
+documentRegistry.onDidCloseSnapshot((document) => {
+  variantContextStore.delete(document.uri);
+});
 const documents = documentRegistry.documents;
 registerDiagnosticsPublisher(connection, documentRegistry, manager);
 manager.configureSettingsResolver((scopeUri) => loadSettings(connection, scopeUri));

@@ -57,6 +57,7 @@ import type {
 import type { CursorRequestFacts } from './requestFacts';
 import type { WorkspaceIndexReadView } from './workspaceIndex';
 import { SEMANTIC_TOKEN_TYPES } from './semanticTokenLegend';
+import { variantContextStore } from './variantContextStore';
 import {
   completeShaderLabName,
   shaderLabNameDefinitions,
@@ -338,6 +339,9 @@ export async function queryHighlights(
     global: state.index.global,
     options: { visibleUriKeys },
     cancellation: input.cancellation,
+    variantContext: variantContextStore.get(document.uri) ?? undefined,
+    getText: (uri: string) => (uri === document.uri ? document.text : undefined),
+    isShaderLab: /\.shader(?:$|[?#])/i.test(document.uri),
   }).map((location): DocumentHighlight => ({
     range: location.range,
     kind: DocumentHighlightKind.Text,

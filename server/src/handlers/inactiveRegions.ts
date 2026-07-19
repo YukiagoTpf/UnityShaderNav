@@ -17,6 +17,7 @@ import {
   awaitWithRequestCancellation,
   throwIfRequestCancelled,
 } from '../lifecycle/requestCancellation';
+import { variantContextStore } from '../workspace/variantContextStore';
 
 // Copied from semanticTokens.ts (private there). `.shader` files only dim inside
 // HLSL/CG blocks; everything else is analyzed as a whole HLSL file.
@@ -58,7 +59,11 @@ export function registerInactiveRegionsHandler(
         const text = documents.get(uri)?.getText();
         if (text === undefined) return empty;
 
-        const regions = analyzeInactiveRegions(text, { isShaderLab: isShaderLabUri(uri) });
+        const context = variantContextStore.get(uri);
+        const regions = analyzeInactiveRegions(text, {
+          isShaderLab: isShaderLabUri(uri),
+          context: context ?? undefined,
+        });
         throwIfRequestCancelled(cancellation);
         return { version, regions };
       };

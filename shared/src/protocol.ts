@@ -54,11 +54,30 @@ export * from './symbols';
 /** Custom pull request: client asks for dimmed preprocessor-branch ranges. */
 export const INACTIVE_REGIONS_REQUEST = 'unityShaderNav/inactiveRegions';
 
+/** Client → server: set the active VariantContext for a document. null = conservative. */
+export const VARIANT_CONTEXT_CHANGED_NOTIFICATION = 'unityShaderNav/variantContextChanged';
+
+/** Client → server: query the current VariantContext for a document (restore on reload). */
+export const VARIANT_CONTEXT_REQUEST = 'unityShaderNav/getVariantContext';
+
 export type DimReason = 'inactive' | 'variant';
 
 export interface VariantContext {
   /** keyword names that are currently enabled for this document */
   readonly activeKeywords: ReadonlySet<string>;
+}
+
+export interface VariantContextChangedParams {
+  readonly textDocument: { readonly uri: string };
+  readonly context: VariantContext | null;
+}
+
+export interface VariantContextParams {
+  readonly textDocument: { readonly uri: string };
+}
+
+export interface VariantContextResult {
+  readonly context: VariantContext | null;
 }
 
 export interface InactiveRegion {

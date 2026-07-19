@@ -40,6 +40,7 @@ import {
   shaderLabNameTargetAt,
   type ShaderLabNameTarget,
 } from './shaderLabNames';
+import { variantContextStore } from './variantContextStore';
 
 export interface WorkspaceNavigationState {
   readonly index: WorkspaceIndexReadView;
@@ -227,6 +228,9 @@ async function navigateCodeDefinition(
     global: state.index.global,
     position,
     options: { visibleUriKeys, trace },
+    variantContext: variantContextStore.get(document.uri) ?? undefined,
+    getText: (uri: string) => (uri === document.uri ? document.text : undefined),
+    isShaderLab: /\.shader(?:$|[?#])/i.test(document.uri),
   };
   trace('visibility', { visibleUriCount: visibleUriKeys.size });
 
@@ -372,5 +376,8 @@ export async function navigateReferences(
     includePackages: state.includePackages,
     includeDeclaration: input.includeDeclaration,
     cancellation: input.cancellation,
+    variantContext: variantContextStore.get(document.uri) ?? undefined,
+    getText: (uri: string) => (uri === document.uri ? document.text : undefined),
+    isShaderLab: /\.shader(?:$|[?#])/i.test(document.uri),
   });
 }
