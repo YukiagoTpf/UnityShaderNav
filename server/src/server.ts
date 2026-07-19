@@ -29,6 +29,7 @@ import { registerDocumentFormattingHandler } from './handlers/formatting';
 import { registerInactiveRegionsHandler } from './handlers/inactiveRegions';
 import { registerIncludePointContextsHandler } from './handlers/includePointContexts';
 import { registerVariantKeywordsHandler } from './handlers/variantKeywords';
+import { registerVariantComparisonHandler } from './handlers/variantComparison';
 import { registerReferencesHandler } from './handlers/references';
 import { registerRenameHandler } from './handlers/rename';
 import { registerSemanticTokensHandler } from './handlers/semanticTokens';
@@ -193,6 +194,7 @@ registerInactiveRegionsHandler(
 registerIncludePointContextsHandler(connection, manager, suspender);
 registerVariantKeywordsHandler(connection, documents);
 registerCodeLensHandler(connection, documents);
+registerVariantComparisonHandler(connection, documents, adapterRegistry);
 registerFileWatchers(
   connection,
   manager,

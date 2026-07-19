@@ -9,6 +9,13 @@ and uses semantic versioning for extension releases.
 
 ### Added
 
+- Added an Adapter-backed Variant comparison report for saved Shader assets.
+  It compares Declared/static stage upper bounds with Unity Compile candidates
+  and Kept Variants per Pass, Stage, build target, and graphics API, ranks the
+  largest keyword-set gaps, and retains validated partial facts from failed or
+  incomplete builds. Project/producer/source/timestamp drift and unavailable or
+  oversized evidence stay explicit instead of becoming zero or measured facts.
+  (#91)
 - Added a session-only Shader include-point Context picker for shared HLSL/CG
   files. Each published revision derives known Shader, Pass, stage, source
   location, and deterministic macro state; selecting one sharpens inactive

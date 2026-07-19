@@ -90,11 +90,11 @@ handling. Important modules:
 - `project`: `UnityProjectFacts` captures the Editor version consumed by Quick
   Documentation compatibility checks and presentation-only predefined macro
   Hover values.
-- `adapter`: owns the Unity Editor Adapter handshake trust boundary and the
-  optional `MaterialSource` query surface. Project, instance, capability,
-  freshness, disconnect, and reconnect checks run before Adapter facts can
-  reach Workspace behavior; unavailable asset and dynamic-runtime scopes stay
-  explicitly unknown.
+- `adapter`: owns the Unity Editor Adapter handshake trust boundary plus the
+  optional `MaterialSource` and bounded Variant build-evidence query surfaces.
+  Project, instance, producer version, capability, source revision, freshness,
+  disconnect, reconnect, and payload-limit checks run before Adapter facts can
+  reach Workspace behavior; unavailable facts stay explicitly unknown.
 - `handlers`: adapts LSP messages to domain behavior. The document adapter owns
   the open-document registry; `handlers/documentRequest.ts` centralizes
   snapshot routing, suspension, and neutral-result policy. Every index-backed
@@ -319,6 +319,19 @@ path, serialized-value compatibility, Adapter provenance, complete asset-scope
 evidence, and an explicit unknown runtime scope. Material revisions are read on
 each request and never create `SymbolEntry`, source-membership, cache, or index
 lifecycle state.
+
+Variant comparison is another Adapter-supplied overlay and remains outside the
+source index. `variantBuildEvidenceSource` accepts only aggregate rows (at most
+2,048 Shader Contexts, 256 keyword sets per Context, and 8,192 sets total) and
+`AdapterRegistry` rejects malformed, oversized, foreign-producer, future,
+connection-changed, or source-drifted snapshots. `variantComparison` derives
+stage-specific Declared/static upper bounds from the current document, joins
+them to trusted Compile candidates and Kept measurements by Shader,
+SubShader/Pass, Stage, build target, and graphics API, and ranks exact-integer
+keyword-set gaps. Failed and incomplete build status is carried alongside any
+validated partial rows; no unavailable count is converted to zero. The client
+presents this through an explicit report command, while the existing
+Declared/static CodeLens remains source-only.
 
 Push diagnostics are another revision-owned projection. Every lifecycle status
 transition requests one coalesced refresh over current open-document attempts.

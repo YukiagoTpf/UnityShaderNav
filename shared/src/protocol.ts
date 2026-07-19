@@ -52,6 +52,7 @@ export * from './materials';
 export * from './settings';
 export * from './structure';
 export * from './symbols';
+export * from './variants';
 
 /** Custom pull request: client asks for dimmed preprocessor-branch ranges. */
 export const INACTIVE_REGIONS_REQUEST = 'unityShaderNav/inactiveRegions';

@@ -29,6 +29,9 @@ UnityShaderNav provides practical VS Code navigation for Unity shader projects:
   points and conservative SRP Batcher material contracts.
 - Declared/static Variant cost CodeLens for explicit keyword sets, with exact
   source-local products that remain separate from compiler/build evidence.
+- A bounded Editor Adapter Variant comparison report that preserves distinct
+  Declared/static, Compile candidates, Kept, and unavailable evidence classes,
+  tied to the exact Shader source and Unity build provenance.
 - Cross-file navigation through `#include` chains and resolved Unity Packages.
 
 The project optimizes for useful editor behavior over full shader compilation
@@ -71,6 +74,7 @@ Language server
   - builds symbol/reference indexes
   - publishes only through the Workspace lifecycle boundary
   - answers LSP definition, references, symbols, highlight, CodeLens, and semantic-token requests
+  - validates and compares optional aggregate Unity Variant build evidence
   - publishes revision- and document-version-checked entry-point diagnostics
   - persists per-Workspace cache manifests under Library/UnityShaderNavCache
 ```

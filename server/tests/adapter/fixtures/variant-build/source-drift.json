@@ -1,0 +1,22 @@
+{
+  "status": "incomplete",
+  "failure": {
+    "phase": "build",
+    "message": "Build cancelled after the Shader source changed"
+  },
+  "provenance": {
+    "capability": "variant-build-evidence",
+    "projectId": "project-a",
+    "instanceId": "editor-1",
+    "adapterVersion": "0.3.0",
+    "unityVersion": "6000.0.31f1",
+    "buildTarget": "StandaloneWindows64",
+    "collectedAt": 1000000,
+    "sourceRevision": {
+      "uri": "file:///project/Assets/Shaders/Lit.shader",
+      "assetGuid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "contentHash": "obsolete-source-hash"
+    }
+  },
+  "contexts": []
+}

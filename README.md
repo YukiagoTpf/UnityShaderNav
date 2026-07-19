@@ -64,6 +64,10 @@ The extension focuses on fast code navigation:
 - Declared/static Variant cost CodeLens for explicit `multi_compile` and
   `shader_feature` keyword sets, including per-program upper bounds, scope,
   stage, and largest-multiplier facts without claiming Unity build counts.
+- An Adapter-backed **Show Variant Build Comparison** report that keeps
+  Declared/static upper bounds, Unity Compile candidates, Kept Variants, and
+  unavailable evidence visibly separate per Shader/Pass/Stage/build target,
+  with the largest keyword-set gaps first.
 - Unity Package resolution through `Packages/packages-lock.json`.
 - Persistent project-local indexing under `Library/UnityShaderNavCache/`.
 
@@ -171,6 +175,10 @@ See [Configuration](docs/configuration.md) for the full explanation and examples
   and does not constitute compiler-accurate variant resolution. Shared include
   files can additionally select one known Shader include-point Context; it is
   revision-bound, session-only, and falls back to Auto after publication.
+- Variant build comparison requires a connected Editor Adapter advertising the
+  versioned `variant-build-evidence` capability. Missing, oversized, foreign,
+  stale, or source-drifted evidence remains explicitly unavailable; it never
+  changes the Declared/static CodeLens or the source index.
 - Macro bodies are not expanded. Built-in and user-configured declaration
   patterns cover common Unity macro declarations.
 - Surface Shader implicit parameters and ShaderGraph generated code are not

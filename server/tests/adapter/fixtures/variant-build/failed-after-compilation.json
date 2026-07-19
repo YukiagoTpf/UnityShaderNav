@@ -1,0 +1,42 @@
+{
+  "status": "failed",
+  "failure": {
+    "phase": "stripping",
+    "message": "Build pipeline stopped while collecting kept Variants"
+  },
+  "provenance": {
+    "capability": "variant-build-evidence",
+    "projectId": "project-a",
+    "instanceId": "editor-1",
+    "adapterVersion": "0.3.0",
+    "unityVersion": "6000.0.31f1",
+    "buildTarget": "StandaloneWindows64",
+    "collectedAt": 1000000,
+    "sourceRevision": {
+      "uri": "file:///project/Assets/Shaders/Lit.shader",
+      "assetGuid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "contentHash": "0123456789abcdef"
+    }
+  },
+  "contexts": [
+    {
+      "shaderName": "Tests/Lit",
+      "subShaderIndex": 0,
+      "passIndex": 0,
+      "passName": "Forward",
+      "stage": "fragment",
+      "graphicsApi": "Direct3D11",
+      "compileCandidates": { "availability": "available", "count": "12" },
+      "kept": { "availability": "unavailable", "reason": "build-failed" },
+      "keywordSets": [
+        {
+          "keywords": ["_MAIN_LIGHT_SHADOWS"],
+          "scope": "global",
+          "hasBlankOption": true,
+          "compileCandidates": { "availability": "available", "count": "2" },
+          "kept": { "availability": "unavailable", "reason": "build-failed" }
+        }
+      ]
+    }
+  ]
+}

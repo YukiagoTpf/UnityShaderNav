@@ -3,7 +3,10 @@ import { realpathSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { OPEN_VARIANT_COST_DOCUMENTATION_COMMAND } from '@unity-shader-nav/shared';
+import {
+  OPEN_VARIANT_COST_DOCUMENTATION_COMMAND,
+  SHOW_VARIANT_COMPARISON_COMMAND,
+} from '@unity-shader-nav/shared';
 
 const EXT_ID = 'Yukiago.unity-shader-nav';
 
@@ -66,6 +69,7 @@ suite('UnityShaderNav activation', () => {
     const ids = commands.map(({ command }) => command);
     assert.ok(ids.includes('unityShaderNav.showIndexStatus'));
     assert.ok(ids.includes('unityShaderNav.showOutput'));
+    assert.ok(ids.includes(SHOW_VARIANT_COMPARISON_COMMAND));
   });
 
   test('opening a .shader document triggers activation via activationEvents', async () => {
@@ -97,6 +101,7 @@ suite('UnityShaderNav activation', () => {
     assert.ok(registered.includes('unityShaderNav.showOutput'));
     assert.ok(registered.includes('unityShaderNav.pickIncludePointContext'));
     assert.ok(registered.includes(OPEN_VARIANT_COST_DOCUMENTATION_COMMAND));
+    assert.ok(registered.includes(SHOW_VARIANT_COMPARISON_COMMAND));
   });
 });
 

@@ -70,6 +70,22 @@ _Avoid_: standard library, compiler symbols
 函数调用位置的参数提示。UnityShaderNav 只在能保守识别单行 free-function call 和候选函数元数据时返回；存在 overload-like 或预处理歧义时可以展示多个候选，而不会为得到唯一答案猜测分支状态。
 _Avoid_: hover, function docs
 
+**Declared Variant estimate**:
+由当前 Shader 源码中的显式 keyword sets 静态计算出的 Variant 数量上界。它是理论估计，不是 Unity 编译或构建测量值；用户界面必须标为 `Declared/static`。
+_Avoid_: compiled variants, build variants
+
+**Compile candidates**:
+Unity build 在 stripping 前报告的候选 Variant 数量。它只在 Editor Adapter 提供匹配 project、Unity version、build target 和 source identity 的 build evidence 时已知。
+_Avoid_: declared variants
+
+**Kept Variants**:
+Unity build 在 stripping 后保留的 Variant 数量。失败或不完整的 build 可以只有 Compile candidates 而没有 Kept Variants；未知不能表示为零。
+_Avoid_: used variants, declared variants
+
+**Variant build evidence**:
+Editor Adapter 提供的有界、聚合 build facts，按 Shader、Pass、Stage、build target 和 graphics API 绑定，并携带 project、producer、source revision 与 collection timestamp。它不进入 Published indexed revision，也不替代 Declared Variant estimate。
+_Avoid_: variant estimate, compiler guess
+
 ## Flagged ambiguities
 
 **"Package"**:

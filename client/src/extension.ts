@@ -13,6 +13,7 @@ import { createLanguageClient } from './client';
 import { setupInactiveRegions } from './inactiveRegions';
 import { createVariantContextPicker } from './variantContextPicker';
 import { createIncludePointContextPicker } from './includePointContextPicker';
+import { createVariantComparisonCommand } from './variantComparison';
 import { IndexStatusController, indexStatusDetails } from './indexStatus';
 import { IndexStatusSession } from './indexStatusSession';
 import {
@@ -78,6 +79,7 @@ export async function activate(context: ExtensionContext): Promise<void> {
     OPEN_VARIANT_COST_DOCUMENTATION_COMMAND,
     () => env.openExternal(Uri.parse(VARIANT_COST_DOCUMENTATION_URL)),
   ));
+  context.subscriptions.push(createVariantComparisonCommand(client, reportError));
   await client.start();
   try {
     const adapterStatus = await client.sendRequest<AdapterStatus>(ADAPTER_STATUS_REQUEST);

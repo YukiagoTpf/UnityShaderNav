@@ -2,6 +2,7 @@ import {
   ADAPTER_INTERFACE_VERSION,
   SHADER_MESSAGES_CAPABILITY,
   MATERIAL_USAGES_ADAPTER_FEATURE,
+  VARIANT_BUILD_EVIDENCE_CAPABILITY,
   type AdapterDiagnostic,
   type AdapterHandshake,
   type AdapterStatus,
@@ -10,6 +11,10 @@ import {
   type CompileProfileDiscovery,
   type CompileProfileRunResult,
   type MaterialSerializedValue,
+  type VariantBuildContextEvidence,
+  type VariantBuildEvidence,
+  type VariantBuildEvidenceResult,
+  type VariantKeywordSetBuildEvidence,
 } from '@unity-shader-nav/shared';
 import { uriKey } from '../uriKey';
 import type { CompileProfileSource } from './compileProfileSource';
@@ -20,6 +25,10 @@ import type {
   MaterialUsageResult,
 } from './materialSource';
 import { unknownMaterialUsage } from './materialSource';
+import {
+  validateVariantBuildEvidence,
+  type VariantBuildEvidenceSource,
+} from './variantBuildEvidenceSource';
 
 const DEFAULT_HANDSHAKE_MAX_AGE_MS = 30_000;
 
@@ -54,6 +63,7 @@ export interface AdapterRegistryOptions {
   readonly handshakeMaxAgeMs?: number;
   readonly messageSource?: ShaderMessageSource;
   readonly profileSource?: CompileProfileSource;
+  readonly variantBuildSource?: VariantBuildEvidenceSource;
 }
 
 /**
@@ -65,6 +75,7 @@ export class AdapterRegistry {
   private readonly handshakeMaxAgeMs: number;
   private readonly messageSource: ShaderMessageSource | undefined;
   private readonly profileSource: CompileProfileSource | undefined;
+  private readonly variantBuildSource: VariantBuildEvidenceSource | undefined;
   private readonly statusListeners = new Set<(status: AdapterStatus) => void>();
   private publishedStatusKey = 'standalone:no-adapter';
   private registered: RegisteredAdapter | undefined;
@@ -75,6 +86,7 @@ export class AdapterRegistry {
       ?? DEFAULT_HANDSHAKE_MAX_AGE_MS;
     this.messageSource = options.messageSource;
     this.profileSource = options.profileSource;
+    this.variantBuildSource = options.variantBuildSource;
   }
 
   registerHandshake(
@@ -295,6 +307,70 @@ export class AdapterRegistry {
     };
   }
 
+  /**
+   * Accept only aggregate build evidence owned by the current Adapter, project,
+   * producer versions, and exact saved Shader contents.
+   */
+  async variantBuildEvidenceFor(
+    documentUri: string,
+    contentHash: string,
+  ): Promise<VariantBuildEvidenceResult> {
+    const connected = this.currentConnectedAdapter();
+    if (!connected) {
+      const status = this.status();
+      return unavailableVariantBuildEvidence(
+        status.mode === 'standalone' ? status.reason : 'connection-changed',
+      );
+    }
+    if (!connected.handshake.capabilities.supportedFeatures.includes(
+      VARIANT_BUILD_EVIDENCE_CAPABILITY,
+    )) return unavailableVariantBuildEvidence('capability-unavailable');
+    if (!this.variantBuildSource) {
+      return unavailableVariantBuildEvidence('source-unavailable');
+    }
+
+    let evidence: VariantBuildEvidence | null;
+    try {
+      evidence = await this.variantBuildSource.getVariantBuildEvidence(documentUri);
+    } catch {
+      return unavailableVariantBuildEvidence('source-unavailable');
+    }
+    if (this.registered !== connected || this.currentConnectedAdapter() !== connected) {
+      return unavailableVariantBuildEvidence('connection-changed');
+    }
+    if (!evidence) return unavailableVariantBuildEvidence('source-unavailable');
+    const validationFailure = validateVariantBuildEvidence(evidence);
+    if (validationFailure) {
+      return unavailableVariantBuildEvidence(validationFailure);
+    }
+
+    const { handshake } = connected;
+    const { capabilities } = handshake;
+    const { provenance } = evidence;
+    if (
+      provenance.capability !== VARIANT_BUILD_EVIDENCE_CAPABILITY
+      || provenance.projectId !== capabilities.projectId
+      || provenance.instanceId !== handshake.instanceId
+      || provenance.adapterVersion !== capabilities.adapterVersion
+      || provenance.unityVersion !== capabilities.unityVersion
+      || !Number.isFinite(provenance.collectedAt)
+      || provenance.collectedAt < 0
+      || provenance.collectedAt > this.now()
+    ) return unavailableVariantBuildEvidence('invalid-evidence');
+    if (
+      uriKey(provenance.sourceRevision.uri) !== uriKey(documentUri)
+      || provenance.sourceRevision.contentHash !== contentHash
+    ) return unavailableVariantBuildEvidence('source-drift');
+    if (!provenance.sourceRevision.assetGuid) {
+      return unavailableVariantBuildEvidence('invalid-evidence');
+    }
+
+    return {
+      availability: 'available',
+      evidence: cloneVariantBuildEvidence(evidence),
+    };
+  }
+
   status(): AdapterStatus {
     const status = this.computeStatus();
     this.publishStatusChange(status);
@@ -482,4 +558,44 @@ function validCompileProfile(profile: unknown): profile is CompileProfile {
     && candidate.graphicsApi.trim().length > 0
     && typeof candidate.capability === 'string'
     && candidate.capability.trim().length > 0;
+}
+
+function unavailableVariantBuildEvidence(
+  reason: Extract<VariantBuildEvidenceResult, { availability: 'unavailable' }>['reason'],
+): Extract<VariantBuildEvidenceResult, { availability: 'unavailable' }> {
+  return { availability: 'unavailable', reason };
+}
+
+function cloneVariantKeywordSet(
+  keywordSet: VariantKeywordSetBuildEvidence,
+): VariantKeywordSetBuildEvidence {
+  return {
+    ...keywordSet,
+    keywords: [...keywordSet.keywords],
+    compileCandidates: { ...keywordSet.compileCandidates },
+    kept: { ...keywordSet.kept },
+  };
+}
+
+function cloneVariantContext(
+  context: VariantBuildContextEvidence,
+): VariantBuildContextEvidence {
+  return {
+    ...context,
+    compileCandidates: { ...context.compileCandidates },
+    kept: { ...context.kept },
+    keywordSets: context.keywordSets.map(cloneVariantKeywordSet),
+  };
+}
+
+function cloneVariantBuildEvidence(evidence: VariantBuildEvidence): VariantBuildEvidence {
+  return {
+    status: evidence.status,
+    provenance: {
+      ...evidence.provenance,
+      sourceRevision: { ...evidence.provenance.sourceRevision },
+    },
+    contexts: evidence.contexts.map(cloneVariantContext),
+    ...(evidence.failure ? { failure: { ...evidence.failure } } : {}),
+  };
 }

@@ -336,6 +336,43 @@ calculation. Use Unity's
 and [build logs](https://docs.unity3d.com/6000.0/Documentation/Manual/shader-how-many-variants.html)
 for compiler and build evidence.
 
+### Variant Build Comparison
+
+With a saved `.shader` asset open, run **UnityShaderNav: Show Variant Build
+Comparison**. The report joins the current source-only estimate to evidence
+from a connected Editor Adapter that advertises `variant-build-evidence`.
+Every row is keyed by Shader, SubShader/Pass, Stage, Unity build target, and
+graphics API, and the three numbers retain different labels and meanings:
+
+- **Declared/static upper bound** is recalculated from the current source. It is
+  still a theoretical product, even when a matching build is available.
+- **Compile candidates/measured** is the Adapter's aggregate count before Unity
+  Variant stripping.
+- **Kept/measured** is the Adapter's aggregate count after stripping.
+- **Unavailable** carries a reason such as no Adapter, unsupported capability,
+  missing collection, failed build phase, or source drift. It is never shown as
+  zero.
+
+The report lists comparable keyword sets by `Declared/static set multiplier −
+Kept/measured set count`, largest gap first. Keyword-set gaps are diagnostic
+leads rather than a claim that independent sets explain every interaction in
+Unity's stripping pipeline.
+
+Build evidence includes the project identity, Adapter and Unity versions,
+Unity build target, graphics API, asset GUID, saved-content hash, and collection
+timestamp. If the open text no longer matches the collected hash, the whole
+build snapshot is reported as source drift and no measurement is joined to the
+new declaration. An Editor disconnect or reconnect likewise invalidates an
+in-flight or prior-instance response.
+
+The Adapter payload is aggregate and bounded: the language server accepts at
+most 2,048 Context rows, 256 keyword sets per row, and 8,192 keyword sets in one
+snapshot. It rejects an oversized snapshot rather than truncating it and
+claiming completeness. A build with status `incomplete` or `failed` can retain
+validated partial Compile candidates while Kept evidence stays explicitly
+unavailable, together with the failed phase and message. None of this evidence
+enters the Published indexed revision or changes conservative navigation.
+
 ## Project Detection
 
 The extension tries to find a Unity project root by locating a directory with
