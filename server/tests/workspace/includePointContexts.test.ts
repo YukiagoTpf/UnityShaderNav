@@ -212,6 +212,7 @@ describe('Published include-point Context Matrix', () => {
 
       const forward = result.contexts.find(({ entryPoint }) => entryPoint === 'FragForward')!;
       select(test, forward.id);
+      expect(await test.revision.selectedIncludePointContext()).toEqual(forward);
       const forwardState = await test.revision.preprocessorContext(test.sharedUri);
       expect(forwardState?.definedMacros).toEqual(new Set([
         'SHARED_SEED',
@@ -384,6 +385,7 @@ describe('Published include-point Context Matrix', () => {
       const rebuilt = test.revision.fork().publish(2);
       expect(rebuilt.publicationId).not.toBe(test.revision.publicationId);
       expect(await rebuilt.preprocessorContext(test.sharedUri)).toBeUndefined();
+      expect(await rebuilt.selectedIncludePointContext()).toBeUndefined();
       expect((await rebuilt.knownIncludePointContexts(test.sharedUri)).contexts)
         .toContainEqual(expect.objectContaining({ id: selected.id }));
 

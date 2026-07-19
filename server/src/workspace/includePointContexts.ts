@@ -55,6 +55,16 @@ export class IncludePointContextMatrix {
     ));
   }
 
+  async recordById(
+    contextId: string,
+  ): Promise<ResolvedIncludePointContext | undefined> {
+    for (const records of (await this.build()).values()) {
+      const match = records.find(({ presentation }) => presentation.id === contextId);
+      if (match) return match;
+    }
+    return undefined;
+  }
+
   private build(): Promise<ReadonlyMap<string, readonly ResolvedIncludePointContext[]>> {
     this.matrix ??= this.derive();
     return this.matrix;

@@ -332,6 +332,42 @@ a live edit, rebuild, deletion, or newly invisible include point switches the
 selection back to **Auto** instead of combining facts from two revisions.
 Choosing a Context does not rebuild the Workspace or unrelated roots.
 
+### Compiler Evidence Views
+
+After selecting a Shader include-point Context, use **UnityShaderNav: Open
+Source Shader View**, **Open Preprocessed Shader View**, or **Open Generated
+Shader View**. A connected Unity Editor Adapter must verify both that Context
+and one compile profile; when several profiles are available, VS Code asks you
+to choose one. Adapter absence, an unsupported profile, or invalid evidence is
+reported as unavailable rather than replaced with static-analysis guesses.
+
+Preprocessed and Generated views are read-only virtual documents. Their first
+two lines show `CURRENT` or `STALE` plus the Context, profile, Unity version,
+and Adapter version. Unity documents that retained `#line` directives can map
+back to original code; Unity describes those directives as the link between
+preprocessed and original ShaderLab/HLSL source in its
+[Shader Import Settings reference](https://docs.unity3d.com/Manual/class-ShaderImporter.html).
+UnityShaderNav additionally requires the directive name to resolve to exactly
+one Adapter-supplied source identity, the source hash to match, and the complete
+line text to be unchanged. This intentionally leaves macro expansions,
+ambiguous/unknown sources, invalid line numbers, and generated-only code as
+visible mapping gaps.
+
+F12 in a mapped Preprocessed or Generated region opens the original source.
+The **Go to Preprocessed Compiler Mapping** and **Go to Generated Compiler
+Mapping** commands navigate from original ShaderLab/HLSL/include source in the
+other direction; repeated include expansions remain multiple selectable
+locations. Compiler diagnostics use a proven original source line when one is
+available and add a clickable Generated evidence link. If Unity supplies no
+trustworthy location, the diagnostic says so and is shown at the owning Shader
+without pretending that its first line is the compiler location.
+
+Any live edit, watched-file change, deletion, Adapter disconnect/reconnect, or
+replacement evidence marks the old virtual documents stale immediately.
+Stale text remains available for comparison, but all old mappings are disabled
+until new hash-matching evidence arrives. Compiler evidence is session-only and
+never enters the project index or persistent cache.
+
 ### Selected Material Context
 
 When a connected Unity Editor Adapter reports a selected persistent Material,

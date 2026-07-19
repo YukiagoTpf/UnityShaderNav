@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import {
   DiagnosticSeverity,
   type Connection,
@@ -11,6 +12,7 @@ import type {
   ProfiledAdapterDiagnostic,
 } from '@unity-shader-nav/shared';
 import type { AdapterRegistry } from '../adapter/adapterRegistry';
+import type { CompilerEvidenceService } from '../adapter/compilerEvidenceService';
 import { uriKey } from '../uriKey';
 import type { FileEvent } from '../workspace/workspace';
 import type { IndexedDocumentSnapshot } from '../workspace/indexedWorkspace';
@@ -18,8 +20,6 @@ import type { RegisteredDocuments } from './documents';
 import type { DiagnosticOverlay } from './diagnosticOverlay';
 import {
   aggregateContextDiagnostics,
-  MAX_AGGREGATED_DIAGNOSTIC_CONTEXTS,
-  type CompilerDiagnosticProvenance,
   type ContextDiagnosticFinding,
   type DiagnosticShaderContext,
 } from '../workspace/diagnosticAggregation';
@@ -37,6 +37,15 @@ interface SavedAttempt {
 
 interface PublishedProfileGroup {
   readonly findings: readonly ContextDiagnosticFinding[];
+  readonly profile: CompileProfile;
+  readonly diagnostics: readonly LocatedAdapterDiagnostic[];
+}
+
+interface LocatedAdapterDiagnostic {
+  readonly uri: string;
+  readonly contentHash: string;
+  readonly evidenceId?: string;
+  readonly diagnostic: Diagnostic;
 }
 
 interface PublishedAdapterDiagnostics extends SavedAttempt {
@@ -94,39 +103,6 @@ function statusProfile(status: CompileProfileRunStatus): CompileProfile {
     : status.requestedProfile;
 }
 
-function adapterDiagnosticToLsp(
-  diagnostic: ProfiledAdapterDiagnostic,
-  source: string,
-): Diagnostic {
-  const { profile, shaderMessage, provenance } = diagnostic;
-  const sourceLines = source.split(/\r\n|\r|\n/);
-  const reportedLine = shaderMessage.line ?? 1;
-  const line = Math.min(
-    Math.max(0, Number.isFinite(reportedLine) ? Math.trunc(reportedLine) - 1 : 0),
-    Math.max(0, sourceLines.length - 1),
-  );
-  const details = shaderMessage.messageDetails
-    ? `\n${shaderMessage.messageDetails}`
-    : '';
-  return {
-    range: {
-      start: { line, character: 0 },
-      end: { line, character: sourceLines[line]?.length ?? 0 },
-    },
-    severity: shaderMessage.severity === 'error'
-      ? DiagnosticSeverity.Error
-      : DiagnosticSeverity.Warning,
-    source: `Unity Shader Compiler [${profile.name}] (Unity ${provenance.unityVersion}, ${profile.platform}, ${profile.graphicsApi})`,
-    message: `${shaderMessage.message}${details}`,
-    data: {
-      kind: 'adapter-diagnostic',
-      shaderMessage,
-      provenance,
-      profile,
-    },
-  };
-}
-
 function compilerDiagnosticContext(
   uri: string,
   profile: CompileProfile,
@@ -153,20 +129,6 @@ function compilerDiagnosticContext(
   };
 }
 
-function compilerProvenance(
-  diagnostic: ProfiledAdapterDiagnostic,
-): CompilerDiagnosticProvenance {
-  return {
-    kind: 'compiler',
-    profile: { ...diagnostic.profile },
-    shaderMessage: { ...diagnostic.shaderMessage },
-    envelope: {
-      ...diagnostic.provenance,
-      sourceRevision: { ...diagnostic.provenance.sourceRevision },
-    },
-  };
-}
-
 function unverifiedProfileReason(status: CompileProfileRunStatus): string {
   switch (status.status) {
     case 'running':
@@ -177,6 +139,96 @@ function unverifiedProfileReason(status: CompileProfileRunStatus): string {
       return `compiler-${status.reason}`;
     case 'completed':
       return 'compiler-analysis-completed';
+  }
+}
+
+function adapterDiagnosticToPublished(
+  diagnostic: ProfiledAdapterDiagnostic,
+  source: string,
+  evidence?: CompilerEvidenceService,
+): LocatedAdapterDiagnostic {
+  const { profile, shaderMessage, provenance } = diagnostic;
+  const sourceLines = source.split(/\r\n|\r|\n/);
+  const details = shaderMessage.messageDetails
+    ? `\n${shaderMessage.messageDetails}`
+    : '';
+  const mapped = evidence?.resolveDiagnostic(diagnostic);
+  const directLine = mapped
+    ? undefined
+    : reliableRootLine(diagnostic, sourceLines.length);
+  const unmapped = !mapped && directLine === undefined;
+  const targetUri = mapped?.uri ?? provenance.sourceRevision.uri;
+  const line = mapped?.range.start.line ?? directLine ?? 0;
+  const range = mapped?.range ?? {
+    start: { line, character: 0 },
+    end: { line, character: sourceLines[line]?.length ?? 0 },
+  };
+  const mappingData = mapped
+    ? {
+        status: 'mapped',
+        evidenceId: mapped.evidenceId,
+        sourceIdentity: mapped.sourceIdentity,
+        provenance: mapped.provenance,
+        generatedEvidence: mapped.generatedEvidence,
+      }
+    : directLine !== undefined
+      ? { status: 'source-reported', granularity: 'line' }
+      : {
+          status: 'unmapped',
+          reason: 'Unity did not provide a trustworthy source mapping.',
+        };
+  const lsp: Diagnostic = {
+    range,
+    severity: shaderMessage.severity === 'error'
+      ? DiagnosticSeverity.Error
+      : DiagnosticSeverity.Warning,
+    source: `Unity Shader Compiler [${profile.name}] (Unity ${provenance.unityVersion}, ${profile.platform}, ${profile.graphicsApi})`,
+    message: `${shaderMessage.message}${details}${unmapped
+      ? '\nCompiler location unavailable; shown at the owning Shader without guessing.'
+      : ''}`,
+    ...(mapped?.generatedEvidence.length
+      ? {
+          relatedInformation: mapped.generatedEvidence.map((location) => ({
+            location: { uri: location.uri, range: location.range },
+            message: `Generated compiler evidence (${location.provenance.method}, ${location.provenance.granularity} granularity)`,
+          })),
+        }
+      : {}),
+    data: {
+      kind: 'adapter-diagnostic',
+      shaderMessage,
+      provenance,
+      profile,
+      mapping: mappingData,
+    },
+  };
+  return {
+    uri: targetUri,
+    contentHash: mapped?.sourceIdentity.contentHash
+      ?? provenance.sourceRevision.contentHash,
+    ...(mapped ? { evidenceId: mapped.evidenceId } : {}),
+    diagnostic: lsp,
+  };
+}
+
+function reliableRootLine(
+  diagnostic: ProfiledAdapterDiagnostic,
+  sourceLineCount: number,
+): number | undefined {
+  const { file, line } = diagnostic.shaderMessage;
+  if (!file || line === undefined || !Number.isFinite(line)) return undefined;
+  const zeroBased = Math.trunc(line) - 1;
+  if (zeroBased < 0 || zeroBased >= sourceLineCount) return undefined;
+  const rootUri = diagnostic.provenance.sourceRevision.uri;
+  if (file === rootUri) return zeroBased;
+  try {
+    const rootPath = fileURLToPath(rootUri).replace(/\\/g, '/');
+    const reported = file.replace(/\\/g, '/').replace(/^\.\//, '');
+    if (reported === rootPath) return zeroBased;
+    if (!/^(?:Assets|Packages)\//.test(reported)) return undefined;
+    return rootPath.endsWith(`/${reported}`) ? zeroBased : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -191,6 +243,7 @@ export function registerAdapterDiagnosticOverlay(
   documents: RegisteredDocuments,
   registry: AdapterRegistry,
   initialProfile?: CompileProfile,
+  compilerEvidence?: CompilerEvidenceService,
 ): AdapterDiagnosticOverlay {
   let selectedProfile = initialProfile ? { ...initialProfile } : undefined;
   const savedAttempts = new Map<string, SavedAttempt>();
@@ -325,12 +378,18 @@ export function registerAdapterDiagnosticOverlay(
     });
     if (removeProfileGroup(key, profileKey)) publishChange();
 
-    void registry.shaderMessagesFor(
-      document.uri,
-      attempt.contentHash,
-      requestedProfile,
-      controller.signal,
-    ).then((result) => {
+    const evidenceRefresh = compilerEvidence
+      ? compilerEvidence.viewsFor(document.uri, requestedProfile).catch(() => undefined)
+      : Promise.resolve(undefined);
+    void Promise.all([
+      registry.shaderMessagesFor(
+        document.uri,
+        attempt.contentHash,
+        requestedProfile,
+        controller.signal,
+      ),
+      evidenceRefresh,
+    ]).then(([result]) => {
       if (!isCurrentGeneration(key, profileKey, generation)) return;
       const current = documents.snapshot(document.uri);
       const saved = savedAttempts.get(key);
@@ -351,9 +410,21 @@ export function registerAdapterDiagnosticOverlay(
         published.set(key, publication);
       }
       publication.groups.set(profileKey, {
+        profile: result.profile,
+        diagnostics: result.diagnostics.map((diagnostic) => (
+          adapterDiagnosticToPublished(diagnostic, current.text, compilerEvidence)
+        )),
         findings: result.diagnostics.map((diagnostic) => ({
-          diagnostic: adapterDiagnosticToLsp(diagnostic, current.text),
-          provenance: compilerProvenance(diagnostic),
+          diagnostic: adapterDiagnosticToPublished(diagnostic, current.text, compilerEvidence).diagnostic,
+          provenance: {
+            kind: 'compiler' as const,
+            profile: { ...result.profile },
+            shaderMessage: { ...diagnostic.shaderMessage },
+            envelope: {
+              ...diagnostic.provenance,
+              sourceRevision: { ...diagnostic.provenance.sourceRevision },
+            },
+          },
         })),
       });
       publishChange();
@@ -378,7 +449,7 @@ export function registerAdapterDiagnosticOverlay(
       statuses.aggregateKnownContexts = true;
       const profiles = discovery.profiles.slice(
         0,
-        MAX_AGGREGATED_DIAGNOSTIC_CONTEXTS,
+        64,
       );
       statuses.knownContextCount = discovery.profiles.length;
       statuses.omittedContextCount = discovery.profiles.length - profiles.length;
@@ -471,15 +542,29 @@ export function registerAdapterDiagnosticOverlay(
     clearAttempt(document.uri, true);
   });
   registry.onDidChangeStatus(handleStatusChange);
+  compilerEvidence?.onDidChange(() => publishChange());
 
   return {
     diagnosticsFor(document) {
-      const result = published.get(uriKey(document.uri));
-      if (!result || !sameAttempt(document, result)) return [];
-      const raw = [...result.groups.values()].flatMap((group) => (
-        group.findings.map(({ diagnostic }) => diagnostic)
-      ));
-      const statuses = profileStatuses.get(uriKey(document.uri));
+      const docKey = uriKey(document.uri);
+      const contentHash = shaderSourceHash(document.text);
+      const raw: Diagnostic[] = [];
+      for (const publication of published.values()) {
+        if (!sameAttempt(documents.snapshot(publication.uri), publication)) continue;
+        for (const group of publication.groups.values()) {
+          for (const located of group.diagnostics) {
+            if (
+              uriKey(located.uri) !== docKey
+              || located.contentHash !== contentHash
+              || (located.evidenceId && !compilerEvidence?.isCurrent(located.evidenceId))
+            ) continue;
+            raw.push(located.diagnostic);
+          }
+        }
+      }
+      const result = published.get(docKey);
+      if (!result || !sameAttempt(document, result)) return raw;
+      const statuses = profileStatuses.get(docKey);
       if (!statuses || !sameAttempt(document, statuses)) return raw;
       const knownContextCount = Math.max(
         statuses.knownContextCount,

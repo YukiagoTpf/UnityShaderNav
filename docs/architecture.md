@@ -92,11 +92,11 @@ handling. Important modules:
   Hover values.
 - `adapter`: owns the Unity Editor Adapter handshake trust boundary plus the
   optional `MaterialSource`, bounded Variant build-evidence, versioned
-  `ShaderGraphSource`, and `MaterialContextSource` query surfaces. Project,
-  instance, producer version, capability, source revision, freshness,
-  disconnect, reconnect, selection-generation, and payload-limit checks run
-  before Adapter facts can reach Workspace behavior; unavailable facts stay
-  explicitly unknown.
+  `ShaderGraphSource`, `MaterialContextSource`, and compiler-evidence query
+  surfaces. Project, instance, producer version, capability, source revision,
+  freshness, disconnect, reconnect, selection-generation, and payload-limit
+  checks run before Adapter facts can reach Workspace behavior; unavailable
+  facts stay explicitly unknown.
 - `handlers`: adapts LSP messages to domain behavior. The document adapter owns
   the open-document registry; `handlers/documentRequest.ts` centralizes
   snapshot routing, suspension, and neutral-result policy. Every index-backed
@@ -361,6 +361,20 @@ candidate. No Material Context fact enters `FileIndex`, source membership,
 cache, or index lifecycle state, and no asset selection is treated as final
 draw evidence.
 
+Compiler evidence is another Adapter-owned, session-only overlay. One selected
+include-point Context plus one Adapter-discovered compile profile requests exact
+Source snapshots and Preprocessed/Generated texts. The trust boundary validates
+project, instance, producer, Context, profile, owning Shader revision, and every
+source-text SHA-256 before publication. The mapping layer recognizes retained
+`#line` directives but publishes a bidirectional line mapping only when the
+directive resolves to one supplied source identity and the complete source and
+compiler lines are byte-for-byte equal after line-ending separation. Changed
+macro lines, unknown/ambiguous identities, invalid line numbers, metadata, and
+generated-only code are explicit gaps. Virtual documents carry two fixed
+provenance/status lines, so a `CURRENT` to `STALE` transition never shifts map
+coordinates. Evidence remains outside `FileIndex`, Published indexed revisions,
+and persistent cache.
+
 Push diagnostics are another revision-owned projection. Every lifecycle status
 transition requests one coalesced refresh over current open-document attempts.
 The publisher computes through Workspace behavior, then rechecks the refresh
@@ -370,6 +384,12 @@ empty set, as required by LSP replacement semantics. The first rule resolves
 pragma entry names through the same transitive Include chain and symbol
 selection as navigation; visible functions, macros, and ambiguous or
 variant-dependent candidates suppress false unresolved errors.
+Adapter diagnostics first consult current compiler evidence. A proven original
+ShaderLab/include line becomes the publication target and its matching
+Generated region is attached as related information. A diagnostic whose file,
+line, source identity, or mapping cannot be proven is surfaced at the owning
+Shader with an explicit unavailable-location note; its reported line is never
+clamped into an unrelated source file.
 
 In Auto, diagnostics for a shared HLSL/CG document consume at most 64 known
 include-point Contexts from that same immutable revision. Equivalent findings

@@ -21,6 +21,7 @@ import {
   normalizeSettings,
   settingsRequireReindex,
   type ExtensionSettings,
+  type IncludePointContext,
   type IncludePointContextsResult,
   type InactiveRegion,
   type WorkspaceIndexStatus,
@@ -302,6 +303,11 @@ export class Workspace implements IndexedWorkspace {
         : null,
     );
     return result;
+  }
+
+  async selectedIncludePointContext(): Promise<IncludePointContext | undefined> {
+    if (!this.canServe()) return undefined;
+    return this.published?.selectedIncludePointContext();
   }
 
   async inactiveRegionsAt(

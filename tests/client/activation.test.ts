@@ -4,6 +4,12 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import {
+  GO_TO_GENERATED_MAPPING_COMMAND,
+  GO_TO_PREPROCESSED_MAPPING_COMMAND,
+  GO_TO_SOURCE_MAPPING_COMMAND,
+  OPEN_GENERATED_VIEW_COMMAND,
+  OPEN_PREPROCESSED_VIEW_COMMAND,
+  OPEN_SOURCE_VIEW_COMMAND,
   OPEN_VARIANT_COST_DOCUMENTATION_COMMAND,
   SHOW_VARIANT_COMPARISON_COMMAND,
 } from '@unity-shader-nav/shared';
@@ -75,6 +81,14 @@ suite('UnityShaderNav activation', () => {
     assert.ok(ids.includes('unityShaderNav.showOutput'));
     assert.ok(ids.includes('unityShaderNav.showMaterialContext'));
     assert.ok(ids.includes(SHOW_VARIANT_COMPARISON_COMMAND));
+    for (const command of [
+      OPEN_SOURCE_VIEW_COMMAND,
+      OPEN_PREPROCESSED_VIEW_COMMAND,
+      OPEN_GENERATED_VIEW_COMMAND,
+      GO_TO_SOURCE_MAPPING_COMMAND,
+      GO_TO_PREPROCESSED_MAPPING_COMMAND,
+      GO_TO_GENERATED_MAPPING_COMMAND,
+    ]) assert.ok(ids.includes(command));
   });
 
   test('opening a .shader document triggers activation via activationEvents', async () => {
@@ -108,6 +122,14 @@ suite('UnityShaderNav activation', () => {
     assert.ok(registered.includes('unityShaderNav.showMaterialContext'));
     assert.ok(registered.includes(OPEN_VARIANT_COST_DOCUMENTATION_COMMAND));
     assert.ok(registered.includes(SHOW_VARIANT_COMPARISON_COMMAND));
+    for (const command of [
+      OPEN_SOURCE_VIEW_COMMAND,
+      OPEN_PREPROCESSED_VIEW_COMMAND,
+      OPEN_GENERATED_VIEW_COMMAND,
+      GO_TO_SOURCE_MAPPING_COMMAND,
+      GO_TO_PREPROCESSED_MAPPING_COMMAND,
+      GO_TO_GENERATED_MAPPING_COMMAND,
+    ]) assert.ok(registered.includes(command));
   });
 });
 

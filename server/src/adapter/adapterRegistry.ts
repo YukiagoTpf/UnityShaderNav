@@ -1,10 +1,13 @@
+import { createHash } from 'node:crypto';
 import {
   ADAPTER_INTERFACE_VERSION,
+  COMPILER_EVIDENCE_CAPABILITY,
   SHADER_MESSAGES_CAPABILITY,
   MATERIAL_USAGES_ADAPTER_FEATURE,
   VARIANT_BUILD_EVIDENCE_CAPABILITY,
   SHADER_GRAPH_CUSTOM_FUNCTIONS_CAPABILITY,
   MATERIAL_CONTEXT_ADAPTER_FEATURE,
+  type AdapterCompilerEvidence,
   type AdapterDiagnostic,
   type AdapterHandshake,
   type AdapterStatus,
@@ -12,6 +15,8 @@ import {
   type CompileProfile,
   type CompileProfileDiscovery,
   type CompileProfileRunResult,
+  type CompilerEvidenceRunResult,
+  type IncludePointContext,
   type MaterialSerializedValue,
   type VariantBuildContextEvidence,
   type VariantBuildEvidence,
@@ -20,6 +25,7 @@ import {
   type SelectedMaterialContext,
 } from '@unity-shader-nav/shared';
 import { uriKey } from '../uriKey';
+import type { CompilerEvidenceSource } from './compilerEvidenceSource';
 import type { CompileProfileSource } from './compileProfileSource';
 import type { ShaderMessageSource } from './shaderMessageSource';
 import type {
@@ -92,6 +98,7 @@ export interface AdapterRegistryOptions {
   readonly messageSource?: ShaderMessageSource;
   readonly profileSource?: CompileProfileSource;
   readonly variantBuildSource?: VariantBuildEvidenceSource;
+  readonly compilerEvidenceSource?: CompilerEvidenceSource;
 }
 
 /** Feature payload boundaries attached atomically to one handshake instance. */
@@ -107,6 +114,7 @@ export class AdapterRegistry {
   private readonly messageSource: ShaderMessageSource | undefined;
   private readonly profileSource: CompileProfileSource | undefined;
   private readonly variantBuildSource: VariantBuildEvidenceSource | undefined;
+  private readonly compilerEvidenceSource: CompilerEvidenceSource | undefined;
   private readonly statusListeners = new Set<(status: AdapterStatus) => void>();
   private publishedStatusKey = 'standalone:no-adapter';
   private registered: RegisteredAdapter | undefined;
@@ -120,6 +128,7 @@ export class AdapterRegistry {
     this.messageSource = options.messageSource;
     this.profileSource = options.profileSource;
     this.variantBuildSource = options.variantBuildSource;
+    this.compilerEvidenceSource = options.compilerEvidenceSource;
   }
 
   registerHandshake(
@@ -465,6 +474,96 @@ export class AdapterRegistry {
     };
   }
 
+  /**
+   * Return compiler texts only when their Context, profile, producer, project,
+   * connection, and exact owning Shader revision all still match.
+   */
+  async compilerEvidenceFor(
+    context: IncludePointContext,
+    contentHash: string,
+    selectedProfile: CompileProfile,
+  ): Promise<CompilerEvidenceRunResult> {
+    const connected = this.currentConnectedAdapter();
+    if (!connected) {
+      const status = this.status();
+      return {
+        status: 'unavailable',
+        reason: status.mode === 'standalone'
+          ? status.reason
+          : 'connection-changed',
+      };
+    }
+
+    const discovery = await this.compileProfiles();
+    if (discovery.status === 'adapter-unavailable') {
+      return { status: 'unavailable', reason: discovery.reason };
+    }
+    if (this.registered !== connected || this.currentConnectedAdapter() !== connected) {
+      const latest = this.status();
+      return {
+        status: 'unavailable',
+        reason: latest.mode === 'standalone'
+          ? latest.reason
+          : 'connection-changed',
+      };
+    }
+
+    const profile = discovery.profiles.find((candidate) => (
+      sameCompileProfile(candidate, selectedProfile)
+    ));
+    if (!profile) return { status: 'unavailable', reason: 'profile-not-supported' };
+    if (!connected.handshake.capabilities.supportedFeatures.includes(
+      COMPILER_EVIDENCE_CAPABILITY,
+    )) {
+      return { status: 'unavailable', reason: 'capability-unavailable' };
+    }
+    if (!this.compilerEvidenceSource) {
+      return {
+        status: 'unavailable',
+        reason: 'compiler-evidence-source-unavailable',
+      };
+    }
+
+    let evidence: AdapterCompilerEvidence;
+    try {
+      evidence = await this.compilerEvidenceSource.getCompilerEvidence(
+        cloneIncludePointContext(context),
+        { ...profile },
+      );
+    } catch {
+      return {
+        status: 'unavailable',
+        reason: 'compiler-evidence-source-unavailable',
+      };
+    }
+    if (this.registered !== connected || this.currentConnectedAdapter() !== connected) {
+      const latest = this.status();
+      return {
+        status: 'unavailable',
+        reason: latest.mode === 'standalone'
+          ? latest.reason
+          : 'connection-changed',
+      };
+    }
+    let valid = false;
+    try {
+      valid = this.isCurrentCompilerEvidence(
+        evidence,
+        connected,
+        context,
+        contentHash,
+        profile,
+      );
+    } catch {
+      valid = false;
+    }
+    if (!valid) {
+      return { status: 'unavailable', reason: 'invalid-evidence' };
+    }
+
+    return { status: 'available', evidence: cloneCompilerEvidence(evidence) };
+  }
+
   status(): AdapterStatus {
     const status = this.computeStatus();
     this.publishStatusChange(status);
@@ -524,6 +623,82 @@ export class AdapterRegistry {
       && uriKey(provenance.sourceRevision.uri) === uriKey(documentUri)
       && provenance.sourceRevision.assetGuid.length > 0
       && provenance.sourceRevision.contentHash === contentHash;
+  }
+
+  private isCurrentCompilerEvidence(
+    evidence: AdapterCompilerEvidence,
+    connected: ConnectedAdapter,
+    context: IncludePointContext,
+    contentHash: string,
+    profile: CompileProfile,
+  ): boolean {
+    if (!evidence || typeof evidence !== 'object') return false;
+    if (!Array.isArray(evidence.sources) || !Array.isArray(evidence.documents)) return false;
+    const { handshake } = connected;
+    const { capabilities } = handshake;
+    const { provenance } = evidence;
+    if (
+      !provenance
+      || provenance.capability !== COMPILER_EVIDENCE_CAPABILITY
+      || provenance.projectId !== capabilities.projectId
+      || provenance.instanceId !== handshake.instanceId
+      || provenance.adapterVersion !== capabilities.adapterVersion
+      || provenance.unityVersion !== capabilities.unityVersion
+      || provenance.contextId !== context.id
+      || !sameCompileProfile(provenance.profile, profile)
+      || !Number.isFinite(provenance.collectedAt)
+      || provenance.collectedAt < 0
+      || provenance.collectedAt > this.now()
+      || uriKey(provenance.sourceRevision.uri) !== uriKey(context.shaderUri)
+      || provenance.sourceRevision.contentHash !== contentHash
+      || provenance.sourceRevision.assetGuid.length === 0
+    ) return false;
+
+    const sourceKeys = new Set<string>();
+    let owningSourceFound = false;
+    for (const source of evidence.sources) {
+      if (
+        !source
+        || typeof source.text !== 'string'
+        || !Array.isArray(source.lineDirectiveNames)
+        || source.lineDirectiveNames.some((name: unknown) => (
+          typeof name !== 'string' || name.length === 0
+        ))
+        || new Set(source.lineDirectiveNames).size !== source.lineDirectiveNames.length
+        || typeof source.identity?.uri !== 'string'
+        || typeof source.identity?.sourceId !== 'string'
+        || source.identity.sourceId.length === 0
+        || !isSha256(source.identity.contentHash)
+        || sha256(source.text) !== source.identity.contentHash
+      ) return false;
+      const key = uriKey(source.identity.uri);
+      if (sourceKeys.has(key)) return false;
+      sourceKeys.add(key);
+      if (key === uriKey(context.shaderUri)) {
+        if (
+          source.identity.contentHash !== contentHash
+          || source.identity.sourceId !== provenance.sourceRevision.assetGuid
+        ) return false;
+        owningSourceFound = true;
+      }
+    }
+    if (!owningSourceFound) return false;
+
+    const kinds = new Set<string>();
+    for (const document of evidence.documents) {
+      if (
+        !document
+        || (document.kind !== 'preprocessed' && document.kind !== 'generated')
+        || typeof document.text !== 'string'
+        || (document.compilerPath !== undefined && (
+          typeof document.compilerPath !== 'string'
+          || document.compilerPath.length === 0
+        ))
+        || kinds.has(document.kind)
+      ) return false;
+      kinds.add(document.kind);
+    }
+    return kinds.has('preprocessed') && kinds.has('generated');
   }
 
   private publishStatusChange(status: AdapterStatus, force = false): void {
@@ -987,5 +1162,44 @@ function cloneVariantBuildEvidence(evidence: VariantBuildEvidence): VariantBuild
     },
     contexts: evidence.contexts.map(cloneVariantContext),
     ...(evidence.failure ? { failure: { ...evidence.failure } } : {}),
+  };
+}
+
+function sha256(text: string): string {
+  return createHash('sha256').update(text, 'utf8').digest('hex');
+}
+
+function isSha256(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value);
+}
+
+function cloneIncludePointContext(context: IncludePointContext): IncludePointContext {
+  return {
+    ...context,
+    includeLocation: {
+      uri: context.includeLocation.uri,
+      range: {
+        start: { ...context.includeLocation.range.start },
+        end: { ...context.includeLocation.range.end },
+      },
+    },
+  };
+}
+
+function cloneCompilerEvidence(
+  evidence: AdapterCompilerEvidence,
+): AdapterCompilerEvidence {
+  return {
+    sources: evidence.sources.map((source) => ({
+      identity: { ...source.identity },
+      text: source.text,
+      lineDirectiveNames: [...source.lineDirectiveNames],
+    })),
+    documents: evidence.documents.map((document) => ({ ...document })),
+    provenance: {
+      ...evidence.provenance,
+      profile: { ...evidence.provenance.profile },
+      sourceRevision: { ...evidence.provenance.sourceRevision },
+    },
   };
 }

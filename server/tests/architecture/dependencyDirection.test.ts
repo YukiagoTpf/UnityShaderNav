@@ -704,7 +704,7 @@ describe('server dependency direction', () => {
     expect(coordinator).toMatch(/registerWorkspaceFolderCoordinator/);
 
     expect(server).toMatch(
-      /registerFileWatchers\(\s*connection,\s*manager,\s*\(event\) => adapterDiagnosticOverlay\.handleFileEvent\(event\),\s*\)/,
+      /registerFileWatchers\(\s*connection,\s*manager,\s*\(event\) => \{[\s\S]*?adapterDiagnosticOverlay\.handleFileEvent\(event\);[\s\S]*?compilerEvidence\.markSourceChanged\([\s\S]*?event\.type === 'deleted',[\s\S]*?\);[\s\S]*?\},\s*\)/,
     );
     expect(server).toMatch(
       /applyScopedSettingsAndRebuild\(\s*connection,\s*manager,\s*\(folderUri\) => loadSettings\(connection, folderUri\),\s*\)/,

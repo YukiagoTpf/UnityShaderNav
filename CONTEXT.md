@@ -74,6 +74,18 @@ _Avoid_: standard library, compiler symbols
 函数调用位置的参数提示。UnityShaderNav 只在能保守识别单行 free-function call 和候选函数元数据时返回；存在 overload-like 或预处理歧义时可以展示多个候选，而不会为得到唯一答案猜测分支状态。
 _Avoid_: hover, function docs
 
+**Compiler evidence view**:
+为一个已选择、经 Unity Editor Adapter 验证的 Shader Context 展示 Source、
+Preprocessed 和 Generated 三种视图。Preprocessed/Generated 是会话内虚拟文档，
+携带 Context、compile profile、Unity/Adapter 版本和 source revision provenance；
+源码 hash 改变后旧视图保留但标为 `STALE`，不再参与导航。
+_Avoid_: decompiled shader, indexed generated source
+
+**Source mapping gap**:
+编译器文本中没有可靠双向 source mapping 的可见区域，例如宏展开、Unity 生成代码、
+未知或有歧义的 `#line` source identity。Gap 不会被邻近行或文件名启发式填补。
+_Avoid_: approximate mapping, best-effort location
+
 **Material Context**:
 连接的 Unity Editor 中当前选中持久化 Material 的资产级证据，包含其 Shader、可用时的
 SubShader/Pass、序列化 Properties、textures、Material keywords 与 Adapter

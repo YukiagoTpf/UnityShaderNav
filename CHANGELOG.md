@@ -9,6 +9,13 @@ and uses semantic versioning for extension releases.
 
 ### Added
 
+- Added Context- and compile-profile-scoped Source, Preprocessed, and Generated
+  compiler evidence views. Exact `#line` regions navigate bidirectionally
+  across ShaderLab and include snapshots; every mapping retains source identity
+  and Adapter provenance, while macro expansions, ambiguous sources, and
+  generated-only code remain explicit gaps. Compiler diagnostics prefer proven
+  original locations and link to Generated evidence; source hash changes keep
+  old virtual documents visible as `STALE` but disable their mappings. (#98)
 - Added selected Material Context from the connected Unity Editor Adapter. The
   status bar and detail command show the Material, Shader, optional
   SubShader/Pass, serialized Properties, textures, Material keywords, and

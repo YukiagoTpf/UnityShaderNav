@@ -60,6 +60,36 @@
         "category": "UnityShaderNav"
       },
       {
+        "command": "unityShaderNav.openShaderSource",
+        "title": "Open Source Shader View",
+        "category": "UnityShaderNav"
+      },
+      {
+        "command": "unityShaderNav.openPreprocessedShader",
+        "title": "Open Preprocessed Shader View",
+        "category": "UnityShaderNav"
+      },
+      {
+        "command": "unityShaderNav.openGeneratedShader",
+        "title": "Open Generated Shader View",
+        "category": "UnityShaderNav"
+      },
+      {
+        "command": "unityShaderNav.goToCompilerMappedSource",
+        "title": "Go to Compiler-mapped Source",
+        "category": "UnityShaderNav"
+      },
+      {
+        "command": "unityShaderNav.goToPreprocessedMapping",
+        "title": "Go to Preprocessed Compiler Mapping",
+        "category": "UnityShaderNav"
+      },
+      {
+        "command": "unityShaderNav.goToGeneratedMapping",
+        "title": "Go to Generated Compiler Mapping",
+        "category": "UnityShaderNav"
+      },
+      {
         "command": "unityShaderNav.showMaterialContext",
         "title": "Show Selected Material Context",
         "category": "UnityShaderNav"

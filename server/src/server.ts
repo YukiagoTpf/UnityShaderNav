@@ -1,3 +1,5 @@
+import { promises as fs } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { getConnection, createInitializeResult } from './connection';
 import {
   INDEX_STATUS_REQUEST,
@@ -12,6 +14,7 @@ import {
   type VariantContextResult,
 } from '@unity-shader-nav/shared';
 import { AdapterRegistry } from './adapter/adapterRegistry';
+import { CompilerEvidenceService } from './adapter/compilerEvidenceService';
 import { loadSettings, onSettingsChanged } from './config';
 import { registerAdapterDiagnosticOverlay } from './handlers/adapterDiagnostics';
 import { registerAdapterStatusHandler } from './handlers/adapterStatus';
@@ -19,6 +22,7 @@ import { registerCodeActionHandler } from './handlers/codeActions';
 import { registerCodeLensHandler } from './handlers/codeLens';
 import { registerColorHandlers } from './handlers/colors';
 import { registerCompletionHandler } from './handlers/completion';
+import { registerCompilerViewsHandler } from './handlers/compilerViews';
 import { registerDefinitionHandler } from './handlers/definition';
 import { registerDocumentHighlightHandler } from './handlers/documentHighlight';
 import { registerDocumentSymbolHandler } from './handlers/documentSymbol';
@@ -54,6 +58,7 @@ const manager = new WorkspaceManager({
   materialContext: adapterRegistry,
 });
 const suspender = new RequestSuspender({ timeoutMs: 5000 });
+let compilerEvidence!: CompilerEvidenceService;
 let globalStorageDir: string | undefined;
 
 registerAdapterStatusHandler(connection, adapterRegistry);
@@ -83,6 +88,10 @@ connection.onNotification(
   INCLUDE_POINT_CONTEXT_CHANGED_NOTIFICATION,
   (params: IncludePointContextChangedParams) => {
     includePointContextStore.set(params.folderUri, params.selection);
+    compilerEvidence.markContextChanged(
+      params.folderUri,
+      params.selection?.contextId,
+    );
     manager.requestDiagnosticsRefresh();
     void Promise.resolve().then(
       () => connection.languages.semanticTokens.refresh(),
@@ -124,10 +133,32 @@ documentRegistry.onDidCloseSnapshot((document) => {
   variantContextStore.delete(document.uri);
 });
 const documents = documentRegistry.documents;
+compilerEvidence = new CompilerEvidenceService({
+  registry: adapterRegistry,
+  selectedContextFor: (uri) => manager.selectedIncludePointContextFor(uri),
+  sourceText: async (uri) => {
+    const open = documentRegistry.snapshot(uri);
+    if (open) return open.text;
+    try {
+      return await fs.readFile(fileURLToPath(uri), 'utf8');
+    } catch {
+      return undefined;
+    }
+  },
+});
 const adapterDiagnosticOverlay = registerAdapterDiagnosticOverlay(
   connection,
   documentRegistry,
   adapterRegistry,
+  undefined,
+  compilerEvidence,
+);
+registerCompilerViewsHandler(
+  connection,
+  documentRegistry,
+  adapterRegistry,
+  compilerEvidence,
+  (profile) => adapterDiagnosticOverlay.selectProfile(profile),
 );
 registerDiagnosticsPublisher(
   connection,
@@ -205,7 +236,14 @@ registerVariantComparisonHandler(connection, documents, adapterRegistry);
 registerFileWatchers(
   connection,
   manager,
-  (event) => adapterDiagnosticOverlay.handleFileEvent(event),
+  (event) => {
+    adapterDiagnosticOverlay.handleFileEvent(event);
+    compilerEvidence.markSourceChanged(
+      event.uri,
+      undefined,
+      event.type === 'deleted',
+    );
+  },
 );
 
 connection.onShutdown(async () => {

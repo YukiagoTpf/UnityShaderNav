@@ -15,6 +15,7 @@ import { createVariantContextPicker } from './variantContextPicker';
 import { createIncludePointContextPicker } from './includePointContextPicker';
 import { createVariantComparisonCommand } from './variantComparison';
 import { createMaterialContextController } from './materialContextController';
+import { setupCompilerViews } from './compilerViews';
 import { IndexStatusController, indexStatusDetails } from './indexStatus';
 import { IndexStatusSession } from './indexStatusSession';
 import {
@@ -102,6 +103,7 @@ export async function activate(context: ExtensionContext): Promise<void> {
     commands.executeCommand('unityShaderNav.refreshInactiveRegions');
   });
   context.subscriptions.push(materialContext);
+  setupCompilerViews(client, context, reportError);
 }
 
 export async function deactivate(): Promise<void> {

@@ -8,6 +8,7 @@ import type {
 import {
   INDEX_STATUS_NOTIFICATION,
   type ExtensionSettings,
+  type IncludePointContext,
   type IncludePointContextsResult,
   type InactiveRegion,
   type IndexStatusSnapshot,
@@ -129,6 +130,19 @@ export class WorkspaceManager implements DiagnosticWorkspaceService {
 
   invalidateMaterialContexts(): void {
     materialContextStore.clear();
+  }
+
+  async selectedIncludePointContextFor(
+    uri: string,
+  ): Promise<{
+    readonly folderUri: string;
+    readonly context: IncludePointContext;
+  } | undefined> {
+    const workspace = this.servingWorkspaceFor(uri);
+    const context = await workspace?.selectedIncludePointContext();
+    return workspace && context
+      ? { folderUri: workspace.folderUri, context }
+      : undefined;
   }
 
   async inactiveRegionsFor(

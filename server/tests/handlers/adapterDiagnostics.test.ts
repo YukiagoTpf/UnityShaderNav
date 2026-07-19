@@ -6,10 +6,13 @@ import {
   type PublishDiagnosticsParams,
 } from 'vscode-languageserver/node';
 import type {
+  AdapterCompilerEvidence,
   AdapterDiagnostic,
   CompileProfile,
+  IncludePointContext,
 } from '@unity-shader-nav/shared';
 import { AdapterRegistry } from '../../src/adapter/adapterRegistry';
+import { CompilerEvidenceService } from '../../src/adapter/compilerEvidenceService';
 import {
   registerAdapterDiagnosticOverlay,
   shaderSourceHash,
@@ -39,6 +42,27 @@ const VULKAN_PROFILE: CompileProfile = {
   platform: 'StandaloneLinux64',
   graphicsApi: 'Vulkan',
   capability: 'compile-profile/vulkan',
+};
+
+const INCLUDE_URI = 'file:///project/Assets/Common.hlsl';
+const INCLUDE_SOURCE = 'float4 Common() { return 0; }';
+const VERIFIED_CONTEXT: IncludePointContext = {
+  id: 'context-a',
+  shaderName: 'Current',
+  shaderUri: URI,
+  subShaderIndex: 0,
+  passIndex: 0,
+  passName: 'Forward',
+  stage: 'fragment',
+  entryPoint: 'frag',
+  includeLocation: {
+    uri: URI,
+    range: {
+      start: { line: 2, character: 0 },
+      end: { line: 2, character: 11 },
+    },
+  },
+  chainDepth: 1,
 };
 
 type OpenHandler = (event: {
@@ -138,6 +162,54 @@ function compilerDiagnostic(options: CompilerDiagnosticOptions = {}): AdapterDia
   };
 }
 
+function compilerMappingEvidence(): AdapterCompilerEvidence {
+  const generated = [
+    '#line 1 "Assets/Common.hlsl"',
+    INCLUDE_SOURCE,
+  ].join('\n');
+  return {
+    sources: [
+      {
+        identity: {
+          uri: URI,
+          sourceId: 'asset-guid',
+          contentHash: shaderSourceHash(SOURCE),
+        },
+        text: SOURCE,
+        lineDirectiveNames: ['Assets/Current.shader'],
+      },
+      {
+        identity: {
+          uri: INCLUDE_URI,
+          sourceId: 'include-guid',
+          contentHash: shaderSourceHash(INCLUDE_SOURCE),
+        },
+        text: INCLUDE_SOURCE,
+        lineDirectiveNames: ['Assets/Common.hlsl'],
+      },
+    ],
+    documents: [
+      { kind: 'preprocessed', text: generated },
+      { kind: 'generated', text: generated },
+    ],
+    provenance: {
+      capability: 'compiler-evidence',
+      adapterVersion: '0.1.0',
+      unityVersion: '2022.3.62f1',
+      projectId: 'project-a',
+      instanceId: 'instance-a',
+      collectedAt: 1_000_000,
+      sourceRevision: {
+        uri: URI,
+        assetGuid: 'asset-guid',
+        contentHash: shaderSourceHash(SOURCE),
+      },
+      contextId: VERIFIED_CONTEXT.id,
+      profile: D3D_PROFILE,
+    },
+  };
+}
+
 async function flush(times = 24): Promise<void> {
   for (let index = 0; index < times; index++) await Promise.resolve();
 }
@@ -164,6 +236,13 @@ interface TestMessageSource {
   ): Promise<readonly AdapterDiagnostic[]>;
 }
 
+interface TestCompilerEvidenceSource {
+  getCompilerEvidence(
+    context: IncludePointContext,
+    profile: CompileProfile,
+  ): Promise<AdapterCompilerEvidence>;
+}
+
 function scenario(
   source: TestMessageSource,
   options: {
@@ -171,6 +250,8 @@ function scenario(
     readonly staticDiagnostics?: readonly Diagnostic[];
     readonly profiles?: readonly CompileProfile[];
     readonly selectedProfile?: CompileProfile | null;
+    readonly compilerEvidenceSource?: TestCompilerEvidenceSource;
+    readonly compilerSources?: ReadonlyMap<string, string>;
   } = {},
 ) {
   const profiles = options.profiles ?? [D3D_PROFILE];
@@ -183,6 +264,9 @@ function scenario(
     profileSource: {
       getCompileProfiles: async () => profiles,
     },
+    ...(options.compilerEvidenceSource
+      ? { compilerEvidenceSource: options.compilerEvidenceSource }
+      : {}),
   });
   const connect = (
     instanceId = 'instance-a',
@@ -198,6 +282,7 @@ function scenario(
       adapterVersion: '0.1.0',
       supportedFeatures: [
         'shader-messages',
+        ...(options.compilerEvidenceSource ? ['compiler-evidence'] : []),
         ...profiles.map((profile) => profile.capability),
       ],
     },
@@ -219,11 +304,24 @@ function scenario(
     configureDiagnosticsRefresh: vi.fn(),
   };
   const documents = registerDocuments(harness.connection, manager as never);
+  const compilerEvidence = options.compilerEvidenceSource
+    ? new CompilerEvidenceService({
+        registry,
+        selectedContextFor: async () => ({
+          folderUri: 'file:///project',
+          context: VERIFIED_CONTEXT,
+        }),
+        sourceText: async (uri) => (
+          documents.snapshot(uri)?.text ?? options.compilerSources?.get(uri)
+        ),
+      })
+    : undefined;
   const adapter = registerAdapterDiagnosticOverlay(
     harness.connection,
     documents,
     registry,
     selectedProfile,
+    compilerEvidence,
   );
   registerDiagnosticsPublisher(
     harness.connection,
@@ -331,15 +429,124 @@ describe('Adapter compiler diagnostics', () => {
           severity: DiagnosticSeverity.Error,
           message: "undeclared identifier 'missing'\nat fragment program",
           source: 'Unity Shader Compiler [d3d11] (Unity 2022.3.62f1, StandaloneWindows64, Direct3D11)',
-          data: {
+          data: expect.objectContaining({
             kind: 'adapter-diagnostic',
             shaderMessage: compilerDiagnostic().shaderMessage,
             provenance: compilerDiagnostic().provenance,
             profile: D3D_PROFILE,
-          },
+          }),
         }),
       ],
     }]);
+  });
+
+  it('publishes include diagnostics at original source and links generated evidence', async () => {
+    const source = {
+      getShaderMessages: vi.fn(async () => [compilerDiagnostic({
+        uri: URI,
+        source: SOURCE,
+        line: 1,
+        message: 'include failure',
+      })].map((diagnostic) => ({
+        ...diagnostic,
+        shaderMessage: {
+          ...diagnostic.shaderMessage,
+          file: 'Assets/Common.hlsl',
+        },
+      }))),
+    };
+    const evidenceSource = {
+      getCompilerEvidence: vi.fn(async () => compilerMappingEvidence()),
+    };
+    const harness = scenario(source, {
+      staticDiagnostics: [],
+      compilerEvidenceSource: evidenceSource,
+      compilerSources: new Map([
+        [URI, SOURCE],
+        [INCLUDE_URI, INCLUDE_SOURCE],
+      ]),
+    });
+    harness.open();
+    harness.open(INCLUDE_URI, INCLUDE_SOURCE, 1);
+    harness.save(URI);
+    await flush(60);
+
+    const publication = [...harness.sends].reverse().find(({ uri, diagnostics }) => (
+      uri === INCLUDE_URI && diagnostics.length > 0
+    ));
+    expect(publication).toMatchObject({
+      uri: INCLUDE_URI,
+      version: 1,
+      diagnostics: [{
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: INCLUDE_SOURCE.length },
+        },
+        message: 'include failure\nat fragment program',
+        relatedInformation: [{
+          location: {
+            uri: expect.stringMatching(
+              /^unity-shader-nav-compiler:\/\/evidence\/.+\/generated\.hlsl$/,
+            ),
+            range: {
+              start: { line: 3, character: 0 },
+              end: { line: 3, character: INCLUDE_SOURCE.length },
+            },
+          },
+          message: 'Generated compiler evidence (line-directive, line granularity)',
+        }],
+        data: {
+          kind: 'adapter-diagnostic',
+          mapping: {
+            status: 'mapped',
+            sourceIdentity: {
+              uri: INCLUDE_URI,
+              sourceId: 'include-guid',
+              contentHash: shaderSourceHash(INCLUDE_SOURCE),
+            },
+            provenance: expect.objectContaining({
+              method: 'compiler-reported-source',
+              granularity: 'line',
+            }),
+            generatedEvidence: [expect.objectContaining({
+              uri: expect.stringMatching(/generated\.hlsl$/),
+            })],
+          },
+        },
+      }],
+    });
+    expect(evidenceSource.getCompilerEvidence).toHaveBeenCalledWith(
+      VERIFIED_CONTEXT,
+      D3D_PROFILE,
+    );
+  });
+
+  it('degrades invalid compiler locations visibly instead of clamping them', async () => {
+    const source = {
+      getShaderMessages: vi.fn(async () => [compilerDiagnostic({ line: 999 })]),
+    };
+    const harness = scenario(source, { staticDiagnostics: [] });
+    harness.open();
+    harness.save();
+    await flush();
+
+    expect(harness.sends.at(-1)?.diagnostics).toEqual([
+      expect.objectContaining({
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: SOURCE.split('\n')[0]!.length },
+        },
+        message: expect.stringContaining(
+          'Compiler location unavailable; shown at the owning Shader without guessing.',
+        ),
+        data: expect.objectContaining({
+          mapping: {
+            status: 'unmapped',
+            reason: 'Unity did not provide a trustworthy source mapping.',
+          },
+        }),
+      }),
+    ]);
   });
 
   it('groups diagnostics by selected profile without dropping Unity message context', async () => {

@@ -65,6 +65,11 @@ The extension focuses on fast code navigation:
   Shader, Pass, stage, and include-point combinations come from one published
   index revision; selecting one sharpens dimming, semantic coloring,
   completion, and diagnostics without narrowing navigation results.
+- Adapter-backed Source, Preprocessed, and Generated compiler evidence views
+  for one selected Shader Context and verified compile profile. Exact `#line`
+  regions navigate in both directions across ShaderLab and includes; macro
+  expansions and generated-only regions stay visibly unmapped. Source changes
+  mark old virtual documents `STALE` before replacement evidence arrives.
 - Selected Material Context from a connected Unity Editor Adapter. The status
   bar exposes the Material's Shader, optional SubShader/Pass, serialized
   Properties, textures, Material keywords, and provenance; matching source
@@ -198,7 +203,10 @@ See [Configuration](docs/configuration.md) for the full explanation and examples
   stale, or source-drifted evidence remains explicitly unavailable; it never
   changes the Declared/static CodeLens or the source index.
 - Macro bodies are not expanded. Built-in and user-configured declaration
-  patterns cover common Unity macro declarations.
+  patterns cover common Unity macro declarations. Compiler evidence maps only
+  unchanged lines whose `#line` source name resolves to one hash-identified
+  snapshot; expanded lines remain visible mapping gaps rather than approximate
+  locations.
 - Surface Shader implicit parameters and Shader Graph generated code are not
   indexed as special sources. File-mode Custom Function navigation consumes
   only version-supported logical facts from the Unity Editor Adapter; when the

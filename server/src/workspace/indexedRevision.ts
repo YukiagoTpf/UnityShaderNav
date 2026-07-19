@@ -306,22 +306,6 @@ export class PublishedIndexedRevision {
     return filterDiagnosticsForContext(diagnostics, document, context);
   }
 
-  private async selectedIncludePointContext(
-    uri: string,
-  ): Promise<ResolvedIncludePointContext | undefined> {
-    const selection = includePointContextStore.get(this.folderUri);
-    return selection?.publicationId === this.publicationId
-      ? this.includePointContexts.recordFor(uri, selection.contextId)
-      : undefined;
-  }
-
-  async preprocessorContext(uri: string): Promise<PreprocessorContext | undefined> {
-    const variant = variantContextStore.get(uri);
-    const includePoint = await this.selectedIncludePointContext(uri);
-    if (!variant && !includePoint) return undefined;
-    return mergePreprocessorContext(variant, includePoint);
-  }
-
   async knownIncludePointContexts(uri: string): Promise<IncludePointContextsResult> {
     const records = await this.includePointContexts.recordsFor(uri);
     return {
@@ -329,6 +313,27 @@ export class PublishedIndexedRevision {
       revision: this.revision,
       publicationId: this.publicationId,
       contexts: records.map(({ presentation }) => presentation),
+    };
+  }
+
+  async selectedIncludePointContext(): Promise<IncludePointContext | undefined> {
+    const selection = includePointContextStore.get(this.folderUri);
+    if (!selection || selection.publicationId !== this.publicationId) return undefined;
+    return (await this.includePointContexts.recordById(selection.contextId))?.presentation;
+  }
+
+  async preprocessorContext(uri: string): Promise<PreprocessorContext | undefined> {
+    const variant = variantContextStore.get(uri);
+    const selection = includePointContextStore.get(this.folderUri);
+    const includePoint = selection?.publicationId === this.publicationId
+      ? await this.includePointContexts.recordFor(uri, selection.contextId)
+      : undefined;
+    if (!variant && !includePoint) return undefined;
+    return {
+      activeKeywords: variant?.activeKeywords ?? new Set(),
+      definedMacros: includePoint?.preprocessor.definedMacros ?? new Set(),
+      undefinedMacros: includePoint?.preprocessor.undefinedMacros ?? new Set(),
+      variantKeywords: includePoint?.preprocessor.variantKeywords ?? new Set(),
     };
   }
 
