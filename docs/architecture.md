@@ -16,6 +16,7 @@ VS Code extension client
      -> parser runtime assets
         -> tree-sitter HLSL parser
         -> release cache fingerprint
+     -> optional Unity Editor Adapter evidence overlays
      -> macro pattern recognizer
      -> per-file symbol/reference indexes
      -> workspace/global indexes
@@ -89,6 +90,11 @@ handling. Important modules:
 - `project`: `UnityProjectFacts` captures the Editor version consumed by Quick
   Documentation compatibility checks and presentation-only predefined macro
   Hover values.
+- `adapter`: owns the Unity Editor Adapter handshake trust boundary and the
+  optional `MaterialSource` query surface. Project, instance, capability,
+  freshness, disconnect, and reconnect checks run before Adapter facts can
+  reach Workspace behavior; unavailable asset and dynamic-runtime scopes stay
+  explicitly unknown.
 - `handlers`: adapts LSP messages to domain behavior. The document adapter owns
   the open-document registry; `handlers/documentRequest.ts` centralizes
   snapshot routing, suspension, and neutral-result policy. Every index-backed
@@ -304,6 +310,15 @@ work running. Suspended requests remove only their own waiter. Request-owned
 candidate and reference loops check every item and yield a macrotask every 256
 items so an in-flight cancellation can surface as `RequestCancelled` rather
 than a neutral result.
+
+Material usages are an Adapter-supplied overlay on References, not indexed
+source. A request first resolves its ShaderLab Property contract from the same
+captured `FileIndex` used by static navigation, then queries the current
+`MaterialSource` revision. Matching `.mat` locations carry asset GUID, current
+path, serialized-value compatibility, Adapter provenance, complete asset-scope
+evidence, and an explicit unknown runtime scope. Material revisions are read on
+each request and never create `SymbolEntry`, source-membership, cache, or index
+lifecycle state.
 
 Push diagnostics are another revision-owned projection. Every lifecycle status
 transition requests one coalesced refresh over current open-document attempts.

@@ -71,6 +71,11 @@ import {
   LiveDocumentTreeSessions,
   type LiveDocumentTreeSessionFactory,
 } from './liveDocumentTreeSessions';
+import {
+  materialPropertyReferences,
+  type MaterialPropertyTarget,
+} from './materialReferences';
+import type { MaterialUsageProvider } from '../adapter/materialSource';
 
 export type { FileEvent } from './workspaceIndex';
 
@@ -80,6 +85,7 @@ export interface WorkspaceRuntimeOptions
   openDocuments?: OpenDocumentsProvider;
   candidateConstructor?: IndexedRevisionCandidateConstructor;
   createLiveDocumentTreeSession?: LiveDocumentTreeSessionFactory;
+  materialUsages?: MaterialUsageProvider;
 }
 
 interface DocumentReconcileRun {
@@ -107,6 +113,7 @@ export class Workspace implements IndexedWorkspace {
   private readonly lifecycle: IndexLifecycle;
   private readonly candidateConstructor: IndexedRevisionCandidateConstructor;
   private readonly openDocuments: OpenDocumentsProvider | undefined;
+  private readonly materialUsages: MaterialUsageProvider | undefined;
   /**
    * The lifecycle mutation queue for initialization, rebuilds, watcher updates,
    * and settings changes. Once an operation starts, no peer on this tail can
@@ -132,6 +139,7 @@ export class Workspace implements IndexedWorkspace {
     this.candidateConstructor = options.candidateConstructor
       ?? createDefaultIndexedRevisionCandidateConstructor(folderUri, options);
     this.openDocuments = options.openDocuments;
+    this.materialUsages = options.materialUsages;
     this.liveDocumentTrees = new LiveDocumentTreeSessions(
       options.createLiveDocumentTreeSession,
     );
@@ -252,13 +260,30 @@ export class Workspace implements IndexedWorkspace {
       input.position,
       this.captureServingRevision()?.requestSource(input.document),
     );
-    return this.queryRevision(
+    const result = await this.queryRevision<{
+      readonly sourceLocations: Location[] | null;
+      readonly materialTarget: MaterialPropertyTarget | undefined;
+    }>(
       input.document,
-      null,
-      (revision) => revision.referencesAt(input, facts),
+      { sourceLocations: null, materialTarget: undefined },
+      async (revision) => ({
+        sourceLocations: await revision.referencesAt(input, facts),
+        materialTarget: revision.materialPropertyTargetAt(input),
+      }),
       input.cancellation,
       facts.source,
     );
+    if (!this.materialUsages || !result.materialTarget || this.disposed) {
+      return result.sourceLocations;
+    }
+    const materialLocations = await materialPropertyReferences(
+      input.document.uri,
+      result.materialTarget,
+      this.materialUsages,
+      input.cancellation,
+    );
+    if (this.disposed || materialLocations.length === 0) return result.sourceLocations;
+    return [...(result.sourceLocations ?? []), ...materialLocations];
   }
 
   async hoverAt(input: DocumentPositionInput): Promise<Hover | null> {

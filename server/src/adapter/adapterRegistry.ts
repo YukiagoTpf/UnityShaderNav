@@ -1,20 +1,42 @@
 import {
   ADAPTER_INTERFACE_VERSION,
   SHADER_MESSAGES_CAPABILITY,
+  MATERIAL_USAGES_ADAPTER_FEATURE,
   type AdapterDiagnostic,
   type AdapterHandshake,
   type AdapterStatus,
   type AdapterUnavailableReason,
+  type MaterialSerializedValue,
 } from '@unity-shader-nav/shared';
 import { uriKey } from '../uriKey';
 import type { ShaderMessageSource } from './shaderMessageSource';
+import type {
+  MaterialShaderIdentity,
+  MaterialSource,
+  MaterialUsageResult,
+} from './materialSource';
+import { unknownMaterialUsage } from './materialSource';
 
 const DEFAULT_HANDSHAKE_MAX_AGE_MS = 30_000;
+
+function cloneSerializedValue(value: MaterialSerializedValue): MaterialSerializedValue {
+  if (Array.isArray(value)) return value.map(cloneSerializedValue);
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nested]) => [
+        key,
+        cloneSerializedValue(nested),
+      ]),
+    );
+  }
+  return value;
+}
 
 interface ConnectedAdapter {
   readonly state: 'connected';
   readonly expectedProjectId: string;
   readonly handshake: AdapterHandshake;
+  readonly materialSource?: MaterialSource;
 }
 
 interface DisconnectedAdapter {
@@ -51,6 +73,7 @@ export class AdapterRegistry {
   registerHandshake(
     expectedProjectId: string,
     handshake: AdapterHandshake,
+    materialSource?: MaterialSource,
   ): AdapterStatus {
     this.registered = {
       state: 'connected',
@@ -62,6 +85,7 @@ export class AdapterRegistry {
           supportedFeatures: [...handshake.capabilities.supportedFeatures],
         },
       },
+      ...(materialSource ? { materialSource } : {}),
     };
     const status = this.computeStatus();
     this.publishStatusChange(status, true);
@@ -186,6 +210,91 @@ export class AdapterRegistry {
     if (!force && key === this.publishedStatusKey) return;
     this.publishedStatusKey = key;
     for (const listener of [...this.statusListeners]) listener(status);
+  }
+
+  /** Query only through evidence that still belongs to the trusted handshake. */
+  async materialsUsingShader(
+    shader: MaterialShaderIdentity,
+  ): Promise<MaterialUsageResult> {
+    const registered = this.registered;
+    const currentStatus = this.status();
+    if (currentStatus.mode === 'standalone') {
+      return unknownMaterialUsage(currentStatus.reason);
+    }
+    if (!registered || registered.state !== 'connected') {
+      return unknownMaterialUsage('source-unavailable');
+    }
+    if (!currentStatus.capabilities.supportedFeatures.includes(
+      MATERIAL_USAGES_ADAPTER_FEATURE,
+    )) {
+      return unknownMaterialUsage('capability-unavailable');
+    }
+
+    const source = registered.materialSource;
+    if (!source) return unknownMaterialUsage('source-unavailable');
+    const { expectedProjectId, handshake } = registered;
+    if (
+      source.identity.projectId !== expectedProjectId
+      || source.identity.projectId !== handshake.capabilities.projectId
+      || source.identity.instanceId !== handshake.instanceId
+    ) {
+      return unknownMaterialUsage('source-identity-mismatch');
+    }
+
+    let snapshot: Awaited<ReturnType<MaterialSource['materialsUsingShader']>>;
+    try {
+      snapshot = await source.materialsUsingShader(shader);
+    } catch {
+      return unknownMaterialUsage('source-unavailable');
+    }
+
+    // A disconnect or reconnect invalidates a response already in flight.
+    if (this.registered !== registered) {
+      const latest = this.status();
+      return unknownMaterialUsage(
+        latest.mode === 'standalone' ? latest.reason : 'invalid-evidence',
+      );
+    }
+    const latest = this.status();
+    if (latest.mode === 'standalone') {
+      return unknownMaterialUsage(latest.reason);
+    }
+    if (snapshot.assetScope === 'unknown') {
+      return unknownMaterialUsage(snapshot.reason);
+    }
+    if (
+      !snapshot.revision
+      || !Number.isFinite(snapshot.collectedAt)
+      || snapshot.collectedAt < 0
+    ) {
+      return unknownMaterialUsage('invalid-evidence');
+    }
+
+    const provenance = {
+      capability: MATERIAL_USAGES_ADAPTER_FEATURE,
+      projectId: source.identity.projectId,
+      instanceId: source.identity.instanceId,
+      adapterVersion: handshake.capabilities.adapterVersion,
+      unityVersion: handshake.capabilities.unityVersion,
+      collectedAt: snapshot.collectedAt,
+      sourceRevision: snapshot.revision,
+    } as const;
+    return {
+      availability: 'available',
+      assetScope: 'complete',
+      runtimeMaterials: 'unknown',
+      revision: snapshot.revision,
+      materials: snapshot.materials.map((material) => ({
+        guid: material.guid,
+        path: material.path,
+        properties: material.properties.map((property) => ({
+          name: property.name,
+          type: property.type,
+          serializedValue: cloneSerializedValue(property.serializedValue),
+        })),
+        provenance,
+      })),
+    };
   }
 }
 

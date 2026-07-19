@@ -87,6 +87,10 @@ import {
   type FileEvent,
   type PreparedDocumentIndex,
 } from './workspaceIndex';
+import {
+  materialPropertyTargetAt,
+  type MaterialPropertyTarget,
+} from './materialReferences';
 
 export interface CommittedDocumentAttempt {
   readonly openId: number;
@@ -222,6 +226,13 @@ export class PublishedIndexedRevision {
     facts?: CursorRequestFacts,
   ): Promise<Location[] | null> {
     return navigateReferences(this.navigationState(), input, facts);
+  }
+
+  materialPropertyTargetAt(input: DocumentPositionInput): MaterialPropertyTarget | undefined {
+    return materialPropertyTargetAt(
+      this.index.read.store.get(input.document.uri),
+      input.position,
+    );
   }
 
   hoverAt(

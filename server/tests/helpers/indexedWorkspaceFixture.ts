@@ -20,12 +20,18 @@ import {
   renameWorkspaceSymbol,
 } from '../../src/workspace/rename';
 import { WorkspaceIndex } from '../../src/workspace/workspaceIndex';
+import {
+  materialPropertyTargetAt,
+  materialPropertyReferences,
+} from '../../src/workspace/materialReferences';
+import type { MaterialUsageProvider } from '../../src/adapter/materialSource';
 
 interface NavigationFixtureOptions {
   includeCtx?: IncludeContext;
   includePackages?: boolean;
   isInPackages?: (uri: string) => boolean;
   definitionTrace?: boolean;
+  materialUsages?: MaterialUsageProvider;
 }
 
 /**
@@ -79,7 +85,22 @@ export function createIndexedWorkspaceFixture(
     },
     async referencesAt(input) {
       await this.updateDocument(input.document);
-      return navigateReferences(state(), input);
+      const sourceLocations = await navigateReferences(state(), input);
+      if (!options.materialUsages) return sourceLocations;
+      const target = materialPropertyTargetAt(
+        state().index.store.get(input.document.uri),
+        input.position,
+      );
+      if (!target) return sourceLocations;
+      const materialLocations = await materialPropertyReferences(
+        input.document.uri,
+        target,
+        options.materialUsages,
+        input.cancellation,
+      );
+      return materialLocations.length > 0
+        ? [...(sourceLocations ?? []), ...materialLocations]
+        : sourceLocations;
     },
     async prepareRenameAt(input) {
       await this.updateDocument(input.document);

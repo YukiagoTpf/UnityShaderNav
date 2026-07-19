@@ -25,6 +25,7 @@ import {
   cooperativeRequestCheckpoint,
   throwIfRequestCancelled,
 } from '../lifecycle/requestCancellation';
+import type { MaterialUsageProvider } from '../adapter/materialSource';
 
 const MAX_WORKSPACE_SYMBOLS = 1000;
 
@@ -54,6 +55,7 @@ export interface WorkspaceManagerRuntimeOptions {
   readonly createCandidateConstructor?: (
     folderUri: string,
   ) => IndexedRevisionCandidateConstructor;
+  readonly materialUsages?: MaterialUsageProvider;
 }
 
 export class WorkspaceManager implements DiagnosticWorkspaceService {
@@ -288,6 +290,7 @@ export class WorkspaceManager implements DiagnosticWorkspaceService {
           (document) => this.workspaceFor(document.uri) === workspace,
         )
         : undefined,
+      materialUsages: this.runtimeOptions.materialUsages,
     });
     let resolveRetired!: () => void;
     const retired = new Promise<void>((resolve) => {

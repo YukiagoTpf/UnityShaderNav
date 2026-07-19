@@ -41,8 +41,8 @@ import type { CancellationToken } from 'vscode-languageserver/node';
 import { throwIfRequestCancelled } from './lifecycle/requestCancellation';
 
 const connection = getConnection();
-const manager = new WorkspaceManager();
 const adapterRegistry = new AdapterRegistry();
+const manager = new WorkspaceManager({ materialUsages: adapterRegistry });
 const suspender = new RequestSuspender({ timeoutMs: 5000 });
 let globalStorageDir: string | undefined;
 
