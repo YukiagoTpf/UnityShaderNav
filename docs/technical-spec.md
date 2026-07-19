@@ -483,11 +483,10 @@ monolithic JSON manifest.
 Cache records have a schema version and a fingerprint. Candidate construction
 first completes parser readiness by resolving one supported runtime layout and
 successfully loading a captured grammar byte snapshot. The fingerprint then
-consumes that same snapshot plus the captured index implementation, resolved
-shared and external parser runtime packages, index-affecting settings, and macro
-table. No component independently
+consumes that same grammar snapshot plus the Extension release version,
+index-affecting settings, and macro table. No component independently
 searches for or reopens the grammar. An unknown layout, missing grammar, or
-unidentifiable implementation cannot produce a persistable fingerprint or
+missing release version cannot produce a persistable fingerprint or
 restore a manifest. A different identity is a cache miss and triggers source
 indexing; it never changes source files. Restored Package files must still belong to the dependency graph resolved
 from the current `Packages/packages-lock.json`. A cached file outside the Unity
