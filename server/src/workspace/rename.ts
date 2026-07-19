@@ -3,13 +3,18 @@ import type {
   Range,
   WorkspaceEdit,
 } from 'vscode-languageserver/node';
-import type { SymbolEntry } from '@unity-shader-nav/shared';
+import type {
+  FileIndex,
+  ShaderLabPropertyEntry,
+  SymbolEntry,
+} from '@unity-shader-nav/shared';
 import {
   cursorTargetAt,
   findPropertyCandidatesForName,
   findReferencesForTarget,
   propertyAt,
   selectActiveReferenceTargets,
+  uniqueLocations,
   type ActiveReferenceTargetSelection,
 } from '../index';
 import {
@@ -39,10 +44,21 @@ import {
 
 type RenameTarget = ActiveReferenceTargetSelection['targets'][number];
 
-interface RenameSubject {
+interface PropertyRenameBinding {
+  readonly uri: string;
+  readonly entry: ShaderLabPropertyEntry;
+  readonly visibleUriKeys: ReadonlySet<string>;
+}
+
+type RenameSubject = {
   readonly token: { readonly text: string; readonly range: Range };
   readonly declaration: RenameTarget;
-}
+  readonly property?: undefined;
+} | {
+  readonly token: { readonly text: string; readonly range: Range };
+  readonly declaration?: RenameTarget;
+  readonly property: PropertyRenameBinding;
+};
 
 function rejected(message: string): RenameFailure {
   return { kind: 'failure', message };
@@ -70,6 +86,89 @@ function rangesOverlap(left: Range, right: Range): boolean {
   return before(left.start, right.end) && before(right.start, left.end);
 }
 
+function isPropertyDeclaration(symbol: SymbolEntry): boolean {
+  return symbol.kind === 'variable' || symbol.kind === 'cbuffer';
+}
+
+function targetForSymbol(symbol: SymbolEntry): RenameTarget {
+  const target: RenameTarget = {
+    name: symbol.name,
+    kind: symbol.kind,
+    uri: symbol.location.uri,
+    range: symbol.location.range,
+  };
+  if (symbol.scopeRange) target.scopeRange = symbol.scopeRange;
+  if (symbol.parentType) target.parentType = symbol.parentType;
+  return target;
+}
+
+function sameFileProperties(
+  index: FileIndex,
+  name: string,
+): ShaderLabPropertyEntry[] {
+  return (index.properties ?? []).filter((property) => property.name === name);
+}
+
+function sameFilePropertyDeclarations(
+  index: FileIndex,
+  name: string,
+): RenameTarget[] {
+  return index.symbols
+    .filter((symbol) => symbol.name === name && isPropertyDeclaration(symbol))
+    .map(targetForSymbol);
+}
+
+async function resolvePropertyRenameSubject(
+  state: WorkspaceNavigationState,
+  input: DocumentPositionInput,
+  index: FileIndex,
+  property: ShaderLabPropertyEntry,
+): Promise<RenameSubject | RenameFailure> {
+  if (state.isInPackages(index.uri)) {
+    return rejected('Symbols declared in Unity Packages are read-only.');
+  }
+
+  const properties = sameFileProperties(index, property.name);
+  if (properties.length > 1) {
+    return rejected(
+      `Rename is ambiguous: '${property.name}' has ${properties.length} ShaderLab Property declarations in this file.`,
+    );
+  }
+
+  const declarations = sameFilePropertyDeclarations(index, property.name);
+  if (declarations.length > 1) {
+    return rejected(
+      `Rename is ambiguous: '${property.name}' has ${declarations.length} HLSL/CG declarations in this shader.`,
+    );
+  }
+
+  const visibleUriKeys = await awaitWithRequestCancellation(
+    state.includeChain.visibleUriKeys(index.uri),
+    input.cancellation,
+  );
+  const visibleExternalDeclarations = state.index.global.lookup(property.name).filter((symbol) => (
+    isPropertyDeclaration(symbol)
+    && uriKey(symbol.location.uri) !== uriKey(index.uri)
+    && visibleUriKeys.has(uriKey(symbol.location.uri))
+  ));
+  if (visibleExternalDeclarations.length > 0) {
+    if (declarations.length > 0) {
+      return rejected(
+        `Rename is ambiguous: '${property.name}' has both same-file and include-visible HLSL/CG declarations.`,
+      );
+    }
+    return rejected(
+      `HLSL/CG declaration '${property.name}' is outside this shader; cross-file Property rename is not supported.`,
+    );
+  }
+
+  return {
+    token: { text: property.name, range: property.nameRange },
+    declaration: declarations[0],
+    property: { uri: index.uri, entry: property, visibleUriKeys },
+  };
+}
+
 async function resolveRenameSubject(
   state: WorkspaceNavigationState,
   input: DocumentPositionInput,
@@ -80,8 +179,9 @@ async function resolveRenameSubject(
   const index = state.index.store.get(document.uri);
   if (!index) return null;
 
-  if (propertyAt(index, position)) {
-    return rejected('ShaderLab Property rename is not supported yet.');
+  const property = propertyAt(index, position);
+  if (property) {
+    return resolvePropertyRenameSubject(state, input, index, property);
   }
 
   const cursorTarget = facts?.target() ?? cursorTargetAt(document.text, position);
@@ -130,12 +230,31 @@ async function resolveRenameSubject(
     return rejected('Symbols declared in Unity Packages are read-only.');
   }
   if (
-    (declaration.kind === 'variable' || declaration.kind === 'cbuffer')
-    && findPropertyCandidatesForName(declaration.name, state.index.store).length > 0
+    declaration.kind === 'variable' || declaration.kind === 'cbuffer'
   ) {
-    return rejected(
-      `HLSL symbol '${declaration.name}' is linked to a ShaderLab Property; cross-contract rename is not supported yet.`,
-    );
+    const properties = sameFileProperties(index, declaration.name);
+    if (properties.length > 1) {
+      return rejected(
+        `Rename is ambiguous: '${declaration.name}' has ${properties.length} ShaderLab Property declarations in this file.`,
+      );
+    }
+    if (properties.length === 1) {
+      if (uriKey(declaration.uri) !== uriKey(index.uri)) {
+        return rejected(
+          `HLSL/CG declaration '${declaration.name}' is outside this shader; cross-file Property rename is not supported.`,
+        );
+      }
+      return {
+        token,
+        declaration,
+        property: { uri: index.uri, entry: properties[0], visibleUriKeys },
+      };
+    }
+    if (findPropertyCandidatesForName(declaration.name, state.index.store).length > 0) {
+      return rejected(
+        `HLSL symbol '${declaration.name}' may be linked to a ShaderLab Property outside this file; cross-file rename is not supported.`,
+      );
+    }
   }
 
   return { token, declaration };
@@ -200,6 +319,54 @@ function collisionReason(
   return undefined;
 }
 
+function propertyContractCollisionReason(
+  state: WorkspaceNavigationState,
+  subject: RenameSubject & { readonly property: PropertyRenameBinding },
+  newName: string,
+): string | undefined {
+  if (findBuiltinEntries(newName).length > 0) {
+    return `New name '${newName}' conflicts with a known Unity or HLSL built-in.`;
+  }
+
+  const index = state.index.store.get(subject.property.uri);
+  const symbolCollision = index?.symbols.some((symbol) => (
+    symbol.name === newName
+    && !isScoped(symbol)
+    && !symbol.parentType
+    && !(
+      !!subject.declaration
+      && sameRange(symbol.location.range, subject.declaration.range)
+    )
+  ));
+  if (symbolCollision) {
+    return `New name '${newName}' conflicts with an indexed global symbol in this shader.`;
+  }
+
+  const visibleExternalCollision = state.index.global.lookup(newName).some((symbol) => (
+    !isScoped(symbol)
+    && !symbol.parentType
+    && uriKey(symbol.location.uri) !== uriKey(subject.property.uri)
+    && subject.property.visibleUriKeys.has(uriKey(symbol.location.uri))
+  ));
+  if (visibleExternalCollision) {
+    return `New name '${newName}' conflicts with an include-visible global symbol.`;
+  }
+
+  const propertyCollision = index?.properties?.some((property) => (
+    property.name === newName
+    && !sameRange(property.nameRange, subject.property.entry.nameRange)
+  ));
+  return propertyCollision
+    ? `New name '${newName}' conflicts with a ShaderLab Property in this shader.`
+    : undefined;
+}
+
+function hasProperty(
+  subject: RenameSubject,
+): subject is RenameSubject & { readonly property: PropertyRenameBinding } {
+  return subject.property !== undefined;
+}
+
 export async function prepareWorkspaceRename(
   state: WorkspaceNavigationState,
   input: DocumentPositionInput,
@@ -238,37 +405,52 @@ export async function renameWorkspaceSymbol(
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(input.newName)) {
     return rejected(`'${input.newName}' is not a valid HLSL identifier.`);
   }
-  if (input.newName === subject.declaration.name) return null;
+  if (input.newName === subject.token.text) return null;
 
-  const conflict = collisionReason(state, subject.declaration, input.newName);
+  const conflict = hasProperty(subject)
+    ? propertyContractCollisionReason(state, subject, input.newName)
+    : subject.declaration
+      ? collisionReason(state, subject.declaration, input.newName)
+      : undefined;
   if (conflict) return rejected(conflict);
 
   const index = state.index.store.get(input.document.uri);
   if (!index) return null;
-  const locations = await findReferencesForTarget(subject.declaration, {
-    index,
-    position: input.position,
-    global: state.index.global,
-    globalRefs: state.index.globalRefs,
-    store: state.index.store,
-    includeChain: state.includeChain,
-    isInPackages: state.isInPackages,
-    includePackages: false,
-    includeDeclaration: true,
-    cancellation: input.cancellation,
-  });
+  const locations = subject.declaration
+    ? await findReferencesForTarget(subject.declaration, {
+      index,
+      position: input.position,
+      global: state.index.global,
+      globalRefs: state.index.globalRefs,
+      store: state.index.store,
+      includeChain: state.includeChain,
+      isInPackages: state.isInPackages,
+      includePackages: false,
+      includeDeclaration: true,
+      cancellation: input.cancellation,
+    })
+    : [];
+  if (subject.property) {
+    locations.push({
+      uri: subject.property.uri,
+      range: subject.property.entry.nameRange,
+    });
+  }
   const editable: Location[] = [];
   let processed = 0;
   for (const location of locations) {
-    if (!state.isInPackages(location.uri)) editable.push(location);
+    const isSamePropertyFile = !subject.property
+      || uriKey(location.uri) === uriKey(subject.property.uri);
+    if (isSamePropertyFile && !state.isInPackages(location.uri)) editable.push(location);
     const checkpoint = cooperativeRequestCheckpoint(++processed, input.cancellation);
     if (checkpoint) await checkpoint;
   }
-  if (editable.length === 0) {
-    return rejected(`No editable occurrences were found for '${subject.declaration.name}'.`);
+  const uniqueEditable = uniqueLocations(editable);
+  if (uniqueEditable.length === 0) {
+    return rejected(`No editable occurrences were found for '${subject.token.text}'.`);
   }
 
-  editable.sort((left, right) => (
+  uniqueEditable.sort((left, right) => (
     left.uri.localeCompare(right.uri)
     || left.range.start.line - right.range.start.line
     || left.range.start.character - right.range.start.character
@@ -277,7 +459,7 @@ export async function renameWorkspaceSymbol(
   ));
   throwIfRequestCancelled(input.cancellation);
   const changes: NonNullable<WorkspaceEdit['changes']> = {};
-  for (const location of editable) {
+  for (const location of uniqueEditable) {
     (changes[location.uri] ??= []).push({
       range: location.range,
       newText: input.newName,

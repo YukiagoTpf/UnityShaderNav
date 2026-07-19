@@ -9,7 +9,7 @@ UnityShaderNav 是一个用于 Unity Shader 项目的 Visual Studio Code 扩展�
 - 为函数、局部变量、参数、struct、struct 成员、宏、`#include` 路径和 shader 入口函数提供 Go to Definition。
 - 在已索引的用户文件中查找引用，并可选择是否包含 package 引用。
 - 为 ShaderLab 的 `Shader`、`Fallback`、Pass `Name` 与 `UsePass` 提供跨项目的定义、引用、悬浮、补全、Workspace 符号和保守重命名；`UsePass` 的 Pass 段遵循 Unity 的大写规范形式。
-- 为声明身份唯一的 HLSL/CG 符号提供保守的 Workspace Rename，并在重载、预处理或 Package 等不安全场景拒绝修改。
+- 为声明身份唯一的 HLSL/CG 符号及同一 `.shader` 文件内的 ShaderLab Property 契约提供保守的 Workspace Rename，并在重载、预处理或 Package 等不安全场景拒绝修改。
 - 在 VS Code Problems 中报告无法解析的 vertex、fragment、geometry、hull、domain、surface 与 compute kernel 入口，并随实时文档和项目索引更新。
 - 保守检查 SRP Batcher 材质契约：标出未进入 `UnityPerMaterial` 的标量/向量 Property、不兼容字段类型及可确定的跨 Pass 布局差异；只有唯一且安全的插入位置才提供 Quick Fix。
 - 悬浮（Hover）显示已索引着色器符号（函数、struct、字段、变量、参数、宏）的声明摘要，并为部分 ShaderLab 术语、Property 语法、语义和 SRP helper 提供带公开来源的 Quick Documentation。项目和 Package 中的真实声明优先于带版本范围的精选兜底文档。
@@ -127,7 +127,7 @@ npm run package:vsix
 - Quick Documentation 是精选内容，不保证穷尽。Package 专属兜底只会用于版本兼容、include 可见的 Unity built-in 或默认 registry Package；Unity 范围文档目前以 Editor 2022.3 验证，其他或未知 Editor 版本仍会显示并附带验证范围提示。scoped registry、fork、本地来源或版本不兼容的 Package 事实保持中性，除非存在已索引的真实声明。
 - Color presentation 不处理 HDR、Vector、表达式或越界分量。格式化只修改 ShaderLab 行首缩进，完整保留嵌入 program/include block 的原始字节；结构畸形时拒绝格式化。HLSL 格式化不在范围内。
 - Chain lookup 对跨行 receiver、宏展开 receiver、分支相关类型、overload-specific return type inference 等情况保持保守。
-- Rename 要求索引中存在唯一声明；ShaderLab Property、内建符号、Package 声明以及存在歧义的 Shader、Pass 或 HLSL 候选都会被拒绝。
+- Rename 要求索引中存在唯一声明；ShaderLab Property 修改只覆盖选定 `.shader` 文件，以及至多一个匹配的 HLSL/CG 声明和可证明引用。内建符号、Package 声明、由 include 提供的 Property 契约及存在歧义的 Shader、Pass 或 HLSL 候选都会被拒绝。
 - SRP Batcher 检查要求源码中存在明确 SRP 证据，目前只覆盖 `Color`、`Vector`、`Float`、`Range`、旧版 float-backed `Int` 和 `Integer` Property。纹理资源、条件式或宏生成的 cbuffer 布局，以及有歧义的多 block 修改会保持中性或要求手工处理；在能证明逐 SubShader 的渲染管线归属前，多 SubShader 文件保持中性。
 
 ## 贡献

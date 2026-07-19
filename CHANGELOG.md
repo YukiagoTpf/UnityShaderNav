@@ -9,6 +9,9 @@ and uses semantic versioning for extension releases.
 
 ### Added
 
+- Added file-local ShaderLab Property Rename from either the Property or its
+  matching HLSL/CG declaration/reference. The edit stays inside one `.shader`
+  file and refuses include-supplied or ambiguous contracts.
 - Added #127 receiver-aware built-in member completion and signature help for
   texture methods, vector swizzles, bounded matrix components, and typed
   built-in declarations, with project members retaining precedence.

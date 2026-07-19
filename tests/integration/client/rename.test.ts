@@ -87,4 +87,28 @@ suite('Workspace Rename', () => {
       }
     });
   });
+
+  test('renames a same-file ShaderLab Property contract', async () => {
+    const root = fixturePath('refs-project');
+    await withWorkspaceFolder(root, async () => {
+      const uri = vscode.Uri.file(path.join(root, 'Assets', 'Shaders', 'Property.shader'));
+      const document = await vscode.workspace.openTextDocument(uri);
+      await vscode.window.showTextDocument(document);
+      const position = document.positionAt(document.getText().indexOf('_Color') + 1);
+
+      const edit = await waitForEventually(
+        'Workspace Rename edits for ShaderLab Property',
+        async () => vscode.commands.executeCommand<unknown>(
+          '_executeDocumentRenameProvider',
+          uri,
+          position,
+          '_Tint',
+        ),
+        (result) => JSON.stringify(result).match(/_Tint/g)?.length === 3,
+      );
+      const serialized = JSON.stringify(edit);
+      assert.ok(!serialized.includes('rejectReason'), serialized);
+      assert.strictEqual(serialized.match(/_Tint/g)?.length, 3);
+    });
+  });
 });

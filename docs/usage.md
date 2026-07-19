@@ -121,11 +121,16 @@ declaration, including supported `#pragma vertex`, `#pragma fragment`, and
 
 Rename intentionally refuses the operation when it cannot prove one declaration
 identity. This includes overload-like or preprocessor ambiguity, built-ins,
-include paths, Package declarations, and HLSL variables linked to ShaderLab
-Properties. It also refuses a new name that is not an HLSL identifier or that
-conflicts with a visible indexed symbol. ShaderLab Property Rename remains a
-separate capability; UnityShaderNav does not perform a partial name-only edit
-for that cross-language contract.
+include paths, and Package declarations. It also refuses a new name that is not
+an HLSL identifier or that conflicts with a visible indexed symbol.
+
+For a ShaderLab Property, Rename edits the Property declaration and, when
+present, one matching HLSL/CG declaration plus the references proven to resolve
+to it in the same `.shader` file. The same edit is available when Rename starts
+from that HLSL/CG declaration or one of its references. Multiple same-name
+Property or HLSL/CG declarations remain ambiguous; declarations supplied by an
+include are outside this file-local contract. C# strings, Material assets, and
+other cross-asset references are not edited.
 
 ShaderLab Shader and Pass names use the same conservative rule. Shader Rename
 updates the declaration plus matching `Fallback` and `UsePass` shader segments.

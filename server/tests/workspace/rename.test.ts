@@ -306,7 +306,7 @@ describe('Workspace Rename', () => {
     }))).toContain('conflicts');
   });
 
-  it('refuses Package declarations and Property-linked HLSL variables', async () => {
+  it('refuses Package declarations', async () => {
     const packageUri = 'file:///project/Packages/com.example/Shared.hlsl';
     const packageText = 'float4 PackageHelper() { return 1; }';
     const packageWorkspace = createIndexedWorkspaceFixture(
@@ -317,7 +317,9 @@ describe('Workspace Rename', () => {
       document: snapshot(packageUri, packageText),
       position: positionOf(packageText, 'PackageHelper'),
     }))).toContain('read-only');
+  });
 
+  it('renames one same-file ShaderLab Property contract from either side', async () => {
     const shaderUri = 'file:///project/Assets/Linked.shader';
     const shaderText = [
       'Shader "Linked" {',
@@ -334,12 +336,184 @@ describe('Workspace Rename', () => {
       '  }',
       '}',
     ].join('\n');
-    const shaderWorkspace = createIndexedWorkspaceFixture([
-      await indexFile(shaderUri, shaderText),
+    const document = { ...snapshot(shaderUri, shaderText), languageId: 'shaderlab' };
+
+    for (const occurrence of [0, 1, 2]) {
+      const shaderWorkspace = createIndexedWorkspaceFixture([
+        await indexFile(shaderUri, shaderText),
+      ]);
+      const position = positionOf(shaderText, '_Color', occurrence);
+
+      await expect(shaderWorkspace.prepareRenameAt({ document, position })).resolves.toEqual({
+        kind: 'ready',
+        range: expect.any(Object),
+        placeholder: '_Color',
+      });
+      const edit = await shaderWorkspace.renameAt({
+        document,
+        position,
+        newName: '_Tint',
+      });
+
+      expect(edit && 'changes' in edit ? edit.changes : undefined).toEqual({
+        [shaderUri]: [
+          { range: expect.objectContaining({ start: { line: 2, character: 4 } }), newText: '_Tint' },
+          { range: expect.objectContaining({ start: { line: 7, character: 13 } }), newText: '_Tint' },
+          { range: expect.objectContaining({ start: { line: 8, character: 41 } }), newText: '_Tint' },
+        ],
+      });
+    }
+  });
+
+  it('keeps ShaderLab Property contract edits inside the selected shader', async () => {
+    const firstUri = 'file:///project/Assets/First.shader';
+    const secondUri = 'file:///project/Assets/Second.shader';
+    const shaderText = (name: string) => [
+      `Shader "${name}" {`,
+      '  Properties {',
+      '    _Color ("Color", Color) = (1,1,1,1)',
+      '  }',
+      '  SubShader {',
+      '    Pass {',
+      '      HLSLPROGRAM',
+      '      float4 _Color;',
+      '      float4 frag() : SV_Target { return _Color; }',
+      '      ENDHLSL',
+      '    }',
+      '  }',
+      '}',
+    ].join('\n');
+    const firstText = shaderText('First');
+    const secondText = shaderText('Second');
+    const workspace = createIndexedWorkspaceFixture([
+      await indexFile(firstUri, firstText),
+      await indexFile(secondUri, secondText),
     ]);
-    expect(failureMessage(await shaderWorkspace.prepareRenameAt({
+    const edit = await workspace.renameAt({
+      document: { ...snapshot(firstUri, firstText), languageId: 'shaderlab' },
+      position: positionOf(firstText, '_Color', 1),
+      newName: '_Tint',
+    });
+
+    expect(edit && 'changes' in edit ? Object.keys(edit.changes ?? {}) : []).toEqual([firstUri]);
+    expect(edit && 'changes' in edit ? edit.changes?.[firstUri] : undefined).toHaveLength(3);
+  });
+
+  it('refuses a same-file ShaderLab Property name collision', async () => {
+    const shaderUri = 'file:///project/Assets/Collision.shader';
+    const shaderText = [
+      'Shader "Collision" {',
+      '  Properties {',
+      '    _Color ("Color", Color) = (1,1,1,1)',
+      '    _Tint ("Tint", Color) = (1,1,1,1)',
+      '  }',
+      '  SubShader { Pass { HLSLPROGRAM',
+      '    float4 _Color;',
+      '  ENDHLSL } }',
+      '}',
+    ].join('\n');
+    const workspace = createIndexedWorkspaceFixture([await indexFile(shaderUri, shaderText)]);
+    const outcome = await workspace.renameAt({
       document: { ...snapshot(shaderUri, shaderText), languageId: 'shaderlab' },
+      position: positionOf(shaderText, '_Color'),
+      newName: '_Tint',
+    });
+
+    expect(failureMessage(outcome)).toContain('conflicts with a ShaderLab Property');
+  });
+
+  it('renames an unlinked ShaderLab Property declaration by itself', async () => {
+    const shaderUri = 'file:///project/Assets/PropertyOnly.shader';
+    const shaderText = [
+      'Shader "PropertyOnly" {',
+      '  Properties {',
+      '    _Value ("Value", Float) = 1',
+      '  }',
+      '  SubShader { Pass {} }',
+      '}',
+    ].join('\n');
+    const workspace = createIndexedWorkspaceFixture([await indexFile(shaderUri, shaderText)]);
+    const edit = await workspace.renameAt({
+      document: { ...snapshot(shaderUri, shaderText), languageId: 'shaderlab' },
+      position: positionOf(shaderText, '_Value'),
+      newName: '_Amount',
+    });
+
+    expect(edit && 'changes' in edit ? edit.changes?.[shaderUri] : undefined).toEqual([
+      { range: expect.any(Object), newText: '_Amount' },
+    ]);
+  });
+
+  it('refuses a Property contract whose HLSL declaration comes from an include', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-property-rename-'));
+    try {
+      const assets = join(root, 'Assets');
+      await mkdir(assets, { recursive: true });
+      const includeUri = pathToFileURL(join(assets, 'Shared.hlsl')).href;
+      const shaderUri = pathToFileURL(join(assets, 'Linked.shader')).href;
+      const includeText = 'float4 _Color;';
+      const shaderText = [
+        'Shader "Linked" {',
+        '  Properties {',
+        '    _Color ("Color", Color) = (1,1,1,1)',
+        '  }',
+        '  SubShader {',
+        '    Pass {',
+        '      HLSLPROGRAM',
+        '      #include "Shared.hlsl"',
+        '      float4 frag() : SV_Target { return _Color; }',
+        '      ENDHLSL',
+        '    }',
+        '  }',
+        '}',
+      ].join('\n');
+      await writeFile(join(assets, 'Shared.hlsl'), includeText, 'utf8');
+      await writeFile(join(assets, 'Linked.shader'), shaderText, 'utf8');
+      const workspace = createIndexedWorkspaceFixture([
+        await indexFile(includeUri, includeText),
+        await indexFile(shaderUri, shaderText),
+      ], { includeCtx: { unityProjectRoot: root, includeDirectories: [] } });
+
+      expect(failureMessage(await workspace.prepareRenameAt({
+        document: { ...snapshot(shaderUri, shaderText), languageId: 'shaderlab' },
+        position: positionOf(shaderText, '_Color'),
+      }))).toContain('outside this shader');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses ambiguous same-file Property contracts', async () => {
+    const shaderUri = 'file:///project/Assets/AmbiguousProperty.shader';
+    const shaderText = [
+      'Shader "AmbiguousProperty" {',
+      '  Properties {',
+      '    _Color ("Color", Color) = (1,1,1,1)',
+      '  }',
+      '  SubShader {',
+      '    Pass {',
+      '      HLSLPROGRAM',
+      '      float4 _Color;',
+      '      ENDHLSL',
+      '    }',
+      '    Pass {',
+      '      HLSLPROGRAM',
+      '      float4 _Color;',
+      '      ENDHLSL',
+      '    }',
+      '  }',
+      '}',
+    ].join('\n');
+    const workspace = createIndexedWorkspaceFixture([await indexFile(shaderUri, shaderText)]);
+    const document = { ...snapshot(shaderUri, shaderText), languageId: 'shaderlab' };
+
+    expect(failureMessage(await workspace.prepareRenameAt({
+      document,
+      position: positionOf(shaderText, '_Color'),
+    }))).toContain('ambiguous');
+    expect(failureMessage(await workspace.prepareRenameAt({
+      document,
       position: positionOf(shaderText, '_Color', 1),
-    }))).toContain('cross-contract rename');
+    }))).toContain('ambiguous');
   });
 });
