@@ -35,6 +35,7 @@ import { registerIncludePointContextsHandler } from './handlers/includePointCont
 import { registerMaterialContextHandler } from './handlers/materialContext';
 import { registerVariantKeywordsHandler } from './handlers/variantKeywords';
 import { registerVariantComparisonHandler } from './handlers/variantComparison';
+import { registerPortabilityReportHandler } from './handlers/portabilityReport';
 import { registerReferencesHandler } from './handlers/references';
 import { registerRenameHandler } from './handlers/rename';
 import { registerSemanticTokensHandler } from './handlers/semanticTokens';
@@ -47,6 +48,7 @@ import { initializeWorkspaceFolders } from './lifecycle/workspaceFolderCoordinat
 import { WorkspaceManager } from './workspace';
 import { variantContextStore } from './workspace/variantContextStore';
 import { includePointContextStore } from './workspace/includePointContextStore';
+import { portabilityTargetStore } from './portability/targetStore';
 import type { CancellationToken } from 'vscode-languageserver/node';
 import { throwIfRequestCancelled } from './lifecycle/requestCancellation';
 
@@ -131,6 +133,7 @@ connection.onInitialize((params) => {
 const documentRegistry = registerDocuments(connection, manager);
 documentRegistry.onDidCloseSnapshot((document) => {
   variantContextStore.delete(document.uri);
+  portabilityTargetStore.delete(document.uri);
 });
 const documents = documentRegistry.documents;
 compilerEvidence = new CompilerEvidenceService({
@@ -231,6 +234,14 @@ registerInactiveRegionsHandler(
 registerIncludePointContextsHandler(connection, manager, suspender);
 registerMaterialContextHandler(connection, manager, adapterRegistry, suspender);
 registerVariantKeywordsHandler(connection, documents);
+registerPortabilityReportHandler(
+  connection,
+  documentRegistry,
+  manager,
+  adapterRegistry,
+  () => manager.requestDiagnosticsRefresh(),
+  suspender,
+);
 registerCodeLensHandler(connection, documents);
 registerVariantComparisonHandler(connection, documents, adapterRegistry);
 registerFileWatchers(

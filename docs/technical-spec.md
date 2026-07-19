@@ -27,6 +27,9 @@ UnityShaderNav provides practical VS Code navigation for Unity shader projects:
   common HLSL symbols.
 - Versioned Problems diagnostics for unresolved Shader and Compute pragma entry
   points and conservative SRP Batcher material contracts.
+- Explainable, revision-owned custom Shader portability reports whose static
+  findings and optional Adapter compiler evidence remain separate from any
+  rendered-equivalence claim.
 - Declared/static Variant cost CodeLens for explicit keyword sets, with exact
   source-local products that remain separate from compiler/build evidence.
 - A bounded Editor Adapter Variant comparison report that preserves distinct

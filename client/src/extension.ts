@@ -29,6 +29,7 @@ import {
   SHOW_OUTPUT_COMMAND,
 } from './statusPresentation';
 import { setupFileWatchers } from './watcher';
+import { registerPortabilityReportCommand } from './portabilityReportCommand';
 
 let client: LanguageClient | undefined;
 
@@ -104,6 +105,7 @@ export async function activate(context: ExtensionContext): Promise<void> {
   });
   context.subscriptions.push(materialContext);
   setupCompilerViews(client, context, reportError);
+  context.subscriptions.push(registerPortabilityReportCommand(client, reportError));
 }
 
 export async function deactivate(): Promise<void> {

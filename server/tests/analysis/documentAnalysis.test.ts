@@ -64,6 +64,9 @@ describe('Document analysis', () => {
     expect(indexAnalysis).toBeDefined();
     expect(fullAnalysis).toBeDefined();
     expect(indexAnalysis!.blocks).toEqual(fullAnalysis!.blocks);
+    expect(indexAnalysis!.sourceCodeLines).toEqual(fullAnalysis!.sourceCodeLines);
+    expect(indexAnalysis!.sourceCodeWithoutStringLines)
+      .toEqual(fullAnalysis!.sourceCodeWithoutStringLines);
     expect(indexAnalysis!.structure).toEqual(fullAnalysis!.structure);
     expect(indexAnalysis!.shaderLabNames).toEqual(fullAnalysis!.shaderLabNames);
     expect(indexAnalysis!.shaderLabMaterial).toEqual(fullAnalysis!.shaderLabMaterial);
@@ -156,6 +159,8 @@ describe('Document analysis', () => {
       const independentLayout = scanShaderLabLayout(fixtureSource);
 
       expect(analysis.sourceLines).toEqual(fixtureSource.split(/\r?\n/));
+      expect(analysis.sourceCodeLines).toHaveLength(analysis.sourceLines.length);
+      expect(analysis.sourceCodeWithoutStringLines).toHaveLength(analysis.sourceLines.length);
       expect(analysis.layout).toEqual(independentLayout);
       expect(analysis.shaderLabNames).toEqual(scanShaderLabNames(
         fixtureSource,

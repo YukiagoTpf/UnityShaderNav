@@ -9,6 +9,12 @@ and uses semantic versioning for extension releases.
 
 ### Added
 
+- Added explainable custom Shader portability reports for the current
+  revision's Unity/URP versions or an Adapter-advertised graphics profile.
+  Findings separate mechanical changes, human semantic work, unsupported
+  semantics, and compiler verification; only a narrow single-Pass unlit
+  BiRP-to-URP slice receives versioned Quick Fixes, and no report claims
+  rendered equivalence. (#99)
 - Added Context- and compile-profile-scoped Source, Preprocessed, and Generated
   compiler evidence views. Exact `#line` regions navigate bidirectionally
   across ShaderLab and include snapshots; every mapping retains source identity

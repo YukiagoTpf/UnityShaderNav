@@ -98,6 +98,11 @@
         "command": "unityShaderNav.showVariantComparison",
         "title": "Show Variant Build Comparison",
         "category": "UnityShaderNav"
+      },
+      {
+        "command": "unityShaderNav.showPortabilityReport",
+        "title": "Show Custom Shader Portability Report",
+        "category": "UnityShaderNav"
       }
     ],
     "languages": [

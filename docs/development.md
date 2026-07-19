@@ -142,6 +142,13 @@ npm run grammar:rebuild
   query adapter and the document lifecycle fake only Indexed Workspace behavior;
   tests must not reconstruct `store/global/globalRefs` Workspace shapes or
   assert through a concrete `WorkspaceIndex`.
+- Portability tests keep version pairs in
+  `server/tests/portability/fixtures/version-pairs.json` and the narrow unlit
+  before/after sources under
+  `server/tests/portability/fixtures/birp-urp-unlit/`. The protocol fixture
+  proves deterministic edits plus separate exact-source hashes through a mock
+  Adapter boundary; it is not a substitute for compiling both revisions with a
+  real Unity Editor and must never be presented as captured compiler evidence.
 - Query semantics belong in revision/Workspace tests that call the same
   Indexed Workspace methods and production query implementation used by the
   server. Live overlay, disk fallback, stale-attempt, rebuild replay,

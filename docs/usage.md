@@ -171,6 +171,67 @@ are not cbuffer fields and are intentionally out of scope. Files with multiple
 SubShaders also stay neutral because an untagged Built-in fallback must not be
 mixed with an SRP-specific contract before per-SubShader ownership is known.
 
+### Custom Shader portability report
+
+Run **UnityShaderNav: Show Custom Shader Portability Report** from an open
+`.shader` file. Select either Universal Render Pipeline or an Adapter-advertised
+graphics profile. The generated Markdown report records the exact target, the
+Unity Editor version captured from `ProjectSettings/ProjectVersion.txt`, and the
+resolved render-pipeline Package name, version, source, and official-source
+status from the same Published indexed revision as the document.
+
+Every finding has one of four meanings:
+
+| Finding | Meaning | Can be a Quick Fix? |
+|---|---|---|
+| mechanical change | An exact, source-local syntax edit is known for this version fixture. | Only when the report carries a mechanically proven edit. |
+| human rewrite | Pipeline ownership, data flow, lighting, texture/sampler, cbuffer, include, macro, or Pass behavior needs a developer decision. | No. |
+| unsupported semantic | The selected target does not implement the source feature, or the target/profile is unavailable. | No. |
+| verification requirement | Static facts are insufficient; save and compile the exact source with Unity, then inspect rendered behavior. | No. |
+
+The first render-pipeline slice recognizes only the public Unity migration
+rules for these version pairs:
+
+| Unity Editor | URP Package | Mechanical rules |
+|---|---|---|
+| 2022.2 or 2022.3 | stable 14.x | Enabled for an official resolved Package. |
+| 6000.0 | stable 17.x | Enabled for an official resolved Package. |
+| Any other, unknown, forked, local, or cross-paired version | Any | Report-only; no automatic edit. |
+
+For a complete single-SubShader, single-Pass, Pass-owned program with no
+semantic blocker, the report can replace `CGPROGRAM`/`ENDCG`, the exact
+`UnityCG.cginc` include, `UnityObjectToClipPos`, and `fixed` types, and can add
+the `UniversalPipeline` SubShader tag. These are individual syntax fixes, not a
+whole-shader converter. Surface pragmas, Built-in lighting, GrabPass,
+texture/sampler migration, UnityCG-provided appdata or macros, custom includes,
+conditional/generated macros, UsePass/Fallback ownership, another pipeline
+tag, a Built-In `LightMode`, multiple SubShaders/Passes/programs, and malformed
+layout suppress every portability Quick Fix. `UnityPerMaterial` work remains
+human-owned unless the separate SRP Batcher diagnostic can prove its narrower
+exact insertion.
+
+Selecting a graphics profile asks the connected Unity Editor Adapter to compile
+the exact saved source hash. The report distinguishes passed, failed,
+profile-not-supported, and unavailable evidence; Adapter project, instance,
+Unity version, capability, source URI, and content hash checks still apply. A
+successful compile proves only that exact source/profile attempt, not rendered
+equivalence or another profile. The current Adapter protocol binds provenance
+to diagnostics, so an empty completed response carries no source revision to
+verify and remains `invalid-evidence`; the report does not infer a clean compile
+from an unbound empty array.
+
+The checked-in `birp-urp-unlit` before/after fixture currently exercises the
+safe-edit result and exact-hash Adapter protocol with a mock compiler boundary.
+It is deliberately not described as a Unity Editor compile capture. Real Unity
+compile verification of both fixture revisions remains pending until a
+connected Adapter run is available.
+
+The rules and limits follow Unity's public documentation for
+[converting custom shaders to URP](https://docs.unity3d.com/Manual/urp/urp-shaders/birp-urp-custom-shader-upgrade-guide.html),
+[URP SRP Batcher material layout](https://docs.unity3d.com/Manual/urp/shaders-in-universalrp-srp-batcher.html),
+[URP version requirements](https://docs.unity3d.com/Manual/urp/requirements.html),
+and [Surface Shader render-pipeline support](https://docs.unity3d.com/Manual/SL-SurfaceShaders.html).
+
 ### Rename
 
 Use F2 or VS Code's `Rename Symbol` command on an indexed HLSL/CG function,

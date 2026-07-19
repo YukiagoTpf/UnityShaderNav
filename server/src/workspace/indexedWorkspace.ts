@@ -20,6 +20,11 @@ import type {
   WorkspaceEdit,
   CancellationToken,
 } from 'vscode-languageserver/node';
+import type {
+  CompileProfileRunResult,
+  PortabilityReport,
+  PortabilityTarget,
+} from '@unity-shader-nav/shared';
 
 export interface RequestCancellationInput {
   readonly cancellation?: CancellationToken;
@@ -68,6 +73,12 @@ export interface CodeActionsAtInput extends RequestCancellationInput {
   readonly context: CodeActionContext;
 }
 
+export interface PortabilityReportAtInput extends RequestCancellationInput {
+  readonly document: IndexedDocumentSnapshot;
+  readonly target: PortabilityTarget;
+  readonly compilerResult?: CompileProfileRunResult;
+}
+
 export interface ColorPresentationAtInput extends RequestCancellationInput {
   readonly document: IndexedDocumentSnapshot;
   readonly range: import('vscode-languageserver/node').Range;
@@ -112,6 +123,7 @@ export interface IndexedWorkspace {
     document: IndexedDocumentSnapshot,
     cancellation?: CancellationToken,
   ): Promise<Diagnostic[] | null>;
+  portabilityReportAt(input: PortabilityReportAtInput): Promise<PortabilityReport | null>;
   codeActionsAt(input: CodeActionsAtInput): Promise<CodeAction[]>;
   definitionAt(input: DefinitionAtInput): Promise<LocationLink[] | Location[] | null>;
   referencesAt(input: ReferencesAtInput): Promise<Location[] | null>;

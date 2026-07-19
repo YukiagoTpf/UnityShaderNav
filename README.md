@@ -31,6 +31,11 @@ The extension focuses on fast code navigation:
   Properties missing from `UnityPerMaterial`, incompatible field types, and
   deterministic cross-Pass layout drift. A Quick Fix is offered only when one
   exact insertion target is safe.
+- Explainable custom Shader portability reports for a selected URP target or
+  Adapter graphics profile. Reports bind Unity and Package versions to the
+  current published source, separate mechanical changes from human rewrites,
+  unsupported semantics, and compiler verification, and expose Quick Fixes
+  only for a narrow mechanically proven unlit slice.
 - Hover for declarations of indexed shader symbols (functions, structs,
   members, variables, parameters, macros), plus sourced Quick Documentation
   for selected ShaderLab terms, Property syntax, semantics, and SRP helpers.
@@ -245,6 +250,10 @@ See [Configuration](docs/configuration.md) for the full explanation and examples
   resources, conditional or macro-generated cbuffer layouts, and ambiguous
   multi-block edits stay neutral or require manual repair. Multi-SubShader files
   stay neutral until per-SubShader pipeline ownership can be proven.
+- Portability reports are not whole-shader converters and never claim rendered
+  equivalence. The checked-in BiRP-to-URP fixture validates safe edits and the
+  exact-source Adapter protocol with a mock compiler boundary; a real Unity
+  Editor compile capture for both revisions is still pending.
 
 ## Contributing
 

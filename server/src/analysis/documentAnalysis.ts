@@ -35,6 +35,10 @@ export type DocumentLexicalToken = ShaderLabLexicalToken;
 export interface DocumentAnalysis {
   readonly sourceText: string;
   readonly sourceLines: readonly string[];
+  /** Comments blanked width-preservingly; complete string contents retained. */
+  readonly sourceCodeLines: readonly string[];
+  /** Comments and complete strings blanked width-preservingly. */
+  readonly sourceCodeWithoutStringLines: readonly string[];
   readonly sourceLexicalLines: readonly ExactSourceLexicalLine[];
   readonly blocks: readonly ShaderLabBlock[];
   readonly layout: ShaderLabLayoutAnalysis;
@@ -72,6 +76,8 @@ export function analyzeDocument(
   return Object.freeze({
     sourceText: text,
     sourceLines: source.lines.map((line) => line.raw),
+    sourceCodeLines: source.lines.map((line) => line.code),
+    sourceCodeWithoutStringLines: source.lines.map((line) => line.codeWithoutStrings),
     sourceLexicalLines: source.lines.map((line) => ({
       commentRoles: line.commentRoles,
       lineComment: line.lineComment,

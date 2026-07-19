@@ -74,6 +74,14 @@ _Avoid_: standard library, compiler symbols
 函数调用位置的参数提示。UnityShaderNav 只在能保守识别单行 free-function call 和候选函数元数据时返回；存在 overload-like 或预处理歧义时可以展示多个候选，而不会为得到唯一答案猜测分支状态。
 _Avoid_: hover, function docs
 
+**Portability report**:
+针对一个打开的自定义 `.shader` 与用户选择的 render pipeline 或 graphics
+profile，从同一 Published indexed revision 的精确源码、Unity Editor 版本和
+已解析 Package 版本生成的解释性报告。Finding 只分为 mechanical change、
+human rewrite、unsupported semantic 与 verification requirement；只有对该精确
+源码机械证明的 edit 才能成为 Quick Fix。静态报告和编译成功都不声明渲染等价。
+_Avoid_: shader converter, automatic migration, compatibility guarantee
+
 **Compiler evidence view**:
 为一个已选择、经 Unity Editor Adapter 验证的 Shader Context 展示 Source、
 Preprocessed 和 Generated 三种视图。Preprocessed/Generated 是会话内虚拟文档，

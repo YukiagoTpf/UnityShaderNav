@@ -41,6 +41,7 @@ import type {
   DocumentPositionInput,
   IndexedDocumentSnapshot,
   IndexedDocumentQueryInput,
+  PortabilityReportAtInput,
   IndexedWorkspace,
   OpenDocumentsProvider,
   ReferencesAtInput,
@@ -91,6 +92,7 @@ import {
   validateMaterialContext,
 } from './materialContext';
 import { materialContextStore } from './materialContextStore';
+import type { PortabilityReport } from '@unity-shader-nav/shared';
 
 export type { FileEvent } from './workspaceIndex';
 
@@ -326,6 +328,20 @@ export class Workspace implements IndexedWorkspace {
       input.document,
       [],
       (revision) => revision.codeActions(input),
+      input.cancellation,
+      undefined,
+      (revision) => !this.disposed && this.published === revision,
+    );
+  }
+
+  async portabilityReportAt(
+    input: PortabilityReportAtInput,
+  ): Promise<PortabilityReport | null> {
+    throwIfRequestCancelled(input.cancellation);
+    return this.queryRevision<PortabilityReport | null>(
+      input.document,
+      null,
+      (revision) => revision.portabilityReport(input),
       input.cancellation,
       undefined,
       (revision) => !this.disposed && this.published === revision,

@@ -72,7 +72,7 @@ suite('UnityShaderNav activation', () => {
     assert.strictEqual(trace?.default, 'off');
   });
 
-  test('manifest contributes user-facing index status and output commands', () => {
+  test('manifest contributes user-facing status, output, and portability commands', () => {
     const ext = findExt();
     assert.ok(ext, 'extension manifest must be loaded');
     const commands: Array<{ command?: string }> = ext.packageJSON.contributes?.commands ?? [];
@@ -80,6 +80,7 @@ suite('UnityShaderNav activation', () => {
     assert.ok(ids.includes('unityShaderNav.showIndexStatus'));
     assert.ok(ids.includes('unityShaderNav.showOutput'));
     assert.ok(ids.includes('unityShaderNav.showMaterialContext'));
+    assert.ok(ids.includes('unityShaderNav.showPortabilityReport'));
     assert.ok(ids.includes(SHOW_VARIANT_COMPARISON_COMMAND));
     for (const command of [
       OPEN_SOURCE_VIEW_COMMAND,
@@ -111,7 +112,7 @@ suite('UnityShaderNav activation', () => {
     );
   });
 
-  test('activation registers the status and Variant cost documentation actions', async () => {
+  test('activation registers status, portability, and Variant cost actions', async () => {
     const ext = findExt();
     assert.ok(ext, 'extension manifest must be loaded');
     await ext.activate();
@@ -120,6 +121,7 @@ suite('UnityShaderNav activation', () => {
     assert.ok(registered.includes('unityShaderNav.showOutput'));
     assert.ok(registered.includes('unityShaderNav.pickIncludePointContext'));
     assert.ok(registered.includes('unityShaderNav.showMaterialContext'));
+    assert.ok(registered.includes('unityShaderNav.showPortabilityReport'));
     assert.ok(registered.includes(OPEN_VARIANT_COST_DOCUMENTATION_COMMAND));
     assert.ok(registered.includes(SHOW_VARIANT_COMPARISON_COMMAND));
     for (const command of [

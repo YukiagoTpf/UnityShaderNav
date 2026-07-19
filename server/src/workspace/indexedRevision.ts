@@ -10,6 +10,7 @@ import type {
   ShaderGraphCustomFunctionUsage,
   VariantContext,
   SelectedMaterialContext,
+  PortabilityReport,
 } from '@unity-shader-nav/shared';
 import { normalizeSettings } from '@unity-shader-nav/shared';
 import {
@@ -62,6 +63,7 @@ import type {
   DocumentPositionInput,
   IndexedDocumentSnapshot,
   IndexedDocumentQueryInput,
+  PortabilityReportAtInput,
   ReferencesAtInput,
   RenameEditOutcome,
   RenamePreparationOutcome,
@@ -122,6 +124,12 @@ import {
   annotateMaterialCompletions,
   rankMaterialDefinitionCandidates,
 } from './materialContextOverlay';
+import {
+  createPortabilityReport,
+  portabilityCodeActions,
+  portabilityDiagnostics,
+} from '../portability';
+import { portabilityTargetStore } from '../portability/targetStore';
 
 const PUBLICATION_SESSION_ID = randomUUID();
 let nextPublicationIdentity = 1;
@@ -255,6 +263,11 @@ export class PublishedIndexedRevision {
       includeChain: this.includeChain,
     }, uri);
     if (typeof document === 'string') return diagnostics;
+    const target = portabilityTargetStore.get(uri);
+    if (target) {
+      const report = this.portabilityReport({ document, target });
+      if (report) diagnostics.push(...portabilityDiagnostics(report));
+    }
     if (diagnostics.length === 0) return diagnostics;
 
     const variant = variantContextStore.get(uri);
@@ -346,7 +359,7 @@ export class PublishedIndexedRevision {
 
   codeActions(input: CodeActionsAtInput): CodeAction[] {
     const index = this.index.read.store.get(input.document.uri);
-    return index
+    const materialActions = index
       ? srpBatcherCodeActions(
         index,
         input.document.uri,
@@ -355,6 +368,48 @@ export class PublishedIndexedRevision {
         input.context,
       )
       : [];
+    const target = portabilityTargetStore.get(input.document.uri);
+    const report = target ? this.portabilityReport({
+      document: input.document,
+      target,
+    }) : null;
+    return report
+      ? [
+          ...materialActions,
+          ...portabilityCodeActions(
+            report,
+            input.document.uri,
+            input.document.version,
+            input.range,
+            input.context,
+          ),
+        ]
+      : materialActions;
+  }
+
+  portabilityReport(input: PortabilityReportAtInput): PortabilityReport | null {
+    const analysis = this.documentAnalysis({
+      uri: input.document.uri,
+      document: input.document,
+    });
+    if (!analysis) return null;
+    return createPortabilityReport({
+      uri: input.document.uri,
+      source: analysis.sourceText,
+      target: input.target,
+      environment: {
+        ...(this.project.editorVersion
+          ? { unityVersion: this.project.editorVersion }
+          : {}),
+        renderPipelinePackages: this.packages.packages().map((pkg) => ({
+          name: pkg.name,
+          ...(pkg.version ? { version: pkg.version } : {}),
+          ...(pkg.source ? { source: pkg.source } : {}),
+          official: pkg.official,
+        })),
+      },
+      ...(input.compilerResult ? { compilerResult: input.compilerResult } : {}),
+    });
   }
 
   async definitionAt(

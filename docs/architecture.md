@@ -97,6 +97,11 @@ handling. Important modules:
   freshness, disconnect, reconnect, selection-generation, and payload-limit
   checks run before Adapter facts can reach Workspace behavior; unavailable
   facts stay explicitly unknown.
+- `portability`: owns the exact-source report classifier, validated Unity/URP
+  version pairs, mechanical edit gate, and the projection from mechanical
+  findings to Hint diagnostics and Quick Fixes. Reports consume revision-owned
+  `UnityProjectFacts` and `PackageContext`; they never read project metadata
+  independently or persist findings in the index/cache.
 - `handlers`: adapts LSP messages to domain behavior. The document adapter owns
   the open-document registry; `handlers/documentRequest.ts` centralizes
   snapshot routing, suspension, and neutral-result policy. Every index-backed
@@ -402,6 +407,17 @@ and publication identity. Compiler occurrences retain the complete Adapter
 provenance envelope and Unity message payload. A newer publication or document
 generation cancels its predecessor before the existing revision/document guards
 can publish it.
+
+The session-only portability target follows the open document rather than the
+cache. Selecting a target recomputes a report through `IndexedWorkspace`, then
+requests a diagnostics refresh. A revision exposes Hint diagnostics only for
+`mechanical-change` findings that carry a safe edit; the Code Action boundary
+checks that classification again before constructing a versioned Quick Fix.
+Human rewrites, unsupported semantics, and verification requirements never
+cross that boundary. Graphics-profile requests run through `AdapterRegistry`
+with the exact document SHA-256 and return explicit passed, failed,
+profile-not-supported, or unavailable evidence. Neither static findings nor a
+successful compiler attempt changes the report's `not-claimed` equivalence fact.
 
 For a ShaderLab open-document attempt, the candidate builds a full
 `DocumentAnalysis` from that attempt's exact source. It becomes query-visible
