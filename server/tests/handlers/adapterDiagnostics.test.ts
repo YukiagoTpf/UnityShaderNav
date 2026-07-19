@@ -170,11 +170,13 @@ function scenario(
     readonly connectedBeforeRegistration?: boolean;
     readonly staticDiagnostics?: readonly Diagnostic[];
     readonly profiles?: readonly CompileProfile[];
-    readonly selectedProfile?: CompileProfile;
+    readonly selectedProfile?: CompileProfile | null;
   } = {},
 ) {
   const profiles = options.profiles ?? [D3D_PROFILE];
-  const selectedProfile = options.selectedProfile ?? D3D_PROFILE;
+  const selectedProfile = options.selectedProfile === null
+    ? undefined
+    : options.selectedProfile ?? D3D_PROFILE;
   const registry = new AdapterRegistry({
     now: () => 1_000_000,
     messageSource: source,
@@ -282,7 +284,11 @@ describe('Adapter compiler diagnostics', () => {
     await flush();
 
     expect(source.getShaderMessages).toHaveBeenCalledOnce();
-    expect(source.getShaderMessages).toHaveBeenCalledWith(uri, D3D_PROFILE);
+    expect(source.getShaderMessages).toHaveBeenCalledWith(
+      uri,
+      D3D_PROFILE,
+      expect.any(AbortSignal),
+    );
     expect(harness.sends.at(-1)).toMatchObject({ uri, version: 1 });
   });
 
@@ -307,7 +313,11 @@ describe('Adapter compiler diagnostics', () => {
     await flush();
 
     expect(source.getShaderMessages).toHaveBeenCalledOnce();
-    expect(source.getShaderMessages).toHaveBeenCalledWith(URI, D3D_PROFILE);
+    expect(source.getShaderMessages).toHaveBeenCalledWith(
+      URI,
+      D3D_PROFILE,
+      expect.any(AbortSignal),
+    );
     expect(harness.sends).toEqual([{
       uri: URI,
       version: 1,
@@ -356,27 +366,235 @@ describe('Adapter compiler diagnostics', () => {
     expect(harness.sends.at(-1)?.diagnostics).toEqual([
       expect.objectContaining({
         source: 'Unity Shader Compiler [d3d11] (Unity 2022.3.62f1, StandaloneWindows64, Direct3D11)',
-        message: 'd3d11 failure\nat fragment program',
+        message: expect.stringContaining('d3d11 failure\nat fragment program'),
         data: expect.objectContaining({
-          profile: D3D_PROFILE,
-          shaderMessage: expect.objectContaining({
-            messageDetails: 'at fragment program',
-            platform: 'Direct3D11',
-          }),
+          kind: 'context-diagnostic-group',
+          affectedContextCount: 1,
+          analyzedContextCount: 2,
+          affectedContexts: [expect.objectContaining({
+            provenances: [expect.objectContaining({
+              kind: 'compiler',
+              profile: D3D_PROFILE,
+              shaderMessage: expect.objectContaining({
+                messageDetails: 'at fragment program',
+                platform: 'Direct3D11',
+              }),
+            })],
+          })],
         }),
       }),
       expect.objectContaining({
         source: 'Unity Shader Compiler [vulkan] (Unity 2022.3.62f1, StandaloneLinux64, Vulkan)',
-        message: 'vulkan failure\nat fragment program',
+        message: expect.stringContaining('vulkan failure\nat fragment program'),
         data: expect.objectContaining({
-          profile: VULKAN_PROFILE,
-          shaderMessage: expect.objectContaining({
-            messageDetails: 'at fragment program',
-            platform: 'Vulkan',
-          }),
+          kind: 'context-diagnostic-group',
+          affectedContextCount: 1,
+          analyzedContextCount: 2,
+          affectedContexts: [expect.objectContaining({
+            provenances: [expect.objectContaining({
+              kind: 'compiler',
+              profile: VULKAN_PROFILE,
+              shaderMessage: expect.objectContaining({
+                messageDetails: 'at fragment program',
+                platform: 'Vulkan',
+              }),
+            })],
+          })],
         }),
       }),
     ]);
+  });
+
+  it('aggregates an equivalent compiler finding across analyzed profiles', async () => {
+    const source = {
+      getShaderMessages: vi.fn(async () => [compilerDiagnostic()]),
+    };
+    const harness = scenario(source, {
+      staticDiagnostics: [],
+      profiles: [D3D_PROFILE, VULKAN_PROFILE],
+    });
+    harness.open();
+    harness.save();
+    await flush();
+
+    harness.adapter.selectProfile(VULKAN_PROFILE);
+    await flush(40);
+
+    expect(harness.sends.at(-1)?.diagnostics).toHaveLength(1);
+    expect(harness.sends.at(-1)?.diagnostics[0]).toMatchObject({
+      source: 'Unity Shader Compiler (aggregated)',
+      message: expect.stringContaining(
+        'Affected in 2 of 2 analyzed Shader Contexts.',
+      ),
+      data: {
+        kind: 'context-diagnostic-group',
+        affectedContextCount: 2,
+        analyzedContextCount: 2,
+        knownContextCount: 2,
+        unverifiedContextCount: 0,
+        affectedContexts: [
+          {
+            context: expect.objectContaining({
+              shader: {
+                status: 'verified',
+                value: { uri: URI },
+              },
+              pass: {
+                status: 'unverified',
+                reason: 'compiler-message-not-context-scoped',
+              },
+              stage: {
+                status: 'unverified',
+                reason: 'compiler-message-not-context-scoped',
+              },
+              keywords: {
+                status: 'unverified',
+                reason: 'compiler-message-not-context-scoped',
+              },
+              platform: {
+                status: 'verified',
+                value: D3D_PROFILE.platform,
+              },
+              graphicsApi: {
+                status: 'verified',
+                value: D3D_PROFILE.graphicsApi,
+              },
+              profile: { status: 'verified', value: D3D_PROFILE },
+            }),
+            provenances: [{
+              kind: 'compiler',
+              profile: D3D_PROFILE,
+              shaderMessage: compilerDiagnostic().shaderMessage,
+              envelope: compilerDiagnostic().provenance,
+            }],
+          },
+          expect.objectContaining({
+            context: expect.objectContaining({
+              platform: {
+                status: 'verified',
+                value: VULKAN_PROFILE.platform,
+              },
+              graphicsApi: {
+                status: 'verified',
+                value: VULKAN_PROFILE.graphicsApi,
+              },
+              profile: { status: 'verified', value: VULKAN_PROFILE },
+            }),
+          }),
+        ],
+      },
+    });
+    expect(harness.sends.at(-1)?.diagnostics[0].relatedInformation).toHaveLength(2);
+  });
+
+  it('analyzes the bounded discovered profile set without manual switching', async () => {
+    const source = {
+      getShaderMessages: vi.fn(async () => [compilerDiagnostic()]),
+    };
+    const harness = scenario(source, {
+      staticDiagnostics: [],
+      profiles: [D3D_PROFILE, VULKAN_PROFILE],
+      selectedProfile: null,
+    });
+
+    harness.open();
+    harness.save();
+    await flush(80);
+
+    expect(source.getShaderMessages).toHaveBeenCalledTimes(2);
+    expect(source.getShaderMessages.mock.calls.map(([, profile]) => profile)).toEqual([
+      D3D_PROFILE,
+      VULKAN_PROFILE,
+    ]);
+    expect(harness.sends.at(-1)?.diagnostics).toHaveLength(1);
+    expect(harness.sends.at(-1)?.diagnostics[0]).toMatchObject({
+      message: expect.stringContaining(
+        'Affected in 2 of 2 analyzed Shader Contexts.',
+      ),
+      data: expect.objectContaining({
+        affectedContextCount: 2,
+        analyzedContextCount: 2,
+        knownContextCount: 2,
+      }),
+    });
+  });
+
+  it('reports Auto coverage even when the Adapter exposes one profile', async () => {
+    const source = {
+      getShaderMessages: vi.fn(async () => [compilerDiagnostic()]),
+    };
+    const harness = scenario(source, {
+      staticDiagnostics: [],
+      profiles: [D3D_PROFILE],
+      selectedProfile: null,
+    });
+
+    harness.open();
+    harness.save();
+    await flush(40);
+
+    expect(harness.sends.at(-1)?.diagnostics).toHaveLength(1);
+    expect(harness.sends.at(-1)?.diagnostics[0]).toMatchObject({
+      message: expect.stringContaining(
+        'Affected in 1 of 1 analyzed Shader Context.',
+      ),
+      data: expect.objectContaining({
+        kind: 'context-diagnostic-group',
+        affectedContextCount: 1,
+        analyzedContextCount: 1,
+        knownContextCount: 1,
+      }),
+    });
+  });
+
+  it('reports a failed profile as unverified beside the surviving finding', async () => {
+    const source = {
+      getShaderMessages: vi.fn((
+        _documentUri: string,
+        profile: CompileProfile,
+      ) => profile.name === D3D_PROFILE.name
+        ? Promise.resolve([compilerDiagnostic()])
+        : Promise.reject(new Error('compiler unavailable'))),
+    };
+    const harness = scenario(source, {
+      staticDiagnostics: [],
+      profiles: [D3D_PROFILE, VULKAN_PROFILE],
+    });
+    harness.open();
+    harness.save();
+    await flush();
+
+    harness.adapter.selectProfile(VULKAN_PROFILE);
+    await flush(40);
+
+    expect(harness.sends.at(-1)?.diagnostics).toHaveLength(1);
+    expect(harness.sends.at(-1)?.diagnostics[0]).toMatchObject({
+      message: expect.stringContaining('1 additional Context unverified.'),
+      data: {
+        kind: 'context-diagnostic-group',
+        affectedContextCount: 1,
+        analyzedContextCount: 1,
+        knownContextCount: 2,
+        unverifiedContextCount: 1,
+        omittedContextCount: 0,
+        unverifiedContexts: [{
+          context: expect.objectContaining({
+            profile: { status: 'verified', value: VULKAN_PROFILE },
+            platform: {
+              status: 'unverified',
+              reason: 'compiler-profile-not-completed',
+            },
+            graphicsApi: {
+              status: 'unverified',
+              reason: 'compiler-profile-not-completed',
+            },
+          }),
+          reason: 'compiler-shader-message-source-unavailable',
+        }],
+      },
+    });
+    expect(harness.sends.at(-1)?.diagnostics[0].relatedInformation?.at(-1)?.message)
+      .toContain('Unverified');
   });
 
   it('exposes running and completed lifecycle facts for the selected profile', async () => {
@@ -568,19 +786,27 @@ describe('Adapter compiler diagnostics', () => {
     const first = deferred<readonly AdapterDiagnostic[]>();
     const second = deferred<readonly AdapterDiagnostic[]>();
     const source = {
-      getShaderMessages: vi.fn()
+      getShaderMessages: vi.fn((
+        _documentUri: string,
+        _profile: CompileProfile,
+        _cancellation?: AbortSignal,
+      ) => Promise.resolve<readonly AdapterDiagnostic[]>([]))
         .mockImplementationOnce(() => first.promise)
         .mockImplementationOnce(() => second.promise),
     };
     const harness = scenario(source);
     harness.open();
     harness.save();
+    await flush();
 
     harness.change({
       textDocument: { uri: URI, version: 2 },
       contentChanges: [{ text: newSource }],
     });
     harness.save();
+    await flush();
+    expect(source.getShaderMessages.mock.calls[0]?.[2]?.aborted).toBe(true);
+    expect(source.getShaderMessages.mock.calls[1]?.[2]?.aborted).toBe(false);
     second.resolve([compilerDiagnostic({
       source: newSource,
       message: 'new result',

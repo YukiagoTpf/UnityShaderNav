@@ -17,8 +17,16 @@ import type { FileEvent } from '../workspace/workspace';
 import type { IndexedDocumentSnapshot } from '../workspace/indexedWorkspace';
 import type { RegisteredDocuments } from './documents';
 import type { DiagnosticOverlay } from './diagnosticOverlay';
+import {
+  aggregateContextDiagnostics,
+  MAX_AGGREGATED_DIAGNOSTIC_CONTEXTS,
+  type CompilerDiagnosticProvenance,
+  type ContextDiagnosticFinding,
+  type DiagnosticShaderContext,
+} from '../workspace/diagnosticAggregation';
 
 const SUPPORTED_ASSET_URI = /\.(?:shader|compute)(?:$|[?#])/i;
+const PROFILE_DISCOVERY_KEY = '\u0000known-compile-profiles';
 
 interface SavedAttempt {
   readonly uri: string;
@@ -28,8 +36,7 @@ interface SavedAttempt {
 }
 
 interface PublishedProfileGroup {
-  readonly profile: CompileProfile;
-  readonly diagnostics: readonly Diagnostic[];
+  readonly findings: readonly ContextDiagnosticFinding[];
 }
 
 interface PublishedAdapterDiagnostics extends SavedAttempt {
@@ -38,6 +45,9 @@ interface PublishedAdapterDiagnostics extends SavedAttempt {
 
 interface PublishedProfileStatuses extends SavedAttempt {
   readonly statuses: Map<string, CompileProfileRunStatus>;
+  knownContextCount: number;
+  omittedContextCount: number;
+  aggregateKnownContexts: boolean;
 }
 
 export interface AdapterDiagnosticOverlay extends DiagnosticOverlay {
@@ -117,11 +127,64 @@ function adapterDiagnosticToLsp(
   };
 }
 
+function compilerDiagnosticContext(
+  uri: string,
+  profile: CompileProfile,
+  completed: boolean,
+): DiagnosticShaderContext {
+  const scopedReason = 'compiler-message-not-context-scoped';
+  const profileReason = completed
+    ? undefined
+    : 'compiler-profile-not-completed';
+  return {
+    id: `compiler-profile:${compileProfileKey(profile)}`,
+    shader: { status: 'verified', value: { uri } },
+    pass: { status: 'unverified', reason: scopedReason },
+    stage: { status: 'unverified', reason: scopedReason },
+    includePoint: { status: 'unverified', reason: scopedReason },
+    keywords: { status: 'unverified', reason: scopedReason },
+    platform: profileReason
+      ? { status: 'unverified', reason: profileReason }
+      : { status: 'verified', value: profile.platform },
+    graphicsApi: profileReason
+      ? { status: 'unverified', reason: profileReason }
+      : { status: 'verified', value: profile.graphicsApi },
+    profile: { status: 'verified', value: { ...profile } },
+  };
+}
+
+function compilerProvenance(
+  diagnostic: ProfiledAdapterDiagnostic,
+): CompilerDiagnosticProvenance {
+  return {
+    kind: 'compiler',
+    profile: { ...diagnostic.profile },
+    shaderMessage: { ...diagnostic.shaderMessage },
+    envelope: {
+      ...diagnostic.provenance,
+      sourceRevision: { ...diagnostic.provenance.sourceRevision },
+    },
+  };
+}
+
+function unverifiedProfileReason(status: CompileProfileRunStatus): string {
+  switch (status.status) {
+    case 'running':
+      return 'compiler-analysis-running';
+    case 'profile-not-supported':
+      return 'compiler-profile-not-supported';
+    case 'adapter-unavailable':
+      return `compiler-${status.reason}`;
+    case 'completed':
+      return 'compiler-analysis-completed';
+  }
+}
+
 /**
  * Maintain compiler-verified diagnostics for exact saved document attempts.
- * Each request runs one Adapter-discovered profile; completed groups coexist
- * so Problems can distinguish their compiler truth without collapsing Unity
- * message details or provenance.
+ * Auto runs an explicitly capped Adapter-discovered profile set; an explicit
+ * selection can add one profile. Completed findings are grouped without
+ * collapsing Unity message details or provenance.
  */
 export function registerAdapterDiagnosticOverlay(
   connection: Connection,
@@ -134,6 +197,7 @@ export function registerAdapterDiagnosticOverlay(
   const published = new Map<string, PublishedAdapterDiagnostics>();
   const profileStatuses = new Map<string, PublishedProfileStatuses>();
   const requestGenerations = new Map<string, Map<string, number>>();
+  const requestControllers = new Map<string, Map<string, AbortController>>();
   const listeners = new Set<() => void>();
 
   const reportFailure = (uri: string, error: unknown): void => {
@@ -164,6 +228,34 @@ export function registerAdapterDiagnosticOverlay(
     for (const [profileKey, generation] of generations) {
       generations.set(profileKey, generation + 1);
     }
+    const controllers = requestControllers.get(key);
+    if (controllers) {
+      for (const controller of controllers.values()) controller.abort();
+      requestControllers.delete(key);
+    }
+  };
+
+  const replaceController = (key: string, requestKey: string): AbortController => {
+    let controllers = requestControllers.get(key);
+    if (!controllers) {
+      controllers = new Map();
+      requestControllers.set(key, controllers);
+    }
+    controllers.get(requestKey)?.abort();
+    const controller = new AbortController();
+    controllers.set(requestKey, controller);
+    return controller;
+  };
+
+  const releaseController = (
+    key: string,
+    requestKey: string,
+    controller: AbortController,
+  ): void => {
+    const controllers = requestControllers.get(key);
+    if (controllers?.get(requestKey) !== controller) return;
+    controllers.delete(requestKey);
+    if (controllers.size === 0) requestControllers.delete(key);
   };
 
   const isCurrentGeneration = (
@@ -201,6 +293,9 @@ export function registerAdapterDiagnosticOverlay(
     const created: PublishedProfileStatuses = {
       ...attempt,
       statuses: new Map(),
+      knownContextCount: 0,
+      omittedContextCount: 0,
+      aggregateKnownContexts: false,
     };
     profileStatuses.set(key, created);
     return created;
@@ -213,16 +308,17 @@ export function registerAdapterDiagnosticOverlay(
     return true;
   };
 
-  const refresh = (
+  const refreshProfile = (
     document: IndexedDocumentSnapshot,
-    profile: CompileProfile | undefined = selectedProfile,
+    profile: CompileProfile,
   ): void => {
-    if (!SUPPORTED_ASSET_URI.test(document.uri) || !profile) return;
+    if (!SUPPORTED_ASSET_URI.test(document.uri)) return;
     const key = uriKey(document.uri);
     const attempt = ensureAttempt(document);
     const requestedProfile = { ...profile };
     const profileKey = compileProfileKey(requestedProfile);
     const generation = nextGeneration(key, profileKey);
+    const controller = replaceController(key, profileKey);
     statusesForAttempt(key, attempt).statuses.set(profileKey, {
       status: 'running',
       profile: requestedProfile,
@@ -233,6 +329,7 @@ export function registerAdapterDiagnosticOverlay(
       document.uri,
       attempt.contentHash,
       requestedProfile,
+      controller.signal,
     ).then((result) => {
       if (!isCurrentGeneration(key, profileKey, generation)) return;
       const current = documents.snapshot(document.uri);
@@ -241,7 +338,10 @@ export function registerAdapterDiagnosticOverlay(
 
       statusesForAttempt(key, attempt).statuses.set(profileKey, result);
       if (result.status !== 'completed') {
-        if (removeProfileGroup(key, profileKey)) publishChange();
+        const hasOtherPublishedProfiles = (published.get(key)?.groups.size ?? 0) > 0;
+        if (removeProfileGroup(key, profileKey) || hasOtherPublishedProfiles) {
+          publishChange();
+        }
         return;
       }
 
@@ -251,13 +351,51 @@ export function registerAdapterDiagnosticOverlay(
         published.set(key, publication);
       }
       publication.groups.set(profileKey, {
-        profile: result.profile,
-        diagnostics: result.diagnostics.map((diagnostic) => (
-          adapterDiagnosticToLsp(diagnostic, current.text)
-        )),
+        findings: result.diagnostics.map((diagnostic) => ({
+          diagnostic: adapterDiagnosticToLsp(diagnostic, current.text),
+          provenance: compilerProvenance(diagnostic),
+        })),
       });
       publishChange();
-    }).catch((error: unknown) => reportFailure(document.uri, error));
+    }).catch((error: unknown) => reportFailure(document.uri, error))
+      .finally(() => releaseController(key, profileKey, controller));
+  };
+
+  const refreshKnownProfiles = (document: IndexedDocumentSnapshot): void => {
+    if (!SUPPORTED_ASSET_URI.test(document.uri)) return;
+    const key = uriKey(document.uri);
+    const attempt = ensureAttempt(document);
+    const generation = nextGeneration(key, PROFILE_DISCOVERY_KEY);
+    const controller = replaceController(key, PROFILE_DISCOVERY_KEY);
+    void registry.compileProfiles(controller.signal).then((discovery) => {
+      if (!isCurrentGeneration(key, PROFILE_DISCOVERY_KEY, generation)) return;
+      const current = documents.snapshot(document.uri);
+      const saved = savedAttempts.get(key);
+      if (!current || !saved || saved !== attempt || !sameAttempt(current, attempt)) return;
+      if (discovery.status !== 'available') return;
+
+      const statuses = statusesForAttempt(key, attempt);
+      statuses.aggregateKnownContexts = true;
+      const profiles = discovery.profiles.slice(
+        0,
+        MAX_AGGREGATED_DIAGNOSTIC_CONTEXTS,
+      );
+      statuses.knownContextCount = discovery.profiles.length;
+      statuses.omittedContextCount = discovery.profiles.length - profiles.length;
+      for (const profile of profiles) refreshProfile(current, profile);
+    }).catch((error: unknown) => reportFailure(document.uri, error))
+      .finally(() => releaseController(key, PROFILE_DISCOVERY_KEY, controller));
+  };
+
+  const refresh = (
+    document: IndexedDocumentSnapshot,
+    profile: CompileProfile | undefined = selectedProfile,
+  ): void => {
+    if (profile) {
+      refreshProfile(document, profile);
+    } else {
+      refreshKnownProfiles(document);
+    }
   };
 
   const clearAttempt = (uri: string, forgetSaved: boolean): void => {
@@ -291,9 +429,11 @@ export function registerAdapterDiagnosticOverlay(
         const profiles = requestedProfiles.get(key) ?? (
           selectedProfile ? [selectedProfile] : []
         );
-        const statuses = statusesForAttempt(key, attempt).statuses;
+        const statusPublication = statusesForAttempt(key, attempt);
+        statusPublication.knownContextCount = profiles.length;
+        statusPublication.omittedContextCount = 0;
         for (const profile of profiles) {
-          statuses.set(
+          statusPublication.statuses.set(
             compileProfileKey(profile),
             {
               status: 'adapter-unavailable',
@@ -336,7 +476,49 @@ export function registerAdapterDiagnosticOverlay(
     diagnosticsFor(document) {
       const result = published.get(uriKey(document.uri));
       if (!result || !sameAttempt(document, result)) return [];
-      return [...result.groups.values()].flatMap((group) => group.diagnostics);
+      const raw = [...result.groups.values()].flatMap((group) => (
+        group.findings.map(({ diagnostic }) => diagnostic)
+      ));
+      const statuses = profileStatuses.get(uriKey(document.uri));
+      if (!statuses || !sameAttempt(document, statuses)) return raw;
+      const knownContextCount = Math.max(
+        statuses.knownContextCount,
+        statuses.statuses.size,
+      );
+      if (
+        !statuses.aggregateKnownContexts
+        && statuses.statuses.size === 1
+        && [...statuses.statuses.values()][0]?.status === 'completed'
+        && knownContextCount === 1
+        && statuses.omittedContextCount === 0
+      ) return raw;
+
+      const analyses = [...statuses.statuses.entries()].map(([profileKey, status]) => {
+        const profile = statusProfile(status);
+        const context = compilerDiagnosticContext(
+          document.uri,
+          profile,
+          status.status === 'completed',
+        );
+        if (status.status !== 'completed') {
+          return {
+            status: 'unverified' as const,
+            context,
+            reason: unverifiedProfileReason(status),
+          };
+        }
+        return {
+          status: 'analyzed' as const,
+          context,
+          findings: result.groups.get(profileKey)?.findings ?? [],
+        };
+      });
+      return aggregateContextDiagnostics({
+        uri: document.uri,
+        analyses,
+        knownContextCount,
+        omittedContextCount: statuses.omittedContextCount,
+      });
     },
     onDidChange(listener) {
       listeners.add(listener);
@@ -350,11 +532,10 @@ export function registerAdapterDiagnosticOverlay(
     },
     selectProfile(profile) {
       selectedProfile = profile ? { ...profile } : undefined;
-      if (!selectedProfile) return;
       for (const attempt of [...savedAttempts.values()]) {
         const current = documents.snapshot(attempt.uri);
         if (current && sameAttempt(current, attempt)) {
-          refresh(current, selectedProfile);
+          refresh(current);
         }
       }
     },

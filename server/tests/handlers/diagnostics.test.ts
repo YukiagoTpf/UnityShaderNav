@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import type {
+  CancellationToken,
   Connection,
   Diagnostic,
   PublishDiagnosticsParams,
 } from 'vscode-languageserver/node';
 import { registerDiagnosticsPublisher } from '../../src/handlers/diagnostics';
 import { registerDocuments } from '../../src/handlers/documents';
+import { awaitWithRequestCancellation } from '../../src/lifecycle/requestCancellation';
 import type {
   IndexedDocumentSnapshot,
   IndexedWorkspace,
@@ -88,7 +90,10 @@ function documentConnection(
 
 function publisherScenario(
   sendDiagnostics: (params: PublishDiagnosticsParams) => Promise<void>,
-  diagnosticsAt: (document: IndexedDocumentSnapshot) => Promise<Diagnostic[] | null>,
+  diagnosticsAt: (
+    document: IndexedDocumentSnapshot,
+    cancellation?: CancellationToken,
+  ) => Promise<Diagnostic[] | null>,
 ) {
   const harness = documentConnection(sendDiagnostics);
   const workspace = {
@@ -115,6 +120,50 @@ function publisherScenario(
 }
 
 describe('registerDiagnosticsPublisher', () => {
+  it('cancels stale Context analysis before publishing the next generation', async () => {
+    const first = deferred<Diagnostic[] | null>();
+    const tokens: CancellationToken[] = [];
+    const diagnosticsAt = vi.fn((
+      _document: IndexedDocumentSnapshot,
+      cancellation?: CancellationToken,
+    ) => {
+      if (cancellation) tokens.push(cancellation);
+      return diagnosticsAt.mock.calls.length === 1
+        ? awaitWithRequestCancellation(first.promise, cancellation)
+        : Promise.resolve([diagnostic('fresh')]);
+    });
+    const sends: PublishDiagnosticsParams[] = [];
+    const scenario = publisherScenario(
+      async (params) => { sends.push(params); },
+      diagnosticsAt,
+    );
+    scenario.open({
+      textDocument: {
+        uri: 'file:///project/Assets/Context.hlsl',
+        languageId: 'hlsl',
+        version: 1,
+        text: '#pragma vertex Fresh',
+      },
+    });
+
+    scenario.refresh();
+    await flush();
+    expect(diagnosticsAt).toHaveBeenCalledOnce();
+    expect(tokens[0]?.isCancellationRequested).toBe(false);
+
+    scenario.refresh();
+    await flush(24);
+
+    expect(diagnosticsAt).toHaveBeenCalledTimes(2);
+    expect(tokens[0]?.isCancellationRequested).toBe(true);
+    expect(sends).toEqual([{
+      uri: 'file:///project/Assets/Context.hlsl',
+      version: 1,
+      diagnostics: [diagnostic('fresh')],
+    }]);
+    expect(scenario.errors).toEqual([]);
+  });
+
   it('orders close clearing after an in-flight publish for the representative URI', async () => {
     const representativeUri = 'file:///C:/Project/Assets/Live.shader';
     const equivalentCloseUri = 'file:///c:/project/assets/live.shader';
@@ -286,13 +335,19 @@ describe('registerDiagnosticsPublisher', () => {
 
     refresh?.();
     await flush();
-    expect(diagnosticsAt).toHaveBeenCalledWith(expect.objectContaining({ version: 1 }));
+    expect(diagnosticsAt).toHaveBeenCalledWith(
+      expect.objectContaining({ version: 1 }),
+      expect.anything(),
+    );
 
     current = document(2, '#pragma vertex New');
     refresh?.();
     first.resolve([diagnostic('old')]);
     await flush();
-    expect(diagnosticsAt).toHaveBeenCalledWith(expect.objectContaining({ version: 2 }));
+    expect(diagnosticsAt).toHaveBeenCalledWith(
+      expect.objectContaining({ version: 2 }),
+      expect.anything(),
+    );
 
     second.resolve([diagnostic('new')]);
     await flush();

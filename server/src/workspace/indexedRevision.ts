@@ -7,6 +7,7 @@ import type {
   IncludePointContextsResult,
   InactiveRegion,
   ShaderGraphCustomFunctionUsage,
+  VariantContext,
 } from '@unity-shader-nav/shared';
 import { normalizeSettings } from '@unity-shader-nav/shared';
 import {
@@ -15,6 +16,7 @@ import {
 } from '../analysis';
 import type {
   CodeAction,
+  CancellationToken,
   ColorInformation,
   ColorPresentation,
   CompletionItem,
@@ -97,7 +99,10 @@ import {
   materialPropertyTargetAt,
   type MaterialPropertyTarget,
 } from './materialReferences';
-import { IncludePointContextMatrix } from './includePointContexts';
+import {
+  IncludePointContextMatrix,
+  type ResolvedIncludePointContext,
+} from './includePointContexts';
 import { includePointContextStore } from './includePointContextStore';
 import { variantContextStore } from './variantContextStore';
 import {
@@ -105,6 +110,11 @@ import {
   shaderGraphDiagnostics,
   shaderGraphReferences,
 } from './shaderGraphNavigation';
+import {
+  aggregateContextDiagnostics,
+  analyzeKnownDiagnosticContexts,
+  type DiagnosticShaderContext,
+} from './diagnosticAggregation';
 
 const PUBLICATION_SESSION_ID = randomUUID();
 let nextPublicationIdentity = 1;
@@ -216,24 +226,85 @@ export class PublishedIndexedRevision {
   }
 
   diagnostics(uri: string): Promise<Diagnostic[]>;
-  diagnostics(document: IndexedDocumentSnapshot): Promise<Diagnostic[]>;
-  async diagnostics(document: string | IndexedDocumentSnapshot): Promise<Diagnostic[]> {
+  diagnostics(
+    document: IndexedDocumentSnapshot,
+    cancellation?: CancellationToken,
+  ): Promise<Diagnostic[]>;
+  async diagnostics(
+    document: string | IndexedDocumentSnapshot,
+    cancellation?: CancellationToken,
+  ): Promise<Diagnostic[]> {
     const uri = typeof document === 'string' ? document : document.uri;
     const diagnostics = await workspaceDiagnostics({
       index: this.index.read,
       includeChain: this.includeChain,
     }, uri);
     if (typeof document === 'string') return diagnostics;
-    const context = await this.preprocessorContext(uri);
-    if (!context || diagnostics.length === 0) return diagnostics;
-    const inactive = analyzeInactiveRegions(document.text, {
-      isShaderLab: isShaderLabUri(uri),
-      context,
-    }).filter((region) => region.reason === 'inactive');
-    return diagnostics.filter((diagnostic) => !inactive.some((region) => (
-      region.range.start.line <= diagnostic.range.start.line
-      && diagnostic.range.start.line <= region.range.end.line
-    )));
+    if (diagnostics.length === 0) return diagnostics;
+
+    const variant = variantContextStore.get(uri);
+    const selection = includePointContextStore.get(this.folderUri);
+    const selectedIncludePoint = selection?.publicationId === this.publicationId
+      ? await this.includePointContexts.recordFor(uri, selection.contextId)
+      : undefined;
+    if (selectedIncludePoint) {
+      return filterDiagnosticsForContext(
+        diagnostics,
+        document,
+        mergePreprocessorContext(variant, selectedIncludePoint),
+      );
+    }
+
+    const records = await this.includePointContexts.recordsFor(uri);
+    if (records.length > 0) {
+      const contexts = records.map((record) => ({
+        record,
+        facts: staticDiagnosticContext(record, variant),
+      }));
+      const provenance = {
+        kind: 'static',
+        source: 'UnityShaderNav',
+        revision: this.revision,
+        publicationId: this.publicationId,
+      } as const;
+      const run = await analyzeKnownDiagnosticContexts({
+        contexts,
+        contextFacts: ({ facts }) => facts,
+        cancellation,
+        analyze: ({ record, facts }) => ({
+          status: 'analyzed',
+          context: facts,
+          findings: filterDiagnosticsForContext(
+            diagnostics,
+            document,
+            mergePreprocessorContext(variant, record),
+          ).map((diagnostic) => ({ diagnostic, provenance })),
+        }),
+      });
+      return aggregateContextDiagnostics({ uri, ...run });
+    }
+
+    const context = variant
+      ? mergePreprocessorContext(variant, undefined)
+      : undefined;
+    if (!context) return diagnostics;
+    return filterDiagnosticsForContext(diagnostics, document, context);
+  }
+
+  private async selectedIncludePointContext(
+    uri: string,
+  ): Promise<ResolvedIncludePointContext | undefined> {
+    const selection = includePointContextStore.get(this.folderUri);
+    return selection?.publicationId === this.publicationId
+      ? this.includePointContexts.recordFor(uri, selection.contextId)
+      : undefined;
+  }
+
+  async preprocessorContext(uri: string): Promise<PreprocessorContext | undefined> {
+    const variant = variantContextStore.get(uri);
+    const includePoint = await this.selectedIncludePointContext(uri);
+    if (!variant && !includePoint) return undefined;
+    return mergePreprocessorContext(variant, includePoint);
   }
 
   async knownIncludePointContexts(uri: string): Promise<IncludePointContextsResult> {
@@ -243,21 +314,6 @@ export class PublishedIndexedRevision {
       revision: this.revision,
       publicationId: this.publicationId,
       contexts: records.map(({ presentation }) => presentation),
-    };
-  }
-
-  async preprocessorContext(uri: string): Promise<PreprocessorContext | undefined> {
-    const variant = variantContextStore.get(uri);
-    const selection = includePointContextStore.get(this.folderUri);
-    const includePoint = selection?.publicationId === this.publicationId
-      ? await this.includePointContexts.recordFor(uri, selection.contextId)
-      : undefined;
-    if (!variant && !includePoint) return undefined;
-    return {
-      activeKeywords: variant?.activeKeywords ?? new Set(),
-      definedMacros: includePoint?.preprocessor.definedMacros ?? new Set(),
-      undefinedMacros: includePoint?.preprocessor.undefinedMacros ?? new Set(),
-      variantKeywords: includePoint?.preprocessor.variantKeywords ?? new Set(),
     };
   }
 
@@ -532,6 +588,88 @@ export class PublishedIndexedRevision {
     ) return undefined;
     return committed.analysis;
   }
+}
+
+function mergePreprocessorContext(
+  variant: VariantContext | null,
+  includePoint: ResolvedIncludePointContext | undefined,
+): PreprocessorContext {
+  return {
+    activeKeywords: variant?.activeKeywords ?? new Set(),
+    definedMacros: includePoint?.preprocessor.definedMacros ?? new Set(),
+    undefinedMacros: includePoint?.preprocessor.undefinedMacros ?? new Set(),
+    variantKeywords: includePoint?.preprocessor.variantKeywords ?? new Set(),
+  };
+}
+
+function staticDiagnosticContext(
+  record: ResolvedIncludePointContext,
+  variant: VariantContext | null,
+): DiagnosticShaderContext {
+  const context = record.presentation;
+  const declared = [...(record.preprocessor.variantKeywords ?? [])].sort();
+  return {
+    id: context.id,
+    shader: {
+      status: 'verified',
+      value: { uri: context.shaderUri, name: context.shaderName },
+    },
+    pass: {
+      status: 'verified',
+      value: {
+        subShaderIndex: context.subShaderIndex,
+        ...(context.passIndex !== undefined ? { passIndex: context.passIndex } : {}),
+        ...(context.passName ? { passName: context.passName } : {}),
+      },
+    },
+    stage: {
+      status: 'verified',
+      value: { stage: context.stage, entryPoint: context.entryPoint },
+    },
+    includePoint: {
+      status: 'verified',
+      value: {
+        location: context.includeLocation,
+        chainDepth: context.chainDepth,
+      },
+    },
+    keywords: variant
+      ? {
+          status: 'verified',
+          value: {
+            active: [...variant.activeKeywords].sort(),
+            declared,
+          },
+        }
+      : {
+          status: 'unverified',
+          reason: 'keyword-selection-not-enumerated',
+          facts: { declared },
+        },
+    platform: {
+      status: 'unverified',
+      reason: 'adapter-evidence-unavailable',
+    },
+    graphicsApi: {
+      status: 'unverified',
+      reason: 'adapter-evidence-unavailable',
+    },
+  };
+}
+
+function filterDiagnosticsForContext(
+  diagnostics: readonly Diagnostic[],
+  document: IndexedDocumentSnapshot,
+  context: PreprocessorContext,
+): Diagnostic[] {
+  const inactive = analyzeInactiveRegions(document.text, {
+    isShaderLab: isShaderLabUri(document.uri),
+    context,
+  }).filter((region) => region.reason === 'inactive');
+  return diagnostics.filter((diagnostic) => !inactive.some((region) => (
+    region.range.start.line <= diagnostic.range.start.line
+    && diagnostic.range.start.line <= region.range.end.line
+  )));
 }
 
 /** One-shot mutable candidate. It becomes inaccessible after publish(). */

@@ -215,7 +215,10 @@ export class Workspace implements IndexedWorkspace {
     return this.reconcileDocumentClose(input.uri, input.openId);
   }
 
-  async diagnosticsAt(document: IndexedDocumentSnapshot): Promise<Diagnostic[] | null> {
+  async diagnosticsAt(
+    document: IndexedDocumentSnapshot,
+    cancellation?: CancellationToken,
+  ): Promise<Diagnostic[] | null> {
     if (isShaderGraphUri(document.uri)) {
       if (!this.shaderGraphUsages) return [];
       return this.queryRevision(
@@ -237,8 +240,8 @@ export class Workspace implements IndexedWorkspace {
     return this.queryRevision<Diagnostic[] | null>(
       document,
       null,
-      (revision) => revision.diagnostics(document),
-      undefined,
+      (revision) => revision.diagnostics(document, cancellation),
+      cancellation,
       undefined,
       (revision) => (
         !this.disposed

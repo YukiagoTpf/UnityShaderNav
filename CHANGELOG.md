@@ -9,6 +9,11 @@ and uses semantic versioning for extension releases.
 
 ### Added
 
+- Added bounded diagnostics aggregation across known Shader Contexts. Auto
+  groups equivalent static and Unity compiler findings with affected/analyzed
+  counts, expandable exact Context and provenance details, explicit unverified
+  dimensions and partial profile failures, plus cancellation and revision
+  guards for stale analysis. (#89)
 - Added Adapter-backed navigation for File-mode Shader Graph Custom Function
   nodes. Definition opens the matching precision-suffixed HLSL declaration,
   HLSL References return exact current graph node locations, and focused

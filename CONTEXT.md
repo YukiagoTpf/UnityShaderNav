@@ -46,7 +46,7 @@ _Avoid_: declarative macro, macro declaration
 打开或未保存文档相对磁盘版本的最新编辑器内容。导航、补全、诊断等能力优先使用当前文档版本；关闭文档后恢复磁盘事实，没有磁盘版本时移除该文件。
 
 **Published diagnostics**:
-Problems 面板中与当前 Published indexed revision 和当前编辑器文档版本一致的诊断。过期异步结果不得覆盖新版本；关闭文档必须清除旧诊断。`unresolved-entry-point` 只在 pragma 引用没有保守可见的函数候选时报告；`srp-batcher-property`、`srp-batcher-property-type` 与 `srp-batcher-layout` 只在 SRP 和 material-cbuffer 事实充分时报告；`shader-graph-source-missing`、`shader-graph-invalid-precision-suffix` 与 `shader-graph-signature-mismatch` 只在精确、受信任且版本受支持的 Adapter graph 事实充分时报告。分支、多候选、宏展开或 Adapter 事实不足时保持中性。
+Problems 面板中与当前 Published indexed revision 和当前编辑器文档版本一致的诊断。过期异步结果不得覆盖新版本；关闭文档必须清除旧诊断。共享文件在 Auto 下只分析有显式上限的已知 Shader Context 集合；等价 finding 按 identity 合并并同时报告 affected/analyzed 数量，展开项保留精确 Context 与 static/compiler provenance。未分析、未知或不支持的维度显式为 `unverified`，不得解释为 passing。`unresolved-entry-point` 只在 pragma 引用没有保守可见的函数候选时报告；`srp-batcher-property`、`srp-batcher-property-type` 与 `srp-batcher-layout` 只在 SRP 和 material-cbuffer 事实充分时报告；`shader-graph-source-missing`、`shader-graph-invalid-precision-suffix` 与 `shader-graph-signature-mismatch` 只在精确、受信任且版本受支持的 Adapter graph 事实充分时报告。分支、多候选、宏展开或 Adapter 事实不足时保持中性。
 
 **Multi-candidate Peek**:
 同名符号有多个定义，例如预处理分支、多 Pass 同名或 HLSL overload 时，F12 返回全部保守候选，由 VS Code 原生 Peek UI 让用户选择。详见 [ADR-0001](docs/adr/0001-multi-candidate-peek-for-ambiguous-symbols.md)。

@@ -103,6 +103,29 @@ or a visible same-name macro suppresses the diagnostic rather than risking a
 false error. The diagnostic source is `UnityShaderNav` and its stable code is
 `unresolved-entry-point`.
 
+#### Shader Context aggregation
+
+With **Context: Auto**, a shared HLSL/CG file is checked across an explicitly
+bounded set of known include-point Contexts from one published revision. The
+extension analyzes at most 64 Contexts and groups equivalent findings into one
+Problem. Its final line shows the affected and analyzed counts; expanding the
+Problem shows the exact Shader, SubShader/Pass, stage, entry point, include
+location, keyword facts, and static revision provenance for each affected
+Context.
+
+The result is intentionally not a build-success claim. A keyword selection,
+platform, graphics API, or unsupported Context that has not been proven is
+shown as **unverified**, never as passing. Contexts beyond the cap are counted
+as omitted/unverified. Selecting one explicit include-point Context keeps the
+existing scoped diagnostic view for investigating that route.
+
+When a connected Unity Editor Adapter exposes compiler profiles, Auto requests
+the same bounded profile set. Equivalent Unity messages from several profiles
+are grouped while preserving each original `ShaderMessage`, profile, and full
+Adapter provenance. A profile that fails, disconnects, or is unsupported stays
+visible as unverified beside findings from profiles that completed. Saving a
+new revision cancels the superseded profile work; stale results cannot publish.
+
 #### Shader Graph Custom Function contracts
 
 For each supported File-mode Custom Function fact, UnityShaderNav reports:

@@ -274,6 +274,80 @@ describe('Published include-point Context Matrix', () => {
     }
   });
 
+  it('aggregates Auto diagnostics across the bounded revision-owned Context set', async () => {
+    const test = await fixture();
+    try {
+      const diagnostics = await test.revision.diagnostics(document(test));
+
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0]).toMatchObject({
+        code: 'unresolved-entry-point',
+        source: 'UnityShaderNav',
+        message: expect.stringContaining(
+          'Affected in 2 of 3 analyzed Shader Contexts.',
+        ),
+        data: {
+          kind: 'context-diagnostic-group',
+          affectedContextCount: 2,
+          analyzedContextCount: 3,
+          knownContextCount: 3,
+          unverifiedContextCount: 0,
+          affectedContexts: [
+            {
+              context: expect.objectContaining({
+                shader: {
+                  status: 'verified',
+                  value: { uri: test.shaderUri, name: 'Context/Shared' },
+                },
+                pass: {
+                  status: 'verified',
+                  value: {
+                    subShaderIndex: 0,
+                    passIndex: 0,
+                    passName: 'Forward',
+                  },
+                },
+                stage: {
+                  status: 'verified',
+                  value: { stage: 'fragment', entryPoint: 'FragForward' },
+                },
+                keywords: expect.objectContaining({
+                  status: 'unverified',
+                  reason: 'keyword-selection-not-enumerated',
+                }),
+                platform: {
+                  status: 'unverified',
+                  reason: 'adapter-evidence-unavailable',
+                },
+                graphicsApi: {
+                  status: 'unverified',
+                  reason: 'adapter-evidence-unavailable',
+                },
+              }),
+              provenances: [{
+                kind: 'static',
+                source: 'UnityShaderNav',
+                revision: 1,
+                publicationId: test.revision.publicationId,
+              }],
+            },
+            expect.objectContaining({
+              context: expect.objectContaining({
+                stage: {
+                  status: 'verified',
+                  value: { stage: 'vertex', entryPoint: 'VertForward' },
+                },
+              }),
+            }),
+          ],
+        },
+      });
+      expect(diagnostics[0].relatedInformation).toHaveLength(2);
+    } finally {
+      await rm(test.root, { recursive: true, force: true });
+    }
+  });
+
   it('ranks Definition candidates by Context without deleting conservative results', async () => {
     const test = await fixture();
     try {

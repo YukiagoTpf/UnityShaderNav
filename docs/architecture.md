@@ -356,6 +356,18 @@ pragma entry names through the same transitive Include chain and symbol
 selection as navigation; visible functions, macros, and ambiguous or
 variant-dependent candidates suppress false unresolved errors.
 
+In Auto, diagnostics for a shared HLSL/CG document consume at most 64 known
+include-point Contexts from that same immutable revision. Equivalent findings
+use range, severity, code, message, and tags as their stable identity; one LSP
+diagnostic reports affected/analyzed counts and exposes each exact Context as
+`relatedInformation`. Context dimensions remain individually verified or
+`unverified`, so an unknown keyword selection, platform, graphics API, Pass, or
+stage is never promoted to passing evidence. Static occurrences carry revision
+and publication identity. Compiler occurrences retain the complete Adapter
+provenance envelope and Unity message payload. A newer publication or document
+generation cancels its predecessor before the existing revision/document guards
+can publish it.
+
 For a ShaderLab open-document attempt, the candidate builds a full
 `DocumentAnalysis` from that attempt's exact source. It becomes query-visible
 only when the same candidate publishes. File indexing projects its structure
@@ -573,6 +585,15 @@ version and source facts, preferring each resolved package's manifest version
 and using registry/builtin lock versions only as a semantic-version fallback.
 The probe does not discover packages or broaden package membership; there is no
 parallel Package include-path or documentation-provenance implementation.
+
+Bulk diagnostics is the bounded Matrix consumer: it preserves the Matrix's
+deterministic ordering, analyzes only the first 64 known Contexts, and reports
+the remainder as omitted/unverified. It never materializes keyword, platform,
+or graphics-API cross-products. Compiler profiles use the same aggregation
+contract and cap; profile-specific platform/API facts become verified only for
+a completed Adapter run, while Unity compiler messages that cannot name a
+Pass, stage, include point, or keyword selection leave those dimensions
+unverified.
 
 ## Package Resolution
 

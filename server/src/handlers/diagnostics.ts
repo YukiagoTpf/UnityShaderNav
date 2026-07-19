@@ -1,4 +1,7 @@
-import type { Connection } from 'vscode-languageserver/node';
+import {
+  CancellationTokenSource,
+  type Connection,
+} from 'vscode-languageserver/node';
 import type {
   DiagnosticWorkspaceService,
   IndexedDocumentLifecycleRegistry,
@@ -6,6 +9,7 @@ import type {
 } from '../workspace/indexedWorkspace';
 import { uriKey } from '../uriKey';
 import type { DiagnosticOverlay } from './diagnosticOverlay';
+import { isRequestCancelledError } from '../lifecycle/requestCancellation';
 
 function sameAttempt(
   left: ReturnType<IndexedDocumentRegistry['snapshot']>,
@@ -34,6 +38,7 @@ export function registerDiagnosticsPublisher(
   let requestedGeneration = 0;
   let completedGeneration = 0;
   let draining = false;
+  let activeAnalysis: CancellationTokenSource | undefined;
   const pipelines = new Map<string, {
     generation: number;
     tail: Promise<void>;
@@ -72,40 +77,49 @@ export function registerDiagnosticsPublisher(
   };
 
   const refreshGeneration = async (generation: number): Promise<void> => {
+    const cancellation = new CancellationTokenSource();
+    activeAnalysis?.cancel();
+    activeAnalysis?.dispose();
+    activeAnalysis = cancellation;
     const snapshots = [...documents.openSnapshots()];
-    await Promise.all(snapshots.map(async (document) => {
-      try {
-        const workspace = manager.servingWorkspaceFor(document.uri);
-        const staticDiagnostics = workspace
-          ? await workspace.diagnosticsAt(document)
-          : [];
-        // Reject stale computation before enqueueing: advancing this URI's
-        // generation would otherwise cancel a close clear already waiting in
-        // the pipeline. The same facts are rechecked after the queue wait.
-        if (staticDiagnostics === null || generation !== requestedGeneration) return;
-        if (!sameAttempt(documents.snapshot(document.uri), document)) return;
-        if (manager.servingWorkspaceFor(document.uri) !== workspace) return;
-        const diagnostics = [
-          ...staticDiagnostics,
-          ...overlays.flatMap((overlay) => overlay.diagnosticsFor(document)),
-        ];
-        await enqueueSend(
-          document.uri,
-          () => (
-            generation === requestedGeneration
-            && sameAttempt(documents.snapshot(document.uri), document)
-            && manager.servingWorkspaceFor(document.uri) === workspace
-          ),
-          async () => connection.sendDiagnostics({
-            uri: document.uri,
-            version: document.version,
-            diagnostics,
-          }),
-        );
-      } catch (error) {
-        reportFailure(error);
-      }
-    }));
+    try {
+      await Promise.all(snapshots.map(async (document) => {
+        try {
+          const workspace = manager.servingWorkspaceFor(document.uri);
+          const staticDiagnostics = workspace
+            ? await workspace.diagnosticsAt(document, cancellation.token)
+            : [];
+          // Reject stale computation before enqueueing: advancing this URI's
+          // generation would otherwise cancel a close clear already waiting in
+          // the pipeline. The same facts are rechecked after the queue wait.
+          if (staticDiagnostics === null || generation !== requestedGeneration) return;
+          if (!sameAttempt(documents.snapshot(document.uri), document)) return;
+          if (manager.servingWorkspaceFor(document.uri) !== workspace) return;
+          const diagnostics = [
+            ...staticDiagnostics,
+            ...overlays.flatMap((overlay) => overlay.diagnosticsFor(document)),
+          ];
+          await enqueueSend(
+            document.uri,
+            () => (
+              generation === requestedGeneration
+              && sameAttempt(documents.snapshot(document.uri), document)
+              && manager.servingWorkspaceFor(document.uri) === workspace
+            ),
+            async () => connection.sendDiagnostics({
+              uri: document.uri,
+              version: document.version,
+              diagnostics,
+            }),
+          );
+        } catch (error) {
+          if (!isRequestCancelledError(error)) reportFailure(error);
+        }
+      }));
+    } finally {
+      if (activeAnalysis === cancellation) activeAnalysis = undefined;
+      cancellation.dispose();
+    }
   };
 
   const drain = async (): Promise<void> => {
@@ -128,6 +142,9 @@ export function registerDiagnosticsPublisher(
   };
 
   documents.onDidCloseSnapshot((document) => {
+    activeAnalysis?.cancel();
+    requestedGeneration++;
+    scheduleDrain();
     void enqueueSend(
       document.uri,
       () => documents.snapshot(document.uri) === undefined,
@@ -139,6 +156,7 @@ export function registerDiagnosticsPublisher(
   });
 
   const requestRefresh = (): void => {
+    activeAnalysis?.cancel();
     requestedGeneration++;
     scheduleDrain();
   };

@@ -108,7 +108,10 @@ export interface IndexedDocumentQueryInput extends RequestCancellationInput {
 export interface IndexedWorkspace {
   updateDocument(document: IndexedDocumentSnapshot): Promise<boolean>;
   closeDocument(input: { readonly uri: string; readonly openId: number }): Promise<void>;
-  diagnosticsAt(document: IndexedDocumentSnapshot): Promise<Diagnostic[] | null>;
+  diagnosticsAt(
+    document: IndexedDocumentSnapshot,
+    cancellation?: CancellationToken,
+  ): Promise<Diagnostic[] | null>;
   codeActionsAt(input: CodeActionsAtInput): Promise<CodeAction[]>;
   definitionAt(input: DefinitionAtInput): Promise<LocationLink[] | Location[] | null>;
   referencesAt(input: ReferencesAtInput): Promise<Location[] | null>;

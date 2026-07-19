@@ -84,6 +84,7 @@ export type CompileProfileUnavailableReason =
   | 'profile-source-unavailable'
   | 'shader-message-source-unavailable'
   | 'connection-changed'
+  | 'analysis-cancelled'
   | 'invalid-evidence';
 
 export type CompileProfileDiscovery =

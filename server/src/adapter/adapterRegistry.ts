@@ -145,7 +145,10 @@ export class AdapterRegistry {
   }
 
   /** Discover only profiles corroborated by the current handshake. */
-  async compileProfiles(): Promise<CompileProfileDiscovery> {
+  async compileProfiles(cancellation?: AbortSignal): Promise<CompileProfileDiscovery> {
+    if (cancellation?.aborted) {
+      return { status: 'adapter-unavailable', reason: 'analysis-cancelled' };
+    }
     const status = this.status();
     if (status.mode === 'standalone') {
       return { status: 'adapter-unavailable', reason: status.reason };
@@ -162,12 +165,17 @@ export class AdapterRegistry {
 
     let reported: readonly CompileProfile[];
     try {
-      reported = await this.profileSource.getCompileProfiles();
+      reported = await this.profileSource.getCompileProfiles(cancellation);
     } catch {
       return {
         status: 'adapter-unavailable',
-        reason: 'profile-source-unavailable',
+        reason: cancellation?.aborted
+          ? 'analysis-cancelled'
+          : 'profile-source-unavailable',
       };
+    }
+    if (cancellation?.aborted) {
+      return { status: 'adapter-unavailable', reason: 'analysis-cancelled' };
     }
     if (!Array.isArray(reported)) {
       return { status: 'adapter-unavailable', reason: 'invalid-evidence' };
@@ -208,7 +216,15 @@ export class AdapterRegistry {
     documentUri: string,
     contentHash: string,
     selectedProfile: CompileProfile,
+    cancellation?: AbortSignal,
   ): Promise<CompileProfileRunResult> {
+    if (cancellation?.aborted) {
+      return {
+        status: 'adapter-unavailable',
+        requestedProfile: { ...selectedProfile },
+        reason: 'analysis-cancelled',
+      };
+    }
     const connected = this.currentConnectedAdapter();
     if (!connected) {
       const status = this.status();
@@ -221,7 +237,7 @@ export class AdapterRegistry {
       };
     }
 
-    const discovery = await this.compileProfiles();
+    const discovery = await this.compileProfiles(cancellation);
     if (discovery.status === 'adapter-unavailable') {
       return {
         ...discovery,
@@ -270,12 +286,22 @@ export class AdapterRegistry {
       diagnostics = await this.messageSource.getShaderMessages(
         documentUri,
         profile,
+        cancellation,
       );
     } catch {
       return {
         status: 'adapter-unavailable',
         requestedProfile: { ...selectedProfile },
-        reason: 'shader-message-source-unavailable',
+        reason: cancellation?.aborted
+          ? 'analysis-cancelled'
+          : 'shader-message-source-unavailable',
+      };
+    }
+    if (cancellation?.aborted) {
+      return {
+        status: 'adapter-unavailable',
+        requestedProfile: { ...selectedProfile },
+        reason: 'analysis-cancelled',
       };
     }
     if (!Array.isArray(diagnostics)) {

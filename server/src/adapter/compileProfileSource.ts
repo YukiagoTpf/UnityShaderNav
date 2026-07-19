@@ -6,5 +6,5 @@ import type { CompileProfile } from '@unity-shader-nav/shared';
  * sources; no profile availability is inferred by the language server.
  */
 export interface CompileProfileSource {
-  getCompileProfiles(): Promise<readonly CompileProfile[]>;
+  getCompileProfiles(cancellation?: AbortSignal): Promise<readonly CompileProfile[]>;
 }

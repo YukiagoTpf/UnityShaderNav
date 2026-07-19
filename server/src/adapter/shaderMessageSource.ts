@@ -12,5 +12,6 @@ export interface ShaderMessageSource {
   getShaderMessages(
     documentUri: string,
     profile: CompileProfile,
+    cancellation?: AbortSignal,
   ): Promise<readonly AdapterDiagnostic[]>;
 }
