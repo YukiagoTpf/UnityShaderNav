@@ -119,6 +119,9 @@ export function setupInactiveRegions(
       if (!event.affectsConfiguration('unityShaderNav.dimInactiveBranches')) return;
       controller.configurationChanged();
     }),
+    vscode.commands.registerCommand('unityShaderNav.refreshInactiveRegions', () => {
+      controller.visibleEditorsChanged(vscode.window.visibleTextEditors);
+    }),
     { dispose: () => controller.dispose() },
   );
 

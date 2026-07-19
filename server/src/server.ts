@@ -4,6 +4,7 @@ import {
   VARIANT_CONTEXT_CHANGED_NOTIFICATION,
   VARIANT_CONTEXT_REQUEST,
   type IndexStatusSnapshot,
+  type VariantContext,
   type VariantContextChangedParams,
   type VariantContextParams,
   type VariantContextResult,
@@ -20,6 +21,7 @@ import { registerDocuments } from './handlers/documents';
 import { registerHoverHandler } from './handlers/hover';
 import { registerDocumentFormattingHandler } from './handlers/formatting';
 import { registerInactiveRegionsHandler } from './handlers/inactiveRegions';
+import { registerVariantKeywordsHandler } from './handlers/variantKeywords';
 import { registerReferencesHandler } from './handlers/references';
 import { registerRenameHandler } from './handlers/rename';
 import { registerSemanticTokensHandler } from './handlers/semanticTokens';
@@ -51,15 +53,26 @@ connection.onRequest(
 connection.onNotification(
   VARIANT_CONTEXT_CHANGED_NOTIFICATION,
   (params: VariantContextChangedParams) => {
-    variantContextStore.set(params.textDocument.uri, params.context);
+    // JSON-RPC serializes Set as {}, so the client sends activeKeywords as an
+    // array; rebuild the Set for the in-memory domain type.
+    const ctx = params.context
+      ? { activeKeywords: new Set(params.context.activeKeywords) }
+      : null;
+    variantContextStore.set(params.textDocument.uri, ctx);
   },
 );
 
 connection.onRequest(
   VARIANT_CONTEXT_REQUEST,
-  (params: VariantContextParams): VariantContextResult => ({
-    context: variantContextStore.get(params.textDocument.uri),
-  }),
+  (params: VariantContextParams): VariantContextResult => {
+    const stored = variantContextStore.get(params.textDocument.uri);
+    // Send activeKeywords as an array over JSON-RPC (Set serializes to {}).
+    return {
+      context: stored
+        ? { activeKeywords: [...stored.activeKeywords] } as unknown as VariantContext
+        : null,
+    };
+  },
 );
 
 connection.onInitialize((params) => {
@@ -140,6 +153,7 @@ registerInactiveRegionsHandler(
   (uri) => loadSettings(connection, uri),
   suspender,
 );
+registerVariantKeywordsHandler(connection, documents);
 registerFileWatchers(connection, manager);
 
 connection.onShutdown(async () => {

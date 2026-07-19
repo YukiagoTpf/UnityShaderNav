@@ -7,6 +7,7 @@ import {
 import { LanguageClient, State } from 'vscode-languageclient/node';
 import { createLanguageClient } from './client';
 import { setupInactiveRegions } from './inactiveRegions';
+import { createVariantContextPicker } from './variantContextPicker';
 import { IndexStatusController, indexStatusDetails } from './indexStatus';
 import { IndexStatusSession } from './indexStatusSession';
 import { reportClientError, reportIndexStatus } from './output';
@@ -67,6 +68,10 @@ export async function activate(context: ExtensionContext): Promise<void> {
   await client.start();
   setupFileWatchers(client, context, reportError);
   setupInactiveRegions(client, context, reportError);
+  const picker = createVariantContextPicker(client, () => {
+    commands.executeCommand('unityShaderNav.refreshInactiveRegions');
+  });
+  context.subscriptions.push(picker);
 }
 
 export async function deactivate(): Promise<void> {

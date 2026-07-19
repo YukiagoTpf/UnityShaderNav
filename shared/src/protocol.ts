@@ -60,6 +60,9 @@ export const VARIANT_CONTEXT_CHANGED_NOTIFICATION = 'unityShaderNav/variantConte
 /** Client → server: query the current VariantContext for a document (restore on reload). */
 export const VARIANT_CONTEXT_REQUEST = 'unityShaderNav/getVariantContext';
 
+/** Client → server: fetch the variant keywords declared in a document. */
+export const GET_VARIANT_KEYWORDS_REQUEST = 'unityShaderNav/getVariantKeywords';
+
 export type DimReason = 'inactive' | 'variant';
 
 export interface VariantContext {
@@ -78,6 +81,14 @@ export interface VariantContextParams {
 
 export interface VariantContextResult {
   readonly context: VariantContext | null;
+}
+
+export interface GetVariantKeywordsParams {
+  readonly textDocument: { readonly uri: string };
+}
+
+export interface GetVariantKeywordsResult {
+  readonly keywords: string[];
 }
 
 export interface InactiveRegion {
