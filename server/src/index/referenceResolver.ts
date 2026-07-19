@@ -36,7 +36,7 @@ export function methodSignatureOf(symbol: SymbolEntry): string | undefined {
   ].join('|');
 }
 
-function toReferenceTarget(symbol: SymbolEntry): ReferenceTarget {
+export function symbolToTarget(symbol: SymbolEntry): ReferenceTarget {
   const target: ReferenceTarget = {
     name: symbol.name,
     kind: symbol.kind,
@@ -87,10 +87,10 @@ export function resolveReferenceTargetsForName(
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
-    }).map(toReferenceTarget);
+    }).map(symbolToTarget);
   }
 
-  return resolveDefinitionSymbols(index, name, position, global, options).map(toReferenceTarget);
+  return resolveDefinitionSymbols(index, name, position, global, options).map(symbolToTarget);
 }
 
 export function resolveReferenceTargets(
@@ -110,7 +110,7 @@ export function resolveReferenceTargets(
       position,
       options,
     );
-    if (memberTargets.length > 0) return memberTargets.map(toReferenceTarget);
+    if (memberTargets.length > 0) return memberTargets.map(symbolToTarget);
   }
 
   if (!memberAccess) return [];
@@ -139,7 +139,7 @@ export function resolveReferenceTargetsForCursor(
       target.member.text,
       position,
       options,
-    ).map(toReferenceTarget);
+    ).map(symbolToTarget);
     if (memberTargets.length > 0) return memberTargets;
     return resolveReferenceTargetsForName(index, target.member.text, position, global, options);
   }
@@ -164,5 +164,5 @@ export function resolveReferenceTargetsForMemberReference(
     reference.name,
     reference.location.range.start,
     options,
-  ).map(toReferenceTarget);
+  ).map(symbolToTarget);
 }

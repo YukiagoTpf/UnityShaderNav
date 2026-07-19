@@ -3,10 +3,9 @@ import type {
   FileIndex,
   Range,
   ReferenceContext,
-  SymbolEntry,
   SymbolKind,
 } from '@unity-shader-nav/shared';
-import { methodSignatureOf, type ReferenceTarget } from './referenceResolver';
+import type { ReferenceTarget } from './referenceResolver';
 import { containsPosition, locationKey } from '../sourceLocation';
 import { uriKey } from '../uriKey';
 
@@ -30,20 +29,6 @@ export function sameMethodOverload(a: ReferenceTarget, b: ReferenceTarget): bool
     && a.name === b.name
     && !!a.methodSignature
     && a.methodSignature === b.methodSignature;
-}
-
-export function symbolToTarget(symbol: SymbolEntry): ReferenceTarget {
-  const target: ReferenceTarget = {
-    name: symbol.name,
-    kind: symbol.kind,
-    uri: symbol.location.uri,
-    range: symbol.location.range,
-  };
-  if (symbol.scopeRange) target.scopeRange = symbol.scopeRange;
-  if (symbol.parentType) target.parentType = symbol.parentType;
-  const methodSignature = methodSignatureOf(symbol);
-  if (methodSignature) target.methodSignature = methodSignature;
-  return target;
 }
 
 export function isScopedTarget(target: ReferenceTarget): boolean {

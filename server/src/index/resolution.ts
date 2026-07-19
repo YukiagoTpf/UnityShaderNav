@@ -11,6 +11,7 @@ import {
   resolveReferenceTargetsForCursor,
   resolveReferenceTargetsForName,
   resolveReferenceTargetsForMemberReference,
+  symbolToTarget,
   type ReferenceTarget,
 } from './referenceResolver';
 import {
@@ -21,7 +22,6 @@ import {
   narrowGlobalTargetsForOccurrence,
   sameMethodOverload,
   sameTarget,
-  symbolToTarget,
   uniqueLocations,
 } from './referenceMatching';
 import { selectGlobalSymbolEntries } from './symbolSelection';
