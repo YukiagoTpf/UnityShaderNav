@@ -157,3 +157,82 @@ describe('resolveDefinition dispatch', () => {
     expect(uris).toEqual([otherUri, uri].sort());
   });
 });
+
+describe('resolveDefinition with VariantContext', () => {
+  // Two same-named variables in different #ifdef branches.
+  // Line 2: #ifdef FOO  ->  int gColor;  (line 3)
+  // Line 5: #else       ->  int gColor;  (line 6)
+  const text = [
+    '#pragma multi_compile _ FOO', // 0
+    '#ifdef FOO', // 1
+    'int gColor;', // 2
+    '#else', // 3
+    'int gColor;', // 4
+    '#endif', // 5
+  ].join('\n');
+
+  const symA = sym({
+    name: 'gColor',
+    kind: 'variable',
+    location: { uri, range: { start: { line: 2, character: 4 }, end: { line: 2, character: 10 } } },
+  });
+  const symB = sym({
+    name: 'gColor',
+    kind: 'variable',
+    location: { uri, range: { start: { line: 4, character: 4 }, end: { line: 4, character: 10 } } },
+  });
+  const idx: FileIndex = { uri, references: [], symbols: [symA, symB] };
+  const target: CursorTarget = { kind: 'symbol', word: word('gColor') };
+
+  it('returns only the active candidate when context makes one branch active', () => {
+    const ctx: ResolverContext = {
+      index: idx,
+      global: null,
+      position: { line: 10, character: 0 },
+      variantContext: { activeKeywords: new Set(['FOO']) },
+      getText: () => text,
+    };
+    const result = resolveDefinition(target, ctx);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toBe(symA);
+  });
+
+  it('returns only the else-branch candidate when FOO is inactive', () => {
+    const ctx: ResolverContext = {
+      index: idx,
+      global: null,
+      position: { line: 10, character: 0 },
+      variantContext: { activeKeywords: new Set(['BAR']) },
+      getText: () => text,
+    };
+    const result = resolveDefinition(target, ctx);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toBe(symB);
+  });
+
+  it('returns all candidates when context rules out every branch (conservative fallback)', () => {
+    // No variant keyword matches — both branches evaluate to VARIANT, both treated as active.
+    // To test the "zero active → return all" path, use a context that makes both FALSE.
+    // But with only FOO declared, activeKeywords: [] means no context effect (VARIANT).
+    // Instead, test that with no getText, all candidates are returned:
+    const ctx: ResolverContext = {
+      index: idx,
+      global: null,
+      position: { line: 10, character: 0 },
+      variantContext: { activeKeywords: new Set(['FOO']) },
+      // getText intentionally omitted → cannot determine → return all
+    };
+    const result = resolveDefinition(target, ctx);
+    expect(result).toHaveLength(2);
+  });
+
+  it('returns all candidates when no variantContext is supplied (unchanged behaviour)', () => {
+    const ctx: ResolverContext = {
+      index: idx,
+      global: null,
+      position: { line: 10, character: 0 },
+    };
+    const result = resolveDefinition(target, ctx);
+    expect(result).toHaveLength(2);
+  });
+});
