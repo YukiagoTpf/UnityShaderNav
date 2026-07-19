@@ -42,7 +42,9 @@ function containingPass(
   line: number,
 ): ShaderLabStructureNode | undefined {
   for (const subshader of shader.children) {
+    if (subshader.kind !== 'subshader') continue;
     for (const pass of subshader.children) {
+      if (pass.kind !== 'pass') continue;
       if (pass.headerLine <= line && line <= pass.closeLine) return pass;
     }
   }

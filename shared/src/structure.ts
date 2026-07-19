@@ -13,7 +13,7 @@ export interface ShaderLabBlock {
   unterminated: boolean;
 }
 
-export type ShaderLabNodeKind = 'shader' | 'subshader' | 'pass';
+export type ShaderLabNodeKind = 'shader' | 'properties' | 'subshader' | 'pass';
 
 export interface ShaderLabStructureNode {
   kind: ShaderLabNodeKind;

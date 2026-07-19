@@ -31,7 +31,13 @@ describe('scanShaderLabLayout', () => {
     expect(layout.lines[9].directScope).toBeUndefined();
     expect(layout.lines.slice(11, 14).every((line) => line.protected)).toBe(true);
     expect(layout.scopes.find((scope) => scope.kind === 'pass')?.hasProgramBlock).toBe(true);
-    expect(layout.structure.shaders[0].children[0].children[0].name).toBe('FORWARD');
+    const shaderChildren = layout.structure.shaders[0].children;
+    expect(shaderChildren.find((child) => child.kind === 'properties')).toMatchObject({
+      headerLine: 1,
+      closeLine: 3,
+    });
+    const subshader = shaderChildren.find((child) => child.kind === 'subshader');
+    expect(subshader?.children[0].name).toBe('FORWARD');
   });
 
   it.each([

@@ -1,4 +1,7 @@
 Shader "Test/MultiPassDefn" {
+  Properties {
+    _Tint ("Tint", Color) = (1, 1, 1, 1)
+  }
   SubShader {
     Pass {
       Name "ForwardLit"

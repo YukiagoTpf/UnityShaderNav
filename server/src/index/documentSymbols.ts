@@ -80,6 +80,17 @@ function pragmaToDocumentSymbol(reference: ReferenceEntry): DocumentSymbol {
   );
 }
 
+function propertyToDocumentSymbol(
+  property: NonNullable<FileIndex['properties']>[number],
+): DocumentSymbol {
+  return makeDocumentSymbol(
+    property.name,
+    LspSymbolKind.Property,
+    property.declarationRange,
+    property.nameRange,
+  );
+}
+
 function buildHlslSymbols(index: FileIndex): DocumentSymbol[] {
   const membersByStruct = new Map<SymbolEntry, SymbolEntry[]>();
   const topLevel: SymbolEntry[] = [];
@@ -132,13 +143,40 @@ function buildHlslSymbols(index: FileIndex): DocumentSymbol[] {
 
 function nodeName(node: ShaderLabStructureNode): string {
   if (node.kind === 'shader') return `Shader "${node.name ?? ''}"`;
+  if (node.kind === 'properties') return 'Properties';
   if (node.kind === 'pass') return `Pass "${node.name ?? ''}"`;
   return 'SubShader';
 }
 
 function nodeKind(node: ShaderLabStructureNode): LspSymbolKind {
   if (node.kind === 'shader') return LspSymbolKind.Class;
+  if (node.kind === 'properties') return LspSymbolKind.Object;
   return LspSymbolKind.Module;
+}
+
+function buildShaderLabContentSymbols(
+  index: FileIndex,
+  hlslSymbols: DocumentSymbol[],
+): DocumentSymbol[] {
+  const groupedHlslSymbols = new Set<DocumentSymbol>();
+  const programBlocks = index.shaderLabMaterial?.programBlocks ?? [];
+  const programSymbols = programBlocks.map((block) => {
+    const range = rangeOfLines(block.startLine, block.endLine);
+    const children = hlslSymbols.filter((symbol) => containsRange(range, symbol.range));
+    for (const child of children) groupedHlslSymbols.add(child);
+    return makeDocumentSymbol(
+      block.kind,
+      LspSymbolKind.Module,
+      rangeWithChildren(range, children),
+      rangeOfLines(block.startLine, block.startLine),
+      children,
+    );
+  });
+  const ungroupedHlslSymbols = hlslSymbols.filter((symbol) => !groupedHlslSymbols.has(symbol));
+  const propertySymbols = (index.properties ?? []).map(propertyToDocumentSymbol);
+
+  return [...programSymbols, ...ungroupedHlslSymbols, ...propertySymbols]
+    .sort((a, b) => startsBefore(a.range, b.range));
 }
 
 function buildStructureNode(
@@ -165,14 +203,15 @@ function buildStructureNode(
 export function buildDocumentSymbols(index: FileIndex): DocumentSymbol[] {
   const hlslSymbols = buildHlslSymbols(index);
   if (!index.structure) return hlslSymbols;
+  const shaderLabContentSymbols = buildShaderLabContentSymbols(index, hlslSymbols);
 
   const shaderSymbols = index.structure.shaders.map((shader) =>
-    buildStructureNode(shader, hlslSymbols),
+    buildStructureNode(shader, shaderLabContentSymbols),
   );
   const shaderRanges = index.structure.shaders.map((shader) =>
     rangeOfLines(shader.headerLine, shader.closeLine),
   );
-  const outsideStructure = hlslSymbols.filter((symbol) =>
+  const outsideStructure = shaderLabContentSymbols.filter((symbol) =>
     !shaderRanges.some((range) => containsRange(range, symbol.range)),
   );
 

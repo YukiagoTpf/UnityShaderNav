@@ -372,7 +372,10 @@ describe('Workspace-owned Document analysis', () => {
             symbols: Array<{ name: string }>;
             structure?: {
               shaders: Array<{
-                children: Array<{ children: Array<{ name?: string }> }>;
+                children: Array<{
+                  kind: string;
+                  children: Array<{ kind: string; name?: string }>;
+                }>;
               }>;
             };
           };
@@ -383,7 +386,9 @@ describe('Workspace-owned Document analysis', () => {
       expect(manifest.files[0].index.symbols).toEqual(expect.arrayContaining([
         expect.objectContaining({ name: 'DiskFunction' }),
       ]));
-      expect(manifest.files[0].index.structure?.shaders[0].children[0].children[0].name)
+      const persistedSubshader = manifest.files[0].index.structure?.shaders[0].children
+        .find((child) => child.kind === 'subshader');
+      expect(persistedSubshader?.children.find((child) => child.kind === 'pass')?.name)
         .toBe('DiskPass');
       expect(manifestText).not.toContain('LivePass');
       expect(manifestText).not.toContain('"analysis"');

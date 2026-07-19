@@ -52,7 +52,7 @@ suite('Document Symbols', () => {
     });
   });
 
-  test('.shader outline shows Shader > SubShader > Pass > entry', async () => {
+  test('.shader outline shows Shader > Properties / SubShader > Pass > program > entry', async () => {
     await withWorkspaceFolder(fixturePath(), async () => {
       const uri = vscode.Uri.file(fixturePath('multi-pass-test.shader'));
       const doc = await vscode.workspace.openTextDocument(uri);
@@ -62,16 +62,22 @@ suite('Document Symbols', () => {
         const shader = childNamed(result, 'Shader "Test/MultiPassDefn"');
         const subshader = childNamed(shader?.children, 'SubShader');
         const forward = childNamed(subshader?.children, 'Pass "ForwardLit"');
-        return !!childNamed(forward?.children, 'vert');
+        const program = childNamed(forward?.children, 'HLSLPROGRAM');
+        return !!childNamed(program?.children, 'vert');
       });
 
       const shader = childNamed(symbols, 'Shader "Test/MultiPassDefn"');
       assert.ok(shader, 'expected Shader root symbol');
+      const properties = childNamed(shader.children, 'Properties');
+      assert.ok(properties, 'expected Properties child');
+      assert.ok(childNamed(properties.children, '_Tint'), 'expected property under Properties');
       const subshader = childNamed(shader.children, 'SubShader');
       assert.ok(subshader, 'expected SubShader child');
       const forward = childNamed(subshader.children, 'Pass "ForwardLit"');
       assert.ok(forward, 'expected ForwardLit pass child');
-      assert.ok(childNamed(forward.children, 'vert'), 'expected vert under ForwardLit');
+      const program = childNamed(forward.children, 'HLSLPROGRAM');
+      assert.ok(program, 'expected HLSLPROGRAM under ForwardLit');
+      assert.ok(childNamed(program.children, 'vert'), 'expected vert under HLSLPROGRAM');
     });
   });
 
@@ -85,7 +91,8 @@ suite('Document Symbols', () => {
         const shader = childNamed(result, 'Shader "Tests/MultilineCommentOutline"');
         const subshader = childNamed(shader?.children, 'SubShader');
         const realPass = childNamed(subshader?.children, 'Pass "RealPass"');
-        return !!childNamed(realPass?.children, 'RealEntry');
+        const program = childNamed(realPass?.children, 'HLSLPROGRAM');
+        return !!childNamed(program?.children, 'RealEntry');
       });
 
       const shader = childNamed(symbols, 'Shader "Tests/MultilineCommentOutline"');
@@ -103,7 +110,9 @@ suite('Document Symbols', () => {
       assert.deepStrictEqual(realPass.range.start, new vscode.Position(7, 0));
       assert.deepStrictEqual(realPass.range.end, new vscode.Position(12, 0));
       assert.deepStrictEqual(realPass.selectionRange.start, new vscode.Position(7, 0));
-      assert.ok(childNamed(realPass.children, 'RealEntry'), 'expected entry under real Pass');
+      const program = childNamed(realPass.children, 'HLSLPROGRAM');
+      assert.ok(program, 'expected HLSLPROGRAM under real Pass');
+      assert.ok(childNamed(program.children, 'RealEntry'), 'expected entry under HLSLPROGRAM');
     });
   });
 });

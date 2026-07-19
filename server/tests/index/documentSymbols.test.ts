@@ -73,6 +73,72 @@ describe('buildDocumentSymbols: .hlsl', () => {
 });
 
 describe('buildDocumentSymbols: .shader with structure', () => {
+  it('reports Properties and program blocks as first-class nested symbols', () => {
+    const idx: FileIndex = {
+      uri: 'file:///t/rich.shader',
+      symbols: [sym('vert', 'function', 8), sym('_Tint', 'variable', 9)],
+      references: [],
+      properties: [{
+        name: '_Tint',
+        nameRange: {
+          start: { line: 2, character: 4 },
+          end: { line: 2, character: 9 },
+        },
+        declarationRange: {
+          start: { line: 2, character: 0 },
+          end: { line: 2, character: 36 },
+        },
+        type: 'Color',
+      }],
+      structure: {
+        shaders: [{
+          kind: 'shader',
+          name: 'Rich',
+          headerLine: 0,
+          closeLine: 14,
+          children: [
+            { kind: 'properties', headerLine: 1, closeLine: 3, children: [] },
+            {
+              kind: 'subshader',
+              headerLine: 4,
+              closeLine: 13,
+              children: [
+                { kind: 'pass', name: 'Forward', headerLine: 5, closeLine: 12, children: [] },
+              ],
+            },
+          ],
+        }],
+      },
+      shaderLabMaterial: {
+        srpEvidence: false,
+        subShaderCount: 1,
+        hasIncludes: false,
+        lineEnding: '\n',
+        cbuffers: [],
+        programBlocks: [{
+          blockIndex: 0,
+          kind: 'HLSLPROGRAM',
+          startLine: 7,
+          endLine: 10,
+          insertionPosition: { line: 10, character: 0 },
+          indent: '      ',
+          unterminated: false,
+        }],
+      },
+    };
+
+    const tree = buildDocumentSymbols(idx);
+
+    const shader = tree[0];
+    expect(shader.children?.map((node) => node.name)).toEqual(['Properties', 'SubShader']);
+    const properties = shader.children?.[0];
+    expect(properties?.children?.map((node) => node.name)).toEqual(['_Tint']);
+    expect(properties?.children?.[0].kind).toBe(LspSymbolKind.Property);
+    const pass = shader.children?.[1].children?.[0];
+    expect(pass?.children?.map((node) => node.name)).toEqual(['HLSLPROGRAM']);
+    expect(pass?.children?.[0].children?.map((node) => node.name)).toEqual(['vert', '_Tint']);
+  });
+
   it('nests HLSL symbols under the owning Pass', () => {
     const idx: FileIndex = {
       uri: 'file:///t/m.shader',

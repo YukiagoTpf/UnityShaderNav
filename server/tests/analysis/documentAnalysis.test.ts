@@ -73,7 +73,9 @@ describe('Document analysis', () => {
       contentEndLine: 8,
       unterminated: false,
     }]);
-    expect(indexAnalysis!.structure.shaders[0].children[0].children[0])
+    const subshader = indexAnalysis!.structure.shaders[0].children
+      .find((child) => child.kind === 'subshader');
+    expect(subshader?.children.find((child) => child.kind === 'pass'))
       .toMatchObject({ name: 'FirstPass', headerLine: 5, closeLine: 10 });
     expect(indexAnalysis!.shaderLabNames).toMatchObject({
       shaders: [{ name: 'Tests/Shared' }],
@@ -127,7 +129,9 @@ describe('Document analysis', () => {
       symbol.name === 'ReplacementFunction'
     ))).toBe(true);
     expect(replacementIndex.symbols.some((symbol) => symbol.name === 'FirstFunction')).toBe(false);
-    expect(replacementIndex.structure?.shaders[0].children[0].children[0].name)
+    const replacementSubshader = replacementIndex.structure?.shaders[0].children
+      .find((child) => child.kind === 'subshader');
+    expect(replacementSubshader?.children.find((child) => child.kind === 'pass')?.name)
       .toBe('ReplacementPass');
   });
 

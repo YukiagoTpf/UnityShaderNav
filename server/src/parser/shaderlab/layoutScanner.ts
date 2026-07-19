@@ -168,19 +168,17 @@ export function scanShaderLabLayoutFromSource(
           };
           frame.scope = scope;
           scopes.push(scope);
-          if (kind !== 'properties') {
-            const node: ShaderLabStructureNode = {
-              kind,
-              name: candidate?.name,
-              headerLine: frame.headerLine,
-              closeLine: frame.headerLine,
-              children: [],
-            };
-            frame.node = node;
-            const parentNode = [...stack].reverse().find((entry) => entry.node)?.node;
-            if (parentNode) parentNode.children.push(node);
-            else if (kind === 'shader') shaders.push(node);
-          }
+          const node: ShaderLabStructureNode = {
+            kind,
+            name: candidate?.name,
+            headerLine: frame.headerLine,
+            closeLine: frame.headerLine,
+            children: [],
+          };
+          frame.node = node;
+          const parentNode = [...stack].reverse().find((entry) => entry.node)?.node;
+          if (parentNode) parentNode.children.push(node);
+          else if (kind === 'shader') shaders.push(node);
           if (kind === 'shader') shaderCount++;
         } else if (stack.length === 0) {
           issues.push(`unowned top-level block at line ${lineNo + 1}`);
