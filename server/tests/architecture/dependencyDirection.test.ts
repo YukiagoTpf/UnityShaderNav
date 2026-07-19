@@ -702,7 +702,9 @@ describe('server dependency direction', () => {
     expect(coordinator).toMatch(/initializeWorkspaceFolders/);
     expect(coordinator).toMatch(/registerWorkspaceFolderCoordinator/);
 
-    expect(server).toMatch(/registerFileWatchers\(connection, manager\)/);
+    expect(server).toMatch(
+      /registerFileWatchers\(\s*connection,\s*manager,\s*\(event\) => adapterDiagnosticOverlay\.handleFileEvent\(event\),\s*\)/,
+    );
     expect(server).toMatch(
       /applyScopedSettingsAndRebuild\(\s*connection,\s*manager,\s*\(folderUri\) => loadSettings\(connection, folderUri\),\s*\)/,
     );

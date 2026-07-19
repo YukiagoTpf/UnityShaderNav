@@ -4,6 +4,9 @@ export const ADAPTER_STATUS_REQUEST = 'unityShaderNav/adapterStatus';
 /** Version of the handshake contract, independent from the Adapter release version. */
 export const ADAPTER_INTERFACE_VERSION = 1;
 
+/** Capability that refreshes compiler messages for one saved Shader asset. */
+export const SHADER_MESSAGES_CAPABILITY = 'shader-messages';
+
 export interface AdapterCapabilities {
   readonly unityVersion: string;
   readonly projectId: string;
@@ -15,7 +18,43 @@ export interface AdapterCapabilities {
 export interface AdapterHandshake {
   readonly interfaceVersion: number;
   readonly issuedAt: number;
+  /** Identity of the currently connected Editor endpoint. */
+  readonly instanceId: string;
   readonly capabilities: AdapterCapabilities;
+}
+
+/** UnityEditor.ShaderMessage serialized without Unity runtime dependencies. */
+export interface ShaderMessage {
+  readonly message: string;
+  readonly messageDetails?: string;
+  readonly file?: string;
+  /** One-based source line reported by Unity, when supplied. */
+  readonly line?: number;
+  readonly severity: 'error' | 'warning';
+  readonly platform?: string;
+}
+
+export interface AdapterSourceRevision {
+  readonly uri: string;
+  readonly assetGuid: string;
+  /** SHA-256 of the saved asset contents observed by the Adapter. */
+  readonly contentHash: string;
+}
+
+export interface AdapterDiagnosticProvenance {
+  readonly capability: typeof SHADER_MESSAGES_CAPABILITY;
+  readonly adapterVersion: string;
+  readonly unityVersion: string;
+  readonly projectId: string;
+  readonly instanceId: string;
+  readonly collectedAt: number;
+  readonly sourceRevision: AdapterSourceRevision;
+}
+
+/** One compiler message together with the evidence needed to trust it. */
+export interface AdapterDiagnostic {
+  readonly shaderMessage: ShaderMessage;
+  readonly provenance: AdapterDiagnosticProvenance;
 }
 
 export type AdapterUnavailableReason =

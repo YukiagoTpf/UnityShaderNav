@@ -17,6 +17,7 @@ function isRebuildTrigger(uri: string): boolean {
 export function registerFileWatchers(
   connection: Connection,
   manager: WorkspaceManager,
+  observeFileEvent?: (event: FileEvent) => void,
 ): void {
   const debouncer = new Debouncer<FileEvent>(
     { windowMs: 500, threshold: 20 },
@@ -59,6 +60,7 @@ export function registerFileWatchers(
   }
 
   connection.onNotification(WATCHER_NOTIFICATION, (event: FileEvent) => {
+    observeFileEvent?.(event);
     debouncer.push(event);
   });
 }

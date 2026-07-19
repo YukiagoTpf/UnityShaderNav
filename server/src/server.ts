@@ -11,6 +11,7 @@ import {
 } from '@unity-shader-nav/shared';
 import { AdapterRegistry } from './adapter/adapterRegistry';
 import { loadSettings, onSettingsChanged } from './config';
+import { registerAdapterDiagnosticOverlay } from './handlers/adapterDiagnostics';
 import { registerAdapterStatusHandler } from './handlers/adapterStatus';
 import { registerCodeActionHandler } from './handlers/codeActions';
 import { registerCodeLensHandler } from './handlers/codeLens';
@@ -97,7 +98,17 @@ documentRegistry.onDidCloseSnapshot((document) => {
   variantContextStore.delete(document.uri);
 });
 const documents = documentRegistry.documents;
-registerDiagnosticsPublisher(connection, documentRegistry, manager);
+const adapterDiagnosticOverlay = registerAdapterDiagnosticOverlay(
+  connection,
+  documentRegistry,
+  adapterRegistry,
+);
+registerDiagnosticsPublisher(
+  connection,
+  documentRegistry,
+  manager,
+  [adapterDiagnosticOverlay],
+);
 manager.configureSettingsResolver((scopeUri) => loadSettings(connection, scopeUri));
 
 connection.onInitialized(async () => {
@@ -161,7 +172,11 @@ registerInactiveRegionsHandler(
 );
 registerVariantKeywordsHandler(connection, documents);
 registerCodeLensHandler(connection, documents);
-registerFileWatchers(connection, manager);
+registerFileWatchers(
+  connection,
+  manager,
+  (event) => adapterDiagnosticOverlay.handleFileEvent(event),
+);
 
 connection.onShutdown(async () => {
   await manager.persistAll();

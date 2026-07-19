@@ -5,6 +5,7 @@ import type {
   IndexedDocumentRegistry,
 } from '../workspace/indexedWorkspace';
 import { uriKey } from '../uriKey';
+import type { DiagnosticOverlay } from './diagnosticOverlay';
 
 function sameAttempt(
   left: ReturnType<IndexedDocumentRegistry['snapshot']>,
@@ -28,6 +29,7 @@ export function registerDiagnosticsPublisher(
   connection: Connection,
   documents: IndexedDocumentLifecycleRegistry,
   manager: DiagnosticWorkspaceService,
+  overlays: readonly DiagnosticOverlay[] = [],
 ): void {
   let requestedGeneration = 0;
   let completedGeneration = 0;
@@ -74,15 +76,19 @@ export function registerDiagnosticsPublisher(
     await Promise.all(snapshots.map(async (document) => {
       try {
         const workspace = manager.servingWorkspaceFor(document.uri);
-        const diagnostics = workspace
+        const staticDiagnostics = workspace
           ? await workspace.diagnosticsAt(document)
           : [];
         // Reject stale computation before enqueueing: advancing this URI's
         // generation would otherwise cancel a close clear already waiting in
         // the pipeline. The same facts are rechecked after the queue wait.
-        if (diagnostics === null || generation !== requestedGeneration) return;
+        if (staticDiagnostics === null || generation !== requestedGeneration) return;
         if (!sameAttempt(documents.snapshot(document.uri), document)) return;
         if (manager.servingWorkspaceFor(document.uri) !== workspace) return;
+        const diagnostics = [
+          ...staticDiagnostics,
+          ...overlays.flatMap((overlay) => overlay.diagnosticsFor(document)),
+        ];
         await enqueueSend(
           document.uri,
           () => (
@@ -132,8 +138,11 @@ export function registerDiagnosticsPublisher(
     );
   });
 
-  manager.configureDiagnosticsRefresh(() => {
+  const requestRefresh = (): void => {
     requestedGeneration++;
     scheduleDrain();
-  });
+  };
+
+  manager.configureDiagnosticsRefresh(requestRefresh);
+  for (const overlay of overlays) overlay.onDidChange(requestRefresh);
 }

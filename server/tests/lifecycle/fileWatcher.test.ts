@@ -14,6 +14,33 @@ function deferred<T = void>(): {
 }
 
 describe('registerFileWatchers', () => {
+  it('forwards asset deletion immediately to diagnostic lifecycle observers', () => {
+    vi.useFakeTimers();
+    try {
+      let handler: ((event: FileEvent) => void) | undefined;
+      const observer = vi.fn();
+      const connection = {
+        console: { log: vi.fn(), error: vi.fn() },
+        onNotification: vi.fn((_name: string, callback: (event: FileEvent) => void) => {
+          handler = callback;
+        }),
+      };
+      const event: FileEvent = {
+        uri: 'file:///project/Assets/Deleted.shader',
+        type: 'deleted',
+      };
+
+      registerFileWatchers(connection as never, {
+        readyWorkspacesFor: vi.fn(() => []),
+      } as never, observer);
+      handler?.(event);
+
+      expect(observer).toHaveBeenCalledWith(event);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('applies ordinary file changes incrementally after debounce', async () => {
     vi.useFakeTimers();
     try {
