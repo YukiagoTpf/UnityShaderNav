@@ -1,0 +1,6 @@
+#pragma multi_compile _ QUALITY_LOW QUALITY_HIGH
+#pragma shader_feature FOG_ON
+
+#pragma kernel CSMain
+[numthreads(1, 1, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID) {}

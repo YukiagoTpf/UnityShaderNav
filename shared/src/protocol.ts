@@ -63,6 +63,12 @@ export const VARIANT_CONTEXT_REQUEST = 'unityShaderNav/getVariantContext';
 /** Client → server: fetch the variant keywords declared in a document. */
 export const GET_VARIANT_KEYWORDS_REQUEST = 'unityShaderNav/getVariantKeywords';
 
+/** CodeLens action: open the user-facing contract for declared Variant cost. */
+export const OPEN_VARIANT_COST_DOCUMENTATION_COMMAND =
+  'unityShaderNav.openVariantCostDocumentation';
+export const VARIANT_COST_DOCUMENTATION_URL =
+  'https://github.com/YukiagoTpf/UnityShaderNav/blob/main/docs/usage.md#declared-variant-cost';
+
 export type DimReason = 'inactive' | 'variant';
 
 export interface VariantContext {

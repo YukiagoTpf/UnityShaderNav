@@ -9,6 +9,12 @@ and uses semantic versioning for extension releases.
 
 ### Added
 
+- Added declared/static Variant cost CodeLens for explicit `multi_compile` and
+  `shader_feature` keyword sets. Each supported pragma shows its normalized set
+  multiplier, scope/stage, and program contribution; each program marker shows
+  an exact overflow-safe upper bound and largest multiplier. The linked user
+  guide documents duplicates, conditional declarations, shared include blocks,
+  and why Unity compiled/kept Variant counts can differ.
 - Added an opt-in **Variant Context** feature: a status-bar entry and QuickPick
   let the user toggle active `multi_compile` / `shader_feature` keywords for the
   current `.shader` / `.hlsl` document. With a context selected, variant-gated

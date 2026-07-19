@@ -49,6 +49,11 @@ describe('LSP handshake', () => {
     expect(result.capabilities.codeActionProvider).toBe(true);
   });
 
+  it('advertises the declared Variant cost CodeLens provider', () => {
+    const result = createInitializeResult();
+    expect(result.capabilities.codeLensProvider).toEqual({ resolveProvider: false });
+  });
+
   it('advertises completionProvider', () => {
     const result = createInitializeResult();
     expect(result.capabilities.completionProvider).toMatchObject({

@@ -93,7 +93,9 @@ handling. Important modules:
   the open-document registry; `handlers/documentRequest.ts` centralizes
   snapshot routing, suspension, and neutral-result policy. Every index-backed
   query adapter calls only the `IndexedWorkspace` behavior interface and never
-  receives raw index stores.
+  receives raw index stores. Text-only presentation adapters such as declared
+  Variant cost read the current open document directly and do not wait for
+  indexed publication.
 - `lifecycle/requestSuspender.ts`: exposes `RequestSuspender`, the bounded
   initial request gate; rebuild and watcher paths do not use it.
 - `lifecycle/requestCancellation.ts`: centralizes the LSP `RequestCancelled`

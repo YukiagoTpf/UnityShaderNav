@@ -27,6 +27,8 @@ UnityShaderNav provides practical VS Code navigation for Unity shader projects:
   common HLSL symbols.
 - Versioned Problems diagnostics for unresolved Shader and Compute pragma entry
   points and conservative SRP Batcher material contracts.
+- Declared/static Variant cost CodeLens for explicit keyword sets, with exact
+  source-local products that remain separate from compiler/build evidence.
 - Cross-file navigation through `#include` chains and resolved Unity Packages.
 
 The project optimizes for useful editor behavior over full shader compilation
@@ -68,7 +70,7 @@ Language server
   - derives exact-source ShaderLab document analysis and parses HLSL syntax
   - builds symbol/reference indexes
   - publishes only through the Workspace lifecycle boundary
-  - answers LSP definition, references, symbols, highlight, and semantic-token requests
+  - answers LSP definition, references, symbols, highlight, CodeLens, and semantic-token requests
   - publishes revision- and document-version-checked entry-point diagnostics
   - persists per-Workspace cache manifests under Library/UnityShaderNavCache
 ```

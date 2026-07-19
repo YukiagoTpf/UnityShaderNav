@@ -3,6 +3,7 @@ import { realpathSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { OPEN_VARIANT_COST_DOCUMENTATION_COMMAND } from '@unity-shader-nav/shared';
 
 const EXT_ID = 'Yukiago.unity-shader-nav';
 
@@ -87,13 +88,14 @@ suite('UnityShaderNav activation', () => {
     );
   });
 
-  test('activation registers the contributed status actions', async () => {
+  test('activation registers the status and Variant cost documentation actions', async () => {
     const ext = findExt();
     assert.ok(ext, 'extension manifest must be loaded');
     await ext.activate();
     const registered = await vscode.commands.getCommands(true);
     assert.ok(registered.includes('unityShaderNav.showIndexStatus'));
     assert.ok(registered.includes('unityShaderNav.showOutput'));
+    assert.ok(registered.includes(OPEN_VARIANT_COST_DOCUMENTATION_COMMAND));
   });
 });
 

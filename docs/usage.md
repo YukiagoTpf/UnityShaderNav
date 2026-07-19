@@ -257,8 +257,58 @@ opening the picker is never required, and the default behaviour is unchanged.
 
 This is a user-driven, presentation/navigation-narrowing aid, not a
 compiler-accurate variant resolver. It covers only the keywords the document
-itself declares; platform defines, material/global keywords, and keyword-set
-combinatorics are out of scope.
+itself declares; platform defines and material/global keyword state are out of
+scope. The selection does not enumerate the combinations shown by the separate
+declared-cost presentation below.
+
+### Declared Variant Cost
+
+VS Code shows a CodeLens above each supported `#pragma multi_compile` or
+`#pragma shader_feature` keyword set. The lens labels the value as
+**Declared/static**, shows the normalized set multiplier, global/local scope,
+all-stage or stage-specific suffix, and the containing program's upper bound.
+An additional lens on each `HLSLPROGRAM` / `CGPROGRAM` marker shows that
+program's upper bound, number of unique sets, and largest multiplier. In a raw
+HLSL or Compute document, the file is the one document-local program. Every
+lens is clickable and opens this explanation.
+
+The estimate has one deterministic contract:
+
+- Exact `multi_compile`, `shader_feature`, their `_local` forms, and the
+  `_vertex`, `_fragment`, `_hull`, `_domain`, `_geometry`, and `_raytracing`
+  suffixes are supported. Built-in `multi_compile_*` shortcuts are not expanded.
+- A `multi_compile` multiplier is its number of unique declared options. One or
+  more underscores are one blank/off option. A single-named-option
+  `shader_feature` has Unity's implicit blank/off option; sets with two or more
+  named options need an explicit underscore. Repeated options on one line are
+  normalized.
+- Unity does not permit the same normalized keyword set twice in one program;
+  the estimate therefore shows every duplicate declaration but lets later
+  copies contribute `×1`. Global/local and stage scope are part of that identity,
+  so the same names can still describe separate scoped or stage-specific sets.
+- All pragmas lexically nested in `#if` / `#ifdef` / `#ifndef` are marked
+  conditional and included. Mutually exclusive branches can therefore make the
+  target-independent static upper bound deliberately high.
+- `HLSLINCLUDE` sets contribute to every `HLSLPROGRAM` in the Shader source;
+  `CGINCLUDE` does the same for `CGPROGRAM`. A standalone include file remains
+  document-local because the CodeLens does not guess which sites use
+  `#include_with_pragmas`.
+- Products use exact integer arithmetic, so counts beyond JavaScript's safe
+  numeric range do not wrap or round. CodeLens pulls from the current open text,
+  so unsaved edits replace the count rather than waiting for index publication.
+
+This number is not how many Variants Unity will compile, keep, load, or execute.
+Unity can select conditional pragmas per platform, strip unused
+`shader_feature` combinations, apply `skip_variants`, inject or strip built-in
+keyword families, merge stage behavior for some graphics APIs, and apply render
+pipeline or project build settings. External `#include_with_pragmas`
+dependencies and invalid declarations are also outside this source-local
+calculation. Use Unity's
+[shader keyword declaration rules](https://docs.unity3d.com/6000.0/Documentation/Manual/SL-MultipleProgramVariants-declare.html),
+[keyword conditional rules](https://docs.unity3d.com/6000.0/Documentation/Manual/SL-MultipleProgramVariants-make-conditionals.html),
+[Variant stripping guidance](https://docs.unity3d.com/6000.0/Documentation/Manual/shader-variant-stripping.html),
+and [build logs](https://docs.unity3d.com/6000.0/Documentation/Manual/shader-how-many-variants.html)
+for compiler and build evidence.
 
 ## Project Detection
 

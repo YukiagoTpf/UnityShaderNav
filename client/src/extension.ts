@@ -1,7 +1,9 @@
-import { commands, ExtensionContext, window } from 'vscode';
+import { commands, env, ExtensionContext, Uri, window } from 'vscode';
 import {
   INDEX_STATUS_NOTIFICATION,
   INDEX_STATUS_REQUEST,
+  OPEN_VARIANT_COST_DOCUMENTATION_COMMAND,
+  VARIANT_COST_DOCUMENTATION_URL,
   type IndexStatusSnapshot,
 } from '@unity-shader-nav/shared';
 import { LanguageClient, State } from 'vscode-languageclient/node';
@@ -64,6 +66,10 @@ export async function activate(context: ExtensionContext): Promise<void> {
       matchOnDescription: true,
       matchOnDetail: true,
     }),
+  ));
+  context.subscriptions.push(commands.registerCommand(
+    OPEN_VARIANT_COST_DOCUMENTATION_COMMAND,
+    () => env.openExternal(Uri.parse(VARIANT_COST_DOCUMENTATION_URL)),
   ));
   await client.start();
   setupFileWatchers(client, context, reportError);

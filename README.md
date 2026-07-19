@@ -56,6 +56,9 @@ The extension focuses on fast code navigation:
   `multi_compile` / `shader_feature` ambiguity: active branches brighten,
   inactive ones dim, and F12 jumps directly to the active variant when the
   context makes it unique. Opt-in; default behaviour is unchanged.
+- Declared/static Variant cost CodeLens for explicit `multi_compile` and
+  `shader_feature` keyword sets, including per-program upper bounds, scope,
+  stage, and largest-multiplier facts without claiming Unity build counts.
 - Unity Package resolution through `Packages/packages-lock.json`.
 - Persistent project-local indexing under `Library/UnityShaderNavCache/`.
 

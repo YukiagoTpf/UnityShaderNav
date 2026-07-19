@@ -12,6 +12,7 @@ import {
 import { loadSettings, onSettingsChanged } from './config';
 import { registerCompletionHandler } from './handlers/completion';
 import { registerCodeActionHandler } from './handlers/codeActions';
+import { registerCodeLensHandler } from './handlers/codeLens';
 import { registerColorHandlers } from './handlers/colors';
 import { registerDefinitionHandler } from './handlers/definition';
 import { registerDocumentHighlightHandler } from './handlers/documentHighlight';
@@ -154,6 +155,7 @@ registerInactiveRegionsHandler(
   suspender,
 );
 registerVariantKeywordsHandler(connection, documents);
+registerCodeLensHandler(connection, documents);
 registerFileWatchers(connection, manager);
 
 connection.onShutdown(async () => {

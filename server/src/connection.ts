@@ -40,6 +40,7 @@ export function createInitializeResult(prepareRenameSupported = true): Initializ
       renameProvider: prepareRenameSupported ? { prepareProvider: true } : true,
       documentHighlightProvider: true,
       codeActionProvider: true,
+      codeLensProvider: { resolveProvider: false },
       completionProvider: {
         triggerCharacters: ['.'],
       },

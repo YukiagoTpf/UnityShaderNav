@@ -4,8 +4,8 @@ import { scanVariantKeywords } from '../../../src/parser/preproc/scanVariantKeyw
 const sorted = (set: Set<string>) => [...set].sort();
 
 describe('scanVariantKeywords', () => {
-  it('drops the bare underscore placeholder', () => {
-    const out = scanVariantKeywords('#pragma multi_compile _ FOO_ON');
+  it('drops every underscore-only placeholder', () => {
+    const out = scanVariantKeywords('#pragma multi_compile _ __ FOO_ON');
     expect(sorted(out)).toEqual(['FOO_ON']);
   });
 
@@ -40,5 +40,13 @@ describe('scanVariantKeywords', () => {
   it('ignores non-variant pragmas', () => {
     const out = scanVariantKeywords('#pragma vertex vert');
     expect(sorted(out)).toEqual([]);
+  });
+
+  it('ignores built-in shortcuts and unknown suffixes', () => {
+    const text = [
+      '#pragma multi_compile_fog FOG_LINEAR',
+      '#pragma shader_feature_pixel PIXEL_ON',
+    ].join('\n');
+    expect(sorted(scanVariantKeywords(text))).toEqual([]);
   });
 });
