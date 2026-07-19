@@ -52,6 +52,10 @@ The extension focuses on fast code navigation:
   preprocessor branches, with a theme-adaptive marker distinguishing variant
   gates from definitely inactive code (presentation only; navigation is
   unaffected).
+- Optional variant-context picker (status bar + QuickPick) to resolve
+  `multi_compile` / `shader_feature` ambiguity: active branches brighten,
+  inactive ones dim, and F12 jumps directly to the active variant when the
+  context makes it unique. Opt-in; default behaviour is unchanged.
 - Unity Package resolution through `Packages/packages-lock.json`.
 - Persistent project-local indexing under `Library/UnityShaderNavCache/`.
 
@@ -152,8 +156,11 @@ See [Configuration](docs/configuration.md) for the full explanation and examples
 
 ## Known Limits
 
-- Preprocessor conditions are not evaluated; multiple valid definitions can be
-  returned through VS Code Peek Definition.
+- Preprocessor conditions are not evaluated by default; multiple valid
+  definitions can be returned through VS Code Peek Definition. The optional
+  Variant Context picker can resolve declared `multi_compile` / `shader_feature`
+  keywords for dimming and navigation, but this is user-driven and does not
+  constitute compiler-accurate variant resolution.
 - Macro bodies are not expanded. Built-in and user-configured declaration
   patterns cover common Unity macro declarations.
 - Surface Shader implicit parameters and ShaderGraph generated code are not

@@ -9,6 +9,14 @@ and uses semantic versioning for extension releases.
 
 ### Added
 
+- Added an opt-in **Variant Context** feature: a status-bar entry and QuickPick
+  let the user toggle active `multi_compile` / `shader_feature` keywords for the
+  current `.shader` / `.hlsl` document. With a context selected, variant-gated
+  branches resolve to active (bright) or inactive (dimmed), and F12 / Find
+  References / Highlights prefer the active variant — jumping directly when the
+  context makes it unique. The default (no context) behaviour is unchanged;
+  ambiguity always falls back to the conservative multi-candidate Peek.
+  (Epic #77, slices #154–#158.)
 - Added a presentation-only `UNITY_VERSION` Hover derived from the captured
   project Editor version. Unknown projects stay neutral, and indexed macro
   declarations retain precedence.

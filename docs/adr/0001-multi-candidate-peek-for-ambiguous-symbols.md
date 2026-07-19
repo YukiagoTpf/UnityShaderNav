@@ -24,3 +24,30 @@ Rider 通过分析当前文件激活的 `#pragma multi_compile` 集合，**唯�
 - `SymbolIndex` 类型必须是 `Map<string, SymbolEntry[]>`（数组而非单值），不去重。
 - `.shader` 文件多 Pass 间的同名函数会作为多候选展示——文档需明确这是有意行为，不是 bug。
 - `HLSLINCLUDE` 块内的符号自动对所有后续 Pass 可见（自然结果，无需特殊建模）。
+
+## Status Update (2026-07)
+
+The original decision (no preprocessor evaluation, all candidates via Peek)
+still holds as the **default and fallback** when no `VariantContext` is
+supplied. Slices 1–5 of the variant-context epic (#154–#158) implement the
+"reliable compilation context" anticipated in the final paragraph above:
+
+- A user-supplied `VariantContext` (a set of active `multi_compile` /
+  `shader_feature` keywords) resolves variant-gated branches to TRUE/FALSE
+  via the existing four-valued evaluator (`evalCondition`).
+- When a context is supplied, `resolveDefinition` / `findReferences` /
+  `findHighlights` filter candidates to those whose defining branch is active
+  in the chosen context. If exactly one candidate remains, F12 jumps directly
+  (no Peek). If several remain active, all are returned (still a Peek, but a
+  shorter list).
+- If the context rules out every candidate, **all** candidates are returned —
+  never an empty result, so F12 never silently fails.
+- When no context is supplied (the default), behaviour is byte-for-byte
+  identical to the original decision.
+
+This does not weaken the conservative guarantee: the user explicitly opts into
+a context via the status-bar picker, and any ambiguity (multiple active, zero
+active, or no context) falls back to the original multi-candidate Peek. This
+is a lightweight, user-driven version of Rider's Shader Context Picker — not a
+full compiler-context replica. Platform defines, material/global keywords, and
+keyword-set combinatorics remain out of scope.

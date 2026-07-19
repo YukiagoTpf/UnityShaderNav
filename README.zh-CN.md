@@ -21,6 +21,7 @@ UnityShaderNav 是一个用于 Unity Shader 项目的 Visual Studio Code 扩展�
   struct、struct 成员、cbuffer、宏和全局变量。默认排除 package 内符号，
   遵循 `findReferences.includePackages` 设置。
 - 保守地变暗不生效和 variant 门控的 `#if`/`#ifdef` 预处理分支（仅影响呈现，不改变导航）。
+- 可选的变体上下文选择器（状态栏 + QuickPick），用于消解 `multi_compile` / `shader_feature` 歧义：激活的分支变亮，未激活的分支变暗，当上下文使目标唯一时 F12 直接跳转到激活变体。需手动启用；默认行为不变。
 - 通过 `Packages/packages-lock.json` 解析 Unity Package。
 - 在 `Library/UnityShaderNavCache/` 下持久化项目本地索引缓存。
 
@@ -120,7 +121,7 @@ npm run package:vsix
 
 ## 已知限制
 
-- 不求值预处理条件；多个有效定义会通过 VS Code Peek Definition 一并返回。
+- 默认不求值预处理条件；多个有效定义会通过 VS Code Peek Definition 一并返回。可选的变体上下文选择器可以为变暗和导航消解已声明的 `multi_compile` / `shader_feature` 关键字，但这是用户驱动的，不构成编译器级别的变体求值。
 - 不展开宏体。内置和用户配置的 declaration patterns 会覆盖常见 Unity 宏声明。
 - 不把 Surface Shader 隐式参数和 ShaderGraph 生成代码作为特殊来源索引。
 - 内置补全和签名帮助是精选词表，不保证穷尽；当项目符号与内置名称冲突时，优先使用项目符号。

@@ -111,3 +111,31 @@ decoration、debounce timer 和请求身份归入一个文档状态；文档关�
   编辑器主题语义。
 - 自定义请求依赖显式 version 回传、请求身份和文档关闭时的状态释放，避免快速编辑或
   关闭后重开时旧响应覆盖新 decoration。
+
+## Status Update (2026-07)
+
+The original decision (presentation-only dimming, four-valued logic, UNKNOWN
+dominates VARIANT) still holds as the **default and fallback** when no
+`VariantContext` is supplied. Slices 1–5 of the variant-context epic
+(#154–#158) extend the dimming behaviour without changing the four-valued
+guard:
+
+- When a `VariantContext` is supplied, `evalCondition` resolves variant
+  keywords to TRUE/FALSE instead of VARIANT. A branch gated by an active
+  keyword evaluates TRUE (not dimmed); a branch gated by an inactive keyword
+  evaluates FALSE (dimmed as `reason: 'inactive'`, not `'variant'`).
+- Branches that still evaluate VARIANT (keyword not declared in the context's
+  document, or genuinely unknown macros) keep the existing `reason: 'variant'`
+  presentation — the conservative false-dim guard is unchanged.
+- The `ChainState` bookkeeping and `applyClauseRule` / `applyElseRule` logic
+  are untouched; they already handle TRUE/FALSE/VARIANT correctly. Only the
+  input to `evalCondition` changed (an optional `variantContext` on
+  `MacroState`).
+- Navigation (definition / references / highlights) now also uses the context
+  to prefer the active candidate — see [ADR-0001](0001-multi-candidate-peek-for-ambiguous-symbols.md)
+  Status Update. Dimming remains presentation-only; the context simply makes
+  the presentation sharper when the user opts in.
+
+No claim of compiler-accurate variant resolution is made: the context is
+user-driven and covers only the keywords the document itself declares via
+`#pragma multi_compile*` / `shader_feature*`.

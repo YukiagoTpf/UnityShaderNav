@@ -225,6 +225,41 @@ Semantic coloring depends on the active VS Code theme. Themes with semantic
 highlighting disabled or sparse semantic token rules may show less visible
 separation between token categories.
 
+### Variant Context
+
+Unity shaders use `#pragma multi_compile` / `shader_feature` to declare variant
+keywords, and `#ifdef` / `#if defined()` to branch code on them. By default,
+UnityShaderNav treats every variant branch as equally valid: variant-gated
+branches are dimmed with a theme-adaptive "variant" marker, and F12 returns
+every candidate from every branch for you to pick from in Peek Definition.
+
+The **Variant Context** status-bar item lets you opt into a specific set of
+active keywords for the current document:
+
+- Click the `Variants: N/off` status-bar item (shown for `.shader` / `.hlsl`
+  files) to open a QuickPick listing every `multi_compile` / `shader_feature`
+  keyword the document declares.
+- Toggle keywords on/off. The chosen set is sent to the server as the active
+  `VariantContext`.
+- **Dimming**: branches gated by an active keyword brighten (no longer dimmed);
+  branches gated by an inactive keyword dim as "inactive" (definitely off in
+  this context). Branches gated by unknown macros stay visible (conservative).
+- **F12 / Find References**: when the context makes exactly one branch active,
+  navigation jumps directly to it (no Peek). When several branches remain
+  active, all are returned. When the context rules out every candidate, all are
+  returned (never an empty result).
+- **Clear (conservative)**: removes the context and restores the default
+  behaviour.
+
+The selection is kept in memory for the editor session; it is not persisted
+across restarts. No settings are required. The feature is purely opt-in —
+opening the picker is never required, and the default behaviour is unchanged.
+
+This is a user-driven, presentation/navigation-narrowing aid, not a
+compiler-accurate variant resolver. It covers only the keywords the document
+itself declares; platform defines, material/global keywords, and keyword-set
+combinatorics are out of scope.
+
 ## Project Detection
 
 The extension tries to find a Unity project root by locating a directory with
