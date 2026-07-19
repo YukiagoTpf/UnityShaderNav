@@ -1,4 +1,7 @@
-import type { AdapterDiagnostic } from '@unity-shader-nav/shared';
+import type {
+  AdapterDiagnostic,
+  CompileProfile,
+} from '@unity-shader-nav/shared';
 
 /**
  * Transport-neutral boundary for one bounded current-asset message refresh.
@@ -6,5 +9,8 @@ import type { AdapterDiagnostic } from '@unity-shader-nav/shared';
  * handlers; tests inject a deterministic source directly.
  */
 export interface ShaderMessageSource {
-  getShaderMessages(documentUri: string): Promise<readonly AdapterDiagnostic[]>;
+  getShaderMessages(
+    documentUri: string,
+    profile: CompileProfile,
+  ): Promise<readonly AdapterDiagnostic[]>;
 }

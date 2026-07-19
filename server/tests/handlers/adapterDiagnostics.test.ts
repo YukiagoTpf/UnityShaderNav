@@ -5,7 +5,10 @@ import {
   type Diagnostic,
   type PublishDiagnosticsParams,
 } from 'vscode-languageserver/node';
-import type { AdapterDiagnostic } from '@unity-shader-nav/shared';
+import type {
+  AdapterDiagnostic,
+  CompileProfile,
+} from '@unity-shader-nav/shared';
 import { AdapterRegistry } from '../../src/adapter/adapterRegistry';
 import {
   registerAdapterDiagnosticOverlay,
@@ -23,6 +26,20 @@ const SOURCE = [
   '  }',
   '}',
 ].join('\n');
+
+const D3D_PROFILE: CompileProfile = {
+  name: 'd3d11',
+  platform: 'StandaloneWindows64',
+  graphicsApi: 'Direct3D11',
+  capability: 'compile-profile/d3d11',
+};
+
+const VULKAN_PROFILE: CompileProfile = {
+  name: 'vulkan',
+  platform: 'StandaloneLinux64',
+  graphicsApi: 'Vulkan',
+  capability: 'compile-profile/vulkan',
+};
 
 type OpenHandler = (event: {
   textDocument: { uri: string; languageId: string; version: number; text: string };
@@ -141,7 +158,10 @@ const STATIC_DIAGNOSTIC: Diagnostic = {
 };
 
 interface TestMessageSource {
-  getShaderMessages(documentUri: string): Promise<readonly AdapterDiagnostic[]>;
+  getShaderMessages(
+    documentUri: string,
+    profile: CompileProfile,
+  ): Promise<readonly AdapterDiagnostic[]>;
 }
 
 function scenario(
@@ -149,11 +169,18 @@ function scenario(
   options: {
     readonly connectedBeforeRegistration?: boolean;
     readonly staticDiagnostics?: readonly Diagnostic[];
+    readonly profiles?: readonly CompileProfile[];
+    readonly selectedProfile?: CompileProfile;
   } = {},
 ) {
+  const profiles = options.profiles ?? [D3D_PROFILE];
+  const selectedProfile = options.selectedProfile ?? D3D_PROFILE;
   const registry = new AdapterRegistry({
     now: () => 1_000_000,
     messageSource: source,
+    profileSource: {
+      getCompileProfiles: async () => profiles,
+    },
   });
   const connect = (
     instanceId = 'instance-a',
@@ -167,7 +194,10 @@ function scenario(
       unityVersion: '2022.3.62f1',
       projectId,
       adapterVersion: '0.1.0',
-      supportedFeatures: ['shader-messages'],
+      supportedFeatures: [
+        'shader-messages',
+        ...profiles.map((profile) => profile.capability),
+      ],
     },
   });
   if (options.connectedBeforeRegistration !== false) connect();
@@ -191,6 +221,7 @@ function scenario(
     harness.connection,
     documents,
     registry,
+    selectedProfile,
   );
   registerDiagnosticsPublisher(
     harness.connection,
@@ -224,8 +255,15 @@ describe('Adapter compiler diagnostics', () => {
     harness.open();
     harness.save();
     await flush();
+    const document = harness.documents.snapshot(URI);
+    if (!document) throw new Error('expected an open document snapshot');
 
     expect(source.getShaderMessages).not.toHaveBeenCalled();
+    expect(harness.adapter.profileStatusesFor(document)).toEqual([{
+      status: 'adapter-unavailable',
+      requestedProfile: D3D_PROFILE,
+      reason: 'no-adapter',
+    }]);
     expect(harness.sends).toEqual([]);
   });
 
@@ -244,7 +282,7 @@ describe('Adapter compiler diagnostics', () => {
     await flush();
 
     expect(source.getShaderMessages).toHaveBeenCalledOnce();
-    expect(source.getShaderMessages).toHaveBeenCalledWith(uri);
+    expect(source.getShaderMessages).toHaveBeenCalledWith(uri, D3D_PROFILE);
     expect(harness.sends.at(-1)).toMatchObject({ uri, version: 1 });
   });
 
@@ -269,7 +307,7 @@ describe('Adapter compiler diagnostics', () => {
     await flush();
 
     expect(source.getShaderMessages).toHaveBeenCalledOnce();
-    expect(source.getShaderMessages).toHaveBeenCalledWith(URI);
+    expect(source.getShaderMessages).toHaveBeenCalledWith(URI, D3D_PROFILE);
     expect(harness.sends).toEqual([{
       uri: URI,
       version: 1,
@@ -282,15 +320,144 @@ describe('Adapter compiler diagnostics', () => {
           },
           severity: DiagnosticSeverity.Error,
           message: "undeclared identifier 'missing'\nat fragment program",
-          source: 'Unity Shader Compiler (Unity 2022.3.62f1, d3d11)',
+          source: 'Unity Shader Compiler [d3d11] (Unity 2022.3.62f1, StandaloneWindows64, Direct3D11)',
           data: {
             kind: 'adapter-diagnostic',
             shaderMessage: compilerDiagnostic().shaderMessage,
             provenance: compilerDiagnostic().provenance,
+            profile: D3D_PROFILE,
           },
         }),
       ],
     }]);
+  });
+
+  it('groups diagnostics by selected profile without dropping Unity message context', async () => {
+    const source = {
+      getShaderMessages: vi.fn(async (
+        _documentUri: string,
+        profile: CompileProfile,
+      ) => [compilerDiagnostic({
+        message: `${profile.name} failure`,
+        platform: profile.graphicsApi,
+      })]),
+    };
+    const harness = scenario(source, {
+      staticDiagnostics: [],
+      profiles: [D3D_PROFILE, VULKAN_PROFILE],
+    });
+    harness.open();
+    harness.save();
+    await flush();
+
+    harness.adapter.selectProfile(VULKAN_PROFILE);
+    await flush(40);
+
+    expect(harness.sends.at(-1)?.diagnostics).toEqual([
+      expect.objectContaining({
+        source: 'Unity Shader Compiler [d3d11] (Unity 2022.3.62f1, StandaloneWindows64, Direct3D11)',
+        message: 'd3d11 failure\nat fragment program',
+        data: expect.objectContaining({
+          profile: D3D_PROFILE,
+          shaderMessage: expect.objectContaining({
+            messageDetails: 'at fragment program',
+            platform: 'Direct3D11',
+          }),
+        }),
+      }),
+      expect.objectContaining({
+        source: 'Unity Shader Compiler [vulkan] (Unity 2022.3.62f1, StandaloneLinux64, Vulkan)',
+        message: 'vulkan failure\nat fragment program',
+        data: expect.objectContaining({
+          profile: VULKAN_PROFILE,
+          shaderMessage: expect.objectContaining({
+            messageDetails: 'at fragment program',
+            platform: 'Vulkan',
+          }),
+        }),
+      }),
+    ]);
+  });
+
+  it('exposes running and completed lifecycle facts for the selected profile', async () => {
+    const pending = deferred<readonly AdapterDiagnostic[]>();
+    const source = { getShaderMessages: vi.fn(() => pending.promise) };
+    const harness = scenario(source, { staticDiagnostics: [] });
+    harness.open();
+    harness.save();
+    const document = harness.documents.snapshot(URI);
+    if (!document) throw new Error('expected an open document snapshot');
+
+    expect(harness.adapter.profileStatusesFor(document)).toEqual([{
+      status: 'running',
+      profile: D3D_PROFILE,
+    }]);
+
+    await flush();
+    pending.resolve([]);
+    await flush(40);
+
+    expect(harness.adapter.profileStatusesFor(document)).toEqual([{
+      status: 'completed',
+      profile: D3D_PROFILE,
+      durationMs: 0,
+      success: true,
+      warningCount: 0,
+      errorCount: 0,
+      diagnostics: [],
+    }]);
+  });
+
+  it('keeps an unsupported selection explicitly unverified', async () => {
+    const source = { getShaderMessages: vi.fn(async () => []) };
+    const harness = scenario(source, {
+      profiles: [D3D_PROFILE],
+      selectedProfile: VULKAN_PROFILE,
+    });
+    harness.open();
+    harness.save();
+    await flush(40);
+    const document = harness.documents.snapshot(URI);
+    if (!document) throw new Error('expected an open document snapshot');
+
+    expect(source.getShaderMessages).not.toHaveBeenCalled();
+    expect(harness.adapter.profileStatusesFor(document)).toEqual([{
+      status: 'profile-not-supported',
+      requestedProfile: VULKAN_PROFILE,
+      availableProfiles: [D3D_PROFILE],
+    }]);
+    expect(harness.sends).toEqual([]);
+  });
+
+  it('marks every requested profile unverified when the Adapter disconnects', async () => {
+    const source = { getShaderMessages: vi.fn(async () => []) };
+    const harness = scenario(source, {
+      staticDiagnostics: [],
+      profiles: [D3D_PROFILE, VULKAN_PROFILE],
+    });
+    harness.open();
+    harness.save();
+    await flush();
+    harness.adapter.selectProfile(VULKAN_PROFILE);
+    await flush(40);
+    const document = harness.documents.snapshot(URI);
+    if (!document) throw new Error('expected an open document snapshot');
+
+    harness.registry.disconnect();
+    await flush();
+
+    expect(harness.adapter.profileStatusesFor(document)).toEqual([
+      {
+        status: 'adapter-unavailable',
+        requestedProfile: D3D_PROFILE,
+        reason: 'disconnected',
+      },
+      {
+        status: 'adapter-unavailable',
+        requestedProfile: VULKAN_PROFILE,
+        reason: 'disconnected',
+      },
+    ]);
   });
 
   it('clears fixed compiler messages without clearing static diagnostics', async () => {
@@ -458,6 +625,7 @@ describe('Adapter compiler diagnostics', () => {
     const harness = scenario(source);
     harness.open();
     harness.save();
+    await flush();
     expect(source.getShaderMessages).toHaveBeenCalledOnce();
 
     harness.registry.disconnect();

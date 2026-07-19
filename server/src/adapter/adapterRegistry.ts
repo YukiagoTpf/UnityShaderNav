@@ -6,9 +6,13 @@ import {
   type AdapterHandshake,
   type AdapterStatus,
   type AdapterUnavailableReason,
+  type CompileProfile,
+  type CompileProfileDiscovery,
+  type CompileProfileRunResult,
   type MaterialSerializedValue,
 } from '@unity-shader-nav/shared';
 import { uriKey } from '../uriKey';
+import type { CompileProfileSource } from './compileProfileSource';
 import type { ShaderMessageSource } from './shaderMessageSource';
 import type {
   MaterialShaderIdentity,
@@ -49,6 +53,7 @@ export interface AdapterRegistryOptions {
   readonly now?: () => number;
   readonly handshakeMaxAgeMs?: number;
   readonly messageSource?: ShaderMessageSource;
+  readonly profileSource?: CompileProfileSource;
 }
 
 /**
@@ -59,6 +64,7 @@ export class AdapterRegistry {
   private readonly now: () => number;
   private readonly handshakeMaxAgeMs: number;
   private readonly messageSource: ShaderMessageSource | undefined;
+  private readonly profileSource: CompileProfileSource | undefined;
   private readonly statusListeners = new Set<(status: AdapterStatus) => void>();
   private publishedStatusKey = 'standalone:no-adapter';
   private registered: RegisteredAdapter | undefined;
@@ -68,6 +74,7 @@ export class AdapterRegistry {
     this.handshakeMaxAgeMs = options.handshakeMaxAgeMs
       ?? DEFAULT_HANDSHAKE_MAX_AGE_MS;
     this.messageSource = options.messageSource;
+    this.profileSource = options.profileSource;
   }
 
   registerHandshake(
@@ -102,38 +109,190 @@ export class AdapterRegistry {
     return { dispose: () => { this.statusListeners.delete(listener); } };
   }
 
+  /** Discover only profiles corroborated by the current handshake. */
+  async compileProfiles(): Promise<CompileProfileDiscovery> {
+    const status = this.status();
+    if (status.mode === 'standalone') {
+      return { status: 'adapter-unavailable', reason: status.reason };
+    }
+    const connected = this.registered?.state === 'connected'
+      ? this.registered
+      : undefined;
+    if (!connected || !this.profileSource) {
+      return {
+        status: 'adapter-unavailable',
+        reason: 'profile-source-unavailable',
+      };
+    }
+
+    let reported: readonly CompileProfile[];
+    try {
+      reported = await this.profileSource.getCompileProfiles();
+    } catch {
+      return {
+        status: 'adapter-unavailable',
+        reason: 'profile-source-unavailable',
+      };
+    }
+    if (!Array.isArray(reported)) {
+      return { status: 'adapter-unavailable', reason: 'invalid-evidence' };
+    }
+    if (this.registered !== connected || this.currentConnectedAdapter() !== connected) {
+      const latest = this.status();
+      return {
+        status: 'adapter-unavailable',
+        reason: latest.mode === 'standalone'
+          ? latest.reason
+          : 'connection-changed',
+      };
+    }
+
+    const capabilities = new Set(
+      connected.handshake.capabilities.supportedFeatures,
+    );
+    const seen = new Set<string>();
+    const profiles: CompileProfile[] = [];
+    for (const profile of reported) {
+      if (
+        !validCompileProfile(profile)
+        || !capabilities.has(profile.capability)
+        || seen.has(profile.name)
+      ) continue;
+      seen.add(profile.name);
+      profiles.push({ ...profile });
+    }
+    return { status: 'available', profiles };
+  }
+
   /**
    * Return only evidence bound to the current connection, project, producer,
-   * and exact saved source revision. A null result is untrusted/unavailable
-   * and must never replace a newer diagnostic publication.
+   * selected profile, and exact saved source revision. Unsupported and
+   * unavailable requests remain explicit statuses rather than empty success.
    */
   async shaderMessagesFor(
     documentUri: string,
     contentHash: string,
-  ): Promise<readonly AdapterDiagnostic[] | null> {
+    selectedProfile: CompileProfile,
+  ): Promise<CompileProfileRunResult> {
     const connected = this.currentConnectedAdapter();
-    if (!connected || !this.messageSource) return null;
-    if (!connected.handshake.capabilities.supportedFeatures.includes(
-      SHADER_MESSAGES_CAPABILITY,
-    )) return null;
+    if (!connected) {
+      const status = this.status();
+      return {
+        status: 'adapter-unavailable',
+        requestedProfile: { ...selectedProfile },
+        reason: status.mode === 'standalone'
+          ? status.reason
+          : 'connection-changed',
+      };
+    }
 
-    const diagnostics = await this.messageSource.getShaderMessages(documentUri);
+    const discovery = await this.compileProfiles();
+    if (discovery.status === 'adapter-unavailable') {
+      return {
+        ...discovery,
+        requestedProfile: { ...selectedProfile },
+      };
+    }
     if (this.registered !== connected || this.currentConnectedAdapter() !== connected) {
-      return null;
+      const latest = this.status();
+      return {
+        status: 'adapter-unavailable',
+        requestedProfile: { ...selectedProfile },
+        reason: latest.mode === 'standalone'
+          ? latest.reason
+          : 'connection-changed',
+      };
+    }
+
+    const profile = discovery.profiles.find((candidate) => (
+      sameCompileProfile(candidate, selectedProfile)
+    ));
+    if (
+      !profile
+      || !connected.handshake.capabilities.supportedFeatures.includes(
+        SHADER_MESSAGES_CAPABILITY,
+      )
+    ) {
+      return {
+        status: 'profile-not-supported',
+        requestedProfile: { ...selectedProfile },
+        availableProfiles: connected.handshake.capabilities.supportedFeatures.includes(
+          SHADER_MESSAGES_CAPABILITY,
+        ) ? discovery.profiles : [],
+      };
+    }
+    if (!this.messageSource) {
+      return {
+        status: 'adapter-unavailable',
+        requestedProfile: { ...selectedProfile },
+        reason: 'shader-message-source-unavailable',
+      };
+    }
+
+    const startedAt = this.now();
+    let diagnostics: readonly AdapterDiagnostic[];
+    try {
+      diagnostics = await this.messageSource.getShaderMessages(
+        documentUri,
+        profile,
+      );
+    } catch {
+      return {
+        status: 'adapter-unavailable',
+        requestedProfile: { ...selectedProfile },
+        reason: 'shader-message-source-unavailable',
+      };
+    }
+    if (!Array.isArray(diagnostics)) {
+      return {
+        status: 'adapter-unavailable',
+        requestedProfile: { ...selectedProfile },
+        reason: 'invalid-evidence',
+      };
+    }
+    if (this.registered !== connected || this.currentConnectedAdapter() !== connected) {
+      const latest = this.status();
+      return {
+        status: 'adapter-unavailable',
+        requestedProfile: { ...selectedProfile },
+        reason: latest.mode === 'standalone'
+          ? latest.reason
+          : 'connection-changed',
+      };
     }
     if (!diagnostics.every((diagnostic) => this.isCurrentDiagnostic(
       diagnostic,
       connected,
       documentUri,
       contentHash,
-    ))) return null;
-    return diagnostics.map((diagnostic) => ({
+    ))) {
+      return {
+        status: 'adapter-unavailable',
+        requestedProfile: { ...selectedProfile },
+        reason: 'invalid-evidence',
+      };
+    }
+    const profiledDiagnostics = diagnostics.map((diagnostic) => ({
       shaderMessage: { ...diagnostic.shaderMessage },
       provenance: {
         ...diagnostic.provenance,
         sourceRevision: { ...diagnostic.provenance.sourceRevision },
       },
+      profile: { ...profile },
     }));
+    const warningCount = profiledDiagnostics.filter((diagnostic) => (
+      diagnostic.shaderMessage.severity === 'warning'
+    )).length;
+    const errorCount = profiledDiagnostics.length - warningCount;
+    return {
+      status: 'completed',
+      profile: { ...profile },
+      durationMs: Math.max(0, this.now() - startedAt),
+      success: errorCount === 0,
+      warningCount,
+      errorCount,
+      diagnostics: profiledDiagnostics,
+    };
   }
 
   status(): AdapterStatus {
@@ -300,4 +459,27 @@ export class AdapterRegistry {
 
 function standalone(reason: AdapterUnavailableReason): AdapterStatus {
   return { mode: 'standalone', reason };
+}
+
+function sameCompileProfile(
+  left: CompileProfile,
+  right: CompileProfile,
+): boolean {
+  return left.name === right.name
+    && left.platform === right.platform
+    && left.graphicsApi === right.graphicsApi
+    && left.capability === right.capability;
+}
+
+function validCompileProfile(profile: unknown): profile is CompileProfile {
+  if (!profile || typeof profile !== 'object') return false;
+  const candidate = profile as Partial<CompileProfile>;
+  return typeof candidate.name === 'string'
+    && candidate.name.trim().length > 0
+    && typeof candidate.platform === 'string'
+    && candidate.platform.trim().length > 0
+    && typeof candidate.graphicsApi === 'string'
+    && candidate.graphicsApi.trim().length > 0
+    && typeof candidate.capability === 'string'
+    && candidate.capability.trim().length > 0;
 }

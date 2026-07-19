@@ -7,6 +7,16 @@ export const ADAPTER_INTERFACE_VERSION = 1;
 /** Capability that refreshes compiler messages for one saved Shader asset. */
 export const SHADER_MESSAGES_CAPABILITY = 'shader-messages';
 
+/** One compiler target explicitly advertised by the connected Adapter. */
+export interface CompileProfile {
+  /** Stable Adapter-owned identity presented to users. */
+  readonly name: string;
+  readonly platform: string;
+  readonly graphicsApi: string;
+  /** Capability that must be present in the current Adapter handshake. */
+  readonly capability: string;
+}
+
 export interface AdapterCapabilities {
   readonly unityVersion: string;
   readonly projectId: string;
@@ -57,12 +67,62 @@ export interface AdapterDiagnostic {
   readonly provenance: AdapterDiagnosticProvenance;
 }
 
+/** A validated compiler diagnostic stamped with the profile that produced it. */
+export interface ProfiledAdapterDiagnostic extends AdapterDiagnostic {
+  readonly profile: CompileProfile;
+}
+
 export type AdapterUnavailableReason =
   | 'no-adapter'
   | 'stale'
   | 'foreign-project'
   | 'disconnected'
   | 'version-incompatible';
+
+export type CompileProfileUnavailableReason =
+  | AdapterUnavailableReason
+  | 'profile-source-unavailable'
+  | 'shader-message-source-unavailable'
+  | 'connection-changed'
+  | 'invalid-evidence';
+
+export type CompileProfileDiscovery =
+  | {
+      readonly status: 'available';
+      readonly profiles: readonly CompileProfile[];
+    }
+  | {
+      readonly status: 'adapter-unavailable';
+      readonly reason: CompileProfileUnavailableReason;
+    };
+
+export type CompileProfileRunResult =
+  | {
+      readonly status: 'completed';
+      readonly profile: CompileProfile;
+      readonly durationMs: number;
+      readonly success: boolean;
+      readonly warningCount: number;
+      readonly errorCount: number;
+      readonly diagnostics: readonly ProfiledAdapterDiagnostic[];
+    }
+  | {
+      readonly status: 'profile-not-supported';
+      readonly requestedProfile: CompileProfile;
+      readonly availableProfiles: readonly CompileProfile[];
+    }
+  | {
+      readonly status: 'adapter-unavailable';
+      readonly requestedProfile: CompileProfile;
+      readonly reason: CompileProfileUnavailableReason;
+    };
+
+export type CompileProfileRunStatus =
+  | CompileProfileRunResult
+  | {
+      readonly status: 'running';
+      readonly profile: CompileProfile;
+    };
 
 export type AdapterStatus =
   | {
