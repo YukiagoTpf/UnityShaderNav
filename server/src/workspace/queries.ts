@@ -49,7 +49,7 @@ import {
   type SuggestionCandidateSelector,
 } from '../suggestions';
 import type { PackageContext } from '../packages';
-import { rangeKey, uriBasename } from '../sourceLocation';
+import { isShaderLabUri, rangeKey, uriBasename } from '../sourceLocation';
 import type {
   DocumentPositionInput,
   IndexedDocumentQueryInput,
@@ -341,7 +341,7 @@ export async function queryHighlights(
     cancellation: input.cancellation,
     variantContext: variantContextStore.get(document.uri) ?? undefined,
     getText: (uri: string) => (uri === document.uri ? document.text : undefined),
-    isShaderLab: /\.shader(?:$|[?#])/i.test(document.uri),
+    isShaderLab: isShaderLabUri(document.uri),
   }).map((location): DocumentHighlight => ({
     range: location.range,
     kind: DocumentHighlightKind.Text,

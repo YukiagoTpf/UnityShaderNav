@@ -76,4 +76,16 @@ describe('registerWorkspaceSymbolHandler', () => {
     await expect(result).resolves.toEqual([symbol]);
     expect(workspaceSymbols).toHaveBeenCalledOnce();
   });
+
+  it('returns the empty workspace-symbol neutral when suspension times out', async () => {
+    const { connection, handler } = captureHandler();
+    const workspaceSymbols = vi.fn(() => [symbol]);
+    const suspender = {
+      run: vi.fn(async () => null),
+    } as unknown as Pick<RequestSuspender, 'run'>;
+    registerWorkspaceSymbolHandler(connection, { workspaceSymbols }, suspender);
+
+    await expect(handler()({ query: 'Main' })).resolves.toEqual([]);
+    expect(workspaceSymbols).not.toHaveBeenCalled();
+  });
 });

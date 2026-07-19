@@ -1,8 +1,4 @@
-import type {
-  CancellationToken,
-  Connection,
-  TextDocuments,
-} from 'vscode-languageserver/node';
+import type { Connection, TextDocuments } from 'vscode-languageserver/node';
 import type { TextDocument } from 'vscode-languageserver-textdocument';
 import {
   INACTIVE_REGIONS_REQUEST,
@@ -13,16 +9,12 @@ import {
 import type { RequestSuspender } from '../lifecycle/requestSuspender';
 import type { WorkspaceManager } from '../workspace';
 import { analyzeInactiveRegions } from '../parser/preproc/analyzeInactiveRegions';
-import {
-  awaitWithRequestCancellation,
-  throwIfRequestCancelled,
-} from '../lifecycle/requestCancellation';
+import { isShaderLabUri } from '../sourceLocation';
 import { variantContextStore } from '../workspace/variantContextStore';
+import { createRequestHandler } from './documentRequest';
 
-// Copied from semanticTokens.ts (private there). `.shader` files only dim inside
-// HLSL/CG blocks; everything else is analyzed as a whole HLSL file.
-function isShaderLabUri(uri: string): boolean {
-  return /\.shader(?:$|[?#])/i.test(uri);
+function neutralResult(params: InactiveRegionsParams): InactiveRegionsResult {
+  return { version: params.textDocument.version, regions: [] };
 }
 
 export function registerInactiveRegionsHandler(
@@ -36,22 +28,14 @@ export function registerInactiveRegionsHandler(
 ): void {
   connection.onRequest(
     INACTIVE_REGIONS_REQUEST,
-    async (
-      params: InactiveRegionsParams,
-      cancellation: CancellationToken,
-    ): Promise<InactiveRegionsResult> => {
-      const { uri, version } = params.textDocument;
-      // Echo the requested version in EVERY result so the client can drop stale
-      // responses (the custom request gets no built-in version handling).
-      const empty: InactiveRegionsResult = { version, regions: [] };
-
-      const resolveRequest = async (): Promise<InactiveRegionsResult> => {
-        throwIfRequestCancelled(cancellation);
-        const settings = await awaitWithRequestCancellation(
-          getSettings(uri),
-          cancellation,
-        );
-        throwIfRequestCancelled(cancellation);
+    createRequestHandler<InactiveRegionsParams, InactiveRegionsResult>(suspender, {
+      neutral: neutralResult,
+      resolve: async (params) => {
+        const { uri, version } = params.textDocument;
+        // Echo the requested version in EVERY result so the client can drop stale
+        // responses (the custom request gets no built-in version handling).
+        const empty = neutralResult(params);
+        const settings = await getSettings(uri);
         if (!settings.dimInactiveBranches.enabled) return empty;
 
         // Text-only path: dimming is purely per-document presentation, so we do
@@ -64,12 +48,8 @@ export function registerInactiveRegionsHandler(
           isShaderLab: isShaderLabUri(uri),
           context: context ?? undefined,
         });
-        throwIfRequestCancelled(cancellation);
         return { version, regions };
-      };
-
-      if (!suspender) return resolveRequest();
-      return await suspender.run(resolveRequest, cancellation) ?? empty;
-    },
+      },
+    }),
   );
 }

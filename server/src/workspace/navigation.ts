@@ -27,7 +27,7 @@ import {
   isGenericDefinitionContext,
   isGenericDefinitionCursor,
 } from '../parser/lexical/context';
-import { symbolToLocationLink } from '../sourceLocation';
+import { isShaderLabUri, symbolToLocationLink } from '../sourceLocation';
 import type {
   DefinitionAtInput,
   ReferencesAtInput,
@@ -230,7 +230,7 @@ async function navigateCodeDefinition(
     options: { visibleUriKeys, trace },
     variantContext: variantContextStore.get(document.uri) ?? undefined,
     getText: (uri: string) => (uri === document.uri ? document.text : undefined),
-    isShaderLab: /\.shader(?:$|[?#])/i.test(document.uri),
+    isShaderLab: isShaderLabUri(document.uri),
   };
   trace('visibility', { visibleUriCount: visibleUriKeys.size });
 
@@ -378,6 +378,6 @@ export async function navigateReferences(
     cancellation: input.cancellation,
     variantContext: variantContextStore.get(document.uri) ?? undefined,
     getText: (uri: string) => (uri === document.uri ? document.text : undefined),
-    isShaderLab: /\.shader(?:$|[?#])/i.test(document.uri),
+    isShaderLab: isShaderLabUri(document.uri),
   });
 }

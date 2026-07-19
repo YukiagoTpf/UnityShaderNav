@@ -6,7 +6,10 @@ import type {
   IndexedDocumentSnapshot,
   IndexedWorkspace,
 } from '../../src/workspace/indexedWorkspace';
-import { createDocumentRequestHandler } from '../../src/handlers/documentRequest';
+import {
+  createDocumentRequestHandler,
+  createRequestHandler,
+} from '../../src/handlers/documentRequest';
 
 const document: IndexedDocumentSnapshot = {
   uri: 'file:///Main.hlsl',
@@ -29,6 +32,22 @@ function deferred<T>() {
 function nextMacrotask(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
+
+describe('createRequestHandler', () => {
+  it('maps suspension timeout to a parameter-aware neutral result', async () => {
+    const resolve = vi.fn(async () => ({ request: 99 }));
+    const handler = createRequestHandler(
+      { run: async () => null },
+      {
+        neutral: (params: { request: number }) => params,
+        resolve,
+      },
+    );
+
+    await expect(handler({ request: 7 })).resolves.toEqual({ request: 7 });
+    expect(resolve).not.toHaveBeenCalled();
+  });
+});
 
 describe('createDocumentRequestHandler', () => {
   it('reports RequestCancelled before snapshot routing for a pre-cancelled request', async () => {

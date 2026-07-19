@@ -22,15 +22,49 @@ export interface DocumentRequestContext<AllowClosed extends boolean = false> {
   readonly workspace: IndexedWorkspace;
 }
 
+export interface RequestHandlerOptions<Params, Result> {
+  readonly neutral: (params: Params) => Result;
+  readonly resolve: (
+    params: Params,
+    cancellation: CancellationToken | undefined,
+  ) => Result | Promise<Result>;
+}
+
 export interface DocumentRequestOptions<Params, Result, AllowClosed extends boolean = false> {
   readonly uri: (params: Params) => string;
-  readonly neutral: () => Result;
+  readonly neutral: (params: Params) => Result;
   readonly allowClosedDocument?: AllowClosed;
   readonly resolve: (
     params: Params,
     context: DocumentRequestContext<AllowClosed>,
     cancellation: CancellationToken | undefined,
   ) => Result | Promise<Result>;
+}
+
+/**
+ * Build the common request boundary: cancellation wins over work completion,
+ * startup suspension is transparent, and a timeout returns the endpoint's
+ * parameter-aware neutral result.
+ */
+export function createRequestHandler<Params, Result>(
+  suspender: Pick<RequestSuspender, 'run'> | undefined,
+  options: RequestHandlerOptions<Params, Result>,
+): (params: Params, cancellation?: CancellationToken) => Promise<Result> {
+  return async (params: Params, cancellation?: CancellationToken): Promise<Result> => {
+    throwIfRequestCancelled(cancellation);
+    const resolveRequest = async (): Promise<Result> => {
+      throwIfRequestCancelled(cancellation);
+      const result = await awaitWithRequestCancellation(
+        Promise.resolve(options.resolve(params, cancellation)),
+        cancellation,
+      );
+      throwIfRequestCancelled(cancellation);
+      return result;
+    };
+
+    if (!suspender) return resolveRequest();
+    return await suspender.run(resolveRequest, cancellation) ?? options.neutral(params);
+  };
 }
 
 /**
@@ -49,36 +83,24 @@ export function createDocumentRequestHandler<
   suspender: Pick<RequestSuspender, 'run'> | undefined,
   options: DocumentRequestOptions<Params, Result, AllowClosed>,
 ): (params: Params, cancellation?: CancellationToken) => Promise<Result> {
-  return async (params: Params, cancellation?: CancellationToken): Promise<Result> => {
-    throwIfRequestCancelled(cancellation);
-    const resolveRequest = async (): Promise<Result> => {
-      throwIfRequestCancelled(cancellation);
+  return createRequestHandler(suspender, {
+    neutral: options.neutral,
+    resolve: async (params, cancellation) => {
       const uri = options.uri(params);
       const document = documents.snapshot(uri);
-      if (!document && !options.allowClosedDocument) return options.neutral();
+      if (!document && !options.allowClosedDocument) return options.neutral(params);
 
       const workspace = document
-        ? await awaitWithRequestCancellation(
-          workspaceForDocumentRequest(document, documents, manager),
-          cancellation,
-        )
+        ? await workspaceForDocumentRequest(document, documents, manager)
         : manager.servingWorkspaceFor(uri);
       throwIfRequestCancelled(cancellation);
-      if (!workspace) return options.neutral();
+      if (!workspace) return options.neutral(params);
 
-      const result = await awaitWithRequestCancellation(
-        Promise.resolve(options.resolve(params, {
-          uri,
-          document,
-          workspace,
-        } as DocumentRequestContext<AllowClosed>, cancellation)),
-        cancellation,
-      );
-      throwIfRequestCancelled(cancellation);
-      return result;
-    };
-
-    if (!suspender) return resolveRequest();
-    return await suspender.run(resolveRequest, cancellation) ?? options.neutral();
-  };
+      return options.resolve(params, {
+        uri,
+        document,
+        workspace,
+      } as DocumentRequestContext<AllowClosed>, cancellation);
+    },
+  });
 }

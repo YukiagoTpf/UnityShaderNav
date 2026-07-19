@@ -764,12 +764,20 @@ describe('server dependency direction', () => {
       expect(source).not.toMatch(/\.(?:index|store|global|globalRefs)\b/);
     }
 
-    for (const adapter of QUERY_ADAPTERS.filter((candidate) => (
-      candidate !== 'handlers/workspaceSymbol.ts'
-    ))) {
+    for (const adapter of QUERY_ADAPTERS) {
       const source = readFileSync(resolve(SOURCE_ROOT, adapter), 'utf8');
-      expect(source, adapter).toContain('createDocumentRequestHandler');
+      const requestFactory = adapter === 'handlers/workspaceSymbol.ts'
+        ? 'createRequestHandler'
+        : 'createDocumentRequestHandler';
+      expect(source, adapter).toContain(requestFactory);
     }
+
+    const inactiveRegions = readFileSync(
+      resolve(SOURCE_ROOT, 'handlers/inactiveRegions.ts'),
+      'utf8',
+    );
+    expect(inactiveRegions).toContain('createRequestHandler');
+    expect(inactiveRegions).toContain('isShaderLabUri');
   });
 
   it('keeps mutable index storage private to the revision owner', () => {

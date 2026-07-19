@@ -85,6 +85,11 @@ export function uriBasename(uri: string): string | undefined {
   }
 }
 
+/** True for a case-insensitive `.shader` URI, including query or fragment metadata. */
+export function isShaderLabUri(uri: string): boolean {
+  return /\.shader(?:$|[?#])/i.test(uri);
+}
+
 export function symbolToLocationLink(
   symbol: SymbolEntry,
   originSelectionRange?: Range,

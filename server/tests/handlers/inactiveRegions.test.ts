@@ -198,4 +198,24 @@ describe('registerInactiveRegionsHandler', () => {
       },
     ]);
   });
+
+  it('returns a versioned empty result when suspension times out', async () => {
+    const { connection, getHandler } = fakeConnection();
+    const uri = 'file:///t/timeout.hlsl';
+    const documents = documentsWith(uri, 'hlsl', 8, HLSL_TEXT);
+    const suspender = {
+      run: async () => null,
+    } as unknown as Pick<RequestSuspender, 'run'>;
+
+    registerInactiveRegionsHandler(
+      connection,
+      documents,
+      {} as never,
+      settingsGetter(enabledSettings),
+      suspender,
+    );
+
+    await expect(getHandler()({ textDocument: { uri, version: 99 } }))
+      .resolves.toEqual({ version: 99, regions: [] });
+  });
 });

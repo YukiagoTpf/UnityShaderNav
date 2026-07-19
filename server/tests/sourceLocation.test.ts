@@ -4,6 +4,7 @@ import {
   containsPosition,
   exactSource,
   isBeforeOrAt,
+  isShaderLabUri,
   locationKey,
   rangeKey,
   symbolToLocationLink,
@@ -65,6 +66,13 @@ describe('source location', () => {
     expect(uriBasename('untitled:Shader')).toBeUndefined();
     expect(uriBasename('file:///Project/')).toBeUndefined();
     expect(uriBasename('file:///Project/%ZZ.hlsl')).toBe('%ZZ.hlsl');
+  });
+
+  it('classifies ShaderLab URIs case-insensitively before query or fragment metadata', () => {
+    expect(isShaderLabUri('file:///Project/Surface.shader')).toBe(true);
+    expect(isShaderLabUri('file:///Project/Surface.SHADER?version=2')).toBe(true);
+    expect(isShaderLabUri('untitled:Surface.shader#fragment')).toBe(true);
+    expect(isShaderLabUri('file:///Project/Surface.shader.hlsl')).toBe(false);
   });
 
   it('formats symbols as links with an optional origin selection', () => {
