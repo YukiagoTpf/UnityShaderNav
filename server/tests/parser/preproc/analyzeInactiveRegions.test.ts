@@ -12,6 +12,10 @@ const hlsl = (text: string): DimmedRegion[] =>
 const shader = (text: string): DimmedRegion[] =>
   analyzeInactiveRegions(text, { isShaderLab: true });
 
+/** Analyze with an explicit VariantContext (active keyword set). */
+const hlslWithContext = (text: string, activeKeywords: string[]): DimmedRegion[] =>
+  analyzeInactiveRegions(text, { isShaderLab: false, context: { activeKeywords: new Set(activeKeywords) } });
+
 /** Convenience: does a region cover (inclusive) the given line range? */
 const hasRegion = (regions: DimmedRegion[], startLine: number, endLine: number, reason?: 'inactive' | 'variant'): boolean =>
   regions.some(
@@ -414,6 +418,70 @@ describe('analyzeInactiveRegions — empty bodies & comments', () => {
     ].join('\n');
     const regions = hlsl(src);
     expect(hasRegion(regions, 2, 3, 'variant')).toBe(true);
+    expect(regions).toHaveLength(1);
+  });
+});
+
+describe('analyzeInactiveRegions — VariantContext', () => {
+  it('active variant keyword → branch visible (not dimmed)', () => {
+    const src = ['#pragma multi_compile _ FOO', '#ifdef FOO', 'int a;', '#endif'].join('\n');
+    expect(hlslWithContext(src, ['FOO'])).toEqual([]);
+  });
+
+  it('inactive variant keyword → branch dimmed as inactive (not variant)', () => {
+    const src = ['#pragma multi_compile _ FOO', '#ifdef FOO', 'int a;', '#endif'].join('\n');
+    const regions = hlslWithContext(src, ['BAR']);
+    expect(hasRegion(regions, 2, 2, 'inactive')).toBe(true);
+    expect(regions).toHaveLength(1);
+    expect(regions[0].reason).toBe('inactive');
+  });
+
+  it('no context → branch dimmed as variant (unchanged behaviour)', () => {
+    const src = ['#pragma multi_compile _ FOO', '#ifdef FOO', 'int a;', '#endif'].join('\n');
+    const regions = hlsl(src);
+    expect(hasRegion(regions, 2, 2, 'variant')).toBe(true);
+  });
+
+  it('active #if followed by #else → #else dimmed as inactive', () => {
+    const src = [
+      '#pragma multi_compile _ FOO', // 0
+      '#if defined(FOO)', // 1 -> TRUE (active)
+      'int a;', // 2 -> visible
+      '#else', // 3
+      'int b;', // 4 -> dimmed inactive (DEFINITELY_TAKEN)
+      '#endif', // 5
+    ].join('\n');
+    const regions = hlslWithContext(src, ['FOO']);
+    expect(hasRegion(regions, 4, 4, 'inactive')).toBe(true);
+    expect(regions).toHaveLength(1);
+  });
+
+  it('inactive #if followed by #else → #if dimmed, #else visible', () => {
+    const src = [
+      '#pragma multi_compile _ FOO', // 0
+      '#if defined(FOO)', // 1 -> FALSE (inactive)
+      'int a;', // 2 -> dimmed inactive
+      '#else', // 3
+      'int b;', // 4 -> visible
+      '#endif', // 5
+    ].join('\n');
+    const regions = hlslWithContext(src, ['BAR']);
+    expect(hasRegion(regions, 2, 2, 'inactive')).toBe(true);
+    expect(regions).toHaveLength(1);
+  });
+
+  it('multiple variant keywords: one active, one inactive', () => {
+    const src = [
+      '#pragma multi_compile _ FOO BAR', // 0
+      '#ifdef FOO', // 1 -> TRUE
+      'int a;', // 2 -> visible
+      '#endif', // 3
+      '#ifdef BAR', // 4 -> FALSE
+      'int b;', // 5 -> dimmed inactive
+      '#endif', // 6
+    ].join('\n');
+    const regions = hlslWithContext(src, ['FOO']);
+    expect(hasRegion(regions, 5, 5, 'inactive')).toBe(true);
     expect(regions).toHaveLength(1);
   });
 });

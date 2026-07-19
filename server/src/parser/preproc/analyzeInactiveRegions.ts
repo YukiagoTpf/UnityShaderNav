@@ -1,4 +1,4 @@
-import type { Range } from '@unity-shader-nav/shared';
+import type { Range, VariantContext } from '@unity-shader-nav/shared';
 import { scanBlocks } from '../shaderlab/blockScanner';
 import { scanVariantKeywords } from './scanVariantKeywords';
 import { stripComments } from './stripComments';
@@ -13,6 +13,8 @@ export interface DimmedRegion {
 export interface AnalyzeOptions {
   /** true for .shader (analyze only inside HLSL/CG blocks); false = whole file. */
   isShaderLab: boolean;
+  /** optional active variant context; when absent, behaviour is identical to today */
+  context?: VariantContext;
 }
 
 type ChainState = 'NONE_TAKEN' | 'DEFINITELY_TAKEN' | 'VARIANT_PENDING' | 'UNKNOWN_PENDING';
@@ -119,6 +121,7 @@ function analyzeLines(
   variants: ReadonlySet<string>,
   seedDefined: ReadonlySet<string>,
   seedUndefed: ReadonlySet<string>,
+  context?: VariantContext,
 ): RegionAnalysis {
   const regions: DimmedRegion[] = [];
   const defined = new Set<string>(seedDefined);
@@ -309,7 +312,12 @@ function analyzeLines(
       // Push first (registering the initial non-definite contribution) so that
       // applyClauseRule's setClauseDefinite adjusts nonDefiniteOpen consistently.
       pushFrame(frame);
-      const v = evalCondition(info.condKind!, info.expr, { defined, undefed, variants });
+      const v = evalCondition(info.condKind!, info.expr, {
+        defined,
+        undefed,
+        variants,
+        variantContext: context,
+      });
       const pres = applyClauseRule(frame, v);
       frame.dimmed = pres.dimmed;
       frame.reason = pres.reason;
@@ -344,7 +352,12 @@ function analyzeLines(
       } else if (info.kind === 'else') {
         pres = applyElseRule(frame);
       } else {
-        const v = evalCondition('elif', info.expr, { defined, undefed, variants });
+        const v = evalCondition('elif', info.expr, {
+          defined,
+          undefed,
+          variants,
+          variantContext: context,
+        });
         pres = applyClauseRule(frame, v);
       }
 
@@ -385,7 +398,7 @@ export function analyzeInactiveRegions(text: string, options: AnalyzeOptions): D
 
   if (!options.isShaderLab) {
     const variants = scanVariantKeywords(text);
-    return analyzeLines(lines, 0, variants, new Set(), new Set()).regions;
+    return analyzeLines(lines, 0, variants, new Set(), new Set(), options.context).regions;
   }
 
   // .shader: variants are file-wide; program blocks seed from preceding includes.
@@ -403,7 +416,14 @@ export function analyzeInactiveRegions(text: string, options: AnalyzeOptions): D
 
     const isInclude = block.kind === 'HLSLINCLUDE' || block.kind === 'CGINCLUDE';
 
-    const analysis = analyzeLines(bodyLines, block.contentStartLine, variants, baseDefined, baseUndefed);
+    const analysis = analyzeLines(
+      bodyLines,
+      block.contentStartLine,
+      variants,
+      baseDefined,
+      baseUndefed,
+      options.context,
+    );
     regions.push(...analysis.regions);
 
     if (isInclude) {
