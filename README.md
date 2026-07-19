@@ -30,8 +30,9 @@ The extension focuses on fast code navigation:
 - Hover for declarations of indexed shader symbols (functions, structs,
   members, variables, parameters, macros), plus sourced Quick Documentation
   for selected ShaderLab terms, Property syntax, semantics, and SRP helpers.
-  Project and Package declarations win over the curated, version-scoped
-  fallback.
+  In Unity projects, `UNITY_VERSION` also shows a presentation-only value
+  derived from `ProjectSettings/ProjectVersion.txt`. Project and Package
+  declarations win over these version-aware fallbacks.
 - Conservative completion and signature help for indexed HLSL/CG code, plus a
   curated Unity/HLSL/ShaderLab/URP/HDRP built-in vocabulary covering common
   intrinsics, helper macros, render states, and semantics. Receiver-aware

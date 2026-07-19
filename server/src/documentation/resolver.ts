@@ -74,12 +74,37 @@ export class DocumentationResolver {
       request.declarations,
       request.visibleUriKeys,
     );
+    const projectPredefined = this.resolveProjectPredefined(target);
     const candidates = declarations.length > 0
       ? declarations
-      : this.resolveCurated(target, request.visibleUriKeys);
+      : projectPredefined.length > 0
+        ? projectPredefined
+        : this.resolveCurated(target, request.visibleUriKeys);
     return candidates.length > 0
       ? { range: target.range, candidates }
       : undefined;
+  }
+
+  private resolveProjectPredefined(
+    target: DocumentationTarget,
+  ): ResolvedDocumentationCandidate[] {
+    if (target.role !== 'hlslIdentifier') return [];
+    const macro = this.project.predefinedShaderMacro(target.name);
+    if (!macro) return [];
+    const precision = macro.precision === 'documented'
+      ? `Derived from project Editor ${macro.editorVersion} using Unity's documented encoding.`
+      : `Derived from project Editor ${macro.editorVersion} as a major/minor prefix because Unity's documented exact encodings do not represent this full version shape.`;
+    return [{
+      source: 'builtin',
+      entry: {
+        name: macro.name,
+        kind: 'macro',
+        category: 'unitycg',
+        detail: `#define ${macro.name} ${macro.value}`,
+        documentation: `${precision} [Unity version macro convention](${UNITY_VERSION_MANUAL_URL}). This hover is presentation-only; preprocessor evaluation remains conservative.`,
+      },
+      package: undefined,
+    }];
   }
 
   private resolveDeclarations(
@@ -161,6 +186,9 @@ export class DocumentationResolver {
     return false;
   }
 }
+
+const UNITY_VERSION_MANUAL_URL =
+  'https://docs.unity3d.com/6000.0/Documentation/Manual/shader-branching-unity-version.html';
 
 function entriesForDocumentationTarget(target: DocumentationTarget): readonly BuiltinEntry[] {
   return findBuiltinEntries(target.name).filter((entry) => {

@@ -87,7 +87,8 @@ handling. Important modules:
   which separate exact cursor interpretation from revision-owned project,
   Package, and compatibility selection.
 - `project`: `UnityProjectFacts` captures the Editor version consumed by Quick
-  Documentation compatibility checks.
+  Documentation compatibility checks and presentation-only predefined macro
+  Hover values.
 - `handlers`: adapts LSP messages to domain behavior. The document adapter owns
   the open-document registry; `handlers/documentRequest.ts` centralizes
   snapshot routing, suspension, and neutral-result policy. Every index-backed

@@ -306,6 +306,48 @@ describe('published query behavior', () => {
     expect((retained?.contents as { value?: string }).value).toContain('SL-Cull.html');
   });
 
+  it('shows the captured project UNITY_VERSION without fabricating an unknown value', async () => {
+    const uri = workspaceLocation.fileUri('Assets', 'Version.hlsl');
+    const text = [
+      '#if UNITY_VERSION >= 202200',
+      'float4 Versioned() { return 1; }',
+      '#endif',
+    ].join('\n');
+    const document = snapshot(uri, text);
+    const lts = await publishOpenDocument(
+      workspaceLocation.folderUri,
+      document,
+      UnityProjectFacts.fromProjectVersionText('m_EditorVersion: 2022.3.53f1\n'),
+    );
+
+    const ltsHover = await lts.hoverAt({
+      document,
+      position: positionOf(text, 'UNITY_VERSION', 0, 1),
+    });
+    const ltsValue = (ltsHover?.contents as { value?: string }).value ?? '';
+    expect(ltsValue).toContain('#define UNITY_VERSION 20223');
+    expect(ltsValue).toContain('project Editor 2022.3.53f1');
+    expect(ltsValue).toContain('presentation-only');
+
+    const unity6 = await publishOpenDocument(
+      workspaceLocation.folderUri,
+      document,
+      UnityProjectFacts.fromProjectVersionText('m_EditorVersion: 6000.0.42f1\n'),
+    );
+    const unity6Hover = await unity6.hoverAt({
+      document,
+      position: positionOf(text, 'UNITY_VERSION', 0, 1),
+    });
+    expect((unity6Hover?.contents as { value?: string }).value)
+      .toContain('#define UNITY_VERSION 60000042');
+
+    const unknown = await publishOpenDocument(workspaceLocation.folderUri, document);
+    expect(await unknown.hoverAt({
+      document,
+      position: positionOf(text, 'UNITY_VERSION', 0, 1),
+    })).toBeNull();
+  });
+
   it('keeps a project declaration authoritative over a same-name curated helper', async () => {
     const uri = workspaceLocation.fileUri('Assets', 'ProjectHelper.hlsl');
     const text = [

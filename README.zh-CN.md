@@ -12,7 +12,7 @@ UnityShaderNav 是一个用于 Unity Shader 项目的 Visual Studio Code 扩展�
 - 为声明身份唯一的 HLSL/CG 符号及同一 `.shader` 文件内的 ShaderLab Property 契约提供保守的 Workspace Rename，并在重载、预处理或 Package 等不安全场景拒绝修改。
 - 在 VS Code Problems 中报告无法解析的 vertex、fragment、geometry、hull、domain、surface 与 compute kernel 入口，并随实时文档和项目索引更新。
 - 保守检查 SRP Batcher 材质契约：标出未进入 `UnityPerMaterial` 的标量/向量 Property、不兼容字段类型及可确定的跨 Pass 布局差异；只有唯一且安全的插入位置才提供 Quick Fix。
-- 悬浮（Hover）显示已索引着色器符号（函数、struct、字段、变量、参数、宏）的声明摘要，并为部分 ShaderLab 术语、Property 语法、语义和 SRP helper 提供带公开来源的 Quick Documentation。项目和 Package 中的真实声明优先于带版本范围的精选兜底文档。
+- 悬浮（Hover）显示已索引着色器符号（函数、struct、字段、变量、参数、宏）的声明摘要，并为部分 ShaderLab 术语、Property 语法、语义和 SRP helper 提供带公开来源的 Quick Documentation。Unity 项目中的 `UNITY_VERSION` 还会显示从 `ProjectSettings/ProjectVersion.txt` 派生的纯展示值；项目和 Package 中的真实声明仍优先于这些版本感知兜底。
 - 为已索引的 HLSL/CG 代码提供保守的补全和签名帮助，并包含精选的 Unity/HLSL/ShaderLab 内置词汇。
 - 提供仅在正确上下文出现的完整 Surface 与 vertex/fragment Shader、常用 Material Property、Pass/program 结构及 Blend 状态 snippets；可编辑归一化的 Color 默认字面量；并安全格式化 ShaderLab 缩进。
 - 为 ShaderLab 外层结构、Properties、Tags、render states、预处理行和

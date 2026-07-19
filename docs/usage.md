@@ -48,6 +48,14 @@ the fallback with an explicit verification note. Scoped-registry, local,
 forked, or incompatible Package facts stay neutral. The catalog is
 intentionally useful rather than exhaustive.
 
+In HLSL/CG code, Hover on `UNITY_VERSION` shows a presentation-only value
+derived from the captured `ProjectSettings/ProjectVersion.txt`. Representable
+Editor versions use Unity's documented numeric encoding. Version shapes outside
+those exact fields—including older LTS patch numbers that exceed the documented
+single patch digit—show an explicit major/minor prefix instead of inventing an
+exact value. Unknown projects remain neutral, indexed `#define` declarations
+still win, and this display does not feed the preprocessor evaluator.
+
 Ambiguous symbols are listed without ranking, matching Go to Definition
 behavior; very large candidate sets are truncated with a `… and N more
 candidates` footer to keep the bubble readable.

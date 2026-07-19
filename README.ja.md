@@ -12,7 +12,7 @@ UnityShaderNav は、Unity Shader プロジェクト向けの Visual Studio Code
 - 宣言が一意な HLSL/CG シンボルと、同じ `.shader` ファイル内の ShaderLab Property contract を対象とする保守的な Workspace Rename。オーバーロード、プリプロセッサ、Package など安全性を証明できない場合は変更を拒否します。
 - 解決できない vertex、fragment、geometry、hull、domain、surface、compute kernel エントリポイントを VS Code Problems に表示し、ライブドキュメントとプロジェクトインデックスに追従して更新します。
 - SRP Batcher の material contract を保守的に検査し、`UnityPerMaterial` にないスカラー/ベクター Property、互換性のない型、確定可能な Pass 間 layout 差異を報告します。Quick Fix は安全な挿入先が一意の場合だけ提供します。
-- インデックス済みシェーダーシンボル（関数、struct、メンバー、変数、引数、マクロ）の宣言サマリーに加え、一部の ShaderLab 用語、Property 構文、セマンティクス、SRP helper に公開ソース付き Quick Documentation を表示します。プロジェクトおよび Package の実際の宣言は、バージョン範囲付きの厳選フォールバックより優先されます。
+- インデックス済みシェーダーシンボル（関数、struct、メンバー、変数、引数、マクロ）の宣言サマリーに加え、一部の ShaderLab 用語、Property 構文、セマンティクス、SRP helper に公開ソース付き Quick Documentation を表示します。Unity プロジェクトでは `ProjectSettings/ProjectVersion.txt` から導出した表示専用の `UNITY_VERSION` 値も表示し、プロジェクトおよび Package の実際の宣言はこれらのバージョン対応フォールバックより優先されます。
 - インデックス済み HLSL/CG コードの保守的な補完とシグネチャヘルプ、および厳選された Unity/HLSL/ShaderLab 組み込み語彙。
 - 正しいコンテキストだけに表示される完全な Surface／vertex-fragment Shader、一般的な Material Property、Pass/program 構造、Blend state snippets、正規化された Color 既定リテラルの編集、および安全な ShaderLab インデント整形。
 - ShaderLab ラッパー、Properties、Tags、render states、プリプロセッサ行、

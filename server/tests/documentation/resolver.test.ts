@@ -242,6 +242,57 @@ describe('DocumentationResolver', () => {
       verificationNote: expect.stringContaining('editor version is unknown'),
     });
   });
+
+  it('resolves project-derived UNITY_VERSION after declarations and stays neutral when unknown', () => {
+    const packages = PackageContext.standalone(DEFAULT_SETTINGS);
+    const request = requestAt(
+      '#if UNITY_VERSION >= 202200\n#endif',
+      'UNITY_VERSION',
+      'hlsl',
+    );
+    const lts = new DocumentationResolver(
+      packages,
+      UnityProjectFacts.fromProjectVersionText('m_EditorVersion: 2022.3.53f1\n'),
+    );
+    expect(lts.resolve(request)?.candidates[0]).toMatchObject({
+      source: 'builtin',
+      entry: {
+        name: 'UNITY_VERSION',
+        detail: '#define UNITY_VERSION 20223',
+        documentation: expect.stringContaining('major/minor prefix'),
+      },
+    });
+
+    const unity6 = new DocumentationResolver(
+      packages,
+      UnityProjectFacts.fromProjectVersionText('m_EditorVersion: 6000.0.42f1\n'),
+    );
+    expect(unity6.resolve(request)?.candidates[0]).toMatchObject({
+      source: 'builtin',
+      entry: {
+        detail: '#define UNITY_VERSION 60000042',
+        documentation: expect.stringContaining('documented encoding'),
+      },
+    });
+    expect(new DocumentationResolver(
+      packages,
+      UnityProjectFacts.unknown(),
+    ).resolve(request)).toBeUndefined();
+
+    const declarationSymbol: SymbolEntry = {
+      name: 'UNITY_VERSION',
+      kind: 'macro',
+      location: {
+        uri: 'file:///project/Assets/Version.hlsl',
+        range: {
+          start: { line: 0, character: 8 },
+          end: { line: 0, character: 21 },
+        },
+      },
+    };
+    expect(lts.resolve({ ...request, declarations: [declarationSymbol] })?.candidates)
+      .toEqual([{ source: 'project', symbol: declarationSymbol, package: undefined }]);
+  });
 });
 
 function requestAt(

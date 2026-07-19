@@ -9,6 +9,9 @@ and uses semantic versioning for extension releases.
 
 ### Added
 
+- Added a presentation-only `UNITY_VERSION` Hover derived from the captured
+  project Editor version. Unknown projects stay neutral, and indexed macro
+  declarations retain precedence.
 - Added `surf` and `vfshader` complete-file ShaderLab snippets, a `vfpass`
   SubShader snippet, and editable alpha, additive, premultiplied, and multiply
   `Blend` states. Their structural gates keep them out of HLSL/CG blocks.

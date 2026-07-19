@@ -60,6 +60,32 @@ suite('hover', () => {
     });
   });
 
+  test('shows the project-derived UNITY_VERSION in the Extension Host', async () => {
+    const root = fixturePath('shaderlab-names');
+    await withWorkspaceFolder(root, async () => {
+      const uri = vscode.Uri.file(fixturePath(
+        'shaderlab-names',
+        'Assets',
+        'Version.hlsl',
+      ));
+      const doc = await vscode.workspace.openTextDocument(uri);
+      await vscode.window.showTextDocument(doc);
+      const line = doc.lineAt(0).text;
+      const character = line.indexOf('UNITY_VERSION') + 1;
+
+      const hovers = await waitForHover(
+        uri,
+        new vscode.Position(0, character),
+        (result) => result ? hoverText(result).includes('#define UNITY_VERSION 202230') : false,
+      );
+
+      assert.ok(hovers, 'expected project-derived UNITY_VERSION hover');
+      const text = hoverText(hovers);
+      assert.ok(text.includes('project Editor 2022.3.0f1'), text);
+      assert.ok(text.includes('presentation-only'), text);
+    });
+  });
+
   test('hovers a project function from a call site in .hlsl', async () => {
     await withWorkspaceFolder(fixturePath(), async () => {
       const uri = vscode.Uri.file(fixturePath('single-file', 'test.hlsl'));

@@ -16,7 +16,9 @@ UnityShaderNav provides practical VS Code navigation for Unity shader projects:
   explicit Unity or Package version scope, while preferring indexed project and
   Package declarations over curated fallback. Unity-scoped curated entries are
   currently verified for Editor 2022.3; other and unknown Editor versions keep
-  the fallback with an explicit verification note.
+  the fallback with an explicit verification note. `UNITY_VERSION` Hover is a
+  presentation-only project fact; unknown versions remain neutral and it does
+  not participate in preprocessor evaluation.
 - Context-scoped ShaderLab snippets, normalized literal Color presentations,
   and deterministic ShaderLab-only indentation formatting with byte-preserved
   embedded program/include blocks and explicit malformed-layout refusal.
