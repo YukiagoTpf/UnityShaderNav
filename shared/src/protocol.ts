@@ -56,6 +56,11 @@ export const INACTIVE_REGIONS_REQUEST = 'unityShaderNav/inactiveRegions';
 
 export type DimReason = 'inactive' | 'variant';
 
+export interface VariantContext {
+  /** keyword names that are currently enabled for this document */
+  readonly activeKeywords: ReadonlySet<string>;
+}
+
 export interface InactiveRegion {
   range: Range;
   reason: DimReason;

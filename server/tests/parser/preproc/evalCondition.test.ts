@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import type { VariantContext } from '@unity-shader-nav/shared';
 import {
   evalCondition,
   evalDefined,
@@ -10,12 +11,31 @@ import {
 /**
  * Build a MacroState placing each named macro into one of the four buckets:
  *   D → defined (TRUE), U → undefed (FALSE), V → variants (VARIANT), absent → UNKNOWN.
+ *
+ * `active` is a shorthand for a non-empty VariantContext: when present it sets
+ * `variantContext.activeKeywords`, which resolves variant keywords to TRUE/FALSE.
+ * An absent or empty `active` deliberately leaves `variantContext` unset — the
+ * conservative fallback where variant keywords keep returning VARIANT.
  */
-const state = (buckets: { D?: string[]; U?: string[]; V?: string[] } = {}): MacroState => ({
+const state = (
+  buckets: { D?: string[]; U?: string[]; V?: string[]; active?: string[] } = {},
+): MacroState => ({
   defined: new Set(buckets.D ?? []),
   undefed: new Set(buckets.U ?? []),
   variants: new Set(buckets.V ?? []),
+  ...(buckets.active?.length
+    ? { variantContext: { activeKeywords: new Set(buckets.active) } }
+    : {}),
 });
+
+/**
+ * Build a MacroState with an explicitly supplied VariantContext — covers the
+ * empty-`activeKeywords` fallback that the `active` shorthand cannot express.
+ */
+const stateWithContext = (
+  variantContext: VariantContext,
+  buckets: { D?: string[]; U?: string[]; V?: string[] } = {},
+): MacroState => ({ ...state(buckets), variantContext });
 
 describe('evalDefined', () => {
   it('applies precedence defined → undefed → variants → unknown', () => {
@@ -231,4 +251,67 @@ describe('evalCondition — unsupported expressions collapse to UNKNOWN', () => 
       expect(evalCondition(kind, expr, s)).toBe('UNKNOWN');
     });
   }
+});
+
+describe('evalDefined with VariantContext', () => {
+  it('returns TRUE for a variant keyword that is active', () => {
+    expect(evalDefined('FOO', state({ V: ['FOO'], active: ['FOO'] }))).toBe('TRUE');
+  });
+
+  it('returns FALSE for a declared variant keyword that is not active', () => {
+    expect(evalDefined('FOO', state({ V: ['FOO'], active: ['BAR'] }))).toBe('FALSE');
+  });
+
+  it('keeps returning VARIANT when no variantContext is supplied (unchanged)', () => {
+    expect(evalDefined('FOO', state({ V: ['FOO'] }))).toBe('VARIANT');
+  });
+
+  it('keeps returning VARIANT when variantContext has empty activeKeywords (conservative fallback)', () => {
+    const s = stateWithContext({ activeKeywords: new Set<string>() }, { V: ['FOO'] });
+    expect(evalDefined('FOO', s)).toBe('VARIANT');
+  });
+
+  it('lets defined win over the variant context', () => {
+    expect(evalDefined('FOO', state({ D: ['FOO'], V: ['FOO'], active: [] }))).toBe('TRUE');
+  });
+
+  it('lets undefed win over the variant context', () => {
+    expect(evalDefined('FOO', state({ U: ['FOO'], V: ['FOO'], active: ['FOO'] }))).toBe('FALSE');
+  });
+
+  it('keeps returning UNKNOWN for a non-variant keyword when a context is present (unchanged)', () => {
+    expect(evalDefined('BAZ', state({ active: ['FOO'] }))).toBe('UNKNOWN');
+  });
+});
+
+describe('evalCondition with VariantContext', () => {
+  it('#ifdef FOO → TRUE (not VARIANT) when FOO is active', () => {
+    expect(evalCondition('ifdef', 'FOO', state({ V: ['FOO'], active: ['FOO'] }))).toBe('TRUE');
+  });
+
+  it('#ifdef FOO → FALSE (not VARIANT) when FOO is inactive', () => {
+    expect(evalCondition('ifdef', 'FOO', state({ V: ['FOO'], active: ['BAR'] }))).toBe('FALSE');
+  });
+
+  it('#ifndef FOO → FALSE when FOO is active', () => {
+    expect(evalCondition('ifndef', 'FOO', state({ V: ['FOO'], active: ['FOO'] }))).toBe('FALSE');
+  });
+
+  it('#ifndef FOO → TRUE when FOO is inactive', () => {
+    expect(evalCondition('ifndef', 'FOO', state({ V: ['FOO'], active: ['BAR'] }))).toBe('TRUE');
+  });
+
+  it('#if defined(FOO) && defined(BAR) → FALSE when FOO is active but BAR is inactive', () => {
+    const s = state({ V: ['FOO', 'BAR'], active: ['FOO'] });
+    expect(evalCondition('if', 'defined(FOO) && defined(BAR)', s)).toBe('FALSE');
+  });
+
+  it('#if defined(FOO) || defined(BAR) → TRUE when FOO is inactive but BAR is active', () => {
+    const s = state({ V: ['FOO', 'BAR'], active: ['BAR'] });
+    expect(evalCondition('if', 'defined(FOO) || defined(BAR)', s)).toBe('TRUE');
+  });
+
+  it('#if defined(FOO) → VARIANT (unchanged) when no variantContext is supplied', () => {
+    expect(evalCondition('if', 'defined(FOO)', state({ V: ['FOO'] }))).toBe('VARIANT');
+  });
 });

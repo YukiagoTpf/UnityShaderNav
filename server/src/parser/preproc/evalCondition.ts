@@ -1,3 +1,5 @@
+import type { VariantContext } from '@unity-shader-nav/shared';
+
 /**
  * Four-valued evaluation of the small subset of preprocessor conditions this
  * analyzer supports. Deliberately *not* a general C expression evaluator:
@@ -17,6 +19,8 @@ export interface MacroState {
   undefed: ReadonlySet<string>;
   /** Unity variant keywords from `multi_compile*` / `shader_feature*` pragmas */
   variants: ReadonlySet<string>;
+  /** optional active variant context; when absent or empty, behaviour is unchanged */
+  variantContext?: VariantContext;
 }
 
 /** Which directive introduced this condition. */
@@ -34,7 +38,13 @@ export type CondKind = 'ifdef' | 'ifndef' | 'if' | 'elif';
 export function evalDefined(name: string, state: MacroState): CondValue {
   if (state.defined.has(name)) return 'TRUE';
   if (state.undefed.has(name)) return 'FALSE';
-  if (state.variants.has(name)) return 'VARIANT';
+  if (state.variants.has(name)) {
+    const activeKeywords = state.variantContext?.activeKeywords;
+    if (activeKeywords && activeKeywords.size > 0) {
+      return activeKeywords.has(name) ? 'TRUE' : 'FALSE';
+    }
+    return 'VARIANT';
+  }
   return 'UNKNOWN';
 }
 
