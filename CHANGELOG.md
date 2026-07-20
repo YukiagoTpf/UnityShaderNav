@@ -5,7 +5,7 @@ All notable changes to UnityShaderNav are recorded here.
 This project follows the spirit of [Keep a Changelog](https://keepachangelog.com/)
 and uses semantic versioning for extension releases.
 
-## Unreleased
+## 0.2.0
 
 ### Added
 
