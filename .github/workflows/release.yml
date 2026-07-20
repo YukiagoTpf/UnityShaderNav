@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Package and publish to VS Code Marketplace
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Resolve and verify version
+        id: version
+        shell: bash
+        run: |
+          PKG_VERSION="$(node -p "require('./client/package.json').version")"
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            TAG_VERSION="${GITHUB_REF_NAME#v}"
+            if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+              echo "::error::Tag $GITHUB_REF_NAME does not match client/package.json version $PKG_VERSION"
+              exit 1
+            fi
+          fi
+          echo "version=$PKG_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Resolved release version: $PKG_VERSION"
+
+      - name: Run fast verification
+        run: npm run check:fast
+
+      - name: Package VSIX
+        run: npm run package:vsix
+
+      - name: Publish to VS Code Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        shell: bash
+        run: |
+          if [ -z "$VSCE_PAT" ]; then
+            echo "::error::VSCE_PAT secret is not configured. Add it in Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          npx --no-install vsce publish \
+            --packagePath "client/unity-shader-nav-${{ steps.version.outputs.version }}.vsix" \
+            --pat "$VSCE_PAT" \
+            --skip-duplicate
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: unity-shader-nav-${{ steps.version.outputs.version }}.vsix
+          path: client/unity-shader-nav-${{ steps.version.outputs.version }}.vsix
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: client/unity-shader-nav-${{ steps.version.outputs.version }}.vsix
+          generate_release_notes: true
