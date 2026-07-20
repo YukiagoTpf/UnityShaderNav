@@ -1,5 +1,3 @@
-import { resolve, sep } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
 import type {
   FileIndex,
   MaterialPropertyCompatibility,
@@ -55,9 +53,12 @@ export function materialPropertyTargetAt(
 
 function unityAssetPath(uri: string): string {
   try {
-    const normalized = fileURLToPath(uri).split(sep).join('/');
-    const match = /(?:^|\/)((?:Assets|Packages)\/.*)$/.exec(normalized);
-    return match?.[1] ?? normalized;
+    // Use the URL API (platform-independent) rather than fileURLToPath so
+    // that drive-letter-less URIs (e.g. test fixtures) resolve correctly on
+    // Windows. fileURLToPath throws ERR_INVALID_FILE_URL_PATH for those.
+    const { pathname } = new URL(uri);
+    const match = /(?:^|\/)((?:Assets|Packages)\/.*)$/.exec(pathname);
+    return match?.[1] ?? pathname;
   } catch {
     return uri;
   }
@@ -68,12 +69,15 @@ function materialUri(assetPath: string, shaderUri: string): string | undefined {
   if (!/^(?:Assets|Packages)\//.test(normalizedAssetPath)) return undefined;
 
   try {
-    const shaderPath = fileURLToPath(shaderUri);
-    const normalized = shaderPath.split(sep).join('/');
-    const marker = /\/(?:Assets|Packages)\//.exec(normalized);
+    // Extract the project root from the shader URI's path component and
+    // re-join with the asset path using forward slashes. This avoids
+    // fileURLToPath/pathToFileURL which require a drive letter on Windows.
+    const { pathname } = new URL(shaderUri);
+    const marker = /\/(?:Assets|Packages)\//.exec(pathname);
     if (!marker) return undefined;
-    const projectRoot = normalized.slice(0, marker.index);
-    return pathToFileURL(resolve(projectRoot, normalizedAssetPath)).href;
+    const projectRoot = pathname.slice(0, marker.index);
+    const resolved = `${projectRoot}/${normalizedAssetPath}`.replace(/\/+/g, '/');
+    return new URL(`file://${resolved}`).href;
   } catch {
     return undefined;
   }

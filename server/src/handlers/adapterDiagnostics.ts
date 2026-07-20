@@ -1,4 +1,3 @@
-import { fileURLToPath } from 'node:url';
 import {
   DiagnosticSeverity,
   type Connection,
@@ -222,7 +221,10 @@ function reliableRootLine(
   const rootUri = diagnostic.provenance.sourceRevision.uri;
   if (file === rootUri) return zeroBased;
   try {
-    const rootPath = fileURLToPath(rootUri).replace(/\\/g, '/');
+    // Use the URL API (platform-independent) rather than fileURLToPath so
+    // that drive-letter-less URIs resolve correctly on Windows.
+    const { pathname } = new URL(rootUri);
+    const rootPath = pathname;
     const reported = file.replace(/\\/g, '/').replace(/^\.\//, '');
     if (reported === rootPath) return zeroBased;
     if (!/^(?:Assets|Packages)\//.test(reported)) return undefined;
