@@ -641,10 +641,11 @@ describe('Indexed Workspace live-document behavior', () => {
     let blocked = false;
 
     try {
+      let initializing = true;
       const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
         ensureParserReady: async () => {},
-        async indexDocument(indexUri, text, table) {
-          if (text === savedText && !blocked) {
+        async indexDocument(indexUri: string, text: string, table: unknown) {
+          if (!initializing && text === savedText && !blocked) {
             blocked = true;
             diskParseStarted.resolve();
             await releaseDiskParse.promise;
@@ -653,6 +654,7 @@ describe('Indexed Workspace live-document behavior', () => {
         },
       });
       await workspace.initialize(fakeConnection);
+      initializing = false;
 
       const live = snapshot(uri, liveText, 1, 1);
       const updating = workspace.updateDocument(live);
@@ -731,10 +733,11 @@ describe('Indexed Workspace live-document behavior', () => {
     await writeFile(join(root, 'Target.hlsl'), targetText);
 
     try {
+      let initializing = true;
       const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
         ensureParserReady: async () => {},
-        async indexDocument(uri, text, table) {
-          if (uri === targetUri) {
+        async indexDocument(uri: string, text: string, table: unknown) {
+          if (!initializing && uri === targetUri) {
             editStarted.resolve();
             await releaseEdit.promise;
           }
@@ -742,6 +745,7 @@ describe('Indexed Workspace live-document behavior', () => {
         },
       });
       await workspace.initialize(fakeConnection);
+      initializing = false;
       const target = snapshot(targetUri, targetText, 1, 1);
       const caller = snapshot(callerUri, callerText, 2, 1);
       const editing = workspace.updateDocument(target);
@@ -797,9 +801,12 @@ describe('Indexed Workspace live-document behavior', () => {
     try {
       const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
         ensureParserReady: async () => {},
-        async indexDocument() {
-          parseCalls++;
-          throw new Error('request document should not be parsed');
+        async indexDocument(indexUri: string, indexText: string, table: unknown) {
+          if (indexUri === callerUri) {
+            parseCalls++;
+            throw new Error('request document should not be parsed');
+          }
+          return indexFile(indexUri, indexText, table);
         },
       });
       await workspace.initialize(fakeConnection);

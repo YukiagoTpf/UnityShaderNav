@@ -76,7 +76,23 @@ export class IndexedSourceMembership {
 
   async discover(signal: AbortSignal): Promise<IndexedSourceFiles> {
     if (!this.unityRoot) {
-      return Object.freeze({ userFiles: Object.freeze([]), packageFiles: Object.freeze([]) });
+      // Standalone mode: scan the workspace folder for shader files so the
+      // index is populated even when no Unity root is detected (e.g. when the
+      // workspace root is a parent of the actual Unity project, or after a
+      // cache invalidation caused by a version upgrade).
+      const userFiles = await walkFiles(this.folderRoot, [...this.userExcludes], signal);
+      const classified = new Map<string, 'user' | 'package'>();
+      for (const filePath of userFiles) {
+        const sourceClass = this.classify(filePath);
+        if (sourceClass) classified.set(filePath, sourceClass);
+      }
+      return Object.freeze({
+        userFiles: Object.freeze([...classified]
+          .filter(([, sourceClass]) => sourceClass === 'user')
+          .map(([filePath]) => filePath)
+          .sort()),
+        packageFiles: Object.freeze([]),
+      });
     }
 
     const [userFiles, packageGroups] = await Promise.all([

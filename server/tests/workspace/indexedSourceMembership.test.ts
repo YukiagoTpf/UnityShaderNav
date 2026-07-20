@@ -26,6 +26,36 @@ describe('IndexedSourceMembership', () => {
     expect(membership.containsUri(uri(join(root, '..', 'Outside.hlsl')))).toBe(false);
   });
 
+  it('discovers shader files within the workspace folder in standalone mode', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'standalone-discover-'));
+    const root = join(base, 'project');
+    const files = {
+      shader: join(root, 'Assets', 'Main.shader'),
+      hlsl: join(root, 'Assets', 'Include.hlsl'),
+      excluded: join(root, 'Library', 'Ignored.hlsl'),
+      nonShader: join(root, 'Assets', 'Readme.md'),
+    };
+    try {
+      await Promise.all(Object.values(files).map(async (filePath) => {
+        await mkdir(dirname(filePath), { recursive: true });
+        await writeFile(filePath, 'float4 Example() { return 0; }');
+      }));
+      const membership = IndexedSourceMembership.create({
+        folderUri: uri(root),
+        settings: DEFAULT_SETTINGS,
+        unityRoot: undefined,
+        packages: { packageRoots: () => [] },
+      });
+
+      const discovered = await membership.discover(new AbortController().signal);
+
+      expect(discovered.userFiles).toEqual([files.hlsl, files.shader].sort());
+      expect(discovered.packageFiles).toEqual([]);
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+
   it('admits only user sources and currently resolved package sources in Unity mode', () => {
     const root = join(tmpdir(), 'unity-membership');
     const externalPackage = join(tmpdir(), 'external-package');

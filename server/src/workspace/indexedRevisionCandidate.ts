@@ -166,16 +166,17 @@ export class DefaultIndexedRevisionCandidateConstructor
       return builder;
     }
 
-    if (unityRoot) {
-      await this.scanCandidate({
-        ...input,
-        builder,
-        unityRoot,
-        packages,
-        membership,
-        compatiblePrevious,
-      });
-    }
+    // Scan for shader files in both unity and standalone modes. In standalone
+    // mode discover() walks the workspace folder so the index is populated
+    // even when no Unity root was detected.
+    await this.scanCandidate({
+      ...input,
+      builder,
+      unityRoot,
+      packages,
+      membership,
+      compatiblePrevious,
+    });
     this.throwIfAborted(input.signal);
     return builder;
   }
@@ -299,9 +300,7 @@ export class DefaultIndexedRevisionCandidateConstructor
         this.throwIfAborted(input.signal);
         this.retainCompatibleSourceFailure(input, uri, indexed);
       });
-      if (input.unityRoot) {
-        await this.indexMissingDiskFiles({ ...input, unityRoot: input.unityRoot });
-      }
+      await this.indexMissingDiskFiles({ ...input, unityRoot: input.unityRoot });
     } finally {
       progress.done();
     }
@@ -310,7 +309,7 @@ export class DefaultIndexedRevisionCandidateConstructor
   private async indexMissingDiskFiles(
     input: IndexedRevisionCandidateConstructionInput & {
       readonly builder: IndexedRevisionBuilder;
-      readonly unityRoot: string;
+      readonly unityRoot: string | undefined;
       readonly packages: PackageContext;
       readonly membership: IndexedSourceMembership;
       readonly compatiblePrevious: boolean;
@@ -347,7 +346,7 @@ export class DefaultIndexedRevisionCandidateConstructor
   private async scanCandidate(
     input: IndexedRevisionCandidateConstructionInput & {
       readonly builder: IndexedRevisionBuilder;
-      readonly unityRoot: string;
+      readonly unityRoot: string | undefined;
       readonly packages: PackageContext;
       readonly membership: IndexedSourceMembership;
       readonly compatiblePrevious: boolean;
