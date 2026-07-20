@@ -376,6 +376,10 @@ const HLSL_KEYWORDS = [
     'HLSL parameter modifier',
   ),
   ...hlslKeywords(
+    ['struct', 'cbuffer', 'typedef'],
+    'HLSL declaration keyword',
+  ),
+  ...hlslKeywords(
     ['const', 'static', 'uniform', 'register', 'packoffset', 'groupshared', 'precise'],
     'HLSL storage or declaration qualifier',
   ),

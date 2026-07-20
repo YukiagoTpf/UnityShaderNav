@@ -438,7 +438,7 @@ describe('built-in vocabulary', () => {
     expect(findBuiltinEntries('float1x5')).toEqual([]);
   });
 
-  it('covers HLSL control-flow, storage, parameter, and interpolation keywords', () => {
+  it('covers HLSL control-flow, storage, parameter, declaration, and interpolation keywords', () => {
     for (const name of [
       'if',
       'else',
@@ -454,6 +454,9 @@ describe('built-in vocabulary', () => {
       'in',
       'out',
       'inout',
+      'struct',
+      'cbuffer',
+      'typedef',
       'const',
       'static',
       'uniform',

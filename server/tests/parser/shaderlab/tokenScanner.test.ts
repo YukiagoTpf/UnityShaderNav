@@ -44,6 +44,38 @@ describe('scanShaderLabTokens', () => {
     ]));
   });
 
+  it('colors HLSL declaration keywords struct, cbuffer, and typedef', () => {
+    const text = [
+      'Shader "Custom/DeclKeywords" {',
+      '  HLSLPROGRAM',
+      '  struct Attributes { float3 positionOS : POSITION; };',
+      '  cbuffer UnityPerMaterial { float4 _BaseColor; };',
+      '  typedef float4 MyVec4;',
+      '  ENDHLSL',
+      '}',
+    ].join('\n');
+
+    expect(tokenTexts(text)).toEqual(expect.arrayContaining([
+      { text: 'struct', type: 'keyword' },
+      { text: 'cbuffer', type: 'keyword' },
+      { text: 'typedef', type: 'keyword' },
+      { text: 'POSITION', type: 'enumMember' },
+    ]));
+  });
+
+  it('does not treat namespace as an HLSL keyword', () => {
+    const text = [
+      'Shader "Custom/NoNamespace" {',
+      '  HLSLPROGRAM',
+      '  float namespace = 1.0;',
+      '  ENDHLSL',
+      '}',
+    ].join('\n');
+
+    const tokens = tokenTexts(text);
+    expect(tokens).not.toContainEqual({ text: 'namespace', type: 'keyword' });
+  });
+
   it('scans ShaderLab wrapper, Properties, Tags, preprocessor, macros, and semantics', () => {
     const text = [
       'Shader "Custom/Mixed" {',
