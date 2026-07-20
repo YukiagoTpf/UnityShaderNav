@@ -79,7 +79,12 @@ import {
   materialPropertyReferences,
   type MaterialPropertyTarget,
 } from './materialReferences';
+import { csharpPropertyReferences } from './csharpPropertyReferences';
 import type { MaterialUsageProvider } from '../adapter/materialSource';
+import type {
+  CSharpCurrentSourceProvider,
+  CSharpPropertyUsageProvider,
+} from '../adapter/csharpPropertySource';
 import type { ShaderGraphUsageProvider } from '../adapter/shaderGraphSource';
 import type { MaterialContextProvider } from '../adapter/materialContextSource';
 import {
@@ -105,6 +110,8 @@ export interface WorkspaceRuntimeOptions
   materialUsages?: MaterialUsageProvider;
   shaderGraphUsages?: ShaderGraphUsageProvider;
   materialContext?: MaterialContextProvider;
+  csharpPropertyUsages?: CSharpPropertyUsageProvider;
+  csharpCurrentSource?: CSharpCurrentSourceProvider;
 }
 
 interface DocumentReconcileRun {
@@ -133,6 +140,8 @@ export class Workspace implements IndexedWorkspace {
   private readonly candidateConstructor: IndexedRevisionCandidateConstructor;
   private readonly openDocuments: OpenDocumentsProvider | undefined;
   private readonly materialUsages: MaterialUsageProvider | undefined;
+  private readonly csharpPropertyUsages: CSharpPropertyUsageProvider | undefined;
+  private readonly csharpCurrentSource: CSharpCurrentSourceProvider | undefined;
   private readonly shaderGraphUsages: ShaderGraphUsageProvider | undefined;
   private readonly materialContext: MaterialContextProvider | undefined;
   /**
@@ -161,6 +170,8 @@ export class Workspace implements IndexedWorkspace {
       ?? createDefaultIndexedRevisionCandidateConstructor(folderUri, options);
     this.openDocuments = options.openDocuments;
     this.materialUsages = options.materialUsages;
+    this.csharpPropertyUsages = options.csharpPropertyUsages;
+    this.csharpCurrentSource = options.csharpCurrentSource;
     this.shaderGraphUsages = options.shaderGraphUsages;
     this.materialContext = options.materialContext;
     this.liveDocumentTrees = new LiveDocumentTreeSessions(
@@ -431,17 +442,30 @@ export class Workspace implements IndexedWorkspace {
     const sourceAndGraphLocations = result.graphLocations.length > 0
       ? [...(result.sourceLocations ?? []), ...result.graphLocations]
       : result.sourceLocations;
-    if (!this.materialUsages || !result.materialTarget || this.disposed) {
+    if (!result.materialTarget || this.disposed) {
       return sourceAndGraphLocations;
     }
-    const materialLocations = await materialPropertyReferences(
-      input.document.uri,
-      result.materialTarget,
-      this.materialUsages,
-      input.cancellation,
-    );
-    if (this.disposed || materialLocations.length === 0) return sourceAndGraphLocations;
-    return [...(sourceAndGraphLocations ?? []), ...materialLocations];
+    const materialLocations = this.materialUsages
+      ? await materialPropertyReferences(
+        input.document.uri,
+        result.materialTarget,
+        this.materialUsages,
+        input.cancellation,
+      )
+      : [];
+    const csharpLocations = this.csharpPropertyUsages && this.csharpCurrentSource
+      ? await csharpPropertyReferences(
+        input.document.uri,
+        result.materialTarget,
+        this.csharpPropertyUsages,
+        this.csharpCurrentSource,
+        input.cancellation,
+      )
+      : [];
+    if (this.disposed) return sourceAndGraphLocations;
+    const overlayLocations = [...materialLocations, ...csharpLocations];
+    if (overlayLocations.length === 0) return sourceAndGraphLocations;
+    return [...(sourceAndGraphLocations ?? []), ...overlayLocations];
   }
 
   async hoverAt(input: DocumentPositionInput): Promise<Hover | null> {

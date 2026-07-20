@@ -30,6 +30,10 @@ import {
   throwIfRequestCancelled,
 } from '../lifecycle/requestCancellation';
 import type { MaterialUsageProvider } from '../adapter/materialSource';
+import type {
+  CSharpCurrentSourceProvider,
+  CSharpPropertyUsageProvider,
+} from '../adapter/csharpPropertySource';
 import type { ShaderGraphUsageProvider } from '../adapter/shaderGraphSource';
 import type { MaterialContextProvider } from '../adapter/materialContextSource';
 import { materialContextStore } from './materialContextStore';
@@ -63,6 +67,8 @@ export interface WorkspaceManagerRuntimeOptions {
     folderUri: string,
   ) => IndexedRevisionCandidateConstructor;
   readonly materialUsages?: MaterialUsageProvider;
+  readonly csharpPropertyUsages?: CSharpPropertyUsageProvider;
+  readonly csharpCurrentSource?: CSharpCurrentSourceProvider;
   readonly shaderGraphUsages?: ShaderGraphUsageProvider;
   readonly materialContext?: MaterialContextProvider;
 }
@@ -346,6 +352,8 @@ export class WorkspaceManager implements DiagnosticWorkspaceService {
         )
         : undefined,
       materialUsages: this.runtimeOptions.materialUsages,
+      csharpPropertyUsages: this.runtimeOptions.csharpPropertyUsages,
+      csharpCurrentSource: this.runtimeOptions.csharpCurrentSource,
       shaderGraphUsages: this.runtimeOptions.shaderGraphUsages,
       materialContext: this.runtimeOptions.materialContext,
     });

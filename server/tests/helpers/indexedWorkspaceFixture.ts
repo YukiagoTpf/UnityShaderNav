@@ -24,7 +24,12 @@ import {
   materialPropertyTargetAt,
   materialPropertyReferences,
 } from '../../src/workspace/materialReferences';
+import { csharpPropertyReferences } from '../../src/workspace/csharpPropertyReferences';
 import type { MaterialUsageProvider } from '../../src/adapter/materialSource';
+import type {
+  CSharpCurrentSourceProvider,
+  CSharpPropertyUsageProvider,
+} from '../../src/adapter/csharpPropertySource';
 
 interface NavigationFixtureOptions {
   includeCtx?: IncludeContext;
@@ -32,6 +37,8 @@ interface NavigationFixtureOptions {
   isInPackages?: (uri: string) => boolean;
   definitionTrace?: boolean;
   materialUsages?: MaterialUsageProvider;
+  csharpPropertyUsages?: CSharpPropertyUsageProvider;
+  csharpCurrentSource?: CSharpCurrentSourceProvider;
 }
 
 /**
@@ -86,20 +93,34 @@ export function createIndexedWorkspaceFixture(
     async referencesAt(input) {
       await this.updateDocument(input.document);
       const sourceLocations = await navigateReferences(state(), input);
-      if (!options.materialUsages) return sourceLocations;
+      if (!options.materialUsages && !options.csharpPropertyUsages) {
+        return sourceLocations;
+      }
       const target = materialPropertyTargetAt(
         state().index.store.get(input.document.uri),
         input.position,
       );
       if (!target) return sourceLocations;
-      const materialLocations = await materialPropertyReferences(
-        input.document.uri,
-        target,
-        options.materialUsages,
-        input.cancellation,
-      );
-      return materialLocations.length > 0
-        ? [...(sourceLocations ?? []), ...materialLocations]
+      const materialLocations = options.materialUsages
+        ? await materialPropertyReferences(
+          input.document.uri,
+          target,
+          options.materialUsages,
+          input.cancellation,
+        )
+        : [];
+      const csharpLocations = options.csharpPropertyUsages
+        ? await csharpPropertyReferences(
+          input.document.uri,
+          target,
+          options.csharpPropertyUsages,
+          options.csharpCurrentSource,
+          input.cancellation,
+        )
+        : [];
+      const overlayLocations = [...materialLocations, ...csharpLocations];
+      return overlayLocations.length > 0
+        ? [...(sourceLocations ?? []), ...overlayLocations]
         : sourceLocations;
     },
     async prepareRenameAt(input) {

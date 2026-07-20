@@ -7,6 +7,7 @@ import {
   VARIANT_BUILD_EVIDENCE_CAPABILITY,
   SHADER_GRAPH_CUSTOM_FUNCTIONS_CAPABILITY,
   MATERIAL_CONTEXT_ADAPTER_FEATURE,
+  CSHARP_PROPERTY_USAGES_ADAPTER_FEATURE,
   type AdapterCompilerEvidence,
   type AdapterDiagnostic,
   type AdapterHandshake,
@@ -16,6 +17,13 @@ import {
   type CompileProfileDiscovery,
   type CompileProfileRunResult,
   type CompilerEvidenceRunResult,
+  type CSharpPropertyUsage,
+  type CSharpPropertyCallKind,
+  type CSharpExpressionDeterminism,
+  type CSharpBindingDeterminism,
+  type CSharpShaderIdentity,
+  type ShaderLabPropertyType,
+  type Range,
   type IncludePointContext,
   type MaterialSerializedValue,
   type VariantBuildContextEvidence,
@@ -53,6 +61,13 @@ import type {
   TrustedMaterialContextResult,
 } from './materialContextSource';
 import { unknownMaterialContext } from './materialContextSource';
+import type {
+  AdapterCSharpPropertyUsage,
+  CSharpPropertySource,
+  CSharpPropertyTarget,
+  CSharpPropertyUsageResult,
+} from './csharpPropertySource';
+import { unknownCSharpPropertyUsage } from './csharpPropertySource';
 
 const DEFAULT_HANDSHAKE_MAX_AGE_MS = 30_000;
 
@@ -76,6 +91,7 @@ interface ConnectedAdapter {
   readonly materialSource?: MaterialSource;
   readonly shaderGraphSource?: ShaderGraphSource;
   readonly materialContextSource?: MaterialContextSource;
+  readonly csharpPropertySource?: CSharpPropertySource;
   readonly materialContextSubscription?: { dispose(): void };
 }
 
@@ -90,6 +106,7 @@ export interface AdapterFeatureSources {
   readonly materialUsages?: MaterialSource;
   readonly shaderGraph?: ShaderGraphSource;
   readonly materialContext?: MaterialContextSource;
+  readonly csharpPropertyUsages?: CSharpPropertySource;
 }
 
 export interface AdapterRegistryOptions {
@@ -147,6 +164,9 @@ export class AdapterRegistry {
     const materialContextSource = 'materialsUsingShader' in sources
       ? undefined
       : sources.materialContext;
+    const csharpPropertySource = 'materialsUsingShader' in sources
+      ? undefined
+      : sources.csharpPropertyUsages;
     this.disposeMaterialContextSubscription();
     this.materialContextGeneration++;
     const materialContextSubscription = materialContextSource?.onDidChangeSelection?.(
@@ -172,6 +192,7 @@ export class AdapterRegistry {
       ...(materialSource ? { materialSource } : {}),
       ...(shaderGraphSource ? { shaderGraphSource } : {}),
       ...(materialContextSource ? { materialContextSource } : {}),
+      ...(csharpPropertySource ? { csharpPropertySource } : {}),
       ...(materialContextSubscription ? { materialContextSubscription } : {}),
     };
     const status = this.computeStatus();
@@ -801,6 +822,103 @@ export class AdapterRegistry {
     };
   }
 
+  /**
+   * Return only connection-bound, source-revision-validated C# property
+   * usages. The trust boundary validates the provenance envelope plus each
+   * usage's exact C# source revision (URI + content hash); a single opaque
+   * snapshot revision is insufficient to rule out stale C# positions. Every
+   * usage field is structurally validated, and a usage whose propertyName or
+   * shader identity does not exactly match the requested target is dropped as
+   * a foreign target. The raw payload may include name-only or dynamic items
+   * for explicit rejection testing — authoritative filtering happens in the
+   * Workspace overlay, not here.
+   */
+  async csharpPropertyUsagesFor(
+    target: CSharpPropertyTarget,
+  ): Promise<CSharpPropertyUsageResult> {
+    const registered = this.registered;
+    const currentStatus = this.status();
+    if (currentStatus.mode === 'standalone') {
+      return unknownCSharpPropertyUsage(currentStatus.reason);
+    }
+    if (!registered || registered.state !== 'connected') {
+      return unknownCSharpPropertyUsage('source-unavailable');
+    }
+    if (!currentStatus.capabilities.supportedFeatures.includes(
+      CSHARP_PROPERTY_USAGES_ADAPTER_FEATURE,
+    )) {
+      return unknownCSharpPropertyUsage('capability-unavailable');
+    }
+
+    const source = registered.csharpPropertySource;
+    if (!source) return unknownCSharpPropertyUsage('source-unavailable');
+    const { expectedProjectId, handshake } = registered;
+    if (
+      source.identity.projectId !== expectedProjectId
+      || source.identity.projectId !== handshake.capabilities.projectId
+      || source.identity.instanceId !== handshake.instanceId
+    ) {
+      return unknownCSharpPropertyUsage('source-identity-mismatch');
+    }
+
+    let snapshot: Awaited<ReturnType<CSharpPropertySource['csharpPropertyUsagesFor']>>;
+    try {
+      snapshot = await source.csharpPropertyUsagesFor(target);
+    } catch {
+      return unknownCSharpPropertyUsage('source-unavailable');
+    }
+
+    // A disconnect or reconnect invalidates a response already in flight.
+    if (this.registered !== registered) {
+      const latest = this.status();
+      return unknownCSharpPropertyUsage(
+        latest.mode === 'standalone' ? latest.reason : 'invalid-evidence',
+      );
+    }
+    const latest = this.status();
+    if (latest.mode === 'standalone') {
+      return unknownCSharpPropertyUsage(latest.reason);
+    }
+    if (snapshot.assetScope === 'unknown') {
+      return unknownCSharpPropertyUsage(snapshot.reason);
+    }
+    if (
+      !snapshot.revision
+      || !Number.isFinite(snapshot.collectedAt)
+      || snapshot.collectedAt < 0
+    ) {
+      return unknownCSharpPropertyUsage('invalid-evidence');
+    }
+
+    const provenanceBase = {
+      capability: CSHARP_PROPERTY_USAGES_ADAPTER_FEATURE,
+      projectId: source.identity.projectId,
+      instanceId: source.identity.instanceId,
+      adapterVersion: handshake.capabilities.adapterVersion,
+      unityVersion: handshake.capabilities.unityVersion,
+      collectedAt: snapshot.collectedAt,
+      sourceRevision: snapshot.revision,
+    } as const;
+
+    const usages: CSharpPropertyUsage[] = [];
+    for (const usage of snapshot.usages) {
+      if (!validCSharpPropertyUsage(usage, target)) continue;
+      usages.push({
+        ...usage,
+        shader: usage.shader ? { ...usage.shader } : null,
+        sourceRevision: { ...usage.sourceRevision },
+        provenance: provenanceBase,
+      });
+    }
+
+    return {
+      availability: 'available',
+      assetScope: 'complete',
+      revision: snapshot.revision,
+      usages,
+    };
+  }
+
   /** Return only complete, connection-bound logical Shader Graph facts. */
   async shaderGraphCustomFunctions(): Promise<ShaderGraphUsageResult> {
     const registered = this.registered;
@@ -1202,4 +1320,110 @@ function cloneCompilerEvidence(
       sourceRevision: { ...evidence.provenance.sourceRevision },
     },
   };
+}
+
+const VALID_CALL_KINDS: readonly CSharpPropertyCallKind[] = [
+  'property-to-id',
+  'material-set',
+  'material-get',
+  'material-property-block-set',
+  'material-property-block-get',
+];
+
+const VALID_EXPRESSION_DETERMINISMS: readonly CSharpExpressionDeterminism[] = [
+  'constant-string',
+  'constant-concat',
+  'dynamic',
+];
+
+const VALID_BINDING_DETERMINISMS: readonly CSharpBindingDeterminism[] = [
+  'proven',
+  'name-only',
+  'unbound',
+];
+
+const VALID_PROPERTY_TYPES: readonly (ShaderLabPropertyType | null)[] = [
+  null,
+  '2D', '2DArray', '3D', 'Cube', 'CubeArray',
+  'Color', 'Vector', 'Float', 'Range', 'Int', 'Integer',
+];
+
+function validRange(value: unknown): value is Range {
+  if (!value || typeof value !== 'object') return false;
+  const r = value as Partial<Range>;
+  const start = r.start;
+  const end = r.end;
+  if (!start || !end) return false;
+  const { line: startLine, character: startChar } = start;
+  const { line: endLine, character: endChar } = end;
+  // All four coordinates must be safe nonnegative integers.
+  if (!Number.isInteger(startLine) || startLine < 0) return false;
+  if (!Number.isInteger(startChar) || startChar < 0) return false;
+  if (!Number.isInteger(endLine) || endLine < 0) return false;
+  if (!Number.isInteger(endChar) || endChar < 0) return false;
+  // Lexicographic ordering: start must precede or equal end.
+  if (startLine > endLine) return false;
+  if (startLine === endLine && startChar > endChar) return false;
+  return true;
+}
+
+function validShaderIdentity(
+  value: unknown,
+): value is CSharpShaderIdentity {
+  if (!value || typeof value !== 'object') return false;
+  const s = value as Partial<CSharpShaderIdentity>;
+  return nonEmptyString(s.name) && nonEmptyString(s.path);
+}
+
+/**
+ * Structural validation for one raw C# property usage. Every field is checked
+ * against its expected type; a usage whose propertyName or shader identity does
+ * not exactly match the requested target is dropped as a foreign target. The
+ * source revision (URI + content hash) must be well-formed and match the usage
+ * URI so the document overlay can rule out stale positions.
+ */
+function validCSharpPropertyUsage(
+  usage: unknown,
+  target: CSharpPropertyTarget,
+): usage is AdapterCSharpPropertyUsage {
+  if (!usage || typeof usage !== 'object') return false;
+  const u = usage as Partial<AdapterCSharpPropertyUsage>;
+
+  if (!nonEmptyString(u.uri)) return false;
+  if (!validRange(u.range)) return false;
+  if (!nonEmptyString(u.propertyName)) return false;
+  // Foreign property names must be rejected.
+  if (u.propertyName !== target.propertyName) return false;
+  // propertyType is required (ShaderLabPropertyType | null); undefined is invalid.
+  if (u.propertyType === undefined) return false;
+  if (!VALID_PROPERTY_TYPES.includes(u.propertyType)) return false;
+  if (!VALID_CALL_KINDS.includes(u.callKind as CSharpPropertyCallKind)) return false;
+  // receiverType is required (string | null); undefined is invalid.
+  if (u.receiverType === undefined) return false;
+  if (u.receiverType !== null && !nonEmptyString(u.receiverType)) return false;
+  if (!VALID_EXPRESSION_DETERMINISMS.includes(
+    u.expressionDeterminism as CSharpExpressionDeterminism,
+  )) return false;
+  if (!VALID_BINDING_DETERMINISMS.includes(
+    u.bindingDeterminism as CSharpBindingDeterminism,
+  )) return false;
+
+  // Shader identity: required for proven bindings, must be exactly null
+  // (not undefined) otherwise.
+  if (u.bindingDeterminism === 'proven') {
+    if (!validShaderIdentity(u.shader)) return false;
+    // Foreign shader targets must be rejected.
+    if (u.shader.name !== target.shaderName) return false;
+    if (u.shader.path !== target.shaderPath) return false;
+  } else if (u.shader !== null) {
+    return false;
+  }
+
+  // Source revision: URI must match the usage URI and content hash must be a
+  // well-formed SHA-256 so the overlay can prove revision identity.
+  if (!u.sourceRevision || typeof u.sourceRevision !== 'object') return false;
+  if (u.sourceRevision.uri !== u.uri) return false;
+  if (!isSha256(u.sourceRevision.contentHash)) return false;
+
+  return true;
 }
