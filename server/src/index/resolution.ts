@@ -26,6 +26,7 @@ import {
   uniqueLocations,
 } from './referenceMatching';
 import { selectGlobalSymbolEntries } from './symbolSelection';
+import { isShaderLabUri } from '../sourceLocation';
 import { uriKey } from '../uriKey';
 import {
   awaitWithRequestCancellation,
@@ -41,7 +42,6 @@ export interface ResolverContext {
   options?: ResolutionOptions;
   variantContext?: PreprocessorContext;
   getText?: (uri: string) => string | undefined;
-  isShaderLab?: boolean;
 }
 
 export function resolveDefinition(target: CursorTarget, ctx: ResolverContext): SymbolEntry[] {
@@ -77,26 +77,14 @@ function filterByVariantContext(
   ctx: {
     variantContext?: PreprocessorContext;
     getText?: (uri: string) => string | undefined;
-    isShaderLab?: boolean;
   },
 ): SymbolEntry[] {
-  if (!ctx.variantContext || !ctx.getText) return candidates;
-  const active: SymbolEntry[] = [];
-  const inactive: SymbolEntry[] = [];
-  for (const c of candidates) {
-    const text = ctx.getText(c.location.uri);
-    if (!text) {
-      active.push(c);
-      continue;
-    }
-    if (isLineActive(text, c.location.range.start.line, ctx.variantContext, ctx.isShaderLab)) {
-      active.push(c);
-    } else {
-      inactive.push(c);
-    }
-  }
-  // Context ranks but never deletes a conservative navigation candidate.
-  return [...active, ...inactive];
+  return filterItemsByVariantContext(
+    candidates,
+    ctx,
+    (c) => c.location.uri,
+    (c) => c.location.range.start.line,
+  );
 }
 
 export interface ReferenceCollectionContext {
@@ -112,7 +100,6 @@ export interface ReferenceCollectionContext {
   cancellation?: CancellationToken;
   variantContext?: PreprocessorContext;
   getText?: (uri: string) => string | undefined;
-  isShaderLab?: boolean;
 }
 
 export interface ActiveReferenceTargetSelection {
@@ -363,25 +350,64 @@ function filterLocationsByVariantContext(
   ctx: {
     variantContext?: PreprocessorContext;
     getText?: (uri: string) => string | undefined;
-    isShaderLab?: boolean;
   },
 ): Location[] {
-  if (!ctx.variantContext || !ctx.getText) return locations;
-  const active: Location[] = [];
-  const inactive: Location[] = [];
-  for (const loc of locations) {
-    const text = ctx.getText(loc.uri);
-    if (!text) {
-      active.push(loc);
-      continue;
-    }
-    if (isLineActive(text, loc.range.start.line, ctx.variantContext, ctx.isShaderLab)) {
-      active.push(loc);
-    } else {
-      inactive.push(loc);
+  return filterItemsByVariantContext(
+    locations,
+    ctx,
+    (loc) => loc.uri,
+    (loc) => loc.range.start.line,
+  );
+}
+
+/**
+ * Shared VariantContext selection policy for resolution candidates
+ * (SymbolEntry) and reference/highlight locations (Location).
+ *
+ * When a context + getText are supplied, each candidate is classified as
+ * eligible (its line is provably active in the context, or the URI text
+ * could not be fetched) or provably inactive.
+ *
+ * Selection policy:
+ *  - One or more candidates are eligible → return only those, dropping
+ *    provably inactive candidates. This makes F12 / Find References /
+ *    Document Highlight prefer (or uniquely select) the active variant
+ *    instead of surfacing every #ifdef branch.
+ *  - Zero candidates are eligible (the context rules every branch out) →
+ *    fall back to returning ALL candidates. Conservative fallback is
+ *    mandatory: navigation must never silently return an empty result when
+ *    the name resolves to something.
+ *  - No context, or no getText → return the original items byte-for-byte.
+ *
+ * A candidate whose URI text cannot be retrieved is treated as eligible so
+ * it is never dropped by mistake — cross-file symbols the caller cannot read
+ * stay conservatively available.
+ *
+ * `isShaderLab` is resolved per-URI via {@link isShaderLabUri}: a `.shader`
+ * candidate is analyzed only inside its HLSL/CG blocks, while a `.hlsl`
+ * candidate is analyzed in full. This prevents a single document-level flag
+ * from mis-ruling cross-file candidates whose file kind differs from the
+ * origin document.
+ */
+function filterItemsByVariantContext<T>(
+  items: T[],
+  ctx: {
+    variantContext?: PreprocessorContext;
+    getText?: (uri: string) => string | undefined;
+  },
+  getUri: (item: T) => string,
+  getLine: (item: T) => number,
+): T[] {
+  if (!ctx.variantContext || !ctx.getText) return items;
+  const eligible: T[] = [];
+  for (const item of items) {
+    const text = ctx.getText(getUri(item));
+    // Text unavailable for this URI: cannot prove inactivity, so keep it.
+    if (!text || isLineActive(text, getLine(item), ctx.variantContext, isShaderLabUri(getUri(item)))) {
+      eligible.push(item);
     }
   }
-  return [...active, ...inactive];
+  return eligible.length > 0 ? eligible : items;
 }
 
 export interface HighlightCollectionContext {
@@ -392,7 +418,6 @@ export interface HighlightCollectionContext {
   cancellation?: CancellationToken;
   variantContext?: PreprocessorContext;
   getText?: (uri: string) => string | undefined;
-  isShaderLab?: boolean;
 }
 
 function isSimpleIdentifier(value: string): boolean {

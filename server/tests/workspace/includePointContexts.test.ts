@@ -349,7 +349,7 @@ describe('Published include-point Context Matrix', () => {
     }
   });
 
-  it('ranks Definition candidates by Context without deleting conservative results', async () => {
+  it('selects the active Definition candidate by Context (issue #156 narrowing)', async () => {
     const test = await fixture();
     try {
       const contexts = (await test.revision.knownIncludePointContexts(test.sharedUri)).contexts;
@@ -360,15 +360,21 @@ describe('Published include-point Context Matrix', () => {
         position: positionOf(SHARED_TEXT, 'BranchValue', 2),
       };
 
+      // Forward context defines FORWARD_PASS → the #ifdef FORWARD_PASS
+      // declaration (line 1) is active and the #else declaration (line 4) is
+      // provably inactive. Per #156, an active context narrows to the active
+      // candidate instead of ranking every branch.
       select(test, forward.id);
       const forwardLinks = await test.revision.definitionAt(input) as LocationLink[];
       expect(forwardLinks.map(({ targetSelectionRange }) => targetSelectionRange.start.line))
-        .toEqual([1, 4]);
+        .toEqual([1]);
 
+      // Unlit context undefines FORWARD_PASS → the #else declaration (line 4)
+      // is active and the #ifdef declaration (line 1) is provably inactive.
       select(test, unlit.id);
       const unlitLinks = await test.revision.definitionAt(input) as LocationLink[];
       expect(unlitLinks.map(({ targetSelectionRange }) => targetSelectionRange.start.line))
-        .toEqual([4, 1]);
+        .toEqual([4]);
     } finally {
       await rm(test.root, { recursive: true, force: true });
     }

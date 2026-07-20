@@ -37,7 +37,6 @@ import type {
 import type { WorkspaceNavigationState } from './navigation';
 import type { CursorRequestFacts } from './requestFacts';
 import type { PreprocessorContext } from '../parser/preproc/context';
-import { isShaderLabUri } from '../sourceLocation';
 import {
   SHADER_GRAPH_INVALID_SUFFIX_CODE,
   SHADER_GRAPH_SIGNATURE_MISMATCH_CODE,
@@ -184,7 +183,6 @@ export async function shaderGraphReferences(
     getText: (uri: string) => (
       uriKey(uri) === uriKey(input.document.uri) ? input.document.text : undefined
     ),
-    isShaderLab: isShaderLabUri(input.document.uri),
   };
   const resolved = direct.length > 0
     ? direct

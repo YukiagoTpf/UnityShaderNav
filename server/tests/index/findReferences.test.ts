@@ -156,3 +156,149 @@ describe('findReferences', () => {
     }
   });
 });
+
+describe('findReferences with VariantContext', () => {
+  // Fixture: two same-name functions in opposite #ifdef branches, each with a
+  // call in its own branch. indexFile flattens both branches (ADR-0001); the
+  // variant filter narrows to the active branch at resolution time.
+  // Line 0: #pragma multi_compile _ FOO BAR
+  // Line 1: #ifdef FOO
+  // Line 2:   float4 Helper() { return 1.0; }   (decl A)
+  // Line 3:   void UseA() { Helper(); }          (ref A)
+  // Line 4: #endif
+  // Line 5: #ifdef BAR
+  // Line 6:   float4 Helper() { return 2.0; }   (decl B)
+  // Line 7:   void UseB() { Helper(); }          (ref B)
+  // Line 8: #endif
+  const text = [
+    '#pragma multi_compile _ FOO BAR', // 0
+    '#ifdef FOO', // 1
+    'float4 Helper() { return 1.0; }', // 2
+    'void UseA() { Helper(); }', // 3
+    '#endif', // 4
+    '#ifdef BAR', // 5
+    'float4 Helper() { return 2.0; }', // 6
+    'void UseB() { Helper(); }', // 7
+    '#endif', // 8
+  ].join('\n');
+
+  const uri = 'file:///t/VariantRefs.hlsl';
+
+  async function referencesWithVariant(
+    text: string,
+    uri: string,
+    position: Position,
+    includeDeclaration: boolean,
+    variantContext?: { activeKeywords: ReadonlySet<string> },
+    getText?: (uri: string) => string | undefined,
+  ): Promise<Location[]> {
+    const base = await setup(uri, text);
+    const target = cursorTargetAt(text, position, { detectIncludes: false });
+    return findReferences(target, {
+      index: base.index,
+      position,
+      global: base.global,
+      globalRefs: base.globalRefs,
+      store: base.store,
+      includeChain: createIncludeChain(base.store, includeCtx),
+      isInPackages: () => false,
+      includePackages: true,
+      includeDeclaration,
+      variantContext,
+      getText,
+    });
+  }
+
+  function lineNumbers(locations: Location[]): number[] {
+    return locations.map((l) => l.range.start.line).sort((a, b) => a - b);
+  }
+
+  it('returns only the active branch declaration + references when one branch is active', async () => {
+    // FOO active → #ifdef FOO branch (lines 2,3) active; #ifdef BAR inactive.
+    const position = tokenPosition(text, 2, 'Helper');
+    const refs = await referencesWithVariant(
+      text,
+      uri,
+      position,
+      true,
+      { activeKeywords: new Set(['FOO']) },
+      () => text,
+    );
+    expect(lineNumbers(refs)).toEqual([2, 3]);
+  });
+
+  it('returns only the other branch when FOO is inactive and BAR is active', async () => {
+    // BAR active → #ifdef BAR branch (lines 6,7) active; #ifdef FOO inactive.
+    const position = tokenPosition(text, 2, 'Helper');
+    const refs = await referencesWithVariant(
+      text,
+      uri,
+      position,
+      true,
+      { activeKeywords: new Set(['BAR']) },
+      () => text,
+    );
+    expect(lineNumbers(refs)).toEqual([6, 7]);
+  });
+
+  it('returns every active location when multiple branches remain active', async () => {
+    // Ungated decl+call (always active) + FOO-gated decl+call (active with FOO).
+    const textMulti = [
+      '#pragma multi_compile _ FOO', // 0
+      'float4 Helper() { return 1.0; }', // 1
+      'void Use() { Helper(); }', // 2
+      '#ifdef FOO', // 3
+      'float4 Helper() { return 2.0; }', // 4
+      'void Use2() { Helper(); }', // 5
+      '#endif', // 6
+    ].join('\n');
+    const uriMulti = 'file:///t/VariantRefsMulti.hlsl';
+    const position = tokenPosition(textMulti, 1, 'Helper');
+    const refs = await referencesWithVariant(
+      textMulti,
+      uriMulti,
+      position,
+      true,
+      { activeKeywords: new Set(['FOO']) },
+      () => textMulti,
+    );
+    // All four locations are active (lines 1,2 ungated + lines 4,5 FOO-gated
+    // but active) → nothing dropped.
+    expect(lineNumbers(refs)).toEqual([1, 2, 4, 5]);
+  });
+
+  it('falls back to all locations when the context rules out every branch', async () => {
+    // Neither FOO nor BAR active (BAZ is) → both branches provably inactive →
+    // zero eligible → conservative fallback returns all four locations.
+    const position = tokenPosition(text, 2, 'Helper');
+    const refs = await referencesWithVariant(
+      text,
+      uri,
+      position,
+      true,
+      { activeKeywords: new Set(['BAZ']) },
+      () => text,
+    );
+    expect(lineNumbers(refs)).toEqual([2, 3, 6, 7]);
+  });
+
+  it('returns all locations when no variantContext is supplied (unchanged behaviour)', async () => {
+    const position = tokenPosition(text, 2, 'Helper');
+    const refs = await referencesWithVariant(text, uri, position, true);
+    expect(lineNumbers(refs)).toEqual([2, 3, 6, 7]);
+  });
+
+  it('returns all locations when getText is not supplied (conservative — cannot evaluate)', async () => {
+    // variantContext present but no getText → cannot evaluate branch activity
+    // → every location kept, identical to no-context behaviour.
+    const position = tokenPosition(text, 2, 'Helper');
+    const refs = await referencesWithVariant(
+      text,
+      uri,
+      position,
+      true,
+      { activeKeywords: new Set(['FOO']) },
+    );
+    expect(lineNumbers(refs)).toEqual([2, 3, 6, 7]);
+  });
+});
