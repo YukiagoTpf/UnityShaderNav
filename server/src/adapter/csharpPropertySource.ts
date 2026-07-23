@@ -88,9 +88,9 @@ export interface CSharpPropertyUsageProvider {
  * snapshot, so a provider cannot bypass freshness by reporting a stale hash
  * alongside mismatched text.
  *
- * #95 must implement a client-side revision/hash bridge (without registering a
- * C# language provider) that distinguishes open-buffer, closed-saved, and
- * unknown before the live capability is enabled.
+ * The client-side bridge distinguishes open-buffer, closed-saved, and unknown
+ * without registering a C# language provider. The server computes the hash
+ * from returned text before enabling authoritative evidence.
  */
 export interface CSharpCurrentSourceSnapshot {
   readonly text: string;

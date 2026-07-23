@@ -101,6 +101,7 @@ import {
 } from './workspaceIndex';
 import {
   materialPropertyTargetAt,
+  materialPropertyTargets,
   type MaterialPropertyTarget,
 } from './materialReferences';
 import {
@@ -474,6 +475,10 @@ export class PublishedIndexedRevision {
       this.index.read.store.get(input.document.uri),
       input.position,
     );
+  }
+
+  materialPropertyTargets(uri: string): MaterialPropertyTarget[] {
+    return materialPropertyTargets(this.index.read.store.get(uri));
   }
 
   hoverAt(

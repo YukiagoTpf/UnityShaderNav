@@ -11,6 +11,10 @@ UnityShaderNav 是一个用于 Unity Shader 项目的 Visual Studio Code 扩展�
 - 通过 Unity Editor Adapter 连接 File 模式的 Shader Graph Custom Function
   节点与 HLSL：F12 跳到带精度后缀的声明，Find References 回到 graph 节点，
   Problems 聚焦报告 include 缺失、后缀无效和 port/signature 不匹配。
+- 通过 Adapter 将 ShaderLab Property 引用连接到源码仍然新鲜的 C# 调用，支持常量
+  `Shader.PropertyToID` 流程和带类型的 `Material` /
+  `MaterialPropertyBlock` Set/Get accessor。Problems 报告已证明的类型不匹配；
+  仅名称或动态证据明确标为不确定，且不会注册与现有 C# 扩展竞争的语言 provider。
 - 为 ShaderLab 的 `Shader`、`Fallback`、Pass `Name` 与 `UsePass` 提供跨项目的定义、引用、悬浮、补全、Workspace 符号和保守重命名；`UsePass` 的 Pass 段遵循 Unity 的大写规范形式。
 - 为声明身份唯一的 HLSL/CG 符号及同一 `.shader` 文件内的 ShaderLab Property 契约提供保守的 Workspace Rename，并在重载、预处理或 Package 等不安全场景拒绝修改。
 - 在 VS Code Problems 中报告无法解析的 vertex、fragment、geometry、hull、domain、surface 与 compute kernel 入口，并随实时文档和项目索引更新。

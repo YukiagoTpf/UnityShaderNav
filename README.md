@@ -17,6 +17,11 @@ The extension focuses on fast code navigation:
   F12 opens the precision-suffixed HLSL declaration, Find References returns to
   graph nodes, and Problems identifies missing includes, invalid suffixes, and
   port/signature mismatches.
+- Adapter-backed ShaderLab Property references to source-fresh C# calls,
+  including constant `Shader.PropertyToID` flows and typed `Material` /
+  `MaterialPropertyBlock` Set/Get accessors. Problems reports proven accessor
+  type mismatches; name-only and dynamic evidence stays explicitly uncertain.
+  The bridge does not register a competing C# language provider.
 - Workspace Rename for unambiguous indexed HLSL/CG symbols, including pragma
   entry-point references and same-file ShaderLab Property contracts, with
   conservative refusal for overload-like or preprocessor ambiguity.

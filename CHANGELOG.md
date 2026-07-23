@@ -9,6 +9,13 @@ and uses semantic versioning for extension releases.
 
 ### Added
 
+- Added Adapter-backed ShaderLab Property References to source-fresh C#
+  `Material` and `MaterialPropertyBlock` calls, including constant
+  `Shader.PropertyToID` name flows. Finite Set/Get accessor contracts produce
+  focused type-mismatch diagnostics, while name-only and dynamic evidence stays
+  explicitly uncertain and excluded from safe Rename edits. The exact-source
+  bridge reuses VS Code's C# buffers/files without registering a competing C#
+  language provider. (#95)
 - Added explainable custom Shader portability reports for the current
   revision's Unity/URP versions or an Adapter-advertised graphics profile.
   Findings separate mechanical changes, human semantic work, unsupported

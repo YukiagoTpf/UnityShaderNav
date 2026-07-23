@@ -39,6 +39,9 @@ UnityShaderNav provides practical VS Code navigation for Unity shader projects:
 - Adapter-backed Definition, References, and focused contract diagnostics for
   File-mode Shader Graph Custom Function nodes, without parsing graph
   serialization in the language server.
+- Adapter-backed ShaderLab Property References and focused accessor diagnostics
+  from source-fresh C# evidence, including constant `Shader.PropertyToID`
+  name flows, without registering C# language providers.
 
 The project optimizes for useful editor behavior over full shader compilation
 semantics.
@@ -51,7 +54,8 @@ semantics.
 - Full C preprocessor expansion.
 - Rider-style shader context selection.
 - ShaderGraph generated-code modeling.
-- C# to shader cross-language navigation.
+- General C# language tooling or C# symbol indexing beyond the narrow
+  Adapter-backed Shader Property evidence overlay.
 - Surface Shader implicit parameter synthesis.
 
 ## Supported Inputs
@@ -81,6 +85,8 @@ Language server
   - builds symbol/reference indexes
   - overlays validated, versioned Shader Graph node facts supplied by the Unity
     Editor Adapter without decoding `.shadergraph` serialization
+  - overlays validated C# Shader Property usages after re-reading the exact
+    open buffer or closed saved source through the VS Code client
   - publishes only through the Workspace lifecycle boundary
   - answers LSP definition, references, symbols, highlight, CodeLens, and semantic-token requests
   - validates and compares optional aggregate Unity Variant build evidence

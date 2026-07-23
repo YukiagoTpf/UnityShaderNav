@@ -30,6 +30,7 @@ import {
 } from './statusPresentation';
 import { setupFileWatchers } from './watcher';
 import { registerPortabilityReportCommand } from './portabilityReportCommand';
+import { setupCSharpCurrentSource } from './csharpCurrentSource';
 
 let client: LanguageClient | undefined;
 
@@ -83,6 +84,7 @@ export async function activate(context: ExtensionContext): Promise<void> {
     () => env.openExternal(Uri.parse(VARIANT_COST_DOCUMENTATION_URL)),
   ));
   context.subscriptions.push(createVariantComparisonCommand(client, reportError));
+  setupCSharpCurrentSource(client, context, reportError);
   await client.start();
   try {
     const adapterStatus = await client.sendRequest<AdapterStatus>(ADAPTER_STATUS_REQUEST);

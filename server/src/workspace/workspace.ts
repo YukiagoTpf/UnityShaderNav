@@ -79,7 +79,10 @@ import {
   materialPropertyReferences,
   type MaterialPropertyTarget,
 } from './materialReferences';
-import { csharpPropertyReferences } from './csharpPropertyReferences';
+import {
+  csharpPropertyDiagnostics,
+  csharpPropertyReferences,
+} from './csharpPropertyReferences';
 import type { MaterialUsageProvider } from '../adapter/materialSource';
 import type {
   CSharpCurrentSourceProvider,
@@ -263,7 +266,20 @@ export class Workspace implements IndexedWorkspace {
     return this.queryRevision<Diagnostic[] | null>(
       document,
       null,
-      (revision) => revision.diagnostics(document, cancellation),
+      async (revision) => {
+        const diagnostics = await revision.diagnostics(document, cancellation);
+        if (!this.csharpPropertyUsages || !this.csharpCurrentSource) {
+          return diagnostics;
+        }
+        const csharpDiagnostics = await csharpPropertyDiagnostics(
+          document.uri,
+          revision.materialPropertyTargets(document.uri),
+          this.csharpPropertyUsages,
+          this.csharpCurrentSource,
+          cancellation,
+        );
+        return [...diagnostics, ...csharpDiagnostics];
+      },
       cancellation,
       undefined,
       (revision) => (

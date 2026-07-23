@@ -11,6 +11,7 @@ import {
   CSHARP_PROPERTY_USAGES_ADAPTER_FEATURE,
   type AdapterHandshake,
   type CSharpPropertyReferenceLocation,
+  type CSharpPropertyUncertainLocation,
   type ShaderLabPropertyType,
 } from '@unity-shader-nav/shared';
 import { AdapterRegistry } from '../../src/adapter/adapterRegistry';
@@ -112,6 +113,8 @@ function propertyToIdUsage(
     propertyName,
     propertyType: 'Color' as ShaderLabPropertyType,
     callKind: 'property-to-id',
+    accessor: 'property-to-id',
+    nameOrigin: 'direct',
     receiverType: 'Shader',
     expressionDeterminism: 'constant-string',
     bindingDeterminism: 'proven',
@@ -135,6 +138,8 @@ function materialSetUsage(
     propertyName,
     propertyType: 'Color' as ShaderLabPropertyType,
     callKind: 'material-set',
+    accessor: 'set-color',
+    nameOrigin: 'direct',
     receiverType: 'Material',
     expressionDeterminism: 'constant-string',
     bindingDeterminism: 'proven',
@@ -230,6 +235,17 @@ function csharpLocations(
     (location): location is CSharpPropertyReferenceLocation => (
       'data' in location
       && location.data?.kind === 'csharp-property-usage'
+    ),
+  );
+}
+
+function uncertainCSharpLocations(
+  locations: Location[] | null,
+): CSharpPropertyUncertainLocation[] {
+  return (locations ?? []).filter(
+    (location): location is CSharpPropertyUncertainLocation => (
+      'data' in location
+      && location.data?.kind === 'csharp-property-uncertain'
     ),
   );
 }
@@ -392,7 +408,7 @@ describe('C# Property usage References overlay (narrow prototype)', () => {
     expect(csharpLocations(result)).toHaveLength(0);
   });
 
-  it('rejects a name-only binding (not authoritative)', async () => {
+  it('returns a name-only binding as uncertain evidence, never authoritative', async () => {
     const handler = await registeredHandler([
       propertyToIdUsage(sha256(csText), {
         bindingDeterminism: 'name-only',
@@ -407,13 +423,19 @@ describe('C# Property usage References overlay (narrow prototype)', () => {
     });
 
     expect(csharpLocations(result)).toHaveLength(0);
+    expect(uncertainCSharpLocations(result)).toMatchObject([{
+      data: {
+        uncertaintyReason: 'binding-not-proven',
+        bindingDeterminism: 'name-only',
+      },
+    }]);
   });
 
-  it('rejects a dynamic expression (not authoritative)', async () => {
+  it('returns a dynamic expression as uncertain evidence, never authoritative', async () => {
     const handler = await registeredHandler([
-      propertyToIdUsage(sha256(csText), {
+      materialSetUsage(sha256(csText), {
         expressionDeterminism: 'dynamic',
-        propertyName: '',
+        nameOrigin: 'dynamic',
       }),
     ]);
 
@@ -424,6 +446,12 @@ describe('C# Property usage References overlay (narrow prototype)', () => {
     });
 
     expect(csharpLocations(result)).toHaveLength(0);
+    expect(uncertainCSharpLocations(result)).toMatchObject([{
+      data: {
+        uncertaintyReason: 'dynamic-property-name',
+        expressionDeterminism: 'dynamic',
+      },
+    }]);
   });
 
   it('returns no C# locations when the Adapter is unavailable', async () => {
@@ -457,5 +485,22 @@ describe('C# Property usage References overlay (narrow prototype)', () => {
     const locations = csharpLocations(result);
     expect(locations).toHaveLength(1);
     expect(locations[0].data.expressionDeterminism).toBe('constant-concat');
+  });
+
+  it('resolves a PropertyToID-derived setter without exposing a numeric ID', async () => {
+    const handler = await registeredHandler([
+      materialSetUsage(sha256(csText), { nameOrigin: 'property-id' }),
+    ]);
+
+    const result = await handler({
+      textDocument: { uri: shaderUri },
+      position: { line: 2, character: 7 },
+      context: { includeDeclaration: true },
+    });
+
+    const locations = csharpLocations(result);
+    expect(locations).toHaveLength(1);
+    expect(locations[0].data.nameOrigin).toBe('property-id');
+    expect(locations[0].data).not.toHaveProperty('propertyId');
   });
 });

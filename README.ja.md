@@ -12,6 +12,11 @@ UnityShaderNav は、Unity Shader プロジェクト向けの Visual Studio Code
   ノードと HLSL のナビゲーション。F12 は精度サフィックス付き宣言を開き、
   Find References は graph ノードへ戻り、Problems は include の欠落、
   無効なサフィックス、port/signature の不一致を報告します。
+- Adapter を介して ShaderLab Property の参照を現在の C# ソース呼び出しへ接続し、
+  定数 `Shader.PropertyToID` フローと型付き `Material` /
+  `MaterialPropertyBlock` Set/Get accessor を扱います。証明済みの型不一致は
+  Problems に表示し、名前のみ／動的な証拠は不確実として明示します。既存の C#
+  拡張機能と競合する language provider は登録しません。
 - ShaderLab の `Shader`、`Fallback`、Pass `Name`、`UsePass` に対するプロジェクト横断の Definition、References、Hover、Completion、Workspace Symbols、および保守的な Rename。`UsePass` の Pass 部分は Unity の大文字の正規形に従います。
 - 宣言が一意な HLSL/CG シンボルと、同じ `.shader` ファイル内の ShaderLab Property contract を対象とする保守的な Workspace Rename。オーバーロード、プリプロセッサ、Package など安全性を証明できない場合は変更を拒否します。
 - 解決できない vertex、fragment、geometry、hull、domain、surface、compute kernel エントリポイントを VS Code Problems に表示し、ライブドキュメントとプロジェクトインデックスに追従して更新します。

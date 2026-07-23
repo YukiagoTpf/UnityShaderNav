@@ -327,6 +327,19 @@ evidence, and an explicit unknown runtime scope. Material revisions are read on
 each request and never create `SymbolEntry`, source-membership, cache, or index
 lifecycle state.
 
+C# Shader Property usages are a separate Adapter overlay on ShaderLab Property
+References and diagnostics. A narrow server-to-client request reads the exact
+open `.cs` buffer, or the closed saved file through VS Code's workspace
+filesystem. `AdapterRegistry` accepts only versioned finite accessor contracts,
+constant name provenance, bounded ranges, and matching project/producer facts;
+the request layer then rechecks every usage against current source. Proven
+`Material` and `MaterialPropertyBlock` Set/Get calls are type-checked against
+the current ShaderLab Property. Constant `Shader.PropertyToID` flows retain the
+name identity but never persist or compare generated integer IDs. Name-only
+binding and dynamic-name calls remain explicit uncertain evidence. No C# fact
+enters `FileIndex`, source membership, or cache, and the extension registers no
+C# language provider.
+
 Variant comparison is another Adapter-supplied overlay and remains outside the
 source index. `variantBuildEvidenceSource` accepts only aggregate rows (at most
 2,048 Shader Contexts, 256 keyword sets per Context, and 8,192 sets total) and

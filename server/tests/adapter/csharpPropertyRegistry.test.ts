@@ -54,6 +54,8 @@ function validUsage(
     propertyName: '_Tint',
     propertyType: 'Color',
     callKind: 'property-to-id',
+    accessor: 'property-to-id',
+    nameOrigin: 'direct',
     receiverType: 'Shader',
     expressionDeterminism: 'constant-string',
     bindingDeterminism: 'proven',
@@ -161,6 +163,43 @@ describe('AdapterRegistry C# property usages validation', () => {
   it('rejects a usage with an invalid callKind', async () => {
     const registry = registryWithSource([
       validUsage({ callKind: 'shader-find' as AdapterCSharpPropertyUsage['callKind'] }),
+    ]);
+    const result = await registry.csharpPropertyUsagesFor(target);
+    expect(result.availability).toBe('available');
+    if (result.availability !== 'available') return;
+    expect(result.usages).toHaveLength(0);
+  });
+
+  it('rejects an accessor that does not match the call kind', async () => {
+    const registry = registryWithSource([
+      validUsage({ callKind: 'material-set', accessor: 'get-color' }),
+    ]);
+    const result = await registry.csharpPropertyUsagesFor(target);
+    expect(result.availability).toBe('available');
+    if (result.availability !== 'available') return;
+    expect(result.usages).toHaveLength(0);
+  });
+
+  it('accepts a PropertyToID-derived setter without a numeric ID contract', async () => {
+    const registry = registryWithSource([
+      validUsage({
+        callKind: 'material-set',
+        accessor: 'set-color',
+        nameOrigin: 'property-id',
+        receiverType: 'Material',
+      }),
+    ]);
+    const result = await registry.csharpPropertyUsagesFor(target);
+    expect(result.availability).toBe('available');
+    if (result.availability !== 'available') return;
+    expect(result.usages).toHaveLength(1);
+    expect(result.usages[0].nameOrigin).toBe('property-id');
+    expect(result.usages[0]).not.toHaveProperty('propertyId');
+  });
+
+  it('rejects a dynamic expression that claims a direct name origin', async () => {
+    const registry = registryWithSource([
+      validUsage({ expressionDeterminism: 'dynamic', nameOrigin: 'direct' }),
     ]);
     const result = await registry.csharpPropertyUsagesFor(target);
     expect(result.availability).toBe('available');

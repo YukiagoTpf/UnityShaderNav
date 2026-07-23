@@ -4,10 +4,12 @@ import { getConnection, createInitializeResult } from './connection';
 import {
   INDEX_STATUS_REQUEST,
   INCLUDE_POINT_CONTEXT_CHANGED_NOTIFICATION,
+  CSHARP_CURRENT_SOURCE_CHANGED_NOTIFICATION,
   VARIANT_CONTEXT_CHANGED_NOTIFICATION,
   VARIANT_CONTEXT_REQUEST,
   type IndexStatusSnapshot,
   type IncludePointContextChangedParams,
+  type CSharpCurrentSourceChangedParams,
   type VariantContext,
   type VariantContextChangedParams,
   type VariantContextParams,
@@ -51,13 +53,17 @@ import { includePointContextStore } from './workspace/includePointContextStore';
 import { portabilityTargetStore } from './portability/targetStore';
 import type { CancellationToken } from 'vscode-languageserver/node';
 import { throwIfRequestCancelled } from './lifecycle/requestCancellation';
+import { CSharpCurrentSourceClient } from './adapter/csharpCurrentSourceClient';
 
 const connection = getConnection();
 const adapterRegistry = new AdapterRegistry();
+const csharpCurrentSource = new CSharpCurrentSourceClient(connection);
 const manager = new WorkspaceManager({
   materialUsages: adapterRegistry,
   shaderGraphUsages: adapterRegistry,
   materialContext: adapterRegistry,
+  csharpPropertyUsages: adapterRegistry,
+  csharpCurrentSource,
 });
 const suspender = new RequestSuspender({ timeoutMs: 5000 });
 let compilerEvidence!: CompilerEvidenceService;
@@ -71,6 +77,13 @@ connection.onRequest(
   (_params, cancellation: CancellationToken): IndexStatusSnapshot => {
     throwIfRequestCancelled(cancellation);
     return manager.statusSnapshot();
+  },
+);
+
+connection.onNotification(
+  CSHARP_CURRENT_SOURCE_CHANGED_NOTIFICATION,
+  (_params: CSharpCurrentSourceChangedParams) => {
+    manager.requestDiagnosticsRefresh();
   },
 );
 

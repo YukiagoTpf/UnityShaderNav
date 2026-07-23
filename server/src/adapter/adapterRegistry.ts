@@ -19,6 +19,8 @@ import {
   type CompilerEvidenceRunResult,
   type CSharpPropertyUsage,
   type CSharpPropertyCallKind,
+  type CSharpPropertyAccessor,
+  type CSharpPropertyNameOrigin,
   type CSharpExpressionDeterminism,
   type CSharpBindingDeterminism,
   type CSharpShaderIdentity,
@@ -1330,6 +1332,28 @@ const VALID_CALL_KINDS: readonly CSharpPropertyCallKind[] = [
   'material-property-block-get',
 ];
 
+const VALID_ACCESSORS: readonly CSharpPropertyAccessor[] = [
+  'property-to-id',
+  'set-color',
+  'get-color',
+  'set-vector',
+  'get-vector',
+  'set-float',
+  'get-float',
+  'set-int',
+  'get-int',
+  'set-integer',
+  'get-integer',
+  'set-texture',
+  'get-texture',
+];
+
+const VALID_NAME_ORIGINS: readonly CSharpPropertyNameOrigin[] = [
+  'direct',
+  'property-id',
+  'dynamic',
+];
+
 const VALID_EXPRESSION_DETERMINISMS: readonly CSharpExpressionDeterminism[] = [
   'constant-string',
   'constant-concat',
@@ -1398,6 +1422,12 @@ function validCSharpPropertyUsage(
   if (u.propertyType === undefined) return false;
   if (!VALID_PROPERTY_TYPES.includes(u.propertyType)) return false;
   if (!VALID_CALL_KINDS.includes(u.callKind as CSharpPropertyCallKind)) return false;
+  if (!VALID_ACCESSORS.includes(u.accessor as CSharpPropertyAccessor)) return false;
+  if (!VALID_NAME_ORIGINS.includes(u.nameOrigin as CSharpPropertyNameOrigin)) return false;
+  if (!accessorMatchesCallKind(
+    u.callKind as CSharpPropertyCallKind,
+    u.accessor as CSharpPropertyAccessor,
+  )) return false;
   // receiverType is required (string | null); undefined is invalid.
   if (u.receiverType === undefined) return false;
   if (u.receiverType !== null && !nonEmptyString(u.receiverType)) return false;
@@ -1407,6 +1437,12 @@ function validCSharpPropertyUsage(
   if (!VALID_BINDING_DETERMINISMS.includes(
     u.bindingDeterminism as CSharpBindingDeterminism,
   )) return false;
+  if (u.expressionDeterminism === 'dynamic') {
+    if (u.nameOrigin !== 'dynamic') return false;
+  } else if (u.nameOrigin === 'dynamic') {
+    return false;
+  }
+  if (u.callKind === 'property-to-id' && u.nameOrigin !== 'direct') return false;
 
   // Shader identity: required for proven bindings, must be exactly null
   // (not undefined) otherwise.
@@ -1426,4 +1462,20 @@ function validCSharpPropertyUsage(
   if (!isSha256(u.sourceRevision.contentHash)) return false;
 
   return true;
+}
+
+function accessorMatchesCallKind(
+  callKind: CSharpPropertyCallKind,
+  accessor: CSharpPropertyAccessor,
+): boolean {
+  switch (callKind) {
+    case 'property-to-id':
+      return accessor === 'property-to-id';
+    case 'material-set':
+    case 'material-property-block-set':
+      return accessor.startsWith('set-');
+    case 'material-get':
+    case 'material-property-block-get':
+      return accessor.startsWith('get-');
+  }
 }

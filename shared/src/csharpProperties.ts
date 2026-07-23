@@ -46,6 +46,37 @@ export type CSharpPropertyCallKind =
   | 'material-property-block-set'
   | 'material-property-block-get';
 
+/**
+ * The exact Unity API accessor selected by Roslyn overload resolution.
+ *
+ * Keeping this finite lets the language server compare a proven C# call with
+ * the ShaderLab Property contract without parsing C# or trusting a free-form
+ * method name.
+ */
+export type CSharpPropertyAccessor =
+  | 'property-to-id'
+  | 'set-color'
+  | 'get-color'
+  | 'set-vector'
+  | 'get-vector'
+  | 'set-float'
+  | 'get-float'
+  | 'set-int'
+  | 'get-int'
+  | 'set-integer'
+  | 'get-integer'
+  | 'set-texture'
+  | 'get-texture';
+
+/**
+ * How the property-name contract reaches this call site.
+ *
+ * `property-id` means Roslyn proved a flow originating at
+ * `Shader.PropertyToID` and retained the string name. The numeric runtime ID
+ * is deliberately absent: it is not a stable source contract.
+ */
+export type CSharpPropertyNameOrigin = 'direct' | 'property-id' | 'dynamic';
+
 /** Identity of the Shader a proven call site is bound to. */
 export interface CSharpShaderIdentity {
   /** Shader name as declared in ShaderLab, e.g. "Tests/Lit". */
@@ -70,7 +101,8 @@ export interface CSharpSourceRevision {
 /**
  * A single C# call site referencing a shader property, as reported by the
  * Adapter. This is the raw payload: it may carry name-only, dynamic, or
- * generated-id items that are explicitly rejected from authoritative results.
+ * PropertyToID-derived items. Only the last category can become authoritative
+ * without ever exposing or trusting a numeric runtime ID.
  * Only items with `bindingDeterminism === 'proven'` AND a provable expression
  * name (constant-string or constant-concat) AND a validated source revision
  * become authoritative references.
@@ -85,6 +117,8 @@ export interface CSharpPropertyUsage {
   /** ShaderLab property type when the Adapter can prove it; null otherwise. */
   readonly propertyType: ShaderLabPropertyType | null;
   readonly callKind: CSharpPropertyCallKind;
+  readonly accessor: CSharpPropertyAccessor;
+  readonly nameOrigin: CSharpPropertyNameOrigin;
   /** Receiver type when the Adapter can prove it (Material, MaterialPropertyBlock, ...). */
   readonly receiverType: string | null;
   readonly expressionDeterminism: CSharpExpressionDeterminism;
@@ -109,6 +143,8 @@ export interface CSharpPropertyReferenceData {
   readonly propertyName: string;
   readonly propertyType: ShaderLabPropertyType | null;
   readonly callKind: CSharpPropertyCallKind;
+  readonly accessor: CSharpPropertyAccessor;
+  readonly nameOrigin: 'direct' | 'property-id';
   readonly receiverType: string | null;
   /** Always `proven` for an authoritative reference. */
   readonly bindingDeterminism: 'proven';
@@ -125,3 +161,38 @@ export interface CSharpPropertyReferenceLocation {
   readonly range: Range;
   readonly data: CSharpPropertyReferenceData;
 }
+
+export type CSharpPropertyUncertaintyReason =
+  | 'binding-not-proven'
+  | 'dynamic-property-name';
+
+/**
+ * Fresh Adapter evidence that can be shown to the user but is not an
+ * authoritative reference. Shader Property Rename must treat any such item as
+ * a blocker rather than silently editing it.
+ */
+export interface CSharpPropertyUncertainData {
+  readonly kind: 'csharp-property-uncertain';
+  readonly propertyName: string;
+  readonly propertyType: ShaderLabPropertyType | null;
+  readonly callKind: CSharpPropertyCallKind;
+  readonly accessor: CSharpPropertyAccessor;
+  readonly nameOrigin: CSharpPropertyNameOrigin;
+  readonly receiverType: string | null;
+  readonly bindingDeterminism: CSharpBindingDeterminism;
+  readonly expressionDeterminism: CSharpExpressionDeterminism;
+  readonly shader: CSharpShaderIdentity | null;
+  readonly sourceRevision: CSharpSourceRevision;
+  readonly uncertaintyReason: CSharpPropertyUncertaintyReason;
+  readonly provenance: CSharpPropertyUsage['provenance'];
+}
+
+export interface CSharpPropertyUncertainLocation {
+  readonly uri: string;
+  readonly range: Range;
+  readonly data: CSharpPropertyUncertainData;
+}
+
+export type CSharpPropertyEvidenceLocation =
+  | CSharpPropertyReferenceLocation
+  | CSharpPropertyUncertainLocation;

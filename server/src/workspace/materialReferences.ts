@@ -51,6 +51,21 @@ export function materialPropertyTargetAt(
   return shaderName ? { shaderName, property } : undefined;
 }
 
+export function materialPropertyTargets(
+  index: FileIndex | undefined,
+): MaterialPropertyTarget[] {
+  if (!index) return [];
+  const targets: MaterialPropertyTarget[] = [];
+  for (const property of index.properties ?? []) {
+    const shader = index.structure?.shaders.find((entry) => (
+      entry.headerLine <= property.nameRange.start.line
+      && property.nameRange.start.line <= entry.closeLine
+    ));
+    if (shader?.name) targets.push({ shaderName: shader.name, property });
+  }
+  return targets;
+}
+
 function unityAssetPath(uri: string): string {
   try {
     // Use the URL API (platform-independent) rather than fileURLToPath so

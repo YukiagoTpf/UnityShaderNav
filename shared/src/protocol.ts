@@ -71,6 +71,13 @@ export const VARIANT_CONTEXT_REQUEST = 'unityShaderNav/getVariantContext';
 /** Client → server: fetch the variant keywords declared in a document. */
 export const GET_VARIANT_KEYWORDS_REQUEST = 'unityShaderNav/getVariantKeywords';
 
+/** Server → client: read the exact current C# source without a C# provider. */
+export const CSHARP_CURRENT_SOURCE_REQUEST = 'unityShaderNav/csharpCurrentSource';
+
+/** Client → server: an observable C# buffer or saved source changed. */
+export const CSHARP_CURRENT_SOURCE_CHANGED_NOTIFICATION =
+  'unityShaderNav/csharpCurrentSourceChanged';
+
 /** Client → server: list revision-grounded include-point Contexts for a shared file. */
 export const INCLUDE_POINT_CONTEXTS_REQUEST = 'unityShaderNav/includePointContexts';
 
@@ -110,6 +117,19 @@ export interface GetVariantKeywordsParams {
 
 export interface GetVariantKeywordsResult {
   readonly keywords: string[];
+}
+
+export interface CSharpCurrentSourceParams {
+  readonly uri: string;
+}
+
+export interface CSharpCurrentSourceResult {
+  readonly text: string;
+  readonly availability: 'open-buffer' | 'closed-saved';
+}
+
+export interface CSharpCurrentSourceChangedParams {
+  readonly uri: string;
 }
 
 export interface IncludePointContext {

@@ -79,6 +79,16 @@ segment. References on a matching precision-suffixed HLSL Custom Function also
 include Adapter-reported graph node positions whose saved graph revision is
 still current.
 
+References on a ShaderLab Property can also include Adapter-reported C# calls
+whose exact current source still matches the evidence. Constant string calls
+and constant `Shader.PropertyToID` flows are authoritative when the Adapter has
+proven their Shader binding. Name-only and dynamic calls remain visible as
+explicitly uncertain evidence; they are never treated as safe Rename edits.
+Numeric runtime property IDs are not persisted or compared as source identity.
+UnityShaderNav reads open C# buffers through VS Code and falls back to the
+closed saved file, without registering a C# Definition, References, Rename, or
+diagnostics provider.
+
 Enable package references with:
 
 ```jsonc
@@ -143,6 +153,21 @@ provenance. An unavailable Adapter, an unadvertised capability, a stale graph
 revision, or an unsupported Shader Graph version produces no guessed graph
 facts or speculative diagnostics. Static ShaderLab/HLSL navigation remains
 unchanged.
+
+#### C# Shader Property evidence
+
+For authoritative, source-fresh C# evidence, UnityShaderNav reports
+`csharp-property-type-mismatch` when a `Material` or
+`MaterialPropertyBlock` Set/Get accessor is incompatible with the ShaderLab
+Property type. For example, a texture accessor is incompatible with a `Color`
+Property. A constant `Shader.PropertyToID` assignment preserves the Property
+name's source identity without using the generated integer value.
+
+Name-only Shader binding and dynamic Property-name expressions produce the
+informational `csharp-property-uncertain` diagnostic instead of a type claim.
+Stale, malformed, foreign-project, or unsupported Adapter evidence is ignored.
+These focused Shader diagnostics do not replace the installed C# extension's
+compiler diagnostics.
 
 #### SRP Batcher material contracts
 

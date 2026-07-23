@@ -61,6 +61,15 @@ struct 成员导航，例如 `surface.positionWS`，先推导 receiver 的声明
 File 模式 Custom Function 节点与其 HLSL include 声明之间的 Adapter-backed 导航关系。Adapter 按受支持的 Shader Graph 版本产出 source、precision、port、range 与 provenance 等逻辑事实；Language Server 只验证精确 asset revision 和带 `_float` / `_half` 后缀的 HLSL signature，不解析或猜测 `.shadergraph` 序列化字段。
 _Avoid_: Shader Graph parser, generated-code index
 
+**C# Property evidence**:
+Adapter 提供的 ShaderLab Property 与 C# `Material` / `MaterialPropertyBlock`
+Set/Get 调用之间的会话级证据。可信引用必须具有已证明的 Shader 绑定、常量 Property
+名称来源、有限 accessor 类型和仍匹配的当前 C# 源码；常量
+`Shader.PropertyToID` 只传递名称 identity，不把运行时整数 ID 当作稳定契约。
+仅名称绑定和动态表达式必须保留为 uncertain evidence，不能成为安全 Rename edit。
+该证据不进入源码索引或缓存，也不构成通用 C# language tooling。
+_Avoid_: C# symbol index, numeric property ID contract
+
 ### 辅助能力
 
 **Quick Documentation**:

@@ -2,8 +2,10 @@
 
 ## Status
 
-Proposed — 2026-07-20; decision draft for
-[#94](https://github.com/YukiagoTpf/UnityShaderNav/issues/94).
+Accepted — 2026-07-20 by
+[#94](https://github.com/YukiagoTpf/UnityShaderNav/issues/94); production
+current-source bridge and contract diagnostics completed by
+[#95](https://github.com/YukiagoTpf/UnityShaderNav/issues/95).
 
 ## Context
 
@@ -142,17 +144,16 @@ current observable source — never enters References.
 The production client does **not** include `csharp` in its documentSelector,
 so the server cannot observe open C# buffers through the normal document
 registry; a disk read alone cannot prove the current visible revision when the
-buffer is unsaved. Therefore the live capability is **not** enabled in
-`server.ts` until #95 implements a client-side revision/hash bridge that
-distinguishes `open-buffer` (an editor buffer, dirty or clean), `closed-saved`
-(read from disk), and `unknown` (not observable) — **without** registering a C#
-language provider. The Workspace and WorkspaceManager retain the optional seam
-(`csharpCurrentSource`), and the narrow prototype proves the PropertyToID path
-using a mock provider. The resolver computes the SHA-256 content hash from the
-observed text itself rather than trusting a provider-supplied hash, so a
-provider cannot bypass freshness by reporting a stale hash alongside mismatched
-text. This mirrors the current-content validation used by Shader Graph
-navigation while respecting the no-C#-provider constraint.
+buffer is unsaved. A narrow server-to-client request therefore distinguishes
+`open-buffer` (an editor buffer, dirty or clean), `closed-saved` (read from
+disk), and `unknown` (not observable) — **without** registering a C# language
+provider. C# open/change/save/close events only invalidate diagnostics; they do
+not transfer source until an evidence query needs it. The resolver computes the
+SHA-256 content hash from the observed text rather than trusting a
+provider-supplied hash, so a provider cannot bypass freshness by reporting a
+stale hash alongside mismatched text. This mirrors the current-content
+validation used by Shader Graph navigation while respecting the no-C#-provider
+constraint.
 
 ### Privacy
 
@@ -186,18 +187,19 @@ The prototype proves one `Shader.PropertyToID` / `Material.Set*` → Shader
 Property navigation path: Find References from a ShaderLab Property returns
 proven C# call sites (constant-string or constant-concat, binding-proven,
 source-fresh) as `CSharpPropertyReferenceLocation` items, alongside existing
-source and Material usages. The prototype uses a mock Adapter and does not
-register any C# provider.
+source and Material usages. Tests use a mock Adapter and the production client
+supplies only exact current-source snapshots; neither path registers a C#
+provider.
 
-## Interface for #95 reuse
+## Accessor contracts
 
-[#95](https://github.com/YukiagoTpf/UnityShaderNav/issues/95) (C# Property
-setters to Shader Property usages) reuses the `csharp-property-usages`
-capability, the `CSharpPropertyUsage` / `CSharpPropertyReferenceLocation`
-types, the AdapterRegistry validation, and the Workspace overlay. #95 adds
-type-checking of supported setters/getters against the Property contract and
-focused diagnostics for mismatches — both as further overlays on the same
-facts. No new transport or provider registration is needed.
+Each usage carries a finite, validated accessor such as `set-color`,
+`get-float`, or `set-texture`. Proven, fresh calls are compared against the
+ShaderLab Property type and incompatible accessors produce focused diagnostics
+on the Property with the C# call as related evidence. PropertyToID-derived
+flows carry the original string contract plus `nameOrigin: property-id`; no
+numeric runtime ID enters the payload. Fresh name-only or dynamic evidence is
+projected as explicitly uncertain and is never authoritative for Rename.
 
 ## Non-goals for this slice
 
@@ -206,7 +208,6 @@ facts. No new transport or provider registration is needed.
 - Production-grade text scanning or automatic text fallback for C#.
 - `Shader.Find` or keyword setter references (separate domains).
 - Persisting C# facts in the index, cache, or any durable store.
-- Defining the #95 type-checking or diagnostics payloads.
 
 ## Existing decision guardrails
 
