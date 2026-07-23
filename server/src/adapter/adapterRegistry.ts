@@ -105,7 +105,15 @@ interface DisconnectedAdapter {
   readonly state: 'disconnected';
 }
 
-type RegisteredAdapter = ConnectedAdapter | DisconnectedAdapter;
+interface RejectedAdapter {
+  readonly state: 'rejected';
+  readonly reason: Extract<
+    AdapterUnavailableReason,
+    'stale' | 'foreign-project' | 'version-incompatible'
+  >;
+}
+
+type RegisteredAdapter = ConnectedAdapter | DisconnectedAdapter | RejectedAdapter;
 
 /** Feature transports negotiated by one handshake, extensible without positional arguments. */
 export interface AdapterFeatureSources {
@@ -159,6 +167,17 @@ export class AdapterRegistry implements MaterialPropertyRenameProvider {
     handshake: AdapterHandshake,
     sources: AdapterConnectionSources | MaterialSource = {},
   ): AdapterStatus {
+    const rejection = this.handshakeRejection(expectedProjectId, handshake);
+    if (rejection) {
+      this.disposeMaterialContextSubscription();
+      this.materialContextGeneration++;
+      this.registered = { state: 'rejected', reason: rejection };
+      const status = this.computeStatus();
+      this.publishStatusChange(status, true);
+      this.publishMaterialContextChange();
+      return status;
+    }
+
     // Keep the pre-#101 MaterialSource argument compatible while all new
     // capabilities use the extensible source bag.
     const materialSource = 'materialsUsingShader' in sources
@@ -602,6 +621,9 @@ export class AdapterRegistry implements MaterialPropertyRenameProvider {
     if (this.registered.state === 'disconnected') {
       return standalone('disconnected');
     }
+    if (this.registered.state === 'rejected') {
+      return standalone(this.registered.reason);
+    }
 
     const { expectedProjectId, handshake } = this.registered;
     if (handshake.interfaceVersion !== ADAPTER_INTERFACE_VERSION) {
@@ -611,19 +633,36 @@ export class AdapterRegistry implements MaterialPropertyRenameProvider {
       return standalone('foreign-project');
     }
 
+    return {
+      mode: 'adapter',
+      capabilities: handshake.capabilities,
+    };
+  }
+
+  /**
+   * Handshake freshness is an admission check. Once its authenticated stream
+   * is connected, elapsed wall-clock time cannot make it stale; EOF or an
+   * explicit replacement owns that lifecycle transition.
+   */
+  private handshakeRejection(
+    expectedProjectId: string,
+    handshake: AdapterHandshake,
+  ): RejectedAdapter['reason'] | undefined {
+    if (handshake.interfaceVersion !== ADAPTER_INTERFACE_VERSION) {
+      return 'version-incompatible';
+    }
+    if (handshake.capabilities.projectId !== expectedProjectId) {
+      return 'foreign-project';
+    }
     const age = this.now() - handshake.issuedAt;
     if (
       !Number.isFinite(handshake.issuedAt)
       || age < 0
       || age > this.handshakeMaxAgeMs
     ) {
-      return standalone('stale');
+      return 'stale';
     }
-
-    return {
-      mode: 'adapter',
-      capabilities: handshake.capabilities,
-    };
+    return undefined;
   }
 
   private currentConnectedAdapter(): ConnectedAdapter | undefined {

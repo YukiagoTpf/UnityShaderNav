@@ -54,6 +54,7 @@ type SettingsResolver = (scopeUri: string) => ExtensionSettings | Promise<Extens
 
 interface WorkspaceRecord {
   workspace: Workspace;
+  adapter?: WorkspaceAdapterProvider;
   terminal: Promise<void>;
   retired: Promise<void>;
   isRetired: boolean;
@@ -75,7 +76,21 @@ export interface WorkspaceManagerRuntimeOptions {
   readonly csharpCurrentSource?: CSharpCurrentSourceProvider;
   readonly shaderGraphUsages?: ShaderGraphUsageProvider;
   readonly materialContext?: MaterialContextProvider;
+  /**
+   * Resolve one Adapter boundary per Workspace root. A connected Unity Editor
+   * stream is exclusive to that boundary; sharing a mutable registry across
+   * roots would let one project's reconnect invalidate another project's
+   * evidence.
+   */
+  readonly adapterForFolder?: (folderUri: string) => WorkspaceAdapterProvider;
 }
+
+export interface WorkspaceAdapterProvider
+  extends MaterialUsageProvider,
+    MaterialPropertyRenameProvider,
+    CSharpPropertyUsageProvider,
+    ShaderGraphUsageProvider,
+    MaterialContextProvider {}
 
 export class WorkspaceManager implements DiagnosticWorkspaceService {
   private readonly byFolder = new Map<string, WorkspaceRecord>();
@@ -86,6 +101,9 @@ export class WorkspaceManager implements DiagnosticWorkspaceService {
   private openDocuments: OpenDocumentsProvider | undefined;
   private diagnosticsRefresh: (() => void) | undefined;
   private readonly routingTransitions = new Map<Workspace, number>();
+  private readonly workspaceListeners = new Set<
+    (workspaces: readonly Workspace[]) => void
+  >();
   private statusSequence = 0;
 
   constructor(private readonly runtimeOptions: WorkspaceManagerRuntimeOptions = {}) {}
@@ -114,6 +132,13 @@ export class WorkspaceManager implements DiagnosticWorkspaceService {
 
   requestDiagnosticsRefresh(): void {
     this.diagnosticsRefresh?.();
+  }
+
+  onDidChangeWorkspaces(
+    listener: (workspaces: readonly Workspace[]) => void,
+  ): { dispose(): void } {
+    this.workspaceListeners.add(listener);
+    return { dispose: () => { this.workspaceListeners.delete(listener); } };
   }
 
   openDocumentSnapshot(uri: string): IndexedDocumentSnapshot | undefined {
@@ -253,6 +278,17 @@ export class WorkspaceManager implements DiagnosticWorkspaceService {
   private publishStatus(): void {
     this.statusSequence++;
     this.diagnosticsRefresh?.();
+    const workspaces = this.list();
+    for (const listener of [...this.workspaceListeners]) {
+      try {
+        listener(workspaces);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.connection?.console.error(
+          `[UnityShaderNav] workspace lifecycle listener failed: ${message}`,
+        );
+      }
+    }
     const connection = this.connection;
     if (typeof connection?.sendNotification !== 'function') return;
 
@@ -342,6 +378,7 @@ export class WorkspaceManager implements DiagnosticWorkspaceService {
     const currentConnection = this.connection ?? connection;
     this.connection ??= currentConnection;
     const currentGlobalStorageDir = globalStorageDir ?? this.globalStorageDir;
+    const adapter = this.runtimeOptions.adapterForFolder?.(folderUri);
     let workspace!: Workspace;
     workspace = new Workspace(folderUri, settings, {
       candidateConstructor: this.runtimeOptions.createCandidateConstructor?.(folderUri),
@@ -355,12 +392,12 @@ export class WorkspaceManager implements DiagnosticWorkspaceService {
           (document) => this.workspaceFor(document.uri) === workspace,
         )
         : undefined,
-      materialUsages: this.runtimeOptions.materialUsages,
-      materialRenames: this.runtimeOptions.materialRenames,
-      csharpPropertyUsages: this.runtimeOptions.csharpPropertyUsages,
+      materialUsages: adapter ?? this.runtimeOptions.materialUsages,
+      materialRenames: adapter ?? this.runtimeOptions.materialRenames,
+      csharpPropertyUsages: adapter ?? this.runtimeOptions.csharpPropertyUsages,
       csharpCurrentSource: this.runtimeOptions.csharpCurrentSource,
-      shaderGraphUsages: this.runtimeOptions.shaderGraphUsages,
-      materialContext: this.runtimeOptions.materialContext,
+      shaderGraphUsages: adapter ?? this.runtimeOptions.shaderGraphUsages,
+      materialContext: adapter ?? this.runtimeOptions.materialContext,
     });
     let resolveRetired!: () => void;
     const retired = new Promise<void>((resolve) => {
@@ -368,6 +405,7 @@ export class WorkspaceManager implements DiagnosticWorkspaceService {
     });
     const record: WorkspaceRecord = {
       workspace,
+      ...(adapter ? { adapter } : {}),
       terminal: Promise.resolve(),
       retired,
       isRetired: false,
@@ -398,6 +436,14 @@ export class WorkspaceManager implements DiagnosticWorkspaceService {
         }
       });
     await Promise.race([record.terminal, record.retired]);
+  }
+
+  adapterFor(fileUri: string): WorkspaceAdapterProvider | undefined {
+    return this.recordFor(fileUri)?.adapter;
+  }
+
+  adapterForFolder(folderUri: string): WorkspaceAdapterProvider | undefined {
+    return this.byFolder.get(folderUri)?.adapter;
   }
 
   async workspaceForOrCreateFile(

@@ -17,6 +17,9 @@ import {
 } from '@unity-shader-nav/shared';
 import { AdapterRegistry } from './adapter/adapterRegistry';
 import { CompilerEvidenceService } from './adapter/compilerEvidenceService';
+import {
+  WorkspaceAdapterCoordinator,
+} from './adapter/workspaceAdapterCoordinator';
 import { loadSettings, onSettingsChanged } from './config';
 import { registerAdapterDiagnosticOverlay } from './handlers/adapterDiagnostics';
 import { registerAdapterStatusHandler } from './handlers/adapterStatus';
@@ -58,20 +61,30 @@ import { CSharpCurrentSourceClient } from './adapter/csharpCurrentSourceClient';
 
 const connection = getConnection();
 const adapterRegistry = new AdapterRegistry();
+const workspaceAdapters = new WorkspaceAdapterCoordinator({
+  reportError(message, error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    connection.console.error(`[UnityShaderNav] ${message}: ${detail}`);
+  },
+});
 const csharpCurrentSource = new CSharpCurrentSourceClient(connection);
 const manager = new WorkspaceManager({
-  materialUsages: adapterRegistry,
-  materialRenames: adapterRegistry,
-  shaderGraphUsages: adapterRegistry,
-  materialContext: adapterRegistry,
-  csharpPropertyUsages: adapterRegistry,
+  adapterForFolder: (folderUri) => (
+    workspaceAdapters.adapterForFolder(folderUri)
+  ),
   csharpCurrentSource,
+});
+manager.onDidChangeWorkspaces((workspaces) => {
+  workspaceAdapters.reconcile(workspaces.map((workspace) => ({
+    folderUri: workspace.folderUri,
+    unityRoot: workspace.unityRoot,
+  })));
 });
 const suspender = new RequestSuspender({ timeoutMs: 5000 });
 let compilerEvidence!: CompilerEvidenceService;
 let globalStorageDir: string | undefined;
 
-registerAdapterStatusHandler(connection, adapterRegistry);
+registerAdapterStatusHandler(connection, workspaceAdapters);
 
 // Status remains queryable during the bounded cold-start request gate.
 connection.onRequest(
@@ -185,6 +198,7 @@ registerDiagnosticsPublisher(
   [adapterDiagnosticOverlay],
 );
 adapterRegistry.onDidChangeStatus(() => manager.requestDiagnosticsRefresh());
+workspaceAdapters.onDidChangeStatus(() => manager.requestDiagnosticsRefresh());
 manager.configureSettingsResolver((scopeUri) => loadSettings(connection, scopeUri));
 
 connection.onInitialized(async () => {
@@ -248,7 +262,7 @@ registerInactiveRegionsHandler(
   suspender,
 );
 registerIncludePointContextsHandler(connection, manager, suspender);
-registerMaterialContextHandler(connection, manager, adapterRegistry, suspender);
+registerMaterialContextHandler(connection, manager, workspaceAdapters, suspender);
 registerVariantKeywordsHandler(connection, documents);
 registerPortabilityReportHandler(
   connection,
@@ -274,7 +288,11 @@ registerFileWatchers(
 );
 
 connection.onShutdown(async () => {
-  await manager.persistAll();
+  try {
+    await manager.persistAll();
+  } finally {
+    workspaceAdapters.dispose();
+  }
 });
 
 connection.listen();

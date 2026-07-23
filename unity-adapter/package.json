@@ -1,0 +1,15 @@
+{
+  "name": "com.yukiagotpf.unity-shader-nav-adapter",
+  "version": "0.1.0",
+  "displayName": "Unity Shader Nav Adapter",
+  "description": "Local Editor Adapter transport for UnityShaderNav.",
+  "unity": "2022.3",
+  "keywords": [
+    "shader",
+    "editor",
+    "adapter"
+  ],
+  "author": {
+    "name": "UnityShaderNav contributors"
+  }
+}

@@ -1,3 +1,5 @@
 {
-  "dependencies": {}
+  "dependencies": {
+    "com.yukiagotpf.unity-shader-nav-adapter": "file:../../../unity-adapter"
+  }
 }

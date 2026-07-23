@@ -101,5 +101,10 @@ test('raw captures and Unity user/generated state stay outside Git', async () =>
     attributes,
     /^tools\/gpu-capture-prototype\/\*\*\/\*\.shader text eol=lf$/m,
   );
-  assert.deepEqual(manifest, { dependencies: {} });
+  assert.deepEqual(manifest, {
+    dependencies: {
+      'com.yukiagotpf.unity-shader-nav-adapter':
+        'file:../../../unity-adapter',
+    },
+  });
 });

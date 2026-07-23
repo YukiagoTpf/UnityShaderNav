@@ -19,6 +19,7 @@ import {
   type WorkspaceManagerRuntimeOptions,
 } from '../../src/workspace/workspaceManager';
 import { Workspace } from '../../src/workspace/workspace';
+import { AdapterRegistry } from '../../src/adapter/adapterRegistry';
 import {
   copyUnityProjectFixture,
   removeCopiedUnityProject,
@@ -161,6 +162,52 @@ describe('WorkspaceManager: multi-root', () => {
     expect(workspaceB?.folderUri).toBe(projectBUri);
     expect(symbolsNamed(workspaceA, 'OnlyInB')).toEqual([]);
     expect(symbolsNamed(workspaceB, 'Common')).toEqual([]);
+  });
+
+  it('binds one exclusive Adapter registry to each workspace root', async () => {
+    const projectB = await makeProjectB();
+    const projectAUri = pathToFileURL(projectA).href;
+    const projectBUri = pathToFileURL(projectB).href;
+    const registries = new Map<string, AdapterRegistry>();
+    const manager = new WorkspaceManager({
+      adapterForFolder(folderUri) {
+        const registry = new AdapterRegistry();
+        registries.set(folderUri, registry);
+        return registry;
+      },
+    });
+
+    await manager.addFolder(projectAUri, DEFAULT_SETTINGS, fakeConnection);
+    await manager.addFolder(projectBUri, DEFAULT_SETTINGS, fakeConnection);
+
+    const fileA = pathToFileURL(
+      join(projectA, 'Assets', 'Shaders', 'Common.hlsl'),
+    ).href;
+    const fileB = pathToFileURL(
+      join(projectB, 'Assets', 'Shaders', 'OnlyInB.hlsl'),
+    ).href;
+    expect(manager.adapterFor(fileA)).toBe(registries.get(projectAUri));
+    expect(manager.adapterFor(fileB)).toBe(registries.get(projectBUri));
+    expect(manager.adapterFor(fileA)).not.toBe(manager.adapterFor(fileB));
+
+    await manager.removeFolder(projectAUri);
+    expect(manager.adapterForFolder(projectAUri)).toBeUndefined();
+    expect(manager.adapterFor(fileB)).toBe(registries.get(projectBUri));
+  });
+
+  it('publishes workspace snapshots to lifecycle subscribers', async () => {
+    const folderUri = pathToFileURL(projectA).href;
+    const manager = new WorkspaceManager();
+    const snapshots: string[][] = [];
+    const subscription = manager.onDidChangeWorkspaces((workspaces) => {
+      snapshots.push(workspaces.map(({ folderUri: uri }) => uri));
+    });
+
+    await manager.addFolder(folderUri, DEFAULT_SETTINGS, fakeConnection);
+    await manager.removeFolder(folderUri);
+    subscription.dispose();
+
+    expect(snapshots).toEqual([[folderUri], [folderUri], []]);
   });
 
   it('reports a ready Unity workspace in the lifecycle snapshot', async () => {

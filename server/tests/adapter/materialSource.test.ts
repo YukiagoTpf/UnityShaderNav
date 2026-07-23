@@ -200,8 +200,8 @@ describe('Adapter Material source trust boundary', () => {
       now: () => currentTime,
       handshakeMaxAgeMs: 1_000,
     });
-    registry.registerHandshake('project-a', handshake(), source);
     currentTime += 1_001;
+    registry.registerHandshake('project-a', handshake(), source);
 
     await expect(registry.materialsUsingShader({
       name: 'Tests/Lit',

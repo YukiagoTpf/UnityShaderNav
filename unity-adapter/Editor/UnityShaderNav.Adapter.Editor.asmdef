@@ -1,0 +1,16 @@
+{
+  "name": "UnityShaderNav.Adapter.Editor",
+  "rootNamespace": "UnityShaderNav.Adapter",
+  "references": [],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

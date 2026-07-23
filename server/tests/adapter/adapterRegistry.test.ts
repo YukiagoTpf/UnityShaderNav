@@ -135,7 +135,7 @@ describe('AdapterRegistry', () => {
     ]);
   });
 
-  it('observes a connected handshake becoming stale', () => {
+  it('keeps an admitted stream current until it disconnects', () => {
     let now = 1_000_000;
     const registry = new AdapterRegistry({
       now: () => now,
@@ -147,8 +147,18 @@ describe('AdapterRegistry', () => {
 
     now += 1_001;
 
-    expect(registry.status()).toEqual({ mode: 'standalone', reason: 'stale' });
-    expect(statuses).toEqual([{ mode: 'standalone', reason: 'stale' }]);
+    expect(registry.status()).toEqual({
+      mode: 'adapter',
+      capabilities: CAPABILITIES,
+    });
+    expect(statuses).toEqual([]);
+
+    registry.disconnect();
+
+    expect(registry.status()).toEqual({
+      mode: 'standalone',
+      reason: 'disconnected',
+    });
   });
 
   it('runs one selected profile and reports its bounded compiler outcome', async () => {
@@ -323,16 +333,16 @@ describe('AdapterRegistry', () => {
   });
 
   it('rejects stale handshake evidence', () => {
-    let now = 1_000_000;
+    const now = 1_000_000;
     const registry = new AdapterRegistry({
       now: () => now,
       handshakeMaxAgeMs: 1_000,
     });
-    registry.registerHandshake('project-a', handshake(now));
 
-    now += 1_001;
-
-    expect(registry.status()).toEqual({
+    expect(registry.registerHandshake(
+      'project-a',
+      handshake(now - 1_001),
+    )).toEqual({
       mode: 'standalone',
       reason: 'stale',
     });

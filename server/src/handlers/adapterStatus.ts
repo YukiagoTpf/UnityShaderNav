@@ -8,7 +8,7 @@ import { throwIfRequestCancelled } from '../lifecycle/requestCancellation';
 
 export function registerAdapterStatusHandler(
   connection: Connection,
-  registry: AdapterRegistry,
+  registry: Pick<AdapterRegistry, 'status'>,
 ): void {
   connection.onRequest(
     ADAPTER_STATUS_REQUEST,
