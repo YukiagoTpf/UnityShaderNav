@@ -1,1 +1,2 @@
 server/grammars/tree-sitter-hlsl.LICENSE -text
+server/tests/**/*.shader text eol=lf

@@ -53,6 +53,7 @@ npm run check:fast
 npm run check:knowledge
 npm run check:artifacts
 npm run check:shader-budgets
+npm run check:shader-contract
 npm run build
 npm run watch
 npm run test -w @unity-shader-nav/server
@@ -71,6 +72,11 @@ npm run grammar:rebuild
 `npm run check:shader-budgets` is the same Shader Variant budget gate used by
 CI. See [Shader Variant Budgets](shader-budgets.md) for the versioned contract,
 baseline workflow, report path, and exit codes.
+
+`npm run check:shader-contract` is the repository's aggregate compiler gate.
+It verifies required profiles and capabilities, warning baselines, conservative
+SRP Batcher Property contracts, and the Variant budget contract with one local
+and CI command. See [Shader Compile Contract](shader-compile-contract.md).
 
 ## Testing Strategy
 

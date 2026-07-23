@@ -143,6 +143,12 @@ Pass、Stage、build target 和 graphics API 选择 Context。Declared 只来自
 `unverified` 并使门禁失败，不能解释为 0 或 pass。
 _Avoid_: best-effort budget, missing-evidence pass
 
+**Shader compile contract**:
+仓库选择的 Shader scopes、必需 Adapter/profile capabilities、compiler warning
+baselines、SRP Batcher requirements、Variant budgets 与明确 unverified CI policy
+的版本化合约。不同 evidence class 保持独立，缺少某类证据不能由另一类替代。
+_Avoid_: best-effort compile check, missing-evidence pass
+
 ## Flagged ambiguities
 
 **"Package"**:

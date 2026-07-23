@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "policy": {
+    "unverified": "fail"
+  },
+  "requiredCapabilities": [
+    "shader-messages",
+    "variant-build-evidence"
+  ],
+  "scopes": [
+    {
+      "id": "compile-contract-self-check",
+      "source": "server/tests/contracts/fixtures/CompileContractSelfCheck.shader",
+      "srpBatcher": "required",
+      "profiles": [
+        {
+          "profile": {
+            "name": "macOS Metal",
+            "platform": "StandaloneOSX",
+            "graphicsApi": "Metal",
+            "capability": "compile-profile/macos-metal"
+          },
+          "evidence": "server/tests/contracts/fixtures/CompileContractSelfCheck.evidence.json",
+          "warnings": {
+            "forbiddenMessageSubstrings": [
+              "Shader error"
+            ],
+            "baseline": []
+          }
+        }
+      ]
+    }
+  ],
+  "variantBudgets": "shader-budgets.json"
+}

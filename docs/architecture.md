@@ -372,6 +372,14 @@ plus keyword-set baselines. Kept budgets accept only completed evidence with a
 current source SHA-256. The stable report has no timestamp or absolute path;
 failed and unverified results both produce a non-zero CI exit.
 
+The repository Shader compile contract is the orchestration boundary above
+profiled `shader-messages`, the static SRP Batcher material checker, and the
+offline Variant budget verifier. It preserves each evidence class and status
+instead of collapsing absence into success. Exact source hashes and exact
+profile identities bind committed compiler captures to selected scopes; the
+contract's explicit unverified policy controls CI without changing report
+truth.
+
 File-mode Shader Graph Custom Function usages are another Adapter-supplied
 overlay. Adapter-owned version decoders emit one serialization-neutral logical
 node contract: graph/source identities, source ranges, precision, ordered

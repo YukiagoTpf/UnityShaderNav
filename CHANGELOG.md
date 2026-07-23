@@ -9,6 +9,12 @@ and uses semantic versioning for extension releases.
 
 ### Added
 
+- Added a repository Shader compile contract and the
+  `npm run check:shader-contract` command, combining exact-source platform
+  compiler evidence,
+  new/forbidden warning enforcement, conservative SRP Batcher Property checks,
+  and Variant budgets with distinct pass/failed/unverified CI semantics.
+  (#100)
 - Added a versioned, repository-owned Shader Variant budget contract and
   `npm run check:shader-budgets` local/CI gate. Per-Shader, Pass, stage, build
   target, and graphics API declared/kept limits and baseline deltas produce

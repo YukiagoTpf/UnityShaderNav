@@ -8,6 +8,7 @@ This directory contains the public-facing documentation for UnityShaderNav.
 - [Configuration](configuration.md)
 - [Troubleshooting](troubleshooting.md)
 - [Shader Variant Budgets](shader-budgets.md)
+- [Shader Compile Contract](shader-compile-contract.md)
 
 ## Contributors
 

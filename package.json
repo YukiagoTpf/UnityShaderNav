@@ -16,6 +16,7 @@
     "check:knowledge": "node --test scripts/check-public-knowledge.test.mjs && node scripts/check-public-knowledge.mjs",
     "check:artifacts": "node --test scripts/bundled-third-party-notices.test.mjs scripts/runtime-artifacts.test.mjs scripts/vsix-file-modes.test.mjs",
     "check:shader-budgets": "tsc -p shared && vite-node server/src/budgets/cli.ts",
+    "check:shader-contract": "tsc -p shared && vite-node server/src/contracts/cli.ts",
     "check:fast": "npm run check:workspace-lock && npm run check:knowledge && npm run check:artifacts && npm run clean && npm run build && npm run test -w @unity-shader-nav/server",
     "test": "npm run check:fast && npm run test:integration",
     "test:integration": "npm run test:package && npm run test:electron:prepared",

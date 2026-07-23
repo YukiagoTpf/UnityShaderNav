@@ -610,6 +610,23 @@ inventories, so source additions, removals, and large count regressions name
 the responsible Shader/Pass and keyword-set deltas. See
 [Shader Variant Budgets](shader-budgets.md).
 
+### Repository Shader Compile Contract
+
+Repositories can combine required compiler profiles, exact-source warning
+baselines, SRP Batcher Property contracts, and Variant budgets behind one local
+and CI command:
+
+```bash
+npm run check:shader-contract
+```
+
+The committed `shader-compile-contract.json` declares selected Shader scopes,
+required Adapter capabilities, evidence files, and the explicit policy for
+unverified results. Missing Unity, license, Adapter, profile, capability, or
+exact-source evidence stays `unverified`; this repository's policy makes that a
+non-zero CI result. See [Shader Compile Contract](shader-compile-contract.md)
+for the evidence envelope, exit codes, machine output, and baseline workflow.
+
 ## Project Detection
 
 The extension tries to find a Unity project root by locating a directory with

@@ -101,6 +101,9 @@ The extension focuses on fast code navigation:
   CI. Per-Shader, Pass, stage, and platform declared/kept limits produce stable
   human and JSON reports; missing required build evidence fails as
   `unverified`, never as a silent pass.
+- One repository Shader compile contract for required platform profiles,
+  compiler warning baselines, SRP Batcher Properties, and Variant budgets, with
+  distinct pass, failed, and unverified CI results.
 - Unity Package resolution through `Packages/packages-lock.json`.
 - Persistent project-local indexing under `Library/UnityShaderNavCache/`.
 
@@ -201,6 +204,7 @@ See [Configuration](docs/configuration.md) for the full explanation and examples
 - [Troubleshooting](docs/troubleshooting.md)
 - [Technical Spec](docs/technical-spec.md)
 - [Shader Variant Budgets](docs/shader-budgets.md)
+- [Shader Compile Contract](docs/shader-compile-contract.md)
 - [Architecture Decision Records](docs/adr/)
 
 ## Known Limits

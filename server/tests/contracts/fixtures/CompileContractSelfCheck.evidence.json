@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "status": "completed",
+  "supportedFeatures": [
+    "compile-profile/macos-metal",
+    "shader-messages",
+    "variant-build-evidence"
+  ],
+  "profile": {
+    "name": "macOS Metal",
+    "platform": "StandaloneOSX",
+    "graphicsApi": "Metal",
+    "capability": "compile-profile/macos-metal"
+  },
+  "durationMs": 12,
+  "provenance": {
+    "capability": "shader-messages",
+    "adapterVersion": "fixture-adapter",
+    "unityVersion": "2022.3.62f1",
+    "projectId": "compile-contract-self-check",
+    "instanceId": "fixture-instance",
+    "collectedAt": 1000,
+    "sourceRevision": {
+      "uri": "project://Assets/CompileContractSelfCheck.shader",
+      "assetGuid": "compile-contract-self-check-guid",
+      "contentHash": "2e1ea10470d3666fb9e56f9ac206bea61bd44195a933c1130a81af4f0cf49bfd"
+    }
+  },
+  "diagnostics": []
+}

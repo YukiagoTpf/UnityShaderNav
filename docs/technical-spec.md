@@ -37,6 +37,8 @@ UnityShaderNav provides practical VS Code navigation for Unity shader projects:
   tied to the exact Shader source and Unity build provenance.
 - A repository-owned, deterministic Shader Variant budget contract and root
   command for declared or kept limits and baseline deltas in local/CI use.
+- A repository-owned Shader compile contract that preserves pass, failed, and
+  unverified compiler/profile/SRP/Variant evidence behind one root command.
 - Cross-file navigation through `#include` chains and resolved Unity Packages.
 - Adapter-backed Definition, References, and focused contract diagnostics for
   File-mode Shader Graph Custom Function nodes, without parsing graph

@@ -45,12 +45,12 @@ test('fast verification runs in a non-cancelling Linux, Windows, and macOS matri
   assert.match(contractValidation, /node --test scripts\/ci-workflow\.test\.mjs/);
   assert.doesNotMatch(contractValidation, /\n\s+if:/);
 
-  const budgetVerification = step('Verify Shader budgets');
-  assert.match(budgetVerification, /run: npm run check:shader-budgets/);
-  assert.doesNotMatch(budgetVerification, /\n\s+if:/);
+  const shaderContract = step('Verify Shader compile contract');
+  assert.match(shaderContract, /run: npm run check:shader-contract/);
+  assert.doesNotMatch(shaderContract, /\n\s+if:/);
   assert.match(
-    rootPackage.scripts?.['check:shader-budgets'] ?? '',
-    /server\/src\/budgets\/cli\.ts/,
+    rootPackage.scripts?.['check:shader-contract'] ?? '',
+    /server\/src\/contracts\/cli\.ts/,
   );
 });
 
@@ -73,4 +73,5 @@ test('checksum-controlled grammar inputs keep their repository bytes on every ru
     attributes,
     /^server\/grammars\/tree-sitter-hlsl\.LICENSE -text$/m,
   );
+  assert.match(attributes, /^server\/tests\/\*\*\/\*\.shader text eol=lf$/m);
 });

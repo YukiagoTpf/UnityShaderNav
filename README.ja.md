@@ -45,6 +45,9 @@ UnityShaderNav は、Unity Shader プロジェクト向けの Visual Studio Code
   コマンド。Shader、Pass、stage、platform ごとの declared/kept 上限を安定した
   human-readable／JSON レポートで検証し、必須 build evidence がない場合は
   `unverified` として失敗します。
+- 必須 platform profile、compiler warning baseline、SRP Batcher Property、
+  Variant budget を一つの repository Shader compile contract で検証し、CI で
+  pass／failed／unverified を区別します。
 - `Packages/packages-lock.json` による Unity Package の解決。
 - `Library/UnityShaderNavCache/` 配下へのプロジェクトローカルなインデックスキャッシュ。
 
@@ -143,6 +146,8 @@ npm run package:vsix
 - [Architecture](docs/architecture.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Technical Spec](docs/technical-spec.md)
+- [Shader Variant Budgets](docs/shader-budgets.md)
+- [Shader Compile Contract](docs/shader-compile-contract.md)
 - [Architecture Decision Records](docs/adr/)
 
 ## 既知の制限

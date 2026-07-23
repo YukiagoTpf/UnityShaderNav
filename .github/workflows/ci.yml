@@ -60,8 +60,8 @@ jobs:
       - name: Run fast verification
         run: npm run check:fast
 
-      - name: Verify Shader budgets
-        run: npm run check:shader-budgets
+      - name: Verify Shader compile contract
+        run: npm run check:shader-contract
 
       - name: Run package verification
         if: runner.os == 'Linux'

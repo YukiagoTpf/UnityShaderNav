@@ -35,6 +35,9 @@ UnityShaderNav 是一个用于 Unity Shader 项目的 Visual Studio Code 扩展�
 - 提供仓库级 Shader Variant 预算命令，可在本地与 CI 中按 Shader、Pass、stage
   和平台校验 declared/kept 上限，输出稳定的人类可读与 JSON 报告；缺少必需构建证据
   会以 `unverified` 失败，不会静默通过。
+- 用一份仓库级 Shader 编译合约统一校验必需平台 profile、编译器 warning baseline、
+  SRP Batcher Property 与 Variant 预算，并在 CI 中明确区分 pass、failed 和
+  unverified。
 - 通过 `Packages/packages-lock.json` 解析 Unity Package。
 - 在 `Library/UnityShaderNavCache/` 下持久化项目本地索引缓存。
 
@@ -134,6 +137,8 @@ npm run package:vsix
 - [Architecture](docs/architecture.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Technical Spec](docs/technical-spec.md)
+- [Shader Variant Budgets](docs/shader-budgets.md)
+- [Shader Compile Contract](docs/shader-compile-contract.md)
 - [Architecture Decision Records](docs/adr/)
 
 ## 已知限制
