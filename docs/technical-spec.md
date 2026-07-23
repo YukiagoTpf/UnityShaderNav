@@ -39,6 +39,9 @@ UnityShaderNav provides practical VS Code navigation for Unity shader projects:
   command for declared or kept limits and baseline deltas in local/CI use.
 - A repository-owned Shader compile contract that preserves pass, failed, and
   unverified compiler/profile/SRP/Variant evidence behind one root command.
+- One bounded macOS/Metal/Xcode GPU capture Adapter prototype that proves an
+  exact draw-to-Shader/Pass/entry/source-range correlation and rejects stale
+  or replay-incompatible evidence.
 - Cross-file navigation through `#include` chains and resolved Unity Packages.
 - Adapter-backed Definition, References, and focused contract diagnostics for
   File-mode Shader Graph Custom Function nodes, without parsing graph

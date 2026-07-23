@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "provenance": {
+    "capability": "gpu-capture-correlation/v1",
+    "adapterVersion": "prototype-1",
+    "unityVersion": "2022.3.62f1",
+    "unityBinaryVersion": "2022.3.62f1",
+    "projectId": "gpu-capture-prototype",
+    "instanceId": "sanitized-fixture",
+    "collectedAt": 1784839447000,
+    "platform": {
+      "operatingSystem": "macOS",
+      "operatingSystemVersion": "26.3 (25D125)",
+      "architecture": "arm64"
+    },
+    "gpu": {
+      "name": "Apple M4 Pro",
+      "driverVersion": "OS build 25D125; Apple metal version 32023.883 (metalfe-32023.883)"
+    },
+    "graphicsApi": "Metal",
+    "tool": {
+      "name": "Xcode Metal Frame Debugger",
+      "version": "26.6",
+      "buildVersion": "17F113",
+      "metalCompilerVersion": "Apple metal version 32023.883 (metalfe-32023.883)",
+      "traceFormat": "gputrace"
+    },
+    "sourceRevision": {
+      "uri": "project://Assets/Shaders/CaptureProbe.shader",
+      "assetGuid": "f14aeb7b969724b9797221308d626ee8",
+      "contentHash": "51e76b895fd691aae6391a91c94975fd5d5bdc79345eb0f604192e739a62eef0"
+    }
+  },
+  "draw": {
+    "captureId": "capture-probe-51e76b895fd6-draw-0",
+    "frameIndex": 0,
+    "drawIndex": 0,
+    "label": "UnityShaderNav Capture Probe 51e76b895fd6 capture-probe-forward-fragment",
+    "trace": {
+      "storage": "local-ephemeral",
+      "fileName": "CaptureProbe.gputrace",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "byteLength": 4096
+    }
+  },
+  "context": {
+    "id": "capture-probe-forward-fragment",
+    "shaderName": "UnityShaderNav/CaptureProbe",
+    "subShaderIndex": 0,
+    "passIndex": 0,
+    "passName": "Forward",
+    "stage": "fragment",
+    "entryPoint": "frag",
+    "keywords": {
+      "enabled": [
+        "CAPTURE_TINT"
+      ],
+      "incomplete": true
+    }
+  },
+  "mapping": {
+    "status": "mapped",
+    "method": "adapter-exact-source-range",
+    "uri": "project://Assets/Shaders/CaptureProbe.shader",
+    "range": {
+      "start": {
+        "line": 23,
+        "character": 19
+      },
+      "end": {
+        "line": 23,
+        "character": 23
+      }
+    },
+    "expectedText": "frag",
+    "sourceEntryPoint": "frag"
+  }
+}

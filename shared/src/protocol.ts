@@ -50,6 +50,7 @@ export * from './adapter';
 export * from './cache';
 export * from './compiler';
 export * from './csharpProperties';
+export * from './gpuCapture';
 export * from './materialContext';
 export * from './materials';
 export * from './portability';

@@ -13,6 +13,7 @@ This directory contains the public-facing documentation for UnityShaderNav.
 ## Contributors
 
 - [Development Guide](development.md)
+- [GPU Capture-to-source Prototype](gpu-capture-prototype.md)
 - [Architecture](architecture.md)
 - [Domain Vocabulary](../CONTEXT.md)
 - [Technical Spec](technical-spec.md)

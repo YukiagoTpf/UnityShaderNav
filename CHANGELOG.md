@@ -9,6 +9,13 @@ and uses semantic versioning for extension releases.
 
 ### Added
 
+- Added a bounded macOS/Apple-silicon, Metal, and Xcode GPU capture
+  correlation prototype. One isolated Unity command-buffer draw produces a
+  local `.gputrace` and versioned evidence bound to Shader/Pass/entry point,
+  source hash/range, keywords, GPU/driver/tool/project provenance, and
+  timestamp. Source drift becomes stale and cannot navigate; replay or mapping
+  gaps remain unavailable/unmapped. Raw traces stay ignored derived data.
+  (#102)
 - Added a repository Shader compile contract and the
   `npm run check:shader-contract` command, combining exact-source platform
   compiler evidence,

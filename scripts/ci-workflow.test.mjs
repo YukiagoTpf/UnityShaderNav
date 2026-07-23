@@ -40,6 +40,7 @@ test('fast verification runs in a non-cancelling Linux, Windows, and macOS matri
   const fastCommand = rootPackage.scripts?.['check:fast'] ?? '';
   assert.match(fastCommand, /npm run build/);
   assert.match(fastCommand, /npm run test -w @unity-shader-nav\/server/);
+  assert.match(fastCommand, /npm run check:gpu-capture-prototype/);
 
   const contractValidation = step('Validate CI workflow contract');
   assert.match(contractValidation, /node --test scripts\/ci-workflow\.test\.mjs/);
@@ -74,4 +75,8 @@ test('checksum-controlled grammar inputs keep their repository bytes on every ru
     /^server\/grammars\/tree-sitter-hlsl\.LICENSE -text$/m,
   );
   assert.match(attributes, /^server\/tests\/\*\*\/\*\.shader text eol=lf$/m);
+  assert.match(
+    attributes,
+    /^tools\/gpu-capture-prototype\/\*\*\/\*\.shader text eol=lf$/m,
+  );
 });

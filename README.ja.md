@@ -48,6 +48,9 @@ UnityShaderNav は、Unity Shader プロジェクト向けの Visual Studio Code
 - 必須 platform profile、compiler warning baseline、SRP Batcher Property、
   Variant budget を一つの repository Shader compile contract で検証し、CI で
   pass／failed／unverified を区別します。
+- 限定された macOS／Metal／Xcode GPU capture prototype で、一つの制御された
+  draw を正確な Shader Context と source range に関連付け、source drift や
+  replay/tool gap は stale または unavailable のまま保持します。
 - `Packages/packages-lock.json` による Unity Package の解決。
 - `Library/UnityShaderNavCache/` 配下へのプロジェクトローカルなインデックスキャッシュ。
 
@@ -148,6 +151,7 @@ npm run package:vsix
 - [Technical Spec](docs/technical-spec.md)
 - [Shader Variant Budgets](docs/shader-budgets.md)
 - [Shader Compile Contract](docs/shader-compile-contract.md)
+- [GPU Capture-to-source Prototype](docs/gpu-capture-prototype.md)
 - [Architecture Decision Records](docs/adr/)
 
 ## 既知の制限

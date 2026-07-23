@@ -54,6 +54,8 @@ npm run check:knowledge
 npm run check:artifacts
 npm run check:shader-budgets
 npm run check:shader-contract
+npm run check:gpu-capture-prototype
+npm run gpu-capture:preflight
 npm run build
 npm run watch
 npm run test -w @unity-shader-nav/server
@@ -77,6 +79,14 @@ baseline workflow, report path, and exit codes.
 It verifies required profiles and capabilities, warning baselines, conservative
 SRP Batcher Property contracts, and the Variant budget contract with one local
 and CI command. See [Shader Compile Contract](shader-compile-contract.md).
+
+`npm run check:gpu-capture-prototype` validates the bounded, sanitized
+macOS/Metal/Xcode capture-correlation fixture. On a compatible Apple-silicon
+host, set `UNITY_PATH` and use `npm run gpu-capture:preflight`, followed by the
+explicit `npm run gpu-capture:capture` command to generate a real local trace
+from the isolated Unity project. See
+[GPU Capture-to-source Prototype](gpu-capture-prototype.md). Raw `.gputrace`
+and Unity `Library/` output remain ignored derived data.
 
 ## Testing Strategy
 

@@ -380,6 +380,18 @@ profile identities bind committed compiler captures to selected scopes; the
 contract's explicit unverified policy controls CI without changing report
 truth.
 
+GPU capture correlation is a separate Adapter overlay with capability
+`gpu-capture-correlation/v1`. The first seam accepts only a bounded,
+sanitized macOS/arm64/Metal/Xcode evidence envelope for one controlled draw.
+It binds capture/tool/GPU/project provenance, Shader Context, current asset
+GUID, source SHA-256, and exact expected source text. Real capture verification
+also independently checks trace hash/size/name and the command-buffer label;
+the checked-in no-trace fixture has an explicit lower trust status. Source or
+asset drift produces `stale` before navigation; replay/trace incompatibility
+is `unavailable`; absent exact line mapping is `unmapped`. Raw `.gputrace` data
+remains tool-owned local derived state and never enters the index or cache. See
+[ADR-0012](adr/0012-macos-metal-capture-source-correlation-prototype.md).
+
 File-mode Shader Graph Custom Function usages are another Adapter-supplied
 overlay. Adapter-owned version decoders emit one serialization-neutral logical
 node contract: graph/source identities, source ranges, precision, ordered

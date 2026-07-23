@@ -627,6 +627,25 @@ exact-source evidence stays `unverified`; this repository's policy makes that a
 non-zero CI result. See [Shader Compile Contract](shader-compile-contract.md)
 for the evidence envelope, exit codes, machine output, and baseline workflow.
 
+### GPU Capture-to-source Prototype
+
+The repository contains one intentionally narrow macOS/Apple-silicon,
+Metal/Xcode capture-correlation experiment. Its sanitized evidence maps one
+controlled draw to an exact Shader, Pass, fragment entry point, source hash,
+and range. A changed source is `STALE` and returns no current location;
+incompatible replay/tool identity is `UNAVAILABLE`; missing exact line
+correlation is `UNMAPPED`.
+
+Verify the bounded fixture with:
+
+```bash
+npm run check:gpu-capture-prototype
+```
+
+Real capture is an explicit contributor workflow using an isolated Unity
+project; it never opens a product project, and raw `.gputrace` resources remain
+local. See [GPU Capture-to-source Prototype](gpu-capture-prototype.md).
+
 ## Project Detection
 
 The extension tries to find a Unity project root by locating a directory with

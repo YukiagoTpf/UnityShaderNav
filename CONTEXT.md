@@ -149,6 +149,14 @@ baselines、SRP Batcher requirements、Variant budgets 与明确 unverified CI p
 的版本化合约。不同 evidence class 保持独立，缺少某类证据不能由另一类替代。
 _Avoid_: best-effort compile check, missing-evidence pass
 
+**GPU capture evidence**:
+版本化、受限的 Adapter evidence，把一个 captured draw 绑定到 capture/tool/GPU/
+driver/project provenance、Shader Context、asset GUID/source revision 与精确
+source range。真实 capture 还要独立匹配 trace hash/size/label。asset 或 source
+漂移后是 `stale`，replay/trace 环境不兼容是 `unavailable`，缺少可靠 line map
+是 `unmapped`；raw `.gputrace` 不属于仓库事实。
+_Avoid_: trace guess, generated-text source match
+
 ## Flagged ambiguities
 
 **"Package"**:

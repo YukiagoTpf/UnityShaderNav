@@ -38,6 +38,9 @@ UnityShaderNav 是一个用于 Unity Shader 项目的 Visual Studio Code 扩展�
 - 用一份仓库级 Shader 编译合约统一校验必需平台 profile、编译器 warning baseline、
   SRP Batcher Property 与 Variant 预算，并在 CI 中明确区分 pass、failed 和
   unverified。
+- 提供受限的 macOS/Metal/Xcode GPU capture 原型，把一个受控 draw 关联到精确
+  Shader Context 与源码 range；源码漂移和 replay/tool 缺口保持 stale 或
+  unavailable。
 - 通过 `Packages/packages-lock.json` 解析 Unity Package。
 - 在 `Library/UnityShaderNavCache/` 下持久化项目本地索引缓存。
 
@@ -139,6 +142,7 @@ npm run package:vsix
 - [Technical Spec](docs/technical-spec.md)
 - [Shader Variant Budgets](docs/shader-budgets.md)
 - [Shader Compile Contract](docs/shader-compile-contract.md)
+- [GPU Capture-to-source Prototype](docs/gpu-capture-prototype.md)
 - [Architecture Decision Records](docs/adr/)
 
 ## 已知限制

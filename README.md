@@ -104,6 +104,9 @@ The extension focuses on fast code navigation:
 - One repository Shader compile contract for required platform profiles,
   compiler warning baselines, SRP Batcher Properties, and Variant budgets, with
   distinct pass, failed, and unverified CI results.
+- A bounded macOS/Metal/Xcode GPU capture prototype that correlates one
+  controlled draw to an exact Shader Context and source range, while source
+  drift and replay/tool gaps remain stale or unavailable.
 - Unity Package resolution through `Packages/packages-lock.json`.
 - Persistent project-local indexing under `Library/UnityShaderNavCache/`.
 
@@ -205,6 +208,7 @@ See [Configuration](docs/configuration.md) for the full explanation and examples
 - [Technical Spec](docs/technical-spec.md)
 - [Shader Variant Budgets](docs/shader-budgets.md)
 - [Shader Compile Contract](docs/shader-compile-contract.md)
+- [GPU Capture-to-source Prototype](docs/gpu-capture-prototype.md)
 - [Architecture Decision Records](docs/adr/)
 
 ## Known Limits
