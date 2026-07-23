@@ -31,6 +31,7 @@ import {
 import { setupFileWatchers } from './watcher';
 import { registerPortabilityReportCommand } from './portabilityReportCommand';
 import { setupCSharpCurrentSource } from './csharpCurrentSource';
+import { registerPropertyRenameCommand } from './propertyRename';
 
 let client: LanguageClient | undefined;
 
@@ -84,6 +85,7 @@ export async function activate(context: ExtensionContext): Promise<void> {
     () => env.openExternal(Uri.parse(VARIANT_COST_DOCUMENTATION_URL)),
   ));
   context.subscriptions.push(createVariantComparisonCommand(client, reportError));
+  context.subscriptions.push(registerPropertyRenameCommand(client, reportError));
   setupCSharpCurrentSource(client, context, reportError);
   await client.start();
   try {

@@ -38,6 +38,52 @@ export interface MaterialSource {
   materialsUsingShader(
     shader: MaterialShaderIdentity,
   ): Promise<MaterialSourceSnapshot>;
+  /**
+   * Prepare, but do not commit, a revision-checked serialized Property rename.
+   * The returned transaction must restore every partial asset mutation when
+   * rollback is called, including after a commit error.
+   */
+  preparePropertyRename?(
+    request: MaterialPropertyRenameRequest,
+  ): Promise<MaterialPropertyRenamePrepareResult>;
+}
+
+export interface MaterialPropertyRenameAsset {
+  readonly guid: string;
+  readonly path: string;
+}
+
+export interface MaterialPropertyRenameRequest {
+  readonly shader: MaterialShaderIdentity;
+  readonly oldName: string;
+  readonly newName: string;
+  readonly expectedRevision: string;
+  readonly assets: readonly MaterialPropertyRenameAsset[];
+}
+
+export interface MaterialPropertyRenameTransaction {
+  commit(): Promise<void>;
+  rollback(): Promise<void>;
+}
+
+export type MaterialPropertyRenamePrepareResult =
+  | {
+      readonly status: 'prepared';
+      readonly transaction: MaterialPropertyRenameTransaction;
+    }
+  | {
+      readonly status: 'conflict' | 'unavailable';
+      readonly message: string;
+    };
+
+export interface MaterialPropertyRenameProvider {
+  materialPropertyRenameAvailability(): {
+    readonly available: boolean;
+    readonly reason?: string;
+  };
+  prepareMaterialPropertyRename(
+    request: MaterialPropertyRenameRequest,
+  ): Promise<MaterialPropertyRenamePrepareResult>;
 }
 
 export type MaterialUsageUnknownReason =

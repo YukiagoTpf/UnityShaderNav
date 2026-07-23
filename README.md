@@ -25,6 +25,10 @@ The extension focuses on fast code navigation:
 - Workspace Rename for unambiguous indexed HLSL/CG symbols, including pragma
   entry-point references and same-file ShaderLab Property contracts, with
   conservative refusal for overload-like or preprocessor ambiguity.
+- An explicit safe cross-asset Shader Property Rename preview groups
+  Shader/HLSL, proven C#, and serialized Material edits. Revision conflicts,
+  dynamic evidence, and read-only assets block Apply; prepared Adapter changes
+  and source edits roll back together on cancellation or failure.
 - Project-wide ShaderLab name intelligence for `Shader`, `Fallback`, `Name`,
   and `UsePass`: Definition, References, Hover, Completion, Workspace Symbols,
   and conservative Rename. `UsePass` pass segments follow Unity's uppercase
@@ -244,6 +248,9 @@ See [Configuration](docs/configuration.md) for the full explanation and examples
   HLSL/CG declaration plus its proven references. Built-ins, Package
   declarations, include-supplied Property contracts, and ambiguous Shader,
   Pass, or HLSL candidates are intentionally refused rather than edited by name.
+  Use **Preview Safe Cross-asset Shader Property Rename** for the separately
+  reviewed C# and Material transaction; unavailable or uncertain evidence
+  blocks that command.
 - ShaderLab name intelligence is declaration-backed and limited to `Fallback`
   and `UsePass`; external or Unity built-in names without an indexed declaration
   stay unresolved rather than being guessed from a catalog.

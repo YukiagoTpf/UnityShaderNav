@@ -103,6 +103,11 @@
         "command": "unityShaderNav.showPortabilityReport",
         "title": "Show Custom Shader Portability Report",
         "category": "UnityShaderNav"
+      },
+      {
+        "command": "unityShaderNav.previewPropertyRename",
+        "title": "Preview Safe Cross-asset Shader Property Rename",
+        "category": "UnityShaderNav"
       }
     ],
     "languages": [

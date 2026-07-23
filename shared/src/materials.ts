@@ -2,6 +2,9 @@ import type { Range, ShaderLabPropertyType } from './symbols';
 
 /** Adapter capability that supplies serialized Material asset facts. */
 export const MATERIAL_USAGES_ADAPTER_FEATURE = 'material-usages';
+/** Adapter capability for transactional serialized Property-name updates. */
+export const MATERIAL_PROPERTY_RENAME_ADAPTER_FEATURE =
+  'material-property-rename';
 
 /** Unity's serialized Material value buckets, not ShaderLab declaration types. */
 export type MaterialPropertyValueType =

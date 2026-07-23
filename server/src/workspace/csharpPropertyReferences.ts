@@ -46,7 +46,7 @@ function unityAssetPath(uri: string): string {
  * dynamic items are visible in the raw payload for explicit rejection
  * testing but never become authoritative references.
  */
-function isAuthoritativeUsage(
+export function isAuthoritativeCSharpPropertyUsage(
   usage: CSharpPropertyUsage,
 ): usage is CSharpPropertyUsage & {
   readonly bindingDeterminism: 'proven';
@@ -91,6 +91,24 @@ export async function currentCSharpPropertyUsages<T extends CSharpPropertyUsage>
   currentSourceProvider: CSharpCurrentSourceProvider | undefined,
   cancellation?: CancellationToken,
 ): Promise<readonly T[]> {
+  const freshness = await currentCSharpPropertyEvidence(
+    usages,
+    currentSourceProvider,
+    cancellation,
+  );
+  return freshness.map(({ usage }) => usage);
+}
+
+export interface CurrentCSharpPropertyEvidence<T extends CSharpPropertyUsage> {
+  readonly usage: T;
+  readonly text: string;
+}
+
+export async function currentCSharpPropertyEvidence<T extends CSharpPropertyUsage>(
+  usages: readonly T[],
+  currentSourceProvider: CSharpCurrentSourceProvider | undefined,
+  cancellation?: CancellationToken,
+): Promise<readonly CurrentCSharpPropertyEvidence<T>[]> {
   if (usages.length === 0 || !currentSourceProvider) return [];
   throwIfRequestCancelled(cancellation);
 
@@ -108,8 +126,6 @@ export async function currentCSharpPropertyUsages<T extends CSharpPropertyUsage>
       try {
         const snapshot = await currentSourceProvider.currentSourceFor(uri);
         if (!snapshot) return null;
-        // Compute the hash from the observed text so a provider cannot bypass
-        // freshness by reporting a stale hash alongside mismatched text.
         return {
           text: snapshot.text,
           contentHash: createHash('sha256').update(snapshot.text, 'utf8').digest('hex'),
@@ -136,7 +152,10 @@ export async function currentCSharpPropertyUsages<T extends CSharpPropertyUsage>
       && current.contentHash === usage.sourceRevision.contentHash
       && rangeWithinText(usage, current.text)
     ))
-    .map(({ usage }) => usage);
+    .map(({ usage, current }) => ({
+      usage,
+      text: current!.text,
+    }));
 }
 
 export async function csharpPropertyReferences(
@@ -166,7 +185,7 @@ export async function csharpPropertyReferences(
   );
 
   const authoritative = current
-    .filter(isAuthoritativeUsage)
+    .filter(isAuthoritativeCSharpPropertyUsage)
     .map((usage): CSharpPropertyReferenceLocation => ({
       uri: usage.uri,
       range: usage.range,
@@ -186,7 +205,7 @@ export async function csharpPropertyReferences(
       },
     }));
   const uncertain = current
-    .filter((usage) => !isAuthoritativeUsage(usage))
+    .filter((usage) => !isAuthoritativeCSharpPropertyUsage(usage))
     .map((usage): CSharpPropertyUncertainLocation => ({
       uri: usage.uri,
       range: usage.range,

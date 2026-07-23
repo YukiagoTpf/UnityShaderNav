@@ -4,6 +4,7 @@ import {
   COMPILER_EVIDENCE_CAPABILITY,
   SHADER_MESSAGES_CAPABILITY,
   MATERIAL_USAGES_ADAPTER_FEATURE,
+  MATERIAL_PROPERTY_RENAME_ADAPTER_FEATURE,
   VARIANT_BUILD_EVIDENCE_CAPABILITY,
   SHADER_GRAPH_CUSTOM_FUNCTIONS_CAPABILITY,
   MATERIAL_CONTEXT_ADAPTER_FEATURE,
@@ -40,6 +41,9 @@ import type { CompileProfileSource } from './compileProfileSource';
 import type { ShaderMessageSource } from './shaderMessageSource';
 import type {
   MaterialShaderIdentity,
+  MaterialPropertyRenameProvider,
+  MaterialPropertyRenameRequest,
+  MaterialPropertyRenamePrepareResult,
   MaterialSource,
   MaterialUsageResult,
 } from './materialSource';
@@ -127,7 +131,7 @@ export type AdapterConnectionSources = AdapterFeatureSources;
  * Trust boundary for Adapter handshake evidence. A later transport can feed
  * this registry without exposing transport state to LSP request handlers.
  */
-export class AdapterRegistry {
+export class AdapterRegistry implements MaterialPropertyRenameProvider {
   private readonly now: () => number;
   private readonly handshakeMaxAgeMs: number;
   private readonly messageSource: ShaderMessageSource | undefined;
@@ -821,6 +825,164 @@ export class AdapterRegistry {
         })),
         provenance,
       })),
+    };
+  }
+
+  materialPropertyRenameAvailability(): {
+    readonly available: boolean;
+    readonly reason?: string;
+  } {
+    const registered = this.registered;
+    const status = this.status();
+    if (status.mode === 'standalone') {
+      return { available: false, reason: status.reason };
+    }
+    if (!registered || registered.state !== 'connected') {
+      return { available: false, reason: 'Adapter source is unavailable.' };
+    }
+    if (!status.capabilities.supportedFeatures.includes(
+      MATERIAL_PROPERTY_RENAME_ADAPTER_FEATURE,
+    )) {
+      return {
+        available: false,
+        reason: 'Adapter does not advertise transactional Material Property rename.',
+      };
+    }
+    const source = registered.materialSource;
+    if (!source?.preparePropertyRename) {
+      return {
+        available: false,
+        reason: 'Adapter has no transactional Material Property rename source.',
+      };
+    }
+    if (
+      source.identity.projectId !== registered.expectedProjectId
+      || source.identity.projectId !== registered.handshake.capabilities.projectId
+      || source.identity.instanceId !== registered.handshake.instanceId
+    ) {
+      return { available: false, reason: 'Adapter source identity does not match.' };
+    }
+    return { available: true };
+  }
+
+  async prepareMaterialPropertyRename(
+    request: MaterialPropertyRenameRequest,
+  ): Promise<MaterialPropertyRenamePrepareResult> {
+    const registered = this.registered;
+    const availability = this.materialPropertyRenameAvailability();
+    if (
+      !availability.available
+      || !registered
+      || registered.state !== 'connected'
+      || !registered.materialSource?.preparePropertyRename
+    ) {
+      return {
+        status: 'unavailable',
+        message: availability.reason ?? 'Material Property rename is unavailable.',
+      };
+    }
+    if (
+      !request.oldName
+      || !request.newName
+      || !request.expectedRevision
+      || request.assets.length === 0
+      || request.assets.some((asset) => (
+        !asset.guid
+        || !/^Assets\//.test(asset.path.replace(/\\/g, '/'))
+      ))
+      || new Set(request.assets.map((asset) => asset.guid)).size !== request.assets.length
+    ) {
+      return {
+        status: 'conflict',
+        message: 'Material Property rename request is malformed or contains read-only assets.',
+      };
+    }
+
+    let prepared: MaterialPropertyRenamePrepareResult;
+    try {
+      prepared = await registered.materialSource.preparePropertyRename({
+        shader: { ...request.shader },
+        oldName: request.oldName,
+        newName: request.newName,
+        expectedRevision: request.expectedRevision,
+        assets: request.assets.map((asset) => ({ ...asset })),
+      });
+    } catch {
+      return {
+        status: 'unavailable',
+        message: 'Adapter failed while preparing Material Property updates.',
+      };
+    }
+    if (
+      !prepared
+      || typeof prepared !== 'object'
+      || !('status' in prepared)
+      || (
+        prepared.status !== 'prepared'
+        && prepared.status !== 'conflict'
+        && prepared.status !== 'unavailable'
+      )
+    ) {
+      return {
+        status: 'unavailable',
+        message: 'Adapter returned an invalid Material Property transaction.',
+      };
+    }
+    if (prepared.status !== 'prepared') {
+      return typeof prepared.message === 'string' && prepared.message.trim()
+        ? prepared
+        : {
+            status: prepared.status,
+            message: 'Adapter rejected the Material Property transaction.',
+          };
+    }
+    if (
+      !prepared.transaction
+      || typeof prepared.transaction.commit !== 'function'
+      || typeof prepared.transaction.rollback !== 'function'
+    ) {
+      return {
+        status: 'unavailable',
+        message: 'Adapter returned an invalid Material Property transaction.',
+      };
+    }
+    if (this.registered !== registered || this.currentConnectedAdapter() !== registered) {
+      try {
+        await prepared.transaction.rollback();
+      } catch {
+        // The transaction is already unusable; keep the primary conflict.
+      }
+      return {
+        status: 'conflict',
+        message: 'Adapter connection changed while preparing Material Property updates.',
+      };
+    }
+
+    const transaction = prepared.transaction;
+    return {
+      status: 'prepared',
+      transaction: {
+        commit: async () => {
+          if (
+            this.registered !== registered
+            || this.currentConnectedAdapter() !== registered
+          ) {
+            throw new Error(
+              'Adapter connection changed before Material Property commit.',
+            );
+          }
+          await transaction.commit();
+          if (
+            this.registered !== registered
+            || this.currentConnectedAdapter() !== registered
+          ) {
+            throw new Error(
+              'Adapter connection changed during Material Property commit.',
+            );
+          }
+        },
+        rollback: () => transaction.rollback(),
+      },
     };
   }
 

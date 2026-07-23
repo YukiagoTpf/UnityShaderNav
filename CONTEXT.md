@@ -70,6 +70,14 @@ Set/Get 调用之间的会话级证据。可信引用必须具有已证明的 Sh
 该证据不进入源码索引或缓存，也不构成通用 C# language tooling。
 _Avoid_: C# symbol index, numeric property ID contract
 
+**Safe cross-asset Property Rename**:
+用户显式触发的 Shader Property 事务式重命名。Preview 按 Shader/HLSL source、
+proven C# source 与 serialized Material assets 分组并保留 provenance；Apply 必须
+重新验证 preview identity，先 prepare Material transaction，再应用 exact-old-text
+source edits，最后 commit。动态/仅名称证据、只读 Package、source/revision conflict
+或不完整 Adapter scope 都是 blocker；取消或失败必须显式 rollback。
+_Avoid_: best-effort rename, partial success
+
 ### 辅助能力
 
 **Quick Documentation**:

@@ -24,6 +24,9 @@ import {
   type IncludePointContext,
   type IncludePointContextsResult,
   type InactiveRegion,
+  type PropertyRenameBeginResult,
+  type PropertyRenameFinishResult,
+  type PropertyRenamePreviewResult,
   type WorkspaceIndexStatus,
 } from '@unity-shader-nav/shared';
 import { uriKey } from '../uriKey';
@@ -85,6 +88,10 @@ import {
 } from './csharpPropertyReferences';
 import type { MaterialUsageProvider } from '../adapter/materialSource';
 import type {
+  MaterialPropertyRenameProvider,
+  MaterialPropertyRenameTransaction,
+} from '../adapter/materialSource';
+import type {
   CSharpCurrentSourceProvider,
   CSharpPropertyUsageProvider,
 } from '../adapter/csharpPropertySource';
@@ -101,6 +108,10 @@ import {
 } from './materialContext';
 import { materialContextStore } from './materialContextStore';
 import type { PortabilityReport } from '@unity-shader-nav/shared';
+import {
+  createPropertyRenameTransactionId,
+  type SafePropertyRenamePlanResult,
+} from './propertyRename';
 
 export type { FileEvent } from './workspaceIndex';
 
@@ -111,6 +122,7 @@ export interface WorkspaceRuntimeOptions
   candidateConstructor?: IndexedRevisionCandidateConstructor;
   createLiveDocumentTreeSession?: LiveDocumentTreeSessionFactory;
   materialUsages?: MaterialUsageProvider;
+  materialRenames?: MaterialPropertyRenameProvider;
   shaderGraphUsages?: ShaderGraphUsageProvider;
   materialContext?: MaterialContextProvider;
   csharpPropertyUsages?: CSharpPropertyUsageProvider;
@@ -143,6 +155,7 @@ export class Workspace implements IndexedWorkspace {
   private readonly candidateConstructor: IndexedRevisionCandidateConstructor;
   private readonly openDocuments: OpenDocumentsProvider | undefined;
   private readonly materialUsages: MaterialUsageProvider | undefined;
+  private readonly materialRenames: MaterialPropertyRenameProvider | undefined;
   private readonly csharpPropertyUsages: CSharpPropertyUsageProvider | undefined;
   private readonly csharpCurrentSource: CSharpCurrentSourceProvider | undefined;
   private readonly shaderGraphUsages: ShaderGraphUsageProvider | undefined;
@@ -158,6 +171,14 @@ export class Workspace implements IndexedWorkspace {
   private readonly liveDocumentTrees: LiveDocumentTreeSessions;
   private readonly documentReconciles = new Map<string, DocumentReconcileRun>();
   private readonly abortController = new AbortController();
+  private readonly propertyRenameTransactions = new Map<string, {
+    readonly material?: MaterialPropertyRenameTransaction;
+    readonly expires: ReturnType<typeof setTimeout>;
+  }>();
+  private readonly propertyRenameFinishes = new Map<
+    string,
+    Promise<PropertyRenameFinishResult>
+  >();
   private disposed = false;
 
   constructor(
@@ -173,6 +194,7 @@ export class Workspace implements IndexedWorkspace {
       ?? createDefaultIndexedRevisionCandidateConstructor(folderUri, options);
     this.openDocuments = options.openDocuments;
     this.materialUsages = options.materialUsages;
+    this.materialRenames = options.materialRenames;
     this.csharpPropertyUsages = options.csharpPropertyUsages;
     this.csharpCurrentSource = options.csharpCurrentSource;
     this.shaderGraphUsages = options.shaderGraphUsages;
@@ -616,6 +638,177 @@ export class Workspace implements IndexedWorkspace {
     );
   }
 
+  private safePropertyRenamePlan(
+    input: DocumentPositionInput & { readonly newName: string },
+  ): Promise<SafePropertyRenamePlanResult> {
+    throwIfRequestCancelled(input.cancellation);
+    const facts = createCursorRequestFacts(
+      input.document,
+      input.position,
+      this.captureServingRevision()?.requestSource(input.document),
+    );
+    return this.queryRevision(
+      input.document,
+      {
+        status: 'failure',
+        message: 'The document does not belong to a ready indexed revision.',
+      },
+      (revision) => revision.previewPropertyRenameAt(input, {
+        materialUsages: this.materialUsages,
+        materialRenames: this.materialRenames,
+        csharpPropertyUsages: this.csharpPropertyUsages,
+        csharpCurrentSource: this.csharpCurrentSource,
+      }),
+      input.cancellation,
+      facts.source,
+    );
+  }
+
+  async previewPropertyRenameAt(
+    input: DocumentPositionInput & { readonly newName: string },
+  ): Promise<PropertyRenamePreviewResult> {
+    const result = await this.safePropertyRenamePlan(input);
+    return result.status === 'ready'
+      ? { status: 'ready', preview: result.plan.preview }
+      : result;
+  }
+
+  async beginPropertyRenameAt(
+    input: DocumentPositionInput & {
+      readonly newName: string;
+      readonly previewId: string;
+    },
+  ): Promise<PropertyRenameBeginResult> {
+    const result = await this.safePropertyRenamePlan(input);
+    if (result.status === 'failure') return result;
+    if (result.plan.preview.previewId !== input.previewId) {
+      return {
+        status: 'conflict',
+        message: 'Shader, C#, or Material evidence changed after the preview. Review the rename again.',
+      };
+    }
+    if (!result.plan.preview.canApply) {
+      return {
+        status: 'failure',
+        message: result.plan.preview.blockers.map((blocker) => blocker.message).join('\n'),
+      };
+    }
+
+    let material: MaterialPropertyRenameTransaction | undefined;
+    try {
+      if (result.plan.materialRequest) {
+        if (!this.materialRenames) {
+          return {
+            status: 'failure',
+            message: 'Transactional Material Property updates are unavailable.',
+          };
+        }
+        const prepared = await this.materialRenames.prepareMaterialPropertyRename(
+          result.plan.materialRequest,
+        );
+        if (prepared.status !== 'prepared') {
+          return {
+            status: prepared.status === 'conflict' ? 'conflict' : 'failure',
+            message: prepared.message,
+          };
+        }
+        material = prepared.transaction;
+      }
+      throwIfRequestCancelled(input.cancellation);
+    } catch (error) {
+      if (material) {
+        try {
+          await material.rollback();
+        } catch {
+          // Preserve cancellation or the primary preparation error.
+        }
+      }
+      throw error;
+    }
+
+    const transactionId = createPropertyRenameTransactionId();
+    const expires = setTimeout(() => {
+      const active = this.propertyRenameTransactions.get(transactionId);
+      if (!active) return;
+      this.propertyRenameTransactions.delete(transactionId);
+      void active.material?.rollback().catch(() => undefined);
+    }, 120_000);
+    expires.unref?.();
+    this.propertyRenameTransactions.set(transactionId, {
+      ...(material ? { material } : {}),
+      expires,
+    });
+    return {
+      status: 'ready',
+      transactionId,
+      edits: result.plan.sourceEdits,
+    };
+  }
+
+  async finishPropertyRename(
+    transactionId: string,
+    sourceApplied: boolean,
+  ): Promise<PropertyRenameFinishResult> {
+    const inFlightOrCompleted = this.propertyRenameFinishes.get(transactionId);
+    if (inFlightOrCompleted) return inFlightOrCompleted;
+    const finish = this.completePropertyRename(transactionId, sourceApplied);
+    this.propertyRenameFinishes.set(transactionId, finish);
+    const forget = setTimeout(() => {
+      if (this.propertyRenameFinishes.get(transactionId) === finish) {
+        this.propertyRenameFinishes.delete(transactionId);
+      }
+    }, 120_000);
+    forget.unref?.();
+    return finish;
+  }
+
+  private async completePropertyRename(
+    transactionId: string,
+    sourceApplied: boolean,
+  ): Promise<PropertyRenameFinishResult> {
+    const active = this.propertyRenameTransactions.get(transactionId);
+    if (!active) {
+      return {
+        status: 'failed',
+        message: 'Rename transaction is unknown or expired.',
+      };
+    }
+    this.propertyRenameTransactions.delete(transactionId);
+    clearTimeout(active.expires);
+    if (!sourceApplied) {
+      try {
+        await active.material?.rollback();
+        return { status: 'rolled-back' };
+      } catch {
+        return {
+          status: 'failed',
+          message: 'Adapter failed to roll back the cancelled Material transaction.',
+        };
+      }
+    }
+
+    try {
+      await active.material?.commit();
+      return { status: 'committed' };
+    } catch (error) {
+      try {
+        await active.material?.rollback();
+      } catch {
+        const primary = error instanceof Error ? error.message : String(error);
+        return {
+          status: 'failed',
+          message: `Material commit failed (${primary}) and Adapter rollback also failed.`,
+        };
+      }
+      return {
+        status: 'failed',
+        message: error instanceof Error
+          ? `Material commit failed and was rolled back: ${error.message}`
+          : 'Material commit failed and was rolled back.',
+      };
+    }
+  }
+
   async documentSymbols(input: IndexedDocumentQueryInput): Promise<DocumentSymbol[] | null> {
     throwIfRequestCancelled(input.cancellation);
     return this.queryRevision(
@@ -860,6 +1053,12 @@ export class Workspace implements IndexedWorkspace {
     if (this.disposed) return;
     this.disposed = true;
     materialContextStore.set(this.folderUri, null);
+    for (const active of this.propertyRenameTransactions.values()) {
+      clearTimeout(active.expires);
+      void active.material?.rollback().catch(() => undefined);
+    }
+    this.propertyRenameTransactions.clear();
+    this.propertyRenameFinishes.clear();
     this.liveDocumentTrees.dispose();
     this.abortController.abort(new WorkspaceDisposedError(this.folderUri));
   }

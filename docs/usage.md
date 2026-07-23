@@ -276,7 +276,23 @@ to it in the same `.shader` file. The same edit is available when Rename starts
 from that HLSL/CG declaration or one of its references. Multiple same-name
 Property or HLSL/CG declarations remain ambiguous; declarations supplied by an
 include are outside this file-local contract. C# strings, Material assets, and
-other cross-asset references are not edited.
+other cross-asset references are not edited by standard F2 Rename.
+
+Use **UnityShaderNav: Preview Safe Cross-asset Shader Property Rename** when the
+Property contract must also update proven C# name tokens and serialized
+Material assets. The preview groups Shader/HLSL source, C# source, and Material
+asset changes with their provenance. Apply is disabled when any C# expression
+is dynamic or name-only, source has changed, the Material asset scope is
+unknown, a target is in a read-only Package, or the Adapter cannot prepare a
+transactional asset update.
+
+Apply recomputes the preview identity, prepares revision-checked Material
+updates, rechecks and applies the source edit, and commits the Adapter
+transaction. Cancellation or a rejected source edit rolls back the prepared
+asset update. An Adapter commit failure rolls back partial asset changes and
+then applies the exact inverse source edit. Runtime-created Materials and
+pre-existing serialized type drift remain explicit manual follow-up. See
+[ADR-0011](adr/0011-two-phase-cross-asset-property-rename.md).
 
 ShaderLab Shader and Pass names use the same conservative rule. Shader Rename
 updates the declaration plus matching `Fallback` and `UsePass` shader segments.

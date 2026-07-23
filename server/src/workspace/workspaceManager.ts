@@ -29,7 +29,10 @@ import {
   cooperativeRequestCheckpoint,
   throwIfRequestCancelled,
 } from '../lifecycle/requestCancellation';
-import type { MaterialUsageProvider } from '../adapter/materialSource';
+import type {
+  MaterialPropertyRenameProvider,
+  MaterialUsageProvider,
+} from '../adapter/materialSource';
 import type {
   CSharpCurrentSourceProvider,
   CSharpPropertyUsageProvider,
@@ -67,6 +70,7 @@ export interface WorkspaceManagerRuntimeOptions {
     folderUri: string,
   ) => IndexedRevisionCandidateConstructor;
   readonly materialUsages?: MaterialUsageProvider;
+  readonly materialRenames?: MaterialPropertyRenameProvider;
   readonly csharpPropertyUsages?: CSharpPropertyUsageProvider;
   readonly csharpCurrentSource?: CSharpCurrentSourceProvider;
   readonly shaderGraphUsages?: ShaderGraphUsageProvider;
@@ -352,6 +356,7 @@ export class WorkspaceManager implements DiagnosticWorkspaceService {
         )
         : undefined,
       materialUsages: this.runtimeOptions.materialUsages,
+      materialRenames: this.runtimeOptions.materialRenames,
       csharpPropertyUsages: this.runtimeOptions.csharpPropertyUsages,
       csharpCurrentSource: this.runtimeOptions.csharpCurrentSource,
       shaderGraphUsages: this.runtimeOptions.shaderGraphUsages,

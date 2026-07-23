@@ -9,6 +9,13 @@ and uses semantic versioning for extension releases.
 
 ### Added
 
+- Added an explicit safe cross-asset Shader Property Rename preview that groups
+  Shader/HLSL, proven C#, and serialized Material edits by provenance. Apply
+  recomputes the evidence identity and coordinates revision-checked Adapter
+  prepare/commit with exact-old-text source edits; cancellation, conflicts,
+  commit failure, and Workspace disposal trigger rollback instead of reporting
+  partial success. Dynamic/name-only evidence and Package assets are blockers.
+  (#96)
 - Added Adapter-backed ShaderLab Property References to source-fresh C#
   `Material` and `MaterialPropertyBlock` calls, including constant
   `Shader.PropertyToID` name flows. Finite Set/Get accessor contracts produce

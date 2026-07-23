@@ -24,6 +24,9 @@ import type {
   CompileProfileRunResult,
   PortabilityReport,
   PortabilityTarget,
+  PropertyRenameBeginResult,
+  PropertyRenameFinishResult,
+  PropertyRenamePreviewResult,
 } from '@unity-shader-nav/shared';
 
 export interface RequestCancellationInput {
@@ -138,6 +141,19 @@ export interface IndexedWorkspace {
   renameAt(
     input: DocumentPositionInput & { readonly newName: string },
   ): Promise<RenameEditOutcome>;
+  previewPropertyRenameAt?(
+    input: DocumentPositionInput & { readonly newName: string },
+  ): Promise<PropertyRenamePreviewResult>;
+  beginPropertyRenameAt?(
+    input: DocumentPositionInput & {
+      readonly newName: string;
+      readonly previewId: string;
+    },
+  ): Promise<PropertyRenameBeginResult>;
+  finishPropertyRename?(
+    transactionId: string,
+    sourceApplied: boolean,
+  ): Promise<PropertyRenameFinishResult>;
   documentSymbols(input: IndexedDocumentQueryInput): Promise<DocumentSymbol[] | null>;
   semanticTokens(input: IndexedDocumentQueryInput): Promise<SemanticTokens>;
   workspaceSymbols(query: string): SymbolInformation[];

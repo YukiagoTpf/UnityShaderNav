@@ -53,6 +53,7 @@ export * from './csharpProperties';
 export * from './materialContext';
 export * from './materials';
 export * from './portability';
+export * from './propertyRename';
 export * from './settings';
 export * from './shaderGraph';
 export * from './structure';

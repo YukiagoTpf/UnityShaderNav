@@ -38,6 +38,7 @@ import { registerMaterialContextHandler } from './handlers/materialContext';
 import { registerVariantKeywordsHandler } from './handlers/variantKeywords';
 import { registerVariantComparisonHandler } from './handlers/variantComparison';
 import { registerPortabilityReportHandler } from './handlers/portabilityReport';
+import { registerPropertyRenameHandler } from './handlers/propertyRename';
 import { registerReferencesHandler } from './handlers/references';
 import { registerRenameHandler } from './handlers/rename';
 import { registerSemanticTokensHandler } from './handlers/semanticTokens';
@@ -60,6 +61,7 @@ const adapterRegistry = new AdapterRegistry();
 const csharpCurrentSource = new CSharpCurrentSourceClient(connection);
 const manager = new WorkspaceManager({
   materialUsages: adapterRegistry,
+  materialRenames: adapterRegistry,
   shaderGraphUsages: adapterRegistry,
   materialContext: adapterRegistry,
   csharpPropertyUsages: adapterRegistry,
@@ -237,6 +239,7 @@ registerReferencesHandler(
   suspender,
 );
 registerRenameHandler(connection, documentRegistry, manager, suspender);
+registerPropertyRenameHandler(connection, documentRegistry, manager, suspender);
 registerInactiveRegionsHandler(
   connection,
   documents,

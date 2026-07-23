@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   ADAPTER_INTERFACE_VERSION,
+  MATERIAL_PROPERTY_RENAME_ADAPTER_FEATURE,
   MATERIAL_USAGES_ADAPTER_FEATURE,
   type AdapterHandshake,
 } from '@unity-shader-nav/shared';
@@ -294,5 +295,96 @@ describe('Adapter Material source trust boundary', () => {
       availability: 'unknown',
       reason: 'invalid-evidence',
     });
+  });
+
+  it('requires an explicit transactional rename capability and source method', async () => {
+    const source: MaterialSource = {
+      identity: { projectId: 'project-a', instanceId: 'editor-1' },
+      async materialsUsingShader() {
+        return {
+          assetScope: 'complete',
+          revision: 'materials-1',
+          collectedAt: now,
+          materials: [],
+        };
+      },
+    };
+    const registry = new AdapterRegistry({ now: () => now });
+    registry.registerHandshake('project-a', handshake(), source);
+    expect(registry.materialPropertyRenameAvailability()).toMatchObject({
+      available: false,
+      reason: expect.stringContaining('does not advertise'),
+    });
+
+    registry.registerHandshake('project-a', {
+      ...handshake(),
+      capabilities: {
+        ...handshake().capabilities,
+        supportedFeatures: [
+          MATERIAL_USAGES_ADAPTER_FEATURE,
+          MATERIAL_PROPERTY_RENAME_ADAPTER_FEATURE,
+        ],
+      },
+    }, source);
+    expect(registry.materialPropertyRenameAvailability()).toMatchObject({
+      available: false,
+      reason: expect.stringContaining('no transactional'),
+    });
+  });
+
+  it('invalidates a prepared Material transaction when the Adapter reconnects', async () => {
+    const commit = vi.fn(async () => undefined);
+    const rollback = vi.fn(async () => undefined);
+    const source: MaterialSource = {
+      identity: { projectId: 'project-a', instanceId: 'editor-1' },
+      async materialsUsingShader() {
+        return {
+          assetScope: 'complete',
+          revision: 'materials-1',
+          collectedAt: now,
+          materials: [],
+        };
+      },
+      async preparePropertyRename() {
+        return {
+          status: 'prepared',
+          transaction: { commit, rollback },
+        };
+      },
+    };
+    const registry = new AdapterRegistry({ now: () => now });
+    registry.registerHandshake('project-a', {
+      ...handshake(),
+      capabilities: {
+        ...handshake().capabilities,
+        supportedFeatures: [
+          MATERIAL_USAGES_ADAPTER_FEATURE,
+          MATERIAL_PROPERTY_RENAME_ADAPTER_FEATURE,
+        ],
+      },
+    }, source);
+    const prepared = await registry.prepareMaterialPropertyRename({
+      shader: { name: 'Tests/Lit', path: 'Assets/Shaders/Lit.shader' },
+      oldName: '_Tint',
+      newName: '_Color',
+      expectedRevision: 'materials-1',
+      assets: [{
+        guid: '11111111111111111111111111111111',
+        path: 'Assets/Materials/Ship.mat',
+      }],
+    });
+    expect(prepared.status).toBe('prepared');
+    if (prepared.status !== 'prepared') return;
+
+    registry.registerHandshake(
+      'project-a',
+      handshake('project-a', 'editor-2'),
+    );
+    await expect(prepared.transaction.commit()).rejects.toThrow(
+      'connection changed',
+    );
+    expect(commit).not.toHaveBeenCalled();
+    await prepared.transaction.rollback();
+    expect(rollback).toHaveBeenCalledOnce();
   });
 });

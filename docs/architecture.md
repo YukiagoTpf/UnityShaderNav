@@ -340,6 +340,17 @@ binding and dynamic-name calls remain explicit uncertain evidence. No C# fact
 enters `FileIndex`, source membership, or cache, and the extension registers no
 C# language provider.
 
+Safe cross-asset Property Rename is an explicit two-phase command rather than
+an LSP Rename side effect. Planning reuses the published source contract plus
+current C# and Material overlays, groups every edit by provenance, and hashes
+the complete evidence identity. Apply recomputes that identity, asks the
+Adapter to prepare revision-checked Material updates, applies exact-old-text
+source edits, and commits. Cancellation rolls back the prepared transaction;
+commit failure rolls back Material mutations before the client applies the
+inverse source edit. Prepared transactions expire and are invalidated by
+Workspace disposal or Adapter reconnect. See
+[ADR-0011](adr/0011-two-phase-cross-asset-property-rename.md).
+
 Variant comparison is another Adapter-supplied overlay and remains outside the
 source index. `variantBuildEvidenceSource` accepts only aggregate rows (at most
 2,048 Shader Contexts, 256 keyword sets per Context, and 8,192 sets total) and

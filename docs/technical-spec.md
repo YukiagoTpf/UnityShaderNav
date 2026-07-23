@@ -42,6 +42,8 @@ UnityShaderNav provides practical VS Code navigation for Unity shader projects:
 - Adapter-backed ShaderLab Property References and focused accessor diagnostics
   from source-fresh C# evidence, including constant `Shader.PropertyToID`
   name flows, without registering C# language providers.
+- Explicit preview and two-phase apply for safe Shader Property Rename across
+  Shader/HLSL source, proven C# name tokens, and serialized Material assets.
 
 The project optimizes for useful editor behavior over full shader compilation
 semantics.
@@ -87,6 +89,8 @@ Language server
     Editor Adapter without decoding `.shadergraph` serialization
   - overlays validated C# Shader Property usages after re-reading the exact
     open buffer or closed saved source through the VS Code client
+  - plans cross-asset Property Rename by provenance and coordinates prepared
+    Material updates with exact-old-text source apply and rollback
   - publishes only through the Workspace lifecycle boundary
   - answers LSP definition, references, symbols, highlight, CodeLens, and semantic-token requests
   - validates and compares optional aggregate Unity Variant build evidence

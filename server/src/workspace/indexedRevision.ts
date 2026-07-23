@@ -88,6 +88,18 @@ import {
   prepareWorkspaceRename,
   renameWorkspaceSymbol,
 } from './rename';
+import {
+  planSafePropertyRename,
+  type SafePropertyRenamePlanResult,
+} from './propertyRename';
+import type {
+  MaterialPropertyRenameProvider,
+  MaterialUsageProvider,
+} from '../adapter/materialSource';
+import type {
+  CSharpCurrentSourceProvider,
+  CSharpPropertyUsageProvider,
+} from '../adapter/csharpPropertySource';
 import { workspaceDiagnostics } from './diagnostics';
 import { srpBatcherCodeActions } from './materialContracts';
 import {
@@ -572,6 +584,18 @@ export class PublishedIndexedRevision {
     facts?: CursorRequestFacts,
   ): Promise<RenameEditOutcome> {
     return renameWorkspaceSymbol(this.navigationState(), input, facts);
+  }
+
+  previewPropertyRenameAt(
+    input: DocumentPositionInput & { readonly newName: string },
+    providers: {
+      readonly materialUsages?: MaterialUsageProvider;
+      readonly materialRenames?: MaterialPropertyRenameProvider;
+      readonly csharpPropertyUsages?: CSharpPropertyUsageProvider;
+      readonly csharpCurrentSource?: CSharpCurrentSourceProvider;
+    },
+  ): Promise<SafePropertyRenamePlanResult> {
+    return planSafePropertyRename(this.navigationState(), input, providers);
   }
 
   documentSymbols(input: IndexedDocumentQueryInput): DocumentSymbol[] | null {
