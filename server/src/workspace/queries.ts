@@ -50,6 +50,7 @@ import {
 } from '../suggestions';
 import type { PackageContext } from '../packages';
 import { isShaderLabUri, rangeKey, uriBasename } from '../sourceLocation';
+import { uriKey } from '../uriKey';
 import type {
   DocumentPositionInput,
   IndexedDocumentQueryInput,
@@ -319,6 +320,7 @@ export async function queryHighlights(
   state: WorkspaceQueryState,
   input: DocumentPositionInput,
   facts?: CursorRequestFacts,
+  preprocessorContext?: PreprocessorContext,
 ): Promise<DocumentHighlight[] | null> {
   throwIfRequestCancelled(input.cancellation);
   const { document, position } = input;
@@ -343,6 +345,14 @@ export async function queryHighlights(
     global: state.index.global,
     options: { visibleUriKeys },
     cancellation: input.cancellation,
+    ...(preprocessorContext
+      ? {
+          variantContext: preprocessorContext,
+          getText: (uri: string) => (
+            uriKey(uri) === uriKey(document.uri) ? document.text : undefined
+          ),
+        }
+      : {}),
   }).map((location): DocumentHighlight => ({
     range: location.range,
     kind: DocumentHighlightKind.Text,

@@ -13,6 +13,7 @@ import type {
   IndexedWorkspace,
   IndexedWorkspaceRequestRouter,
 } from '../../src/workspace/indexedWorkspace';
+import { variantContextStore } from '../../src/workspace/variantContextStore';
 
 type HighlightHandler = (
   params: DocumentHighlightParams,
@@ -109,5 +110,42 @@ describe('registerDocumentHighlightHandler', () => {
     suspender.release();
     await expect(result).resolves.toBeNull();
     expect(highlightsAt).toHaveBeenCalledOnce();
+  });
+
+  it('lets the workspace read VariantContext only after suspension is released', async () => {
+    const highlightsAt = vi.fn(async () => {
+      const line = variantContextStore.get(uri)?.activeKeywords.has('BAR') ? 7 : 3;
+      return [{
+        range: {
+          start: { line, character: 0 },
+          end: { line, character: 6 },
+        },
+        kind: DocumentHighlightKind.Text,
+      }];
+    });
+    const workspace = { highlightsAt } as unknown as IndexedWorkspace;
+    const suspender = new RequestSuspender({ timeoutMs: 1000 });
+    suspender.suspend();
+    variantContextStore.set(uri, { activeKeywords: new Set(['FOO']) });
+    const handler = captureHandler(
+      { snapshot: () => documentSnapshot() },
+      { servingWorkspaceFor: () => workspace },
+      suspender,
+    );
+
+    try {
+      const result = handler({ textDocument: { uri }, position });
+      await Promise.resolve();
+      variantContextStore.set(uri, { activeKeywords: new Set(['BAR']) });
+      suspender.release();
+
+      await expect(result).resolves.toMatchObject([{
+        range: { start: { line: 7 } },
+      }]);
+      expect(highlightsAt).toHaveBeenCalledOnce();
+    } finally {
+      variantContextStore.delete(uri);
+      suspender.release();
+    }
   });
 });

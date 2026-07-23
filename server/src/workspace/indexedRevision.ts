@@ -543,11 +543,16 @@ export class PublishedIndexedRevision {
     return querySignatureHelp(this.queryState(), input, facts);
   }
 
-  highlightsAt(
+  async highlightsAt(
     input: DocumentPositionInput,
     facts?: CursorRequestFacts,
   ): Promise<DocumentHighlight[] | null> {
-    return queryHighlights(this.queryState(), input, facts);
+    return queryHighlights(
+      this.queryState(),
+      input,
+      facts,
+      await this.preprocessorContext(input.document.uri),
+    );
   }
 
   prepareRenameAt(

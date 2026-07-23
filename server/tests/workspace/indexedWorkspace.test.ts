@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { indexFile } from '../../src/parser/hlsl';
 import type { IndexedDocumentSnapshot } from '../../src/workspace/indexedWorkspace';
 import { Workspace } from '../../src/workspace/workspace';
+import { variantContextStore } from '../../src/workspace/variantContextStore';
 
 const fakeConnection = {
   console: { log() {}, warn() {} },
@@ -244,6 +245,50 @@ describe('Indexed Workspace live-document behavior', () => {
       expect(result).toHaveLength(2);
       expect(sourceSplitCount).toBe(0);
     } finally {
+      workspace.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('applies the latest VariantContext to document highlights without rebuilding', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-highlight-variant-context-'));
+    const uri = pathToFileURL(join(root, 'VariantHighlight.hlsl')).href;
+    const text = [
+      '#pragma multi_compile _ FOO BAR',
+      '#ifdef FOO',
+      'float4 Helper() { return 1; }',
+      'float4 UseFoo() { return Helper(); }',
+      '#endif',
+      '#ifdef BAR',
+      'float4 Helper() { return 2; }',
+      'float4 UseBar() { return Helper(); }',
+      '#endif',
+    ].join('\n');
+    const document = snapshot(uri, text, 1, 1);
+    const workspace = new Workspace(pathToFileURL(root).href, DEFAULT_SETTINGS, {
+      ensureParserReady: async () => {},
+    });
+
+    try {
+      await workspace.initialize(fakeConnection);
+      await workspace.updateDocument(document);
+
+      variantContextStore.set(uri, { activeKeywords: new Set(['FOO']) });
+      const fooHighlights = await workspace.highlightsAt({
+        document,
+        position: positionOf(text, 'Helper', 0, 1),
+      });
+
+      variantContextStore.set(uri, { activeKeywords: new Set(['BAR']) });
+      const barHighlights = await workspace.highlightsAt({
+        document,
+        position: positionOf(text, 'Helper', 0, 1),
+      });
+
+      expect(fooHighlights?.map((highlight) => highlight.range.start.line)).toEqual([2, 3]);
+      expect(barHighlights?.map((highlight) => highlight.range.start.line)).toEqual([6, 7]);
+    } finally {
+      variantContextStore.delete(uri);
       workspace.dispose();
       await rm(root, { recursive: true, force: true });
     }
