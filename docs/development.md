@@ -52,6 +52,7 @@ Run from the repository root:
 npm run check:fast
 npm run check:knowledge
 npm run check:artifacts
+npm run check:shader-budgets
 npm run build
 npm run watch
 npm run test -w @unity-shader-nav/server
@@ -66,6 +67,10 @@ npm run bench:live-document -- --functions 2000 --iterations 40 --warmup 10
 npm run package:vsix
 npm run grammar:rebuild
 ```
+
+`npm run check:shader-budgets` is the same Shader Variant budget gate used by
+CI. See [Shader Variant Budgets](shader-budgets.md) for the versioned contract,
+baseline workflow, report path, and exit codes.
 
 ## Testing Strategy
 

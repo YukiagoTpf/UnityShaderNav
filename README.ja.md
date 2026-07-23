@@ -41,6 +41,10 @@ UnityShaderNav は、Unity Shader プロジェクト向けの Visual Studio Code
   表示され、非アクティブな分岐はディムされ、コンテキストにより対象が一意になる場合は
   F12 がアクティブなバリアントに直接ジャンプします。ユーザーが明示的に有効化する機能で、
   既定の動作は変わりません。
+- ローカルと CI で同じように実行できる repository-owned Shader Variant budget
+  コマンド。Shader、Pass、stage、platform ごとの declared/kept 上限を安定した
+  human-readable／JSON レポートで検証し、必須 build evidence がない場合は
+  `unverified` として失敗します。
 - `Packages/packages-lock.json` による Unity Package の解決。
 - `Library/UnityShaderNavCache/` 配下へのプロジェクトローカルなインデックスキャッシュ。
 

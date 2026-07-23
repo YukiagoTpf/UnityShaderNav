@@ -136,6 +136,13 @@ _Avoid_: used variants, declared variants
 Editor Adapter 提供的有界、聚合 build facts，按 Shader、Pass、Stage、build target 和 graphics API 绑定，并携带 project、producer、source revision 与 collection timestamp。它不进入 Published indexed revision，也不替代 Declared Variant estimate。
 _Avoid_: variant estimate, compiler guess
 
+**Shader Variant budget**:
+仓库版本化的 declared 或 kept Variant 上限与 baseline delta 合约，可按 Shader、
+Pass、Stage、build target 和 graphics API 选择 Context。Declared 只来自当前源码的
+静态上界；Kept 必须来自 source hash 匹配且 completed 的 build evidence。缺失证据是
+`unverified` 并使门禁失败，不能解释为 0 或 pass。
+_Avoid_: best-effort budget, missing-evidence pass
+
 ## Flagged ambiguities
 
 **"Package"**:

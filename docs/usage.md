@@ -595,6 +595,21 @@ validated partial Compile candidates while Kept evidence stays explicitly
 unavailable, together with the failed phase and message. None of this evidence
 enters the Published indexed revision or changes conservative navigation.
 
+### Repository Shader Variant Budgets
+
+Repositories can turn the same Declared/static and validated Kept evidence
+classes into a deterministic local/CI gate with
+`npm run check:shader-budgets`. The versioned `shader-budgets.json` contract
+supports per-Shader, Pass, stage, build-target, and graphics-API limits and
+baseline deltas. Missing or stale required Unity build evidence is
+`unverified` and fails the command rather than appearing as zero.
+
+The command prints a human report and writes stable JSON under
+`Library/UnityShaderNavReports/`. Baselines include Context and keyword-set
+inventories, so source additions, removals, and large count regressions name
+the responsible Shader/Pass and keyword-set deltas. See
+[Shader Variant Budgets](shader-budgets.md).
+
 ## Project Detection
 
 The extension tries to find a Unity project root by locating a directory with

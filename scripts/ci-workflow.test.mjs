@@ -44,6 +44,14 @@ test('fast verification runs in a non-cancelling Linux, Windows, and macOS matri
   const contractValidation = step('Validate CI workflow contract');
   assert.match(contractValidation, /node --test scripts\/ci-workflow\.test\.mjs/);
   assert.doesNotMatch(contractValidation, /\n\s+if:/);
+
+  const budgetVerification = step('Verify Shader budgets');
+  assert.match(budgetVerification, /run: npm run check:shader-budgets/);
+  assert.doesNotMatch(budgetVerification, /\n\s+if:/);
+  assert.match(
+    rootPackage.scripts?.['check:shader-budgets'] ?? '',
+    /server\/src\/budgets\/cli\.ts/,
+  );
 });
 
 test('Bash, package, and Electron work remains Linux-only', () => {

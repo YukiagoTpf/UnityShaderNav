@@ -97,6 +97,10 @@ The extension focuses on fast code navigation:
   Declared/static upper bounds, Unity Compile candidates, Kept Variants, and
   unavailable evidence visibly separate per Shader/Pass/Stage/build target,
   with the largest keyword-set gaps first.
+- A repository-owned Shader Variant budget command for local verification and
+  CI. Per-Shader, Pass, stage, and platform declared/kept limits produce stable
+  human and JSON reports; missing required build evidence fails as
+  `unverified`, never as a silent pass.
 - Unity Package resolution through `Packages/packages-lock.json`.
 - Persistent project-local indexing under `Library/UnityShaderNavCache/`.
 
@@ -196,6 +200,7 @@ See [Configuration](docs/configuration.md) for the full explanation and examples
 - [Architecture](docs/architecture.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Technical Spec](docs/technical-spec.md)
+- [Shader Variant Budgets](docs/shader-budgets.md)
 - [Architecture Decision Records](docs/adr/)
 
 ## Known Limits

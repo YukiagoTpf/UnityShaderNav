@@ -364,6 +364,14 @@ validated partial rows; no unavailable count is converted to zero. The client
 presents this through an explicit report command, while the existing
 Declared/static CodeLens remains source-only.
 
+The repository Shader budget verifier reuses the same declared-cost analyzer,
+Variant comparison join, and bounded build-evidence validator in an offline
+root command. Its versioned contract selects Shader/Pass/stage/platform
+Contexts, uses exact arbitrary-precision decimal counts, and snapshots Context
+plus keyword-set baselines. Kept budgets accept only completed evidence with a
+current source SHA-256. The stable report has no timestamp or absolute path;
+failed and unverified results both produce a non-zero CI exit.
+
 File-mode Shader Graph Custom Function usages are another Adapter-supplied
 overlay. Adapter-owned version decoders emit one serialization-neutral logical
 node contract: graph/source identities, source ranges, precision, ordered

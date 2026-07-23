@@ -32,6 +32,9 @@ UnityShaderNav 是一个用于 Unity Shader 项目的 Visual Studio Code 扩展�
   遵循 `findReferences.includePackages` 设置。
 - 保守地变暗不生效和 variant 门控的 `#if`/`#ifdef` 预处理分支（仅影响呈现，不改变导航）。
 - 可选的变体上下文选择器（状态栏 + QuickPick），用于消解 `multi_compile` / `shader_feature` 歧义：激活的分支变亮，未激活的分支变暗，当上下文使目标唯一时 F12 直接跳转到激活变体。需手动启用；默认行为不变。
+- 提供仓库级 Shader Variant 预算命令，可在本地与 CI 中按 Shader、Pass、stage
+  和平台校验 declared/kept 上限，输出稳定的人类可读与 JSON 报告；缺少必需构建证据
+  会以 `unverified` 失败，不会静默通过。
 - 通过 `Packages/packages-lock.json` 解析 Unity Package。
 - 在 `Library/UnityShaderNavCache/` 下持久化项目本地索引缓存。
 

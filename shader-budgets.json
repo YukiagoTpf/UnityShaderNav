@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "budgets": [
+    {
+      "id": "budget-command-self-check",
+      "source": "server/tests/budgets/fixtures/BudgetSelfCheck.shader",
+      "selector": {
+        "shaderName": "Tests/BudgetSelfCheck",
+        "subShaderIndex": 0,
+        "passIndex": 0,
+        "passName": "Forward",
+        "stage": "fragment",
+        "buildTarget": "StandaloneWindows64",
+        "graphicsApi": "Direct3D11"
+      },
+      "evidence": "server/tests/budgets/fixtures/BudgetSelfCheck.evidence.json",
+      "limits": {
+        "declaredMax": "6",
+        "keptMax": "2",
+        "declaredMaxDelta": "0",
+        "keptMaxDelta": "0"
+      },
+      "policy": {
+        "contextChanges": "fail",
+        "keywordSetChanges": "fail"
+      },
+      "baseline": {
+        "declared": {
+          "count": "6",
+          "contexts": [
+            {
+              "key": "Tests/BudgetSelfCheck | SubShader 0 | Pass 0 Forward | fragment",
+              "count": "6"
+            }
+          ],
+          "keywordSets": [
+            {
+              "key": "Tests/BudgetSelfCheck | SubShader 0 | Pass 0 Forward | fragment | global/fragment | <blank> / QUALITY_LOW / QUALITY_HIGH",
+              "count": "3"
+            },
+            {
+              "key": "Tests/BudgetSelfCheck | SubShader 0 | Pass 0 Forward | fragment | local/fragment | <blank> / _NORMALMAP",
+              "count": "2"
+            }
+          ]
+        },
+        "kept": {
+          "count": "2",
+          "contexts": [
+            {
+              "key": "Tests/BudgetSelfCheck | SubShader 0 | Pass 0 Forward | fragment | StandaloneWindows64 | Direct3D11",
+              "count": "2"
+            }
+          ],
+          "keywordSets": [
+            {
+              "key": "Tests/BudgetSelfCheck | SubShader 0 | Pass 0 Forward | fragment | StandaloneWindows64 | Direct3D11 | global/fragment | <blank> / QUALITY_LOW / QUALITY_HIGH",
+              "count": "2"
+            },
+            {
+              "key": "Tests/BudgetSelfCheck | SubShader 0 | Pass 0 Forward | fragment | StandaloneWindows64 | Direct3D11 | local/fragment | <blank> / _NORMALMAP",
+              "count": "1"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

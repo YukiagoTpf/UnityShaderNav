@@ -1,0 +1,70 @@
+{
+  "status": "completed",
+  "provenance": {
+    "capability": "variant-build-evidence",
+    "projectId": "unity-shader-nav-self-check",
+    "instanceId": "fixture",
+    "adapterVersion": "0.3.0",
+    "unityVersion": "6000.0.31f1",
+    "buildTarget": "StandaloneWindows64",
+    "collectedAt": 1000000,
+    "sourceRevision": {
+      "uri": "file:///fixture/Assets/Shaders/BudgetSelfCheck.shader",
+      "assetGuid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "contentHash": "c634ba457503453dd8bf7679c6683066244197f1740d58432f110a1859747454"
+    }
+  },
+  "contexts": [
+    {
+      "shaderName": "Tests/BudgetSelfCheck",
+      "subShaderIndex": 0,
+      "passIndex": 0,
+      "passName": "Forward",
+      "stage": "fragment",
+      "graphicsApi": "Direct3D11",
+      "compileCandidates": {
+        "availability": "available",
+        "count": "6"
+      },
+      "kept": {
+        "availability": "available",
+        "count": "2"
+      },
+      "keywordSets": [
+        {
+          "keywords": [
+            "QUALITY_LOW",
+            "QUALITY_HIGH"
+          ],
+          "scope": "global",
+          "stage": "fragment",
+          "hasBlankOption": true,
+          "compileCandidates": {
+            "availability": "available",
+            "count": "3"
+          },
+          "kept": {
+            "availability": "available",
+            "count": "2"
+          }
+        },
+        {
+          "keywords": [
+            "_NORMALMAP"
+          ],
+          "scope": "local",
+          "stage": "fragment",
+          "hasBlankOption": true,
+          "compileCandidates": {
+            "availability": "available",
+            "count": "2"
+          },
+          "kept": {
+            "availability": "available",
+            "count": "1"
+          }
+        }
+      ]
+    }
+  ]
+}

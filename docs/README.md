@@ -7,6 +7,7 @@ This directory contains the public-facing documentation for UnityShaderNav.
 - [User Guide](usage.md)
 - [Configuration](configuration.md)
 - [Troubleshooting](troubleshooting.md)
+- [Shader Variant Budgets](shader-budgets.md)
 
 ## Contributors
 

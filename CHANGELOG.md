@@ -9,6 +9,12 @@ and uses semantic versioning for extension releases.
 
 ### Added
 
+- Added a versioned, repository-owned Shader Variant budget contract and
+  `npm run check:shader-budgets` local/CI gate. Per-Shader, Pass, stage, build
+  target, and graphics API declared/kept limits and baseline deltas produce
+  deterministic human and JSON reports with responsible Context and
+  keyword-set changes. Missing, incomplete, malformed, or source-stale required
+  build evidence fails as `unverified`, never as zero or a silent pass. (#92)
 - Added an explicit safe cross-asset Shader Property Rename preview that groups
   Shader/HLSL, proven C#, and serialized Material edits by provenance. Apply
   recomputes the evidence identity and coordinates revision-checked Adapter
