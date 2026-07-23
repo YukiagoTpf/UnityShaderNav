@@ -434,6 +434,31 @@ a live edit, rebuild, deletion, or newly invisible include point switches the
 selection back to **Auto** instead of combining facts from two revisions.
 Choosing a Context does not rebuild the Workspace or unrelated roots.
 
+### Unity Editor Adapter Connection
+
+Adapter-backed features require the Editor-only UPM package in the Unity
+project. From a repository checkout, open Unity Package Manager, choose **Add
+package from disk...**, and select `unity-adapter/package.json`. The extension
+never modifies `Packages/manifest.json` or installs the package automatically.
+
+The package publishes a derived descriptor at
+`Library/UnityShaderNavAdapter/session.json`. The extension checks the project
+and protocol identities and authenticates with the descriptor's per-run token
+before accepting any capability or evidence. Windows uses a current-user named
+pipe; macOS and Linux use a user-permissioned Unix domain socket. There is no
+TCP fallback.
+
+The language server owns at most one authenticated stream per Unity project.
+Several Workspace folders that resolve to the same project share that stream;
+different Unity roots have independent Adapter clients, registries, tokens, and
+reconnect lifecycles. A domain reload or Editor restart creates a new instance,
+so prior evidence becomes stale even when the project and source are unchanged.
+Indexing and Standalone behavior remain available while the Adapter is absent
+or reconnecting.
+
+See [Unity-rendered Visual Lab](visual-lab.md) for complete installation,
+same-machine trust assumptions, and real Unity validation.
+
 ### Compiler Evidence Views
 
 After selecting a Shader include-point Context, use **UnityShaderNav: Open
@@ -499,8 +524,63 @@ completion or navigation candidate and never enters the index or cache.
 Material Context is **not the final draw Context**. A Material selection does
 not prove which renderer, camera, platform, graphics API, dynamic pass, global
 keyword, or engine-added keyword participates in a real draw. Global and
-engine-added keyword state therefore remains visibly **unknown** until a later
-source supplies actual draw evidence.
+engine-added keyword state therefore remains visibly **unknown** unless a
+separate identity-matching source, such as a controlled Visual Lab frame,
+supplies actual draw evidence for its own bounded input.
+
+### Unity-rendered Visual Lab
+
+Run **UnityShaderNav: Open Visual Lab** to open the persistent comparison
+Webview. Opening the panel does not select or render a target. To make one
+available:
+
+1. Select a saved, persistent Material asset in the connected Unity Editor.
+2. In VS Code, select one exact **Context: ...** entry for a Shader include
+   source from the current Published indexed revision.
+3. Press **Use Current Selected Material** in Visual Lab.
+
+That action explicitly pins the Material, its Shader revision, and the selected
+Shader include-point Context. Visual Lab never follows later Unity selections
+silently.
+
+Press **Capture Before** and **Capture After / Refresh** separately. Each button
+issues one independent `visual-lab-render/v1` request and one real Unity draw
+into the repository-owned 64x64 offscreen input. There is no background,
+save-triggered, or selection-triggered render. Each slot shows its own complete
+provenance:
+
+- selection and Published Context revision;
+- Material and Shader path, URI, asset GUID, and content hash;
+- final Shader/SubShader/Pass/stage/entry point and separate Material, global,
+  and engine-added keyword collections; the v1 controlled draw reports the
+  engine-added collection as empty;
+- render-pipeline and graphics-profile identities, build target, graphics API,
+  quality level, render-target format, and color space;
+- Unity, Adapter, project, Editor instance, and controlled render-input
+  identities; and
+- capture time, request generation, PNG byte length, and PNG SHA-256.
+
+Any selection, Material, Material revision, source revision, Shader Context,
+pipeline, graphics profile, color-space, Adapter-instance, or render-input
+change immediately cancels in-flight work and invalidates the pin. A previous
+frame remains visible only as `STALE`, with its original provenance and reason.
+Capture stays disabled until **Use Current Selected Material** explicitly pins
+the new identity. Disconnect, domain reload, and late responses from rapid edits
+follow the same rule.
+
+The diagnostic beside each PNG is a separate top-left, row-major R8 NaN/Inf
+mask read from Unity's raw float target before the display PNG is sanitized. It
+contains one byte per pixel: `255` when any raw channel is non-finite and `0`
+otherwise. NaN has deterministic precedence when both classes occur in one
+pixel. Both server and Webview verify binary bytes and exact NaN, infinite, and
+masked-pixel counts. Image-diff tolerance is never used to prove this mask.
+
+Targets, frames, masks, and Webview state are session-only. They never enter
+the source index, persistent cache, workspace/global storage, project assets, or
+telemetry. Visual Lab v1 does not render an arbitrary Scene or Renderer, refresh
+continuously, measure overdraw, provide additional diagnostics, or repair a
+Shader automatically. See [Unity-rendered Visual Lab](visual-lab.md) and
+[ADR-0013](adr/0013-explicitly-pinned-unity-rendered-visual-lab.md).
 
 ### Declared Variant Cost
 

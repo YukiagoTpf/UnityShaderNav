@@ -9,6 +9,17 @@ and uses semantic versioning for extension releases.
 
 ### Added
 
+- Added a persistent, session-only Unity-rendered Visual Lab for one explicitly
+  pinned persistent Material and published Shader include-point Context.
+  Separate user-triggered Before and After requests render real 64x64 offscreen
+  Unity frames with complete Material/source/Context/pipeline/profile/
+  color-space/Adapter/render-input provenance and an independently validated
+  top-left row-major R8 NaN/Inf mask. Every identity change, disconnect, domain
+  reload, or rapid edit retains prior frames only as `STALE` until an explicit
+  re-pin; there is no arbitrary Scene rendering, continuous refresh, automatic
+  repair, persistence, or telemetry. The Editor-only UPM Adapter now provides
+  one authenticated local stream per Unity project with multi-root isolation.
+  (#103)
 - Added a bounded macOS/Apple-silicon, Metal, and Xcode GPU capture
   correlation prototype. One isolated Unity command-buffer draw produces a
   local `.gputrace` and versioned evidence bound to Shader/Pass/entry point,

@@ -2,8 +2,10 @@
 
 ## Status
 
-Proposed — 2026-07-19; decision draft for
-[#84](https://github.com/YukiagoTpf/UnityShaderNav/issues/84).
+Implemented — 2026-07-24. The transport decision originated in
+[#84](https://github.com/YukiagoTpf/UnityShaderNav/issues/84); the production
+UPM host, authenticated client, and per-project lifecycle were completed by
+[#103](https://github.com/YukiagoTpf/UnityShaderNav/issues/103).
 
 ## Context
 
@@ -20,10 +22,10 @@ Editor. [#84](https://github.com/YukiagoTpf/UnityShaderNav/issues/84) therefore
 blocks that chain: the transport, lifecycle, and trust Interface must be
 decided before any feature payload is defined.
 
-The current product is a pure VS Code extension plus language server. It
-detects a Unity project root (`Assets/` + `ProjectSettings/`), indexes shader
-source, and otherwise never talks to an Editor process. Standalone mode and
-conservative Multi-candidate Peek navigation
+At the time of this decision, the product was a pure VS Code extension plus
+language server. It detected a Unity project root (`Assets/` +
+`ProjectSettings/`), indexed shader source, and otherwise never talked to an
+Editor process. Standalone mode and conservative Multi-candidate Peek navigation
 ([ADR-0001](0001-multi-candidate-peek-for-ambiguous-symbols.md)) are the
 permanent fallback and must not depend on Adapter availability.
 
@@ -189,9 +191,32 @@ Peek are unchanged. Adapter-sourced features are additive overlays; their
 absence disables only themselves, with observable status, and never removes
 or reorders conservative static results.
 
-## Non-goals for this slice
+## Implementation
 
-This slice defines the Interface only. It does not implement or specify:
+The repository now ships the Editor-only UPM package under `unity-adapter/`.
+Installing it is an explicit Unity Package Manager action; the extension still
+never changes a project's manifest. The package starts with the Editor, writes
+the atomic descriptor, creates a fresh instance ID and 256-bit token, binds the
+current-user named pipe or permissioned Unix domain socket, and advertises
+versioned capabilities after the authenticated handshake. It accepts no TCP
+connection.
+
+The language server discovers one client per canonical Unity project root.
+Workspace folders resolving to the same project share exactly one client,
+stream, and Adapter registry; different Unity roots own isolated clients,
+registries, tokens, reconnect loops, and evidence. Disconnect and domain reload
+close the stream, invalidate prior-instance evidence, and retry with bounded
+exponential backoff without entering the index lifecycle.
+
+`visual-lab-render/v1` is the first production feature that exercises both the
+authenticated request/response path and Adapter-owned invalidation events end
+to end. Its separate identity and evidence decision is
+[ADR-0013](0013-explicitly-pinned-unity-rendered-visual-lab.md).
+
+## Non-goals
+
+This decision defines the shared lifecycle and trust Interface. It does not by
+itself implement or specify:
 
 - any feature payload — compiler messages, Material usages, Variant/build
   evidence, Shader Graph facts, Material Context, or GPU capture correlation
@@ -216,7 +241,7 @@ This slice defines the Interface only. It does not implement or specify:
 
 ## Consequences
 
-- The extension gains one optional Adapter client boundary per Workspace
+- The extension has one optional Adapter client boundary per Unity project
   root; unavailability is a normal, observable state, not an exception.
 - The Adapter is an independently versioned UPM package; compatibility is
   gated by the handshake protocol version, and each feature capability is

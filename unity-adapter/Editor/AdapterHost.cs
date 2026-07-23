@@ -190,14 +190,14 @@ namespace UnityShaderNav.Adapter
             endpointKind = "unix-domain-socket";
             var runtimeDirectory = Path.Combine(
                 Path.GetTempPath(),
-                "unity-shader-nav-" + EffectiveUserId());
+                "usn-" + EffectiveUserId());
             Directory.CreateDirectory(runtimeDirectory);
             Chmod(runtimeDirectory, Convert.ToInt32("700", 8));
             endpoint = Path.Combine(
                 runtimeDirectory,
-                projectHash.Substring(0, 16)
+                projectHash.Substring(0, 12)
                 + "-"
-                + instanceId.Substring(0, 12)
+                + instanceId.Substring(0, 8)
                 + ".sock");
             if (File.Exists(endpoint))
             {

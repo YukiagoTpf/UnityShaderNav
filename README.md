@@ -90,6 +90,12 @@ The extension focuses on fast code navigation:
   candidates rank first while every conservative result remains available.
   This is asset/editor evidence, not the final draw Context, so global and
   engine-added keyword state stays explicitly unknown.
+- A persistent, session-only **Visual Lab** Webview for one explicitly pinned
+  persistent Material and published Shader include-point Context. Separate
+  Before and After buttons request real Unity 64x64 offscreen draws, show
+  complete source/Material/Context/pipeline/profile/color-space/Adapter/input
+  provenance, and render an exact independent R8 NaN/Inf mask. Identity changes
+  retain old frames only as `STALE` until the user explicitly pins again.
 - Declared/static Variant cost CodeLens for explicit `multi_compile` and
   `shader_feature` keyword sets, including per-program upper bounds, scope,
   stage, and largest-multiplier facts without claiming Unity build counts.
@@ -182,6 +188,20 @@ To package a local VSIX:
 npm run package:vsix
 ```
 
+### Optional Unity Editor Adapter
+
+Adapter-backed features, including Visual Lab, require the Editor-only UPM
+package under `unity-adapter/`. From a repository checkout, open Unity Package
+Manager, choose **Add package from disk...**, and select
+`unity-adapter/package.json`. Installation is explicit: the extension never
+edits a project's `Packages/manifest.json` or installs Editor code silently.
+
+The Adapter exposes one authenticated local named-pipe or Unix-domain-socket
+stream per Unity project. Workspace folders resolving to the same project share
+that stream; different project roots remain isolated. See
+[Unity-rendered Visual Lab](docs/visual-lab.md) for setup, trust boundaries, and
+the complete workflow.
+
 ## Configuration
 
 Common settings:
@@ -206,6 +226,7 @@ See [Configuration](docs/configuration.md) for the full explanation and examples
 - [Architecture](docs/architecture.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Technical Spec](docs/technical-spec.md)
+- [Unity-rendered Visual Lab](docs/visual-lab.md)
 - [Shader Variant Budgets](docs/shader-budgets.md)
 - [Shader Compile Contract](docs/shader-compile-contract.md)
 - [GPU Capture-to-source Prototype](docs/gpu-capture-prototype.md)
@@ -224,7 +245,14 @@ See [Configuration](docs/configuration.md) for the full explanation and examples
   Material asset. It is invalidated on reconnect, selection changes, asset
   deletion, or source/content-hash mismatch. It does not claim renderer,
   camera, platform, graphics API, global keyword, or engine-added keyword state
-  without actual draw evidence.
+  without identity-matching draw evidence.
+- Visual Lab v1 renders only an explicitly pinned persistent Material and
+  published Shader include-point Context through its fixed 64x64 full-screen
+  input. It does not follow the Unity selection, render an arbitrary Scene or
+  Renderer, refresh continuously, repair Shaders, or infer diagnostic
+  correctness from image differences. Frames are session-only; any
+  selection/Material/source/Context/pipeline/profile/color/Adapter/input change
+  keeps the old image only as `STALE` and requires an explicit re-pin.
 - Variant build comparison requires a connected Editor Adapter advertising the
   versioned `variant-build-evidence` capability. Missing, oversized, foreign,
   stale, or source-drifted evidence remains explicitly unavailable; it never

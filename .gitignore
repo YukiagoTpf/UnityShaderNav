@@ -135,7 +135,10 @@ dist
 # Unity generated project state and index-cache fixtures
 **/Library/
 **/Logs/
+**/Temp/
 **/UserSettings/
+**/Assets/UnityShaderNavVisualLabFixture/
+**/Assets/UnityShaderNavVisualLabFixture.meta
 
 # pnpm
 .pnpm-store

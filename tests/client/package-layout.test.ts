@@ -635,7 +635,11 @@ suite('verification command contract', () => {
     );
     assert.strictEqual(
       scripts['test:package'],
-      'npm run package:vsix && npm run compile:tests && npm run test:package-layout',
+      'npm run package:vsix && npm run compile:tests && npm run test:client-unit && npm run test:package-layout',
+    );
+    assert.strictEqual(
+      scripts['test:client-unit'],
+      'mocha tests/out/client/visualLabPresentation.test.js --ui tdd --timeout 60000',
     );
     assert.strictEqual(
       scripts['test:integration'],

@@ -16,7 +16,11 @@ VS Code extension client
      -> parser runtime assets
         -> tree-sitter HLSL parser
         -> release cache fingerprint
-     -> optional Unity Editor Adapter evidence overlays
+     -> per-Unity-project Adapter client
+        <-> authenticated named-pipe / Unix-domain-socket stream
+        <-> Editor-only UPM Adapter
+           -> Material Context and versioned evidence capabilities
+           -> controlled Visual Lab rendering
      -> macro pattern recognizer
      -> per-file symbol/reference indexes
      -> workspace/global indexes
@@ -34,6 +38,13 @@ per-root `WorkspaceIndexStatus` values. Within one LSP session the client
 accepts only snapshots with a newer `statusSequence`, and projects multiple
 roots to one status-bar state in the order
 `failed > indexing > ready > standalone`.
+
+The client also owns the single persistent Visual Lab Webview. It accepts only
+validated server snapshots, embeds validated PNG bytes as `data:` images, draws
+the validated R8 diagnostic locally, and sends render requests only for the
+three explicit Webview actions: pin current selected Material, capture Before,
+and capture After. A strict content-security policy permits no network or local
+file resource.
 
 ## Server
 
@@ -90,13 +101,15 @@ handling. Important modules:
 - `project`: `UnityProjectFacts` captures the Editor version consumed by Quick
   Documentation compatibility checks and presentation-only predefined macro
   Hover values.
-- `adapter`: owns the Unity Editor Adapter handshake trust boundary plus the
-  optional `MaterialSource`, bounded Variant build-evidence, versioned
-  `ShaderGraphSource`, `MaterialContextSource`, and compiler-evidence query
-  surfaces. Project, instance, producer version, capability, source revision,
-  freshness, disconnect, reconnect, selection-generation, and payload-limit
-  checks run before Adapter facts can reach Workspace behavior; unavailable
-  facts stay explicitly unknown.
+- `adapter`: owns one Unity Editor Adapter trust boundary per Unity project,
+  local descriptor discovery, framed authenticated RPC, reconnect, multi-root
+  routing, and the optional `MaterialSource`, bounded Variant build-evidence,
+  versioned `ShaderGraphSource`, `MaterialContextSource`, Visual Lab, and
+  compiler-evidence query surfaces. Project, instance, producer version,
+  capability, source revision, freshness, disconnect, reconnect,
+  selection-generation, request-generation, and payload-limit checks run before
+  Adapter facts can reach Workspace behavior; unavailable facts stay explicitly
+  unknown.
 - `portability`: owns the exact-source report classifier, validated Unity/URP
   version pairs, mechanical edit gate, and the projection from mechanical
   findings to Hint diagnostics and Quick Fixes. Reports consume revision-owned
@@ -137,6 +150,60 @@ handling. Important modules:
   `WorkspaceIndex` is private to those revision types. `WorkspaceManager` owns
   root routing, cross-root query aggregation, the current-open-document
   provider, and the separate status-snapshot sequence.
+
+## Unity Editor Adapter Boundary
+
+The production Adapter is the Editor-only UPM package under `unity-adapter/`.
+It starts through Unity's Editor lifecycle and writes
+`Library/UnityShaderNavAdapter/session.json` atomically. The descriptor binds
+protocol, Adapter and Unity versions, canonical project hash, Editor instance,
+endpoint kind/address, process ID, and one fresh 256-bit token. The extension
+never installs the package or edits a project manifest.
+
+Windows binds a current-user named pipe; macOS and Linux bind a Unix domain
+socket and descriptor under user-only permissions. Both use the same bounded
+32-bit-little-endian-length-prefixed UTF-8 JSON messages. There is no TCP
+listener. Before any request or event is accepted, `hello` must match the
+descriptor token, protocol version, and project hash, and the descriptor-bound
+`welcome` must repeat the instance and producer identities plus a unique
+versioned capability list.
+
+`WorkspaceAdapterCoordinator` keys connections by canonical Unity project
+identity rather than by open folder spelling. Workspace folders resolving to
+the same project bind stable scopes to one registry, one authenticated stream,
+and one reconnect loop. Different Unity roots use isolated clients, registries,
+tokens, streams, and evidence lifecycles. Discovery and reconnect are
+asynchronous and additive: they neither block index publication nor let one
+root's disconnect affect another. EOF or domain reload invalidates prior
+instance evidence; bounded exponential backoff begins at 1 second and caps at
+30 seconds with jitter. See
+[ADR-0008](adr/0008-unity-editor-adapter-lifecycle-and-trust-model.md).
+
+Visual Lab is a session-only Adapter overlay above Material Context and the
+Published include-point Context selection. `VisualLabService` changes its pin
+only for the explicit user action; state reads cannot adopt Unity's current
+selection. Before each slot request it re-reads the Material selection, asks the
+Adapter to redescribe the final draw, and compares the complete canonical
+identity before accepting a response. Per-slot request generations and
+cancellation reject late rapid-edit responses.
+
+The `visual-lab-render/v1` UPM capability revalidates the persistent Material
+and Shader bytes, explicit pass/stage/entry point, Material and global keywords,
+pipeline asset, build target, graphics API, quality level, project color space,
+Adapter instance, and controlled input immediately before drawing. It renders
+one full-screen triangle through the requested `Material.SetPass` into a hidden
+64x64 linear `ARGBFloat` target. It does not load or inspect an arbitrary Scene.
+The float readback produces the exact top-left row-major binary R8 NaN/Inf mask
+before non-finite channels are sanitized for the display PNG.
+
+Selection, Material, source, Shader Context, pipeline, profile, color space,
+Adapter instance, or render-input changes abort work and turn every retained
+slot into stale evidence. The old bytes remain available with their original
+identity, but capture stays unavailable until a user explicitly pins again.
+Targets, frames, and masks are held only by the client/server session
+coordinators; they never enter `FileIndex`, a Published indexed revision,
+persistent cache, workspace/global storage, project assets, or telemetry. See
+[ADR-0013](adr/0013-explicitly-pinned-unity-rendered-visual-lab.md).
 
 ## Indexing Model
 

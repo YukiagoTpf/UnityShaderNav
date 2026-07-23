@@ -11,6 +11,7 @@ import {
   OPEN_PREPROCESSED_VIEW_COMMAND,
   OPEN_SOURCE_VIEW_COMMAND,
   OPEN_VARIANT_COST_DOCUMENTATION_COMMAND,
+  OPEN_VISUAL_LAB_COMMAND,
   SHOW_VARIANT_COMPARISON_COMMAND,
 } from '@unity-shader-nav/shared';
 
@@ -44,7 +45,7 @@ suite('UnityShaderNav activation', () => {
     }
   });
 
-  test('manifest declares onLanguage activation for shaderlab, hlsl, and shadergraph', () => {
+  test('manifest declares language and Visual Lab command activation', () => {
     const ext = findExt();
     assert.ok(ext, 'extension manifest must be loaded');
     const events: string[] = ext.packageJSON.activationEvents ?? [];
@@ -59,6 +60,10 @@ suite('UnityShaderNav activation', () => {
     assert.ok(
       events.includes('onLanguage:shadergraph'),
       `expected onLanguage:shadergraph in activationEvents, got ${JSON.stringify(events)}`,
+    );
+    assert.ok(
+      events.includes(`onCommand:${OPEN_VISUAL_LAB_COMMAND}`),
+      `expected Visual Lab command activation, got ${JSON.stringify(events)}`,
     );
   });
 
@@ -82,6 +87,7 @@ suite('UnityShaderNav activation', () => {
     assert.ok(ids.includes('unityShaderNav.showMaterialContext'));
     assert.ok(ids.includes('unityShaderNav.showPortabilityReport'));
     assert.ok(ids.includes(SHOW_VARIANT_COMPARISON_COMMAND));
+    assert.ok(ids.includes(OPEN_VISUAL_LAB_COMMAND));
     for (const command of [
       OPEN_SOURCE_VIEW_COMMAND,
       OPEN_PREPROCESSED_VIEW_COMMAND,
@@ -124,6 +130,7 @@ suite('UnityShaderNav activation', () => {
     assert.ok(registered.includes('unityShaderNav.showPortabilityReport'));
     assert.ok(registered.includes(OPEN_VARIANT_COST_DOCUMENTATION_COMMAND));
     assert.ok(registered.includes(SHOW_VARIANT_COMPARISON_COMMAND));
+    assert.ok(registered.includes(OPEN_VISUAL_LAB_COMMAND));
     for (const command of [
       OPEN_SOURCE_VIEW_COMMAND,
       OPEN_PREPROCESSED_VIEW_COMMAND,

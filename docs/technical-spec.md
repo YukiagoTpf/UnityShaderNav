@@ -42,6 +42,10 @@ UnityShaderNav provides practical VS Code navigation for Unity shader projects:
 - One bounded macOS/Metal/Xcode GPU capture Adapter prototype that proves an
   exact draw-to-Shader/Pass/entry/source-range correlation and rejects stale
   or replay-incompatible evidence.
+- One explicitly pinned, session-only Visual Lab that reuses a connected Unity
+  Editor for independent 64x64 Before/After draws, exposes complete render
+  identity, and verifies an exact R8 NaN/Inf diagnostic independently from
+  image-diff noise.
 - Cross-file navigation through `#include` chains and resolved Unity Packages.
 - Adapter-backed Definition, References, and focused contract diagnostics for
   File-mode Shader Graph Custom Function nodes, without parsing graph
@@ -57,8 +61,13 @@ semantics.
 
 ## Non-Goals
 
-- Shader compilation, preview, or general compiler diagnostics beyond the
-  explicitly documented index-backed rules.
+- A parallel Shader compiler or general-purpose preview renderer. The bounded
+  Visual Lab delegates its explicit draws to Unity.
+- General compiler diagnostics beyond the explicitly documented Adapter and
+  index-backed rules.
+- Arbitrary Scene/Renderer/camera preview, continuous rendering, automatic
+  Shader repair, overdraw, or diagnostics beyond the documented Visual Lab
+  NaN/Inf mask.
 - Formatting or exhaustive compiler-grade completion.
 - Full C preprocessor expansion.
 - Rider-style shader context selection.
@@ -101,8 +110,19 @@ Language server
   - publishes only through the Workspace lifecycle boundary
   - answers LSP definition, references, symbols, highlight, CodeLens, and semantic-token requests
   - validates and compares optional aggregate Unity Variant build evidence
+  - discovers and authenticates one local Editor Adapter stream per Unity
+    project and isolates different project roots
+  - owns session-only Visual Lab target/frame state and rejects stale render
+    identity before publishing Webview snapshots
   - publishes revision- and document-version-checked entry-point diagnostics
   - persists per-Workspace cache manifests under Library/UnityShaderNavCache
+
+Unity Editor UPM Adapter
+  - publishes one project-local session descriptor
+  - serves versioned capabilities over a current-user named pipe or
+    user-permissioned Unix domain socket
+  - revalidates persistent Material/Shader and environment identity
+  - renders each explicitly requested Visual Lab frame through Unity
 ```
 
 See [Architecture](architecture.md) for module-level details.
@@ -297,6 +317,68 @@ Workspace-stored staged candidate, follow-up take protocol, synthetic empty
 fallback, or public construction-phase bootstrap. Rebuild or recovery failure
 discards its candidate and continues serving the retained revision. See
 [ADR-0006](adr/0006-index-lifecycle-and-failure-semantics.md).
+
+## Unity Editor Adapter and Visual Lab
+
+The production Adapter is an explicitly installed Editor-only UPM package for
+Unity 2022.3 or newer. From a checkout, Unity Package Manager's **Add package
+from disk...** selects `unity-adapter/package.json`; the extension never edits
+`Packages/manifest.json`.
+
+The Adapter atomically publishes
+`Library/UnityShaderNavAdapter/session.json`. The language server validates its
+protocol, producer, canonical project hash, instance, endpoint, process, and
+256-bit token fields, then requires a token/protocol/project-matching `hello`
+before accepting the descriptor-bound `welcome` and versioned capabilities.
+Windows uses a current-user named pipe; macOS/Linux use a user-permissioned Unix
+domain socket. Both carry bounded 32-bit-little-endian-length-prefixed UTF-8
+JSON. There is no TCP or remote transport.
+
+Connections are keyed by canonical Unity project root. Workspace folders that
+resolve to one project share one authenticated stream, registry, and reconnect
+loop; different projects have isolated clients, tokens, registries, and
+evidence. Discovery and reconnect do not suspend or mutate index lifecycle.
+
+Visual Lab has four user-owned transitions: opening the persistent Webview has
+no selection or render side effect; **Use Current Selected Material** explicitly
+pins the persistent Adapter Material Context plus one selected Shader
+include-point Context from a Published indexed revision; **Capture Before** and
+**Capture After / Refresh** issue independent requests. Each slot is `empty`,
+`capturing`, `current`, `stale`, or `failed`, and a failed/in-flight slot can
+retain an older frame.
+
+The canonical target binds selection and publication; Material and Shader
+path/URI/GUID/content hash; Shader/SubShader/Pass/stage/entry point and separate
+Material/global/engine-added keyword collections (v1 reports no engine-added
+keywords for its controlled draw); pipeline; build target, graphics API,
+quality and render-target profile; project color space; Unity/Adapter/project/
+instance; and render-input identity. Every frame repeats the target and adds
+slot, request generation, capture time, PNG byte length/SHA-256/data, and
+diagnostic evidence. Complete identity equality and the current generation are
+checked before a response can become current.
+
+The v1 Adapter revalidates the persistent assets, explicit pass/entry,
+keywords, environment, and instance immediately before `Material.SetPass`. It
+renders one full-screen triangle with fixed identity matrices into a hidden
+64x64 linear `ARGBFloat` target with point sampling and no MSAA. It has no open
+Scene, Scene camera, object, or light dependency and refuses an unprovable
+SubShader-to-pass mapping.
+
+Raw float readback produces a top-left, row-major 4,096-byte R8 mask before the
+display PNG is sanitized. A byte is exactly `255` iff any channel is NaN or
+infinite, otherwise `0`; NaN has precedence for pixels containing both. Binary
+bytes and NaN/infinite/masked counts are checked independently from the PNG.
+Image diff is not diagnostic evidence.
+
+Selection, Material/revision, source, Shader Context, pipeline, profile, color
+space, Adapter instance, and render-input changes cancel in-flight work and
+retain old frames only as `STALE`. Disconnect and domain reload do the same.
+Capture remains disabled until an explicit re-pin. Frames and targets are
+session-only and never enter `FileIndex`, Published indexed revisions, cache,
+workspace/global storage, project assets, or telemetry. See
+[Unity-rendered Visual Lab](visual-lab.md),
+[ADR-0008](adr/0008-unity-editor-adapter-lifecycle-and-trust-model.md), and
+[ADR-0013](adr/0013-explicitly-pinned-unity-rendered-visual-lab.md).
 
 ## Indexing Scope
 
@@ -580,10 +662,16 @@ Core verification commands:
 
 ```powershell
 npm run check:fast
+npm run check:visual-lab-prototype
 npm run test:package
 npm test
 ```
 
 Use focused server tests while developing, then run the authoritative fast,
 current-package, and aggregate commands before publishing or merging
-user-visible behavior changes.
+user-visible behavior changes. A current real Unity proof is explicit and
+environment-dependent:
+
+```powershell
+npm run visual-lab:prototype -- --unity <Unity-executable>
+```

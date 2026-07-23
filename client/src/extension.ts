@@ -32,6 +32,10 @@ import { setupFileWatchers } from './watcher';
 import { registerPortabilityReportCommand } from './portabilityReportCommand';
 import { setupCSharpCurrentSource } from './csharpCurrentSource';
 import { registerPropertyRenameCommand } from './propertyRename';
+import {
+  createLanguageClientVisualLabApi,
+  createVisualLabController,
+} from './visualLabController';
 
 let client: LanguageClient | undefined;
 
@@ -86,6 +90,10 @@ export async function activate(context: ExtensionContext): Promise<void> {
   ));
   context.subscriptions.push(createVariantComparisonCommand(client, reportError));
   context.subscriptions.push(registerPropertyRenameCommand(client, reportError));
+  context.subscriptions.push(createVisualLabController(
+    createLanguageClientVisualLabApi(client),
+    reportError,
+  ));
   setupCSharpCurrentSource(client, context, reportError);
   await client.start();
   try {

@@ -13,8 +13,10 @@ root. This single-root contract is recorded in
   client/   VS Code extension client
   server/   language server, parser, index, and LSP handlers
   shared/   shared protocol and data types
+  unity-adapter/   Editor-only Unity Package Manager Adapter
   tests/    VS Code integration tests and fixtures
   scripts/  build, packaging, benchmark, and helper scripts
+  tools/    isolated Unity verification projects
 ```
 
 ## Setup
@@ -55,7 +57,9 @@ npm run check:artifacts
 npm run check:shader-budgets
 npm run check:shader-contract
 npm run check:gpu-capture-prototype
+npm run check:visual-lab-prototype
 npm run gpu-capture:preflight
+npm run visual-lab:prototype -- --unity <Unity-executable>
 npm run build
 npm run watch
 npm run test -w @unity-shader-nav/server
@@ -87,6 +91,27 @@ explicit `npm run gpu-capture:capture` command to generate a real local trace
 from the isolated Unity project. See
 [GPU Capture-to-source Prototype](gpu-capture-prototype.md). Raw `.gputrace`
 and Unity `Library/` output remain ignored derived data.
+
+`npm run check:visual-lab-prototype` is the offline Visual Lab contract check
+included by `npm run check:fast`. It verifies the real-runner wiring, isolated
+UPM Adapter dependency, controlled Shader input, and exact independent R8
+NaN/Inf mask contract without launching Unity.
+
+Use the explicit real proof when a compatible Unity Editor is available:
+
+```powershell
+npm run visual-lab:prototype -- --unity <Unity-executable>
+```
+
+This command builds the current TypeScript runtime, launches the repository's
+isolated Unity project in batch mode, discovers and authenticates its UPM
+Adapter, and makes separate Before and After render requests. A passing run
+requires two real 64x64 Unity frames, matching PNG hashes, and exactly 64 NaN
+plus 64 infinite pixels in each 4,096-byte R8 mask. It does not open a product
+Unity project and terminates only the process it launched. The command is an
+explicit environment-dependent check; the offline command above, not an
+unobserved Unity result, is what `check:fast` can prove. See
+[Unity-rendered Visual Lab](visual-lab.md).
 
 ## Testing Strategy
 
@@ -170,6 +195,15 @@ and Unity `Library/` output remain ignored derived data.
   proves deterministic edits plus separate exact-source hashes through a mock
   Adapter boundary; it is not a substitute for compiling both revisions with a
   real Unity Editor and must never be presented as captured compiler evidence.
+- Visual Lab protocol tests cover explicit pin ownership, independent slot
+  generations, every render-identity stale transition, late-response rejection,
+  bounded canonical PNGs, and exact binary R8 bytes/counts without using image
+  diffs. Client tests validate the same evidence before building a `data:` PNG
+  or drawing the mask. IPC tests cover descriptor, framing, authentication,
+  capability negotiation, reconnect, one-project sharing, and cross-project
+  isolation. The offline prototype check proves the real-runner contract; only
+  `npm run visual-lab:prototype -- --unity <Unity-executable>` proves a current
+  environment performed the two Unity draws.
 - Query semantics belong in revision/Workspace tests that call the same
   Indexed Workspace methods and production query implementation used by the
   server. Live overlay, disk fallback, stale-attempt, rebuild replay,

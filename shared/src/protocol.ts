@@ -60,6 +60,7 @@ export * from './shaderGraph';
 export * from './structure';
 export * from './symbols';
 export * from './variants';
+export * from './visualLab';
 
 /** Custom pull request: client asks for dimmed preprocessor-branch ranges. */
 export const INACTIVE_REGIONS_REQUEST = 'unityShaderNav/inactiveRegions';

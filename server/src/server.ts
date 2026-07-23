@@ -5,6 +5,7 @@ import {
   INDEX_STATUS_REQUEST,
   INCLUDE_POINT_CONTEXT_CHANGED_NOTIFICATION,
   CSHARP_CURRENT_SOURCE_CHANGED_NOTIFICATION,
+  VISUAL_LAB_STATE_CHANGED_NOTIFICATION,
   VARIANT_CONTEXT_CHANGED_NOTIFICATION,
   VARIANT_CONTEXT_REQUEST,
   type IndexStatusSnapshot,
@@ -20,6 +21,9 @@ import { CompilerEvidenceService } from './adapter/compilerEvidenceService';
 import {
   WorkspaceAdapterCoordinator,
 } from './adapter/workspaceAdapterCoordinator';
+import {
+  VisualLabSessionCoordinator,
+} from './adapter/visualLabSessionCoordinator';
 import { loadSettings, onSettingsChanged } from './config';
 import { registerAdapterDiagnosticOverlay } from './handlers/adapterDiagnostics';
 import { registerAdapterStatusHandler } from './handlers/adapterStatus';
@@ -47,6 +51,7 @@ import { registerRenameHandler } from './handlers/rename';
 import { registerSemanticTokensHandler } from './handlers/semanticTokens';
 import { registerSignatureHelpHandler } from './handlers/signatureHelp';
 import { registerWorkspaceSymbolHandler } from './handlers/workspaceSymbol';
+import { registerVisualLabHandlers } from './handlers/visualLab';
 import { registerFileWatchers } from './lifecycle/fileWatcher';
 import { applyScopedSettingsAndRebuild } from './lifecycle/rebuild';
 import { RequestSuspender } from './lifecycle/requestSuspender';
@@ -80,11 +85,37 @@ manager.onDidChangeWorkspaces((workspaces) => {
     unityRoot: workspace.unityRoot,
   })));
 });
+const visualLabSessions = new VisualLabSessionCoordinator({
+  manager,
+  adapters: workspaceAdapters,
+  publish(params) {
+    const reportFailure = (error: unknown): void => {
+      const message = error instanceof Error ? error.message : String(error);
+      connection.console.error(
+        `[UnityShaderNav] Visual Lab notification failed: ${message}`,
+      );
+    };
+    try {
+      void Promise.resolve(
+        connection.sendNotification(
+          VISUAL_LAB_STATE_CHANGED_NOTIFICATION,
+          params,
+        ),
+      ).catch(reportFailure);
+    } catch (error) {
+      reportFailure(error);
+    }
+  },
+});
 const suspender = new RequestSuspender({ timeoutMs: 5000 });
 let compilerEvidence!: CompilerEvidenceService;
 let globalStorageDir: string | undefined;
 
 registerAdapterStatusHandler(connection, workspaceAdapters);
+registerVisualLabHandlers(
+  connection,
+  (documentUri) => visualLabSessions.serviceFor(documentUri),
+);
 
 // Status remains queryable during the bounded cold-start request gate.
 connection.onRequest(
@@ -111,6 +142,7 @@ connection.onNotification(
       ? { activeKeywords: new Set(params.context.activeKeywords) }
       : null;
     variantContextStore.set(params.textDocument.uri, ctx);
+    visualLabSessions.markShaderContextChanged(params.textDocument.uri);
   },
 );
 
@@ -122,6 +154,7 @@ connection.onNotification(
       params.folderUri,
       params.selection?.contextId,
     );
+    visualLabSessions.markShaderContextChanged();
     manager.requestDiagnosticsRefresh();
     void Promise.resolve().then(
       () => connection.languages.semanticTokens.refresh(),
@@ -164,6 +197,15 @@ documentRegistry.onDidCloseSnapshot((document) => {
   portabilityTargetStore.delete(document.uri);
 });
 const documents = documentRegistry.documents;
+documents.onDidOpen(({ document }) => {
+  visualLabSessions.markSourceChanged(document.uri);
+});
+documents.onDidChangeContent(({ document }) => {
+  visualLabSessions.markSourceChanged(document.uri);
+});
+documents.onDidClose(({ document }) => {
+  visualLabSessions.markSourceChanged(document.uri);
+});
 compilerEvidence = new CompilerEvidenceService({
   registry: adapterRegistry,
   selectedContextFor: (uri) => manager.selectedIncludePointContextFor(uri),
@@ -199,6 +241,9 @@ registerDiagnosticsPublisher(
 );
 adapterRegistry.onDidChangeStatus(() => manager.requestDiagnosticsRefresh());
 workspaceAdapters.onDidChangeStatus(() => manager.requestDiagnosticsRefresh());
+workspaceAdapters.onDidChangeMaterialContext(() => {
+  visualLabSessions.markSelectionChanged();
+});
 manager.configureSettingsResolver((scopeUri) => loadSettings(connection, scopeUri));
 
 connection.onInitialized(async () => {
@@ -284,6 +329,7 @@ registerFileWatchers(
       undefined,
       event.type === 'deleted',
     );
+    visualLabSessions.markSourceChanged(event.uri);
   },
 );
 
@@ -291,6 +337,7 @@ connection.onShutdown(async () => {
   try {
     await manager.persistAll();
   } finally {
+    visualLabSessions.dispose();
     workspaceAdapters.dispose();
   }
 });

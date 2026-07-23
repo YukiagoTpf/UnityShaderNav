@@ -21,6 +21,15 @@ _Avoid_: degraded mode, no-project mode
 判断两个 file URI 或文件系统路径是否指向同一源码文件的跨平台语义。Windows 对路径大小写不敏感；默认 macOS volume 同时折叠大小写并统一 Unicode；Linux 保持大小写和 Unicode 差异。该身份不解析 symlink，也不会把归一化后的比较键当成可访问文件地址。
 _Avoid_: URI spelling, canonical path
 
+**Unity Editor Adapter**:
+用户显式安装到 Unity project 的 Editor-only UPM package。它通过 project-local
+descriptor、每次 Editor instance 新生成的 token，以及 Windows named pipe 或
+macOS/Linux Unix domain socket，向同机同用户的扩展提供 Unity-only evidence。
+同一 Unity project 的多个 Workspace folder 共享一个 authenticated stream；不同
+project root 的 client、registry、token 与 evidence lifecycle 相互隔离。它不是远程
+服务，不使用 TCP，也不进入 index lifecycle。
+_Avoid_: remote service, TCP daemon, automatic project install
+
 **Include chain**:
 从一个源码文件出发递归跟随 `#include` 得到的可见文件集合。Definition、References、Hover、Completion、Signature Help 和 Document Highlight 对同一 Published indexed revision 使用相同的 Include chain；无法解析的 include 不会被猜测为可见文件。
 
@@ -119,6 +128,35 @@ provenance。证据同时绑定 project、Editor instance、Material/Shader cont
 Material Context 不是最终 draw Context；在真实 draw 证据到达前，global 与
 engine-added keywords 必须保持 `UNKNOWN`。
 _Avoid_: draw Context, runtime variant
+
+**Visual Lab**:
+用户显式打开、仅在当前会话存在的持久 Webview。用户通过 **Use Current Selected
+Material** 同时 pin 当前持久化 Material 与一个 Published Shader include-point
+Context，再分别手动请求 Before 和 After 的真实 Unity 64x64 离屏渲染。它不自动跟随
+Unity selection，不连续渲染，也不修改 Shader 或 Material。
+_Avoid_: live preview, Scene preview, automatic Shader repair
+
+**Pinned Visual Lab target**:
+Visual Lab 一次显式选择所冻结的完整 render identity：selection 和 publication、
+Material/Shader asset revision、最终 Shader Context 与 keywords、render pipeline、
+graphics profile、color space、Unity/Adapter/project/instance，以及 repository-owned
+render input。任一维度变化都立即取消在途请求；旧帧只可带原 provenance 以 `STALE`
+保留，用户必须重新 pin，不能静默采用新 identity。
+_Avoid_: current Unity selection, best-effort refresh
+
+**Visual Lab frame evidence**:
+一次单独 Before 或 After 请求的会话级证据，包含完整 Pinned Visual Lab target、
+request generation、capture timestamp、PNG bytes/hash 和独立 NaN/Inf mask。Before
+与 After 各自拥有完整 provenance；像素相似不代表 identity 相同或验证通过。证据不进入
+Published indexed revision、cache、workspace/global storage 或 telemetry。
+_Avoid_: screenshot, persisted render result, image-diff proof
+
+**NaN/Inf mask**:
+从 Unity float render target、在生成展示 PNG 之前精确读取的 top-left row-major R8
+mask。每像素恰好一个 byte；任一原始 channel 为 NaN 或 Infinity 时为 `255`，否则为
+`0`，同时包含可由 mask 精确核对的 NaN、Infinity 与 masked pixel counts。它不是
+Before/After image diff；同一像素同时含两类时 NaN 优先。
+_Avoid_: heatmap diff, tolerance-based diagnostic
 
 **Declared Variant estimate**:
 由当前 Shader 源码中的显式 keyword sets 静态计算出的 Variant 数量上界。它是理论估计，不是 Unity 编译或构建测量值；用户界面必须标为 `Declared/static`。
