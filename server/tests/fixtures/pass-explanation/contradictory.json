@@ -1,0 +1,16 @@
+{
+  "base": "complete.json",
+  "graphId": "contradictory-pass-selection",
+  "replaceMaterialSelectedProgram": {
+    "subShaderIndex": 0,
+    "passIndex": 2,
+    "passName": "ShadowCaster"
+  },
+  "expected": {
+    "observationStatus": "observed",
+    "observedPassIndex": 2,
+    "causalStatus": "refused",
+    "causalReason": "contradictory-evidence",
+    "contradictions": ["selected-program-mismatch"]
+  }
+}

@@ -528,6 +528,84 @@ engine-added keyword state therefore remains visibly **unknown** unless a
 separate identity-matching source, such as a controlled Visual Lab frame,
 supplies actual draw evidence for its own bounded input.
 
+### Evidence-constrained Pass Explanation
+
+With a ShaderLab or HLSL document open, run **UnityShaderNav: Explain Current
+Pass**. The command opens one read-only panel and asks exactly:
+
+> Why was this Pass selected for the current Material Context?
+
+The panel deliberately separates two results:
+
+- **Observed project fact** reports the Shader/SubShader/Pass identified by the
+  current Material Context. This can remain available even when no cause is
+  proven.
+- **Causal explanation** is supported only by one Adapter-authored
+  `pass-selection-decision/v1` fact that links the exact Material Context,
+  current locally verified Shader Context, and source Pass through a consistent
+  decision, selection, project, Editor instance, Shader/Pass, stage/entry point,
+  source revision, and provenance chain. The decision must name the actual
+  selection rule that fired and include its Adapter-authored summary and facts;
+  matching identities alone establish the selection, not its cause.
+
+Matching names, Pass indices, source hashes, compiler output, and generated
+source never create that decision. When required evidence is absent, the panel
+lists every blocking item and shows **Cause refused**. When identities disagree
+or the graph is invalid, it lists the contradictions and also refuses the
+claim. Linked Variant, compiler, and generated-source facts can appear as
+additional exact citations, but they corroborate rather than replace the
+Adapter decision. Variant build status remains visible; compiler and generated
+source must share a current registry evidence ID and exact virtual/source
+mapping. The Shader Context must retain a complete locally verified trace whose
+trace, draw, source text, entry point, and mapping identities agree. Test-only
+sanitized, stale, or partial GPU evidence is shown but cannot authorize the
+claim. The mapped entry-point range must be one line and exactly span the
+expected entry-point text. Generated-code citations point to the mapped
+generated line, not the
+preceding `#line` directive; the panel accepts them only when the generated and
+source ranges, source line/name, compiler snapshot, and provenance close.
+
+The current production projector is intentionally narrower than the complete
+evidence protocol. It can project the Workspace-validated Material Context and,
+only when that context already supplies `selectedProgram`, the Shader content
+hash still matches, and one exact Shader/SubShader/Pass range is proven, a
+source-Pass citation. The requested source must be that Shader or an indexed
+include point for its selected Program. Only Material, Shader, selected Program,
+and provenance identity enter this explanation; Material properties, textures,
+and keyword inventories are not copied. It does not yet project Shader Context,
+Variant, compiler, generated-source, or Adapter-authored `selection-decision`
+evidence. The
+bundled Adapter does not currently author `selectedProgram`, so a normal result
+reports both the Pass observation and causal explanation as unavailable and
+lists the missing facts. If a future Adapter supplies the observed program but
+not the decision, the panel preserves that observation and exact source
+citation while still refusing causality. Evidence is omitted rather than
+reconstructed.
+
+Each answer is produced by a bounded deterministic engine in the local language
+server. No language model is used, no project source or evidence is sent to an
+external service, no telemetry is emitted, and the answer is retained only for
+the current session. Model availability has no effect on the command. Complete
+supported graphs are currently deterministic test fixtures, not a production
+Adapter capability.
+
+The Webview has scripts, network access, local resources, and edit controls
+disabled. It validates the structured answer and renders the observation,
+causal status, disclosures, citations, and execution boundary as a read-only
+ledger. The command starts no background refresh. Starting another request
+cancels the previous one. Editing the requested source or any source/revision
+cited by the answer, changing/deleting it through the filesystem, or changing
+its exact Unity `.meta` sidecar, or changing Material Context immediately
+removes the prior answer and marks the panel stale. Mutations that happen while
+an include-file request is still discovering its owning Shader or sidecar are
+also rejected before display. Run the command again to collect a new snapshot.
+
+Version 1 never suggests or applies edits. A future edit protocol must be
+designed around an explicitly accepted revision-bound preview, passed compiler
+verification with provenance, and passed test verification; no such token is
+accepted today. See
+[ADR-0014](adr/0014-evidence-constrained-current-pass-explanation.md).
+
 ### Unity-rendered Visual Lab
 
 Run **UnityShaderNav: Open Visual Lab** to open the persistent comparison

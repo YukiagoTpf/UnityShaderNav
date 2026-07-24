@@ -1,0 +1,408 @@
+{
+  "schemaVersion": 1,
+  "question": "why-pass-selected-for-current-material-context",
+  "graphId": "complete-pass-selection",
+  "nodes": [
+    {
+      "id": "source-forward",
+      "kind": "source-pass",
+      "source": {
+        "uri": "file:///project/Assets/Shaders/Ship.shader",
+        "sourceId": "22222222222222222222222222222222",
+        "contentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "program": {
+        "blockIndex": 0,
+        "shaderName": "Tests/Ship",
+        "subShaderIndex": 0,
+        "passIndex": 1,
+        "passName": "Forward",
+        "stages": [
+          {
+            "stage": "fragment",
+            "entryPoint": "frag",
+            "defines": []
+          }
+        ],
+        "sharedBlockIndices": []
+      },
+      "range": {
+        "start": { "line": 10, "character": 0 },
+        "end": { "line": 30, "character": 1 }
+      }
+    },
+    {
+      "id": "material-ship",
+      "kind": "material-context",
+      "context": {
+        "selectionId": "selection-7",
+        "material": {
+          "name": "Ship",
+          "path": "Assets/Materials/Ship.mat",
+          "revision": {
+            "uri": "file:///project/Assets/Materials/Ship.mat",
+            "assetGuid": "11111111111111111111111111111111",
+            "contentHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        },
+        "shader": {
+          "name": "Tests/Ship",
+          "path": "Assets/Shaders/Ship.shader",
+          "revision": {
+            "uri": "file:///project/Assets/Shaders/Ship.shader",
+            "assetGuid": "22222222222222222222222222222222",
+            "contentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        "selectedProgram": {
+          "subShaderIndex": 0,
+          "passIndex": 1,
+          "passName": "Forward"
+        },
+        "provenance": {
+          "capability": "material-context",
+          "projectId": "project-a",
+          "instanceId": "editor-1",
+          "adapterVersion": "1.0.0",
+          "unityVersion": "2022.3.62f1",
+          "collectedAt": 1000,
+          "sourceRevision": "selection-7"
+        }
+      }
+    },
+    {
+      "id": "context-forward-fragment",
+      "kind": "shader-context",
+      "correlation": {
+        "status": "current",
+        "traceStatus": "sanitized-fixture",
+        "traceVerification": {
+          "status": "sanitized-fixture"
+        },
+        "evidence": {
+          "schemaVersion": 1,
+          "provenance": {
+            "capability": "gpu-capture-correlation/v1",
+            "adapterVersion": "1.0.0",
+            "unityVersion": "2022.3.62f1",
+            "unityBinaryVersion": "2022.3.62f1",
+            "projectId": "project-a",
+            "instanceId": "editor-1",
+            "collectedAt": 1001,
+            "platform": {
+              "operatingSystem": "macOS",
+              "operatingSystemVersion": "26.3",
+              "architecture": "arm64"
+            },
+            "gpu": {
+              "name": "Apple M4 Pro",
+              "driverVersion": "driver-1"
+            },
+            "graphicsApi": "Metal",
+            "tool": {
+              "name": "Xcode Metal Frame Debugger",
+              "version": "26.6",
+              "buildVersion": "17F113",
+              "metalCompilerVersion": "metal-1",
+              "traceFormat": "gputrace"
+            },
+            "sourceRevision": {
+              "uri": "file:///project/Assets/Shaders/Ship.shader",
+              "assetGuid": "22222222222222222222222222222222",
+              "contentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          },
+          "draw": {
+            "captureId": "capture-forward-1",
+            "frameIndex": 12,
+            "drawIndex": 48,
+            "label": "Ship Forward",
+            "trace": {
+              "storage": "local-ephemeral",
+              "fileName": "ship-forward.gputrace",
+              "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "byteLength": 4096
+            }
+          },
+          "context": {
+            "id": "ctx-forward-fragment",
+            "shaderName": "Tests/Ship",
+            "subShaderIndex": 0,
+            "passIndex": 1,
+            "passName": "Forward",
+            "stage": "fragment",
+            "entryPoint": "frag",
+            "keywords": {
+              "enabled": ["_NORMALMAP"],
+              "incomplete": false
+            }
+          },
+          "mapping": {
+            "status": "mapped",
+            "method": "adapter-exact-source-range",
+            "uri": "file:///project/Assets/Shaders/Ship.shader",
+            "range": {
+              "start": { "line": 20, "character": 10 },
+              "end": { "line": 20, "character": 14 }
+            },
+            "expectedText": "frag",
+            "sourceEntryPoint": "frag"
+          }
+        },
+        "uri": "file:///project/Assets/Shaders/Ship.shader",
+        "range": {
+          "start": { "line": 20, "character": 10 },
+          "end": { "line": 20, "character": 14 }
+        },
+        "context": {
+          "id": "ctx-forward-fragment",
+          "shaderName": "Tests/Ship",
+          "subShaderIndex": 0,
+          "passIndex": 1,
+          "passName": "Forward",
+          "stage": "fragment",
+          "entryPoint": "frag",
+          "keywords": {
+            "enabled": ["_NORMALMAP"],
+            "incomplete": false
+          }
+        }
+      }
+    },
+    {
+      "id": "variant-forward-fragment",
+      "kind": "variant",
+      "build": {
+        "status": "completed",
+        "provenance": {
+          "capability": "variant-build-evidence",
+          "projectId": "project-a",
+          "instanceId": "editor-1",
+          "adapterVersion": "1.0.0",
+          "unityVersion": "2022.3.62f1",
+          "buildTarget": "StandaloneOSX",
+          "collectedAt": 1002,
+          "sourceRevision": {
+            "uri": "file:///project/Assets/Shaders/Ship.shader",
+            "assetGuid": "22222222222222222222222222222222",
+            "contentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        }
+      },
+      "context": {
+        "shaderName": "Tests/Ship",
+        "subShaderIndex": 0,
+        "passIndex": 1,
+        "passName": "Forward",
+        "stage": "fragment",
+        "graphicsApi": "Metal",
+        "compileCandidates": {
+          "availability": "available",
+          "count": "2"
+        },
+        "kept": {
+          "availability": "available",
+          "count": "1"
+        },
+        "keywordSets": [
+          {
+            "keywords": ["_NORMALMAP"],
+            "scope": "local",
+            "stage": "fragment",
+            "hasBlankOption": true,
+            "compileCandidates": {
+              "availability": "available",
+              "count": "2"
+            },
+            "kept": {
+              "availability": "available",
+              "count": "1"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "compiler-forward-fragment",
+      "kind": "compiler",
+      "record": {
+        "status": "current",
+        "evidenceId": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "sourceUri": "file:///project/Assets/Shaders/Ship.shader",
+        "contextId": "ctx-forward-fragment",
+        "profile": {
+          "name": "Metal",
+          "platform": "StandaloneOSX",
+          "graphicsApi": "Metal",
+          "capability": "compiler-evidence"
+        },
+        "views": [
+          {
+            "kind": "generated",
+            "uri": "unity-shader-nav-compiler://evidence/dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd/generated.hlsl",
+            "contentHash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+          }
+        ],
+        "provenance": {
+          "capability": "compiler-evidence",
+          "adapterVersion": "1.0.0",
+          "unityVersion": "2022.3.62f1",
+          "projectId": "project-a",
+          "instanceId": "editor-1",
+          "collectedAt": 1003,
+          "sourceRevision": {
+            "uri": "file:///project/Assets/Shaders/Ship.shader",
+            "assetGuid": "22222222222222222222222222222222",
+            "contentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "contextId": "ctx-forward-fragment",
+          "profile": {
+            "name": "Metal",
+            "platform": "StandaloneOSX",
+            "graphicsApi": "Metal",
+            "capability": "compiler-evidence"
+          }
+        }
+      }
+    },
+    {
+      "id": "generated-forward-fragment",
+      "kind": "generated-source",
+      "evidenceId": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "view": {
+        "kind": "generated",
+        "uri": "unity-shader-nav-compiler://evidence/dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd/generated.hlsl"
+      },
+      "document": {
+        "contentHash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "range": {
+          "start": { "line": 41, "character": 10 },
+          "end": { "line": 41, "character": 14 }
+        }
+      },
+      "mapping": {
+        "uri": "file:///project/Assets/Shaders/Ship.shader",
+        "range": {
+          "start": { "line": 20, "character": 10 },
+          "end": { "line": 20, "character": 14 }
+        },
+        "generatedRange": {
+          "start": { "line": 41, "character": 10 },
+          "end": { "line": 41, "character": 14 }
+        },
+        "sourceIdentity": {
+          "uri": "file:///project/Assets/Shaders/Ship.shader",
+          "sourceId": "22222222222222222222222222222222",
+          "contentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "provenance": {
+          "method": "line-directive",
+          "granularity": "line",
+          "evidence": {
+            "capability": "compiler-evidence",
+            "adapterVersion": "1.0.0",
+            "unityVersion": "2022.3.62f1",
+            "projectId": "project-a",
+            "instanceId": "editor-1",
+            "collectedAt": 1003,
+            "sourceRevision": {
+              "uri": "file:///project/Assets/Shaders/Ship.shader",
+              "assetGuid": "22222222222222222222222222222222",
+              "contentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "contextId": "ctx-forward-fragment",
+            "profile": {
+              "name": "Metal",
+              "platform": "StandaloneOSX",
+              "graphicsApi": "Metal",
+              "capability": "compiler-evidence"
+            }
+          },
+          "directive": {
+            "documentLine": 40,
+            "sourceLine": 20,
+            "sourceName": "Assets/Shaders/Ship.shader"
+          }
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "decision-material-forward",
+      "kind": "selection-decision",
+      "materialNodeId": "material-ship",
+      "contextNodeId": "context-forward-fragment",
+      "sourceNodeId": "source-forward",
+      "reason": "adapter-reported-material-pass-selection",
+      "decision": {
+        "schemaVersion": 1,
+        "decisionId": "pass-decision-7",
+        "selectionId": "selection-7",
+        "program": {
+          "subShaderIndex": 0,
+          "passIndex": 1,
+          "passName": "Forward"
+        },
+        "materialRevision": {
+          "uri": "file:///project/Assets/Materials/Ship.mat",
+          "assetGuid": "11111111111111111111111111111111",
+          "contentHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "shaderRevision": {
+          "uri": "file:///project/Assets/Shaders/Ship.shader",
+          "assetGuid": "22222222222222222222222222222222",
+          "contentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "contextId": "ctx-forward-fragment",
+        "rationale": {
+          "schemaVersion": 1,
+          "ruleId": "forward-render-path-pass-match",
+          "summary": "The active forward render path matched this Pass for the selected Material.",
+          "facts": [
+            {
+              "name": "renderPath",
+              "value": "Forward"
+            },
+            {
+              "name": "passName",
+              "value": "Forward"
+            }
+          ]
+        },
+        "provenance": {
+          "capability": "pass-selection-decision/v1",
+          "projectId": "project-a",
+          "instanceId": "editor-1",
+          "adapterVersion": "1.0.0",
+          "unityVersion": "2022.3.62f1",
+          "collectedAt": 1001
+        }
+      }
+    },
+    {
+      "id": "link-context-variant",
+      "kind": "context-variant",
+      "fromNodeId": "context-forward-fragment",
+      "toNodeId": "variant-forward-fragment"
+    },
+    {
+      "id": "link-context-compiler",
+      "kind": "context-compiler",
+      "fromNodeId": "context-forward-fragment",
+      "toNodeId": "compiler-forward-fragment"
+    },
+    {
+      "id": "link-compiler-generated",
+      "kind": "compiler-generated",
+      "fromNodeId": "compiler-forward-fragment",
+      "toNodeId": "generated-forward-fragment"
+    },
+    {
+      "id": "link-generated-source",
+      "kind": "generated-source-map",
+      "fromNodeId": "generated-forward-fragment",
+      "toNodeId": "source-forward"
+    }
+  ]
+}

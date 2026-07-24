@@ -45,6 +45,9 @@ import { registerMaterialContextHandler } from './handlers/materialContext';
 import { registerVariantKeywordsHandler } from './handlers/variantKeywords';
 import { registerVariantComparisonHandler } from './handlers/variantComparison';
 import { registerPortabilityReportHandler } from './handlers/portabilityReport';
+import {
+  registerPassExplanationHandler,
+} from './handlers/passExplanation';
 import { registerPropertyRenameHandler } from './handlers/propertyRename';
 import { registerReferencesHandler } from './handlers/references';
 import { registerRenameHandler } from './handlers/rename';
@@ -63,6 +66,10 @@ import { portabilityTargetStore } from './portability/targetStore';
 import type { CancellationToken } from 'vscode-languageserver/node';
 import { throwIfRequestCancelled } from './lifecycle/requestCancellation';
 import { CSharpCurrentSourceClient } from './adapter/csharpCurrentSourceClient';
+import {
+  PassExplanationService,
+  WorkspacePassExplanationProjector,
+} from './explanation';
 
 const connection = getConnection();
 const adapterRegistry = new AdapterRegistry();
@@ -108,6 +115,9 @@ const visualLabSessions = new VisualLabSessionCoordinator({
   },
 });
 const suspender = new RequestSuspender({ timeoutMs: 5000 });
+const passExplanation = new PassExplanationService(
+  new WorkspacePassExplanationProjector({ workspace: manager }),
+);
 let compilerEvidence!: CompilerEvidenceService;
 let globalStorageDir: string | undefined;
 
@@ -116,6 +126,7 @@ registerVisualLabHandlers(
   connection,
   (documentUri) => visualLabSessions.serviceFor(documentUri),
 );
+registerPassExplanationHandler(connection, passExplanation, suspender);
 
 // Status remains queryable during the bounded cold-start request gate.
 connection.onRequest(

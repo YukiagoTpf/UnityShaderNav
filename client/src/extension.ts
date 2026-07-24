@@ -36,6 +36,10 @@ import {
   createLanguageClientVisualLabApi,
   createVisualLabController,
 } from './visualLabController';
+import {
+  createLanguageClientPassExplanationApi,
+  createPassExplanationController,
+} from './passExplanationController';
 
 let client: LanguageClient | undefined;
 
@@ -92,6 +96,10 @@ export async function activate(context: ExtensionContext): Promise<void> {
   context.subscriptions.push(registerPropertyRenameCommand(client, reportError));
   context.subscriptions.push(createVisualLabController(
     createLanguageClientVisualLabApi(client),
+    reportError,
+  ));
+  context.subscriptions.push(createPassExplanationController(
+    createLanguageClientPassExplanationApi(client),
     reportError,
   ));
   setupCSharpCurrentSource(client, context, reportError);

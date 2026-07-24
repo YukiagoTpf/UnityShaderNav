@@ -1,0 +1,11 @@
+{
+  "base": "complete.json",
+  "graphId": "missing-selection-decision",
+  "removeEdgeIds": ["decision-material-forward"],
+  "expected": {
+    "observationStatus": "observed",
+    "causalStatus": "refused",
+    "causalReason": "insufficient-evidence",
+    "missing": ["selection-decision"]
+  }
+}

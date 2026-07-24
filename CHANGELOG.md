@@ -9,6 +9,22 @@ and uses semantic versioning for extension releases.
 
 ### Added
 
+- Added a read-only **Explain Current Pass** command for the single question
+  “Why was this Pass selected for the current Material Context?” A bounded,
+  deterministic local evidence engine keeps the observed Material Pass separate
+  from causality, preserves exact source/Context/Variant/Material/compiler/
+  generated citations when linked, and explicitly reports missing,
+  contradictory, or invalid evidence. A supported cause requires both a closed
+  locally verified identity chain and the Adapter-authored rule, summary, and
+  facts that actually selected the Pass. The production projector is limited
+  to a minimal Workspace-validated Material identity and, when that evidence
+  already identifies a program, a hash-matched exact source Pass. The bundled
+  Adapter does not currently author either `selectedProgram` or the
+  authoritative selection decision, so the command reports those facts as
+  missing rather than inferring them. Superseded work is cancelled and any
+  cited source change invalidates the answer. The scriptless Webview is
+  session-only, model-free, has no telemetry, and exposes no edit or Apply
+  action. (#104)
 - Added a persistent, session-only Unity-rendered Visual Lab for one explicitly
   pinned persistent Material and published Shader include-point Context.
   Separate user-triggered Before and After requests render real 64x64 offscreen

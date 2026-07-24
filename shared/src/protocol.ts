@@ -53,12 +53,14 @@ export * from './csharpProperties';
 export * from './gpuCapture';
 export * from './materialContext';
 export * from './materials';
+export * from './passExplanation';
 export * from './portability';
 export * from './propertyRename';
 export * from './settings';
 export * from './shaderGraph';
 export * from './structure';
 export * from './symbols';
+export * from './uriIdentity';
 export * from './variants';
 export * from './visualLab';
 

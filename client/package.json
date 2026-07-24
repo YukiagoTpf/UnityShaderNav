@@ -41,7 +41,8 @@
     "onLanguage:shaderlab",
     "onLanguage:hlsl",
     "onLanguage:shadergraph",
-    "onCommand:unityShaderNav.openVisualLab"
+    "onCommand:unityShaderNav.openVisualLab",
+    "onCommand:unityShaderNav.explainCurrentPass"
   ],
   "contributes": {
     "commands": [
@@ -113,6 +114,11 @@
       {
         "command": "unityShaderNav.openVisualLab",
         "title": "Open Visual Lab",
+        "category": "UnityShaderNav"
+      },
+      {
+        "command": "unityShaderNav.explainCurrentPass",
+        "title": "Explain Current Pass",
         "category": "UnityShaderNav"
       }
     ],
