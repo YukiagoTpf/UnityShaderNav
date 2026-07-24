@@ -31,7 +31,7 @@
     "test:electron:activation": "npm run test:package && npm run test:electron:harness && node tests/out/runTest.js --suite activation",
     "test:electron:harness": "mocha tests/out/harness/electronHarness.test.js --ui tdd --timeout 60000",
     "test:electron:prepared": "npm run test:electron:harness && node tests/out/runTest.js --suite activation && node tests/out/runTest.js --suite integration",
-    "test:client-unit": "mocha tests/out/client/visualLabPresentation.test.js --ui tdd --timeout 60000",
+    "test:client-unit": "mocha tests/out/client/visualLabPresentation.test.js tests/out/client/passExplanationPresentation.test.js tests/out/client/passExplanationController.test.js --ui tdd --timeout 60000",
     "test:package-layout": "mocha tests/out/client/package-layout.test.js --ui tdd --timeout 60000",
     "clean": "rimraf client/out server/out shared/out tests/out client/tsconfig.tsbuildinfo server/tsconfig.tsbuildinfo shared/tsconfig.tsbuildinfo",
     "bench:index-cache": "node scripts/benchmark-index-cache.mjs",

@@ -63,6 +63,7 @@ npm run visual-lab:prototype -- --unity <Unity-executable>
 npm run build
 npm run watch
 npm run test -w @unity-shader-nav/server
+npm run test -w @unity-shader-nav/server -- passExplanation
 npm run test:package
 npm test
 npm run test:electron:activation
@@ -204,6 +205,28 @@ unobserved Unity result, is what `check:fast` can prove. See
   isolation. The offline prototype check proves the real-runner contract; only
   `npm run visual-lab:prototype -- --unity <Unity-executable>` proves a current
   environment performed the two Unity draws.
+- Pass explanation tests keep two proof surfaces separate. Deterministic engine
+  fixtures under `server/tests/fixtures/pass-explanation/` cover a six-citation
+  identity chain whose checked-in GPU evidence remains explicitly
+  `sanitized-fixture`, a missing Adapter selection decision, and a
+  contradictory observed Pass. Engine tests separately exercise the
+  complete verified-local-trace envelope, dedicated decision rationale,
+  canonical URI joins, duplicate primary evidence, Adapter session and
+  build-platform closure, generated snapshot hashes and exact generated/source
+  range pairs with preceding directive identity,
+  stale/foreign corroboration, output bounds, and malformed nested graphs.
+  Service/projector tests prove the production path emits only a minimal
+  current Material identity plus a hash-matched exact source Pass for a relevant
+  requested URI, propagates cancellation, bounds disk reads, and refuses to
+  manufacture causality. Handler tests cover cancellation-aware read-only
+  requests, while `npm run test:client-unit` validates request-generation
+  freshness, cancellation, all-cited-source stale invalidation, bounded schema
+  rejection, in-flight newly discovered citation races, external filesystem
+  invalidation, client/server semantic-join parity, escaped scriptless
+  rendering, and the absence of edit controls.
+  Use the focused server command above for the engine/projector slice;
+  `npm run test:package` builds and runs the client presentation and
+  package-layout gates.
 - Query semantics belong in revision/Workspace tests that call the same
   Indexed Workspace methods and production query implementation used by the
   server. Live overlay, disk fallback, stale-attempt, rebuild replay,

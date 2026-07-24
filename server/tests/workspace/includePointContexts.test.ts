@@ -2,7 +2,12 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { DEFAULT_SETTINGS } from '@unity-shader-nav/shared';
+import {
+  DEFAULT_SETTINGS,
+  MATERIAL_CONTEXT_ADAPTER_FEATURE,
+  type MaterialContextProgram,
+  type SelectedMaterialContext,
+} from '@unity-shader-nav/shared';
 import type { LocationLink, SemanticTokens } from 'vscode-languageserver/node';
 import { afterEach, describe, expect, it } from 'vitest';
 import { PackageContext } from '../../src/packages';
@@ -138,6 +143,50 @@ function document(test: Fixture): IndexedDocumentSnapshot {
   };
 }
 
+function materialContext(
+  shaderUri: string,
+  selectedProgram: MaterialContextProgram,
+): SelectedMaterialContext {
+  return {
+    selectionId: 'selection-1',
+    material: {
+      name: 'Fixture',
+      path: 'Assets/Fixture.mat',
+      revision: {
+        uri: 'file:///project/Assets/Fixture.mat',
+        assetGuid: '11111111111111111111111111111111',
+        contentHash: '1'.repeat(64),
+      },
+    },
+    shader: {
+      name: 'Context/PassName',
+      path: 'Assets/PassName.shader',
+      revision: {
+        uri: shaderUri,
+        assetGuid: '22222222222222222222222222222222',
+        contentHash: '2'.repeat(64),
+      },
+    },
+    selectedProgram,
+    properties: [],
+    textures: [],
+    keywords: {
+      material: [],
+      global: { status: 'unknown', reason: 'draw-evidence-required' },
+      engineAdded: { status: 'unknown', reason: 'draw-evidence-required' },
+    },
+    provenance: {
+      capability: MATERIAL_CONTEXT_ADAPTER_FEATURE,
+      projectId: 'project-a',
+      instanceId: 'editor-1',
+      adapterVersion: '0.3.0',
+      unityVersion: '2022.3.62f1',
+      collectedAt: 1,
+      sourceRevision: 'selection-1',
+    },
+  };
+}
+
 function positionOf(text: string, needle: string, occurrence = 0) {
   let offset = -1;
   let from = 0;
@@ -162,6 +211,75 @@ function functionTokenLines(tokens: SemanticTokens): number[] {
 }
 
 describe('Published include-point Context Matrix', () => {
+  it('does not treat an unnamed or differently named Pass as a name-only Material selection', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'usn-material-pass-name-'));
+    const shaderPath = join(root, 'PassName.shader');
+    const unnamedPath = join(root, 'Unnamed.hlsl');
+    const otherPath = join(root, 'Other.hlsl');
+    const shaderText = [
+      'Shader "Context/PassName" {',
+      '  SubShader {',
+      '    Pass {',
+      '      HLSLPROGRAM',
+      '      #pragma vertex UnnamedVert',
+      '      #include "Unnamed.hlsl"',
+      '      ENDHLSL',
+      '    }',
+      '    Pass {',
+      '      Name "Other"',
+      '      HLSLPROGRAM',
+      '      #pragma vertex OtherVert',
+      '      #include "Other.hlsl"',
+      '      ENDHLSL',
+      '    }',
+      '  }',
+      '}',
+    ].join('\n');
+    try {
+      await Promise.all([
+        writeSource(shaderPath, shaderText),
+        writeSource(unnamedPath, 'void UnnamedVert() {}\n'),
+        writeSource(otherPath, 'void OtherVert() {}\n'),
+      ]);
+      const folderUri = pathToFileURL(root).href;
+      const builder = IndexedRevisionBuilder.create({
+        folderUri,
+        settings: DEFAULT_SETTINGS,
+        unityRoot: undefined,
+        packages: PackageContext.standalone(DEFAULT_SETTINGS),
+        cache: undefined,
+        fingerprint: undefined,
+      });
+      for (const path of [shaderPath, unnamedPath, otherPath]) {
+        await builder.indexAndStore(path, fakeConnection);
+      }
+      const revision = builder.publish(1);
+      const shaderUri = pathToFileURL(shaderPath).href;
+      const selectedForward = materialContext(shaderUri, {
+        subShaderIndex: 0,
+        passName: 'Forward',
+      });
+
+      await expect(revision.materialContextAppliesToUri(
+        pathToFileURL(unnamedPath).href,
+        selectedForward,
+      )).resolves.toBe(false);
+      await expect(revision.materialContextAppliesToUri(
+        pathToFileURL(otherPath).href,
+        selectedForward,
+      )).resolves.toBe(false);
+      await expect(revision.materialContextAppliesToUri(
+        pathToFileURL(otherPath).href,
+        materialContext(shaderUri, {
+          subShaderIndex: 0,
+          passName: 'Other',
+        }),
+      )).resolves.toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('derives multiple stages and nested include points with Shader/Pass/source identity', async () => {
     const test = await fixture();
     try {

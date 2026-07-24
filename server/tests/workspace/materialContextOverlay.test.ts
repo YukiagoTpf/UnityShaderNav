@@ -12,6 +12,11 @@ import {
 } from '@unity-shader-nav/shared';
 import { AdapterRegistry } from '../../src/adapter/adapterRegistry';
 import type { MaterialContextSource } from '../../src/adapter/materialContextSource';
+import {
+  MAX_MATERIAL_CONTEXT_MATERIAL_BYTES,
+  MAX_MATERIAL_CONTEXT_META_BYTES,
+  MAX_MATERIAL_CONTEXT_SHADER_BYTES,
+} from '../../src/workspace/materialContext';
 import { Workspace } from '../../src/workspace/workspace';
 
 const now = 1_000_000;
@@ -47,6 +52,7 @@ function handshake(): AdapterHandshake {
 interface Fixture {
   readonly root: string;
   readonly shaderPath: string;
+  readonly shaderMetaPath: string;
   readonly shaderUri: string;
   readonly materialPath: string;
   readonly materialMetaPath: string;
@@ -169,6 +175,7 @@ async function fixture(): Promise<Fixture> {
   return {
     root,
     shaderPath,
+    shaderMetaPath,
     shaderUri: pathToFileURL(shaderPath).href,
     materialPath,
     materialMetaPath,
@@ -193,6 +200,20 @@ describe('Workspace selected Material Context overlay', () => {
             shader: { name: 'Tests/Lit' },
           },
         });
+    } finally {
+      await rm(test.root, { recursive: true, force: true });
+    }
+  });
+
+  it('does not project the selected Material onto an unrelated indexed Shader', async () => {
+    const test = await fixture();
+    try {
+      await expect(
+        test.workspace.materialContextAt(test.otherShaderUri),
+      ).resolves.toEqual({
+        status: 'unavailable',
+        reason: 'source-unavailable',
+      });
     } finally {
       await rm(test.root, { recursive: true, force: true });
     }
@@ -242,6 +263,68 @@ describe('Workspace selected Material Context overlay', () => {
       await rm(test.root, { recursive: true, force: true });
     }
   });
+
+  it.each([
+    {
+      asset: 'Material',
+      path: 'materialPath',
+      maxBytes: MAX_MATERIAL_CONTEXT_MATERIAL_BYTES,
+    },
+    {
+      asset: 'Shader',
+      path: 'shaderPath',
+      maxBytes: MAX_MATERIAL_CONTEXT_SHADER_BYTES,
+    },
+  ] as const)(
+    'reports source unavailable before acquiring an oversized selected $asset',
+    async ({ path, maxBytes }) => {
+      const test = await fixture();
+      try {
+        await writeFile(test[path], Buffer.alloc(maxBytes + 1, 0x20));
+
+        await expect(
+          test.workspace.materialContextAt(test.shaderUri),
+        ).resolves.toEqual({
+          status: 'unavailable',
+          reason: 'source-unavailable',
+        });
+      } finally {
+        await rm(test.root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.each([
+    {
+      asset: 'Material',
+      path: 'materialMetaPath',
+      guid: '11111111111111111111111111111111',
+    },
+    {
+      asset: 'Shader',
+      path: 'shaderMetaPath',
+      guid: '22222222222222222222222222222222',
+    },
+  ] as const)(
+    'reports source unavailable before acquiring an oversized selected $asset meta file',
+    async ({ path, guid }) => {
+      const test = await fixture();
+      try {
+        const meta = Buffer.alloc(MAX_MATERIAL_CONTEXT_META_BYTES + 1, 0x20);
+        Buffer.from(`fileFormatVersion: 2\nguid: ${guid}\n`).copy(meta);
+        await writeFile(test[path], meta);
+
+        await expect(
+          test.workspace.materialContextAt(test.shaderUri),
+        ).resolves.toEqual({
+          status: 'unavailable',
+          reason: 'source-unavailable',
+        });
+      } finally {
+        await rm(test.root, { recursive: true, force: true });
+      }
+    },
+  );
 
   it('annotates and ranks matching completion candidates without deleting conservative results', async () => {
     const test = await fixture();

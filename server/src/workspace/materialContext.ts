@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { open } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type {
@@ -10,6 +10,10 @@ import type {
 import { sourceHash } from '../sourceHash';
 import { uriKey } from '../uriKey';
 import { containsPath } from './pathUtils';
+
+export const MAX_MATERIAL_CONTEXT_MATERIAL_BYTES = 4 * 1_024 * 1_024;
+export const MAX_MATERIAL_CONTEXT_SHADER_BYTES = 4 * 1_024 * 1_024;
+export const MAX_MATERIAL_CONTEXT_META_BYTES = 64 * 1_024;
 
 export interface MaterialContextRevisionView {
   readonly folderUri: string;
@@ -51,14 +55,23 @@ export async function validateMaterialContext(
     return unavailableMaterialContext('stale-source');
   }
 
-  const materialSource = await readCurrentSource(materialUri);
+  const materialSource = await readCurrentSource(
+    materialUri,
+    MAX_MATERIAL_CONTEXT_MATERIAL_BYTES,
+  );
   if (materialSource.status !== 'available') {
     return unavailableMaterialContext(materialSource.reason);
   }
   const liveShaderSource = revision.sourceTextFor(shaderUri);
   const shaderSource = liveShaderSource !== undefined
-    ? { status: 'available' as const, source: liveShaderSource }
-    : await readCurrentSource(shaderUri);
+    ? currentSourceFromText(
+        liveShaderSource,
+        MAX_MATERIAL_CONTEXT_SHADER_BYTES,
+      )
+    : await readCurrentSource(
+        shaderUri,
+        MAX_MATERIAL_CONTEXT_SHADER_BYTES,
+      );
   if (shaderSource.status !== 'available') {
     return unavailableMaterialContext(shaderSource.reason);
   }
@@ -100,29 +113,89 @@ function resolveAssetUri(unityRoot: string, assetPath: string): string | undefin
   return pathToFileURL(absolute).href;
 }
 
-async function readCurrentSource(uri: string): Promise<
+type CurrentSource =
   | { readonly status: 'available'; readonly source: string }
   | {
       readonly status: 'unavailable';
       readonly reason: 'asset-deleted' | 'source-unavailable';
-    }
-> {
-  try {
-    return { status: 'available', source: await readFile(fileURLToPath(uri), 'utf8') };
-  } catch (error) {
-    return {
-      status: 'unavailable',
-      reason: isMissingFile(error) ? 'asset-deleted' : 'source-unavailable',
     };
+
+function currentSourceFromText(source: string, maxBytes: number): CurrentSource {
+  return Buffer.byteLength(source, 'utf8') <= maxBytes
+    ? { status: 'available', source }
+    : { status: 'unavailable', reason: 'source-unavailable' };
+}
+
+async function readCurrentSource(
+  uri: string,
+  maxBytes: number,
+): Promise<CurrentSource> {
+  const result = await readBoundedUtf8File(fileURLToPath(uri), maxBytes);
+  if (result.status === 'available') {
+    return { status: 'available', source: result.text };
   }
+  return {
+    status: 'unavailable',
+    reason: result.reason === 'missing'
+      ? 'asset-deleted'
+      : 'source-unavailable',
+  };
 }
 
 async function readCurrentAssetGuid(uri: string): Promise<string | undefined> {
+  const result = await readBoundedUtf8File(
+    `${fileURLToPath(uri)}.meta`,
+    MAX_MATERIAL_CONTEXT_META_BYTES,
+  );
+  if (result.status !== 'available') return undefined;
+  return /^guid:\s*([0-9a-f]{32})\s*$/im.exec(result.text)?.[1].toLowerCase();
+}
+
+type BoundedTextRead =
+  | { readonly status: 'available'; readonly text: string }
+  | {
+      readonly status: 'unavailable';
+      readonly reason: 'missing' | 'unavailable';
+    };
+
+async function readBoundedUtf8File(
+  path: string,
+  maxBytes: number,
+): Promise<BoundedTextRead> {
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
   try {
-    const meta = await readFile(`${fileURLToPath(uri)}.meta`, 'utf8');
-    return /^guid:\s*([0-9a-f]{32})\s*$/im.exec(meta)?.[1].toLowerCase();
-  } catch {
-    return undefined;
+    handle = await open(path, 'r');
+    const { size } = await handle.stat();
+    if (!Number.isSafeInteger(size) || size < 0 || size > maxBytes) {
+      return { status: 'unavailable', reason: 'unavailable' };
+    }
+
+    const bytes = Buffer.allocUnsafe(size + 1);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const read = await handle.read(
+        bytes,
+        offset,
+        bytes.length - offset,
+        offset,
+      );
+      if (read.bytesRead === 0) break;
+      offset += read.bytesRead;
+    }
+    if (offset > size) {
+      return { status: 'unavailable', reason: 'unavailable' };
+    }
+    return {
+      status: 'available',
+      text: bytes.subarray(0, offset).toString('utf8'),
+    };
+  } catch (error) {
+    return {
+      status: 'unavailable',
+      reason: isMissingFile(error) ? 'missing' : 'unavailable',
+    };
+  } finally {
+    if (handle) await handle.close().catch(() => undefined);
   }
 }
 

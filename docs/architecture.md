@@ -21,6 +21,7 @@ VS Code extension client
         <-> Editor-only UPM Adapter
            -> Material Context and versioned evidence capabilities
            -> controlled Visual Lab rendering
+     -> bounded Pass-explanation projector and deterministic evidence engine
      -> macro pattern recognizer
      -> per-file symbol/reference indexes
      -> workspace/global indexes
@@ -45,6 +46,19 @@ the validated R8 diagnostic locally, and sends render requests only for the
 three explicit Webview actions: pin current selected Material, capture Before,
 and capture After. A strict content-security policy permits no network or local
 file resource.
+
+The client owns a separate single Pass Explanation Webview. Each
+**Explain Current Pass** command creates one generation-bound pull request for
+the active ShaderLab/HLSL document. The presentation validates the bounded
+answer, escapes every displayed value, and keeps observed selection, causal
+claim, disclosures, citations, and execution policy separate. The Webview is
+scriptless, has no local resource roots or edit controls, and starts no
+background refresh. The controller cancels superseded requests, records source
+mutations that occur before an answer reveals all of its citations, and tracks
+the requested URI plus every source/revision URI in the accepted answer.
+Document edits and filesystem create/change/delete events for any tracked
+source or its exact Unity `.meta` sidecar, or Material Context changes, clear
+the answer and require an explicit rerun.
 
 ## Server
 
@@ -110,6 +124,12 @@ handling. Important modules:
   selection-generation, request-generation, and payload-limit checks run before
   Adapter facts can reach Workspace behavior; unavailable facts stay explicitly
   unknown.
+- `explanation`: owns the bounded Pass-evidence graph projection,
+  deterministic validation/citation/refusal engine, and stateless request
+  service. The production projector reads only Workspace-validated Material
+  Context and an exact hash-matched source Pass; it never authors an Adapter
+  selection decision or substitutes unavailable Shader Context, Variant,
+  compiler, or generated-source facts.
 - `portability`: owns the exact-source report classifier, validated Unity/URP
   version pairs, mechanical edit gate, and the projection from mechanical
   findings to Hint diagnostics and Quick Fixes. Reports consume revision-owned
@@ -204,6 +224,86 @@ Targets, frames, and masks are held only by the client/server session
 coordinators; they never enter `FileIndex`, a Published indexed revision,
 persistent cache, workspace/global storage, project assets, or telemetry. See
 [ADR-0013](adr/0013-explicitly-pinned-unity-rendered-visual-lab.md).
+
+## Evidence-constrained Pass Explanation
+
+Pass explanation is a pull-only, read-only projection over existing evidence,
+not another index or Adapter registry. Its version 1 protocol supports exactly
+one question: “Why was this Pass selected for the current Material Context?”
+The graph is bounded to 256 KiB, 64 nodes, 128 edges, and bounded identifiers
+before nested facts are evaluated. The answer has its own 512 KiB limit and
+2,048-entry limits for each disclosure collection; nested evidence arrays share
+one 256-item protocol limit.
+
+`WorkspacePassExplanationProjector` asks the owning Workspace for its current
+Material Context. The Workspace accepts it only for the selected Shader URI or
+an indexed include point whose Program matches the Material selection. The
+projector emits a minimal identity node containing only Material, Shader,
+selected Program, and provenance; properties, textures, and keyword inventories
+do not enter this graph. It then reads the reported Shader revision and emits
+one `source-pass` node only when the Material evidence already contains
+`selectedProgram` and URI/GUID/content hash, Shader name, SubShader, Pass
+index/name, program structure, and exact Pass range resolve without ambiguity.
+A missing selected program, content-hash mismatch, source above the 4 MiB
+projection limit, or ambiguous structure simply leaves the source evidence
+absent.
+
+The projector always emits an empty edge set. In particular, Material
+Context's `selectedProgram` is only an observation and cannot become an
+Adapter-authored `selection-decision`. The projector also does not synthesize
+Shader Context, Variant, compiler, or generated-source nodes. The current
+production request can therefore cite Material and exact source when safe, but
+its causal claim is necessarily refused with explicit missing evidence. The
+bundled Adapter does not currently author `selectedProgram`, so its normal
+result also discloses that the Pass observation itself is unavailable.
+
+`explainPassSelection` is the repository-owned deterministic authority. It
+sorts graph items, deeply validates every bounded node/edge shape and identity
+join, and produces separate `observation` and `causalExplanation` values.
+Causality is supported only when exactly one dedicated
+`pass-selection-decision/v1` fact closes Material, a current locally verified
+GPU correlation, and source Pass identities without contradiction. The
+decision must include the Adapter-authored rule ID, summary, and non-empty facts
+that explain what rule actually fired; identity equality alone proves only the
+selection. The GPU correlation must carry a full verified trace envelope whose
+trace, draw, mapping, expected source text, and entry-point identities agree.
+Its mapped entry-point range is one line and has the exact UTF-16 span of the
+expected entry-point text.
+Linked Variant evidence retains its parent build status. Adapter/Unity session
+and Variant/compiler platform identities must close, while
+compiler/generated citations must share a current 64-hex registry evidence ID,
+registered virtual URI, exact compiler-view/generated-document hash, a
+registry-owned exact generated/source range pair, and exact source mapping.
+Both sides of that pair are single-line with equal character spans. The
+preceding `#line` directive must report the mapped source line and a path alias
+of its source URI; the directive line is never treated as mapped generated
+code.
+These citations cannot replace the decision. Missing required evidence, stale
+or contradictory identities, invalid nested fields, or hard-limit violations
+return structured refusals.
+
+`PassExplanationService` retains neither graph nor answer beyond the current
+call stack. The handler uses the normal bounded document-request gate and
+returns a neutral local refusal when a request cannot run. There is no model
+input, external request, telemetry, or persistence. The protocol fixes the
+execution boundary to deterministic/local/model-not-used/no-telemetry/
+session-only, so model availability is outside the feature lifecycle.
+
+The client repeats the server's supported-answer identity joins before
+rendering: one primary Material/source/Context chain, current verified trace,
+Adapter session, Variant graphics API and build target, compiler Context/
+profile/source revision, and generated compiler/source mapping must all agree.
+
+The production composition has no provider for the complete graph and therefore
+cannot return a supported cause. Complete graphs are fixture-only until a
+versioned Adapter/provider integration also supplies a unified generation and
+invalidation signal for every non-source evidence class it exposes.
+
+Version 1 returns no suggested edits, and the client rejects any answer that
+does. A future edit protocol must bind each edit to an accepted
+revision-specific preview plus registry-verified compiler and test results;
+there is currently no edit type, UI, or handler that applies it. See
+[ADR-0014](adr/0014-evidence-constrained-current-pass-explanation.md).
 
 ## Indexing Model
 
@@ -477,7 +577,10 @@ engine-added keywords to `unknown`. Workspace then resolves both reported
 asset paths under the current Unity project, matches their canonical URIs,
 checks the selected Shader declaration, and hashes the current Material and
 published/live Shader source before binding the evidence to one publication
-ID. The ephemeral store is ignored after any publication and cleared on
+ID. Disk acquisition is bounded before hashing: selected Material and Shader
+sources are limited to 4 MiB each, and each asset `.meta` file to 64 KiB;
+oversized or read-growth evidence remains `source-unavailable`. The ephemeral
+store is ignored after any publication and cleared on
 Adapter selection/reconnect events or Workspace disposal. Completion metadata
 annotates matching Property, texture, and keyword names; Definition and
 Completion use stable ranking partitions that retain every conservative

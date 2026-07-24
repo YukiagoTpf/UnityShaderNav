@@ -647,18 +647,27 @@ export class PublishedIndexedRevision {
     return this.index.diskCacheEntries();
   }
 
+  async materialContextAppliesToUri(
+    uri: string,
+    context: SelectedMaterialContext,
+  ): Promise<boolean> {
+    if (uriKey(context.shader.revision.uri) === uriKey(uri)) return true;
+    const records = await this.includePointContexts.recordsFor(uri);
+    return records.some(({ presentation }) => (
+      uriKey(presentation.shaderUri) === uriKey(context.shader.revision.uri)
+      && programMatchesMaterialContext(presentation, context)
+    ));
+  }
+
   private async materialContextForUri(
     uri: string,
   ): Promise<SelectedMaterialContext | undefined> {
     const stored = materialContextStore.get(this.folderUri);
     if (!stored || stored.publicationId !== this.publicationId) return undefined;
     const context = stored.context;
-    if (uriKey(context.shader.revision.uri) === uriKey(uri)) return context;
-    const records = await this.includePointContexts.recordsFor(uri);
-    return records.some(({ presentation }) => (
-      uriKey(presentation.shaderUri) === uriKey(context.shader.revision.uri)
-      && programMatchesMaterialContext(presentation, context)
-    )) ? context : undefined;
+    return await this.materialContextAppliesToUri(uri, context)
+      ? context
+      : undefined;
   }
 
   fork(settings: ExtensionSettings = this.settings): IndexedRevisionBuilder {
@@ -811,16 +820,17 @@ function programMatchesMaterialContext(
 ): boolean {
   const selected = context.selectedProgram;
   if (!selected) return true;
-  return includePoint.subShaderIndex === selected.subShaderIndex
-    && (
-      selected.passIndex === undefined
-      || includePoint.passIndex === selected.passIndex
-    )
-    && (
-      !selected.passName
-      || !includePoint.passName
-      || includePoint.passName === selected.passName
-    );
+  if (includePoint.subShaderIndex !== selected.subShaderIndex) return false;
+  if (selected.passIndex !== undefined) {
+    return includePoint.passIndex === selected.passIndex
+      && (
+        selected.passName === undefined
+        || includePoint.passName === undefined
+        || includePoint.passName === selected.passName
+      );
+  }
+  return selected.passName === undefined
+    || includePoint.passName === selected.passName;
 }
 
 /** One-shot mutable candidate. It becomes inaccessible after publish(). */

@@ -7,6 +7,7 @@ This directory contains the public-facing documentation for UnityShaderNav.
 - [User Guide](usage.md)
 - [Configuration](configuration.md)
 - [Troubleshooting](troubleshooting.md)
+- [Evidence-constrained Pass Explanation](usage.md#evidence-constrained-pass-explanation)
 - [Unity-rendered Visual Lab](visual-lab.md)
 - [Shader Variant Budgets](shader-budgets.md)
 - [Shader Compile Contract](shader-compile-contract.md)

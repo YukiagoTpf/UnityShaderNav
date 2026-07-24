@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { sourceNameMatchesUri } from '@unity-shader-nav/shared';
 import { normalizePathForComparison } from '../src/pathIdentity';
 import { uriKey } from '../src/uriKey';
 
@@ -68,5 +69,39 @@ describe('uriKey', () => {
         normalizePathForComparison(entry.path, { platform: entry.platform }),
       );
     }
+  });
+
+  it('binds compiler source aliases to a mapped file URI suffix', () => {
+    const uri = 'file:///Project/Assets/Shaders/Ship.shader';
+    expect(sourceNameMatchesUri(
+      uri,
+      'Assets/Shaders/Ship.shader',
+      { platform: 'linux' },
+    )).toBe(true);
+    expect(sourceNameMatchesUri(
+      uri,
+      'Ship.shader',
+      { platform: 'linux' },
+    )).toBe(true);
+    expect(sourceNameMatchesUri(
+      uri,
+      'assets/shaders/ship.shader',
+      { platform: 'darwin' },
+    )).toBe(true);
+    expect(sourceNameMatchesUri(
+      'file:///C:/Unity/Assets/Shaders/Ship.shader',
+      'c:\\unity\\assets\\shaders\\SHIP.shader',
+      { platform: 'linux' },
+    )).toBe(true);
+    expect(sourceNameMatchesUri(
+      uri,
+      'Other/Forged.shader',
+      { platform: 'linux' },
+    )).toBe(false);
+    expect(sourceNameMatchesUri(
+      uri,
+      '../Shaders/Ship.shader',
+      { platform: 'linux' },
+    )).toBe(false);
   });
 });

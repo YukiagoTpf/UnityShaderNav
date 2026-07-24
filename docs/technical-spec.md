@@ -46,6 +46,10 @@ UnityShaderNav provides practical VS Code navigation for Unity shader projects:
   Editor for independent 64x64 Before/After draws, exposes complete render
   identity, and verifies an exact R8 NaN/Inf diagnostic independently from
   image-diff noise.
+- One read-only, evidence-constrained answer to “Why was this Pass selected for
+  the current Material Context?” that separates the observed Material Pass from
+  causality, cites only exact linked evidence, and refuses missing,
+  contradictory, or invalid identity chains.
 - Cross-file navigation through `#include` chains and resolved Unity Packages.
 - Adapter-backed Definition, References, and focused contract diagnostics for
   File-mode Shader Graph Custom Function nodes, without parsing graph
@@ -68,6 +72,10 @@ semantics.
 - Arbitrary Scene/Renderer/camera preview, continuous rendering, automatic
   Shader repair, overdraw, or diagnostics beyond the documented Visual Lab
   NaN/Inf mask.
+- General Shader chat, language-model inference, or using generated prose to
+  resolve symbols, establish compiler truth, fill missing evidence, or
+  authorize edits.
+- Pass-explanation suggestions or Apply actions in version 1.
 - Formatting or exhaustive compiler-grade completion.
 - Full C preprocessor expansion.
 - Rider-style shader context selection.
@@ -94,6 +102,7 @@ VS Code extension client
   - contributes languages and settings
   - starts the language server
   - exposes status/output integration
+  - renders one scriptless, read-only, generation-bound Pass explanation
 
 Language server
   - detects Unity project roots
@@ -114,6 +123,8 @@ Language server
     project and isolates different project roots
   - owns session-only Visual Lab target/frame state and rejects stale render
     identity before publishing Webview snapshots
+  - projects bounded current-Pass evidence and evaluates it with a deterministic
+    local observation/cause/refusal engine
   - publishes revision- and document-version-checked entry-point diagnostics
   - persists per-Workspace cache manifests under Library/UnityShaderNavCache
 
@@ -379,6 +390,99 @@ workspace/global storage, project assets, or telemetry. See
 [Unity-rendered Visual Lab](visual-lab.md),
 [ADR-0008](adr/0008-unity-editor-adapter-lifecycle-and-trust-model.md), and
 [ADR-0013](adr/0013-explicitly-pinned-unity-rendered-visual-lab.md).
+
+## Evidence-constrained Pass Explanation
+
+Version 1 supports one exact question: “Why was this Pass selected for the
+current Material Context?” The `unityShaderNav/passExplanation` pull request
+accepts one ShaderLab/HLSL document URI and returns a versioned, bounded
+structured answer. The evidence graph admits at most 256 KiB, 64 nodes, 128
+edges, and bounded identifiers. The client and server independently enforce a
+512 KiB answer limit and 2,048-entry limits for missing and contradictory
+disclosures. Arrays nested within evidence share a 256-item limit.
+
+The answer has independent observation and causal fields. Material Context can
+support an observation that its selected program identifies one
+Shader/SubShader/Pass. It cannot support a causal explanation by itself.
+Causality requires exactly one Adapter-authored `selection-decision` joining
+the exact Material Context, Shader Context, and source Pass, with matching
+project, Editor instance, Shader/Pass/stage/entry point, source revision, and
+Adapter provenance. The decision uses the independent versioned
+`pass-selection-decision/v1` capability and carries its own decision, selection,
+Program, Material/Shader revision, Context, and session identities. It also
+carries the versioned Adapter-authored selection rule: a rule ID, summary, and
+non-empty named facts describing what actually fired. Closed identities attest
+which Pass was selected but cannot replace that rationale. Names, indices,
+hashes, Variant counts, compiler output, and generated text never synthesize
+that edge.
+
+Source Pass, Material Context, and Shader Context primary nodes plus
+Variant/compiler/generated-source nodes reached through explicit links can
+become citations. Citations remain visible for audit when a claim is refused;
+they never override a contradiction. Missing required facts produce
+`insufficient-evidence`; identity conflicts produce
+`contradictory-evidence`; malformed or over-limit graphs produce
+`invalid-evidence`. Optional Variant/compiler/generated corroboration is
+disclosed when absent but does not replace or independently block an otherwise
+authoritative core selection chain.
+
+Shader Context citations retain the complete current GPU correlation and
+`verified-local-trace` envelope. Trace file/hash/label, draw, mapped URI/range/
+Context, expected source text, and source entry point must all agree; test-only
+sanitized, stale, unmapped, or partial captures cannot authorize causality.
+The mapped entry-point range must be one line and its UTF-16 span must exactly
+equal the expected entry-point text.
+Variant citations retain completed/incomplete/failed parent build state and
+must match the capture graphics API. Corroborating branches must also preserve
+Adapter/Unity session identity and Variant/compiler build platform. Compiler
+and generated citations join on a current 64-hex registry evidence ID,
+registered virtual URI, an exact compiler-view/generated-snapshot hash, a
+registry-owned exact generated/source range pair, exact compiler provenance,
+and exact source mapping. The generated/source pair is single-line with equal
+character spans. Its preceding `#line` directive must report the mapped source
+line and a path alias of the mapped source URI; the directive line itself is
+unmapped.
+
+The production Workspace projector currently supplies only current Material
+Context and, when that evidence already identifies a program whose Shader
+URI/GUID/SHA-256 and exact unique Pass range match the source snapshot,
+source-Pass evidence. It deliberately supplies no edges and no Shader Context,
+Variant, compiler, or generated-source nodes. The bundled Adapter does not
+currently author `selectedProgram`, so its normal result reports the observation
+as unavailable as well as refusing causality. Both become available only from
+future versioned Adapter evidence that explicitly provides the missing facts
+and complete identity chain.
+
+The Workspace rejects Material Context for an unrelated requested Shader; the
+URI must be the selected Shader or an indexed include point for the matching
+Program. The projector copies only Material, Shader, selected Program, and
+provenance identity into the graph. Material properties, textures, and keywords
+are out of scope. Material and Shader acquisition is capped at 4 MiB per file,
+and each Unity `.meta` sidecar at 64 KiB, before hashing or GUID parsing.
+
+The deterministic engine performs no I/O. The service retains no graph or
+answer beyond the request, and the execution contract is local-only,
+model-not-used, no-telemetry, and session-only. Model availability has no
+effect. The client validates the answer and renders one scriptless,
+network-disabled, read-only Webview. It independently repeats the supported
+answer's primary, session, Context, platform, compiler, and generated mapping
+joins. It cancels superseded work, records source mutations during the request,
+and tracks the requested URI plus every cited source/revision URI. Document or
+filesystem mutations to any tracked source or its exact Unity `.meta` sidecar,
+and Material Context changes, discard the old answer as stale; no background
+request is started.
+
+Complete graphs remain test fixtures. A production provider for Adapter
+decision, Shader Context, Variant, or compiler evidence must add a shared
+generation/freshness contract and client invalidation notification before it
+can participate in a supported answer.
+
+`suggestedEdits` is always empty in version 1 and a non-empty value is rejected
+by the client. No future edit token is reserved before a registry can prove that
+every edit is bound to an accepted revision-specific preview, compiler
+verification with provenance, and test verification with result identity.
+There is no current suggestion, preview, or Apply command. See
+[ADR-0014](adr/0014-evidence-constrained-current-pass-explanation.md).
 
 ## Indexing Scope
 

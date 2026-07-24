@@ -90,6 +90,14 @@ The extension focuses on fast code navigation:
   candidates rank first while every conservative result remains available.
   This is asset/editor evidence, not the final draw Context, so global and
   engine-added keyword state stays explicitly unknown.
+- A read-only **Explain Current Pass** evidence ledger for the single question
+  “Why was this Pass selected for the current Material Context?” It keeps the
+  observed Material Pass separate from a causal claim, cites the exact source
+  Pass when its revision can be proved, and requires an Adapter-authored actual
+  selection rule as well as a closed verified identity chain before supporting
+  a cause. Missing or contradictory evidence is listed instead of inferred.
+  The deterministic engine is local, session-only, model-free, and emits no
+  telemetry or edits.
 - A persistent, session-only **Visual Lab** Webview for one explicitly pinned
   persistent Material and published Shader include-point Context. Separate
   Before and After buttons request real Unity 64x64 offscreen draws, show
@@ -226,6 +234,7 @@ See [Configuration](docs/configuration.md) for the full explanation and examples
 - [Architecture](docs/architecture.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Technical Spec](docs/technical-spec.md)
+- [Evidence-constrained Pass Explanation](docs/usage.md#evidence-constrained-pass-explanation)
 - [Unity-rendered Visual Lab](docs/visual-lab.md)
 - [Shader Variant Budgets](docs/shader-budgets.md)
 - [Shader Compile Contract](docs/shader-compile-contract.md)
@@ -246,6 +255,15 @@ See [Configuration](docs/configuration.md) for the full explanation and examples
   deletion, or source/content-hash mismatch. It does not claim renderer,
   camera, platform, graphics API, global keyword, or engine-added keyword state
   without identity-matching draw evidence.
+- Pass explanation v1 is an explicit, read-only request and supports only its
+  documented Material-to-Pass question. The production projector can cite the
+  current Material Context and, when upstream evidence identifies a program, a
+  hash-matched exact source Pass. The bundled Adapter does not currently author
+  `selectedProgram` or the selection decision. The command therefore reports
+  them as missing and never manufactures Shader Context, Variant, compiler, or
+  generated-source evidence. Complete supported graphs remain test fixtures
+  until a versioned provider also supplies unified evidence freshness and
+  invalidation.
 - Visual Lab v1 renders only an explicitly pinned persistent Material and
   published Shader include-point Context through its fixed 64x64 full-screen
   input. It does not follow the Unity selection, render an arbitrary Scene or

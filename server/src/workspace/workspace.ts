@@ -343,9 +343,15 @@ export class Workspace implements IndexedWorkspace {
       return unavailableMaterialContext(trusted.reason);
     }
     const result = await validateMaterialContext(revision, trusted.context);
+    const appliesToRequestedSource = result.status !== 'available'
+      || await revision.materialContextAppliesToUri(uri, result.context);
     if (this.disposed || this.published !== revision) {
       materialContextStore.set(this.folderUri, null);
       return unavailableMaterialContext('stale-source');
+    }
+    if (!appliesToRequestedSource) {
+      materialContextStore.set(this.folderUri, null);
+      return unavailableMaterialContext('source-unavailable');
     }
     materialContextStore.set(
       this.folderUri,

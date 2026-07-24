@@ -129,6 +129,34 @@ Material Context 不是最终 draw Context；在真实 draw 证据到达前，gl
 engine-added keywords 必须保持 `UNKNOWN`。
 _Avoid_: draw Context, runtime variant
 
+**Pass selection observation**:
+Material Context 对当前 Material 所报告 Shader/SubShader/Pass 的只读资产级事实。
+它回答“报告选中了什么”，即使缺少 Shader Context 或 Adapter selection-decision
+仍可成立；它不回答 Unity 为什么选择该 Pass，也不能单独成为 causal claim。
+_Avoid_: Pass selection cause, runtime draw decision
+
+**Pass causal explanation**:
+对唯一问题 “Why was this Pass selected for the current Material Context?”
+给出的证据约束结论。只有 Adapter-authored selection-decision 同时连接 exact
+Material Context、Shader Context 与 source Pass，且 project、Editor instance、
+Shader/Pass/stage/entry、source revision 和 provenance 身份链闭合无矛盾时才为
+`supported`；该 decision 还必须携带实际触发的 versioned rule、summary 与非空
+facts，身份相等本身只证明“选了什么”，不证明“为什么”。否则必须明确列出
+missing/contradictory evidence 并 `refused`。
+Variant、compiler 与 generated-source 只能作为精确链接的 corroboration，不能补出
+selection-decision。详见 [ADR-0014](docs/adr/0014-evidence-constrained-current-pass-explanation.md)。
+_Avoid_: inferred Pass cause, best-effort explanation
+
+**Selection-decision evidence**:
+Unity Editor Adapter 通过独立版本化 `pass-selection-decision/v1` capability
+明确产出的 Material-to-Shader-Context-to-source-Pass 决策边。它保留 decision、
+selection、Program、Material/Shader revision、Context、Adapter 会话身份，以及
+实际触发规则的 versioned rule ID、summary 与 named facts。
+Material Context 的
+`selectedProgram`、名称/索引相等、源码 hash、compiler output 或 generated source
+都不能派生或替代这条边。
+_Avoid_: inferred selection edge, matching-pass decision
+
 **Visual Lab**:
 用户显式打开、仅在当前会话存在的持久 Webview。用户通过 **Use Current Selected
 Material** 同时 pin 当前持久化 Material 与一个 Published Shader include-point

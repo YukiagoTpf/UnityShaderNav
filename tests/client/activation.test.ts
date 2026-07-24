@@ -7,6 +7,7 @@ import {
   GO_TO_GENERATED_MAPPING_COMMAND,
   GO_TO_PREPROCESSED_MAPPING_COMMAND,
   GO_TO_SOURCE_MAPPING_COMMAND,
+  EXPLAIN_CURRENT_PASS_COMMAND,
   OPEN_GENERATED_VIEW_COMMAND,
   OPEN_PREPROCESSED_VIEW_COMMAND,
   OPEN_SOURCE_VIEW_COMMAND,
@@ -45,7 +46,7 @@ suite('UnityShaderNav activation', () => {
     }
   });
 
-  test('manifest declares language and Visual Lab command activation', () => {
+  test('manifest declares language and evidence-tool command activation', () => {
     const ext = findExt();
     assert.ok(ext, 'extension manifest must be loaded');
     const events: string[] = ext.packageJSON.activationEvents ?? [];
@@ -64,6 +65,10 @@ suite('UnityShaderNav activation', () => {
     assert.ok(
       events.includes(`onCommand:${OPEN_VISUAL_LAB_COMMAND}`),
       `expected Visual Lab command activation, got ${JSON.stringify(events)}`,
+    );
+    assert.ok(
+      events.includes(`onCommand:${EXPLAIN_CURRENT_PASS_COMMAND}`),
+      `expected Pass explanation command activation, got ${JSON.stringify(events)}`,
     );
   });
 
@@ -88,6 +93,7 @@ suite('UnityShaderNav activation', () => {
     assert.ok(ids.includes('unityShaderNav.showPortabilityReport'));
     assert.ok(ids.includes(SHOW_VARIANT_COMPARISON_COMMAND));
     assert.ok(ids.includes(OPEN_VISUAL_LAB_COMMAND));
+    assert.ok(ids.includes(EXPLAIN_CURRENT_PASS_COMMAND));
     for (const command of [
       OPEN_SOURCE_VIEW_COMMAND,
       OPEN_PREPROCESSED_VIEW_COMMAND,
@@ -131,6 +137,7 @@ suite('UnityShaderNav activation', () => {
     assert.ok(registered.includes(OPEN_VARIANT_COST_DOCUMENTATION_COMMAND));
     assert.ok(registered.includes(SHOW_VARIANT_COMPARISON_COMMAND));
     assert.ok(registered.includes(OPEN_VISUAL_LAB_COMMAND));
+    assert.ok(registered.includes(EXPLAIN_CURRENT_PASS_COMMAND));
     for (const command of [
       OPEN_SOURCE_VIEW_COMMAND,
       OPEN_PREPROCESSED_VIEW_COMMAND,
