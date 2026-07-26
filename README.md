@@ -72,13 +72,15 @@ The extension focuses on fast code navigation:
   unaffected).
 - Optional variant-context picker (status bar + QuickPick) to resolve
   `multi_compile` / `shader_feature` ambiguity: active branches brighten,
-  inactive ones dim, and active navigation candidates rank first while every
-  conservative candidate remains available. Opt-in; default behaviour is
-  unchanged.
+  inactive ones dim, and navigation selects the provably active candidates; if
+  the context proves none of them active, every conservative candidate remains
+  available. Opt-in; default behaviour is unchanged.
 - Session-only Shader Context picker for shared HLSL/CG includes. Known
   Shader, Pass, stage, and include-point combinations come from one published
   index revision; selecting one sharpens dimming, semantic coloring,
-  completion, and diagnostics without narrowing navigation results.
+  completion, diagnostics, and navigation. Provably active navigation
+  candidates are selected; if none can be proven active, conservative
+  candidates remain available.
 - Adapter-backed Source, Preprocessed, and Generated compiler evidence views
   for one selected Shader Context and verified compile profile. Exact `#line`
   regions navigate in both directions across ShaderLab and includes; macro
