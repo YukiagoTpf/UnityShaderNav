@@ -157,14 +157,16 @@ export function createPassExplanationController(
         || request.cancellation.token.isCancellationRequested
         || error instanceof vscode.CancellationError
       ) return;
-      const failed = session.fail(
+      // Report before consulting the session. `fail` only transitions away from
+      // 'loading', so a throw after `settle` already flipped the snapshot to
+      // 'ready' — rendering the settled answer, for instance — used to skip both
+      // the panel refresh and the only path to the output channel.
+      reportError('Failed to explain the current Pass', error);
+      if (session.fail(
         generation,
         sourceUri,
         'The local Pass explanation request failed. See the UnityShaderNav output for details.',
-      );
-      if (!failed) return;
-      updatePanel();
-      reportError('Failed to explain the current Pass', error);
+      )) updatePanel();
     } finally {
       if (activeRequest === request) {
         activeRequest = undefined;

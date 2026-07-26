@@ -126,6 +126,9 @@ function invalidAnswer(
   code: PassExplanationContradictionCode,
   detail: string,
 ): PassExplanationAnswer {
+  // An engine defect is not a statement about the project's evidence, so it must
+  // not be phrased as one.
+  const internal = code === 'internal-error';
   return {
     schemaVersion: PASS_EXPLANATION_SCHEMA_VERSION,
     question: PASS_EXPLANATION_QUESTION,
@@ -133,13 +136,17 @@ function invalidAnswer(
     observation: {
       status: 'not-observed',
       reason: 'material-context-missing',
-      statement: 'No Pass selection is reported because the evidence graph is invalid.',
+      statement: internal
+        ? 'No Pass selection is reported because UnityShaderNav failed to evaluate this evidence.'
+        : 'No Pass selection is reported because the evidence graph is invalid.',
       citationNodeIds: [],
     },
     causalExplanation: {
       status: 'refused',
       reason: 'invalid-evidence',
-      statement: 'No causal explanation is claimed from invalid or unbounded evidence.',
+      statement: internal
+        ? 'No causal explanation is claimed because UnityShaderNav failed to evaluate this evidence.'
+        : 'No causal explanation is claimed from invalid or unbounded evidence.',
       citationNodeIds: [],
     },
     disclosures: {
@@ -174,7 +181,10 @@ function topLevelGraph(value: unknown): value is {
  * This function performs no I/O and owns no persistence, model, or telemetry
  * integration.
  */
-export function explainPassSelection(input: unknown): PassExplanationAnswer {
+export function explainPassSelection(
+  input: unknown,
+  onInternalError?: (error: unknown) => void,
+): PassExplanationAnswer {
   const graphId = safeGraphId(input);
   if (!topLevelGraph(input)) {
     return invalidAnswer(graphId, 'invalid-graph', 'nodes and edges must be arrays');
@@ -239,11 +249,16 @@ export function explainPassSelection(input: unknown): PassExplanationAnswer {
       );
     }
     return answer;
-  } catch {
+  } catch (error) {
+    // The graph already passed shape validation above and this module throws
+    // nothing itself, so anything caught here is a defect in this engine, not
+    // bad project data. Report it as such and hand the caller the error so it
+    // leaves a trace instead of telling the user to fix their Unity evidence.
+    onInternalError?.(error);
     return invalidAnswer(
       graphId,
-      'invalid-graph',
-      'one or more nested evidence facts are invalid',
+      'internal-error',
+      'the local explanation engine failed to evaluate this evidence',
     );
   }
 }

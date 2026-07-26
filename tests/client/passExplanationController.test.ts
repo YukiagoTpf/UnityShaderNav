@@ -67,7 +67,10 @@ class FakePassExplanationClientSession {
   }
 
   settle(generation: number, sourceUri: string, answer: unknown): boolean {
-    if (!this.isCurrent(generation, sourceUri)) return false;
+    // Mirrors the real session: only a loading snapshot may settle.
+    if (!this.isCurrent(generation, sourceUri) || this.value.status !== 'loading') {
+      return false;
+    }
     const cited = (
       answer as { readonly citationSourceUris?: readonly string[] }
     ).citationSourceUris ?? [];
@@ -77,7 +80,12 @@ class FakePassExplanationClientSession {
   }
 
   fail(generation: number, sourceUri: string, message: string): boolean {
-    if (!this.isCurrent(generation, sourceUri)) return false;
+    // Mirrors the real session's `status !== 'loading'` guard. Without it a
+    // post-settle failure looked recoverable here and controller tests could
+    // not observe the swallowed error path at all.
+    if (!this.isCurrent(generation, sourceUri) || this.value.status !== 'loading') {
+      return false;
+    }
     this.value = { status: 'failed', sourceUri, message };
     return true;
   }
@@ -244,13 +252,18 @@ const vscodeMock = {
   },
 };
 
+let renderHook: ((snapshot: Snapshot) => void) | undefined;
+
 const presentationMock = {
   PassExplanationClientSession: FakePassExplanationClientSession,
   passExplanationSourceUris: (
     requestUri: string,
     answer: { readonly citationSourceUris?: readonly string[] },
   ) => [...new Set([requestUri, ...(answer.citationSourceUris ?? [])])],
-  renderPassExplanationHtml: (snapshot: Snapshot) => JSON.stringify(snapshot),
+  renderPassExplanationHtml: (snapshot: Snapshot) => {
+    renderHook?.(snapshot);
+    return JSON.stringify(snapshot);
+  },
 };
 
 type ModuleLoad = (
@@ -298,6 +311,7 @@ suite('Pass explanation controller request lifecycle', () => {
   });
 
   teardown(() => {
+    renderHook = undefined;
     for (const controller of controllers.splice(0)) controller.dispose();
   });
 
@@ -420,6 +434,35 @@ suite('Pass explanation controller request lifecycle', () => {
 
     assert.deepStrictEqual(controller.inspect(), snapshotAtDispose);
     assert.deepStrictEqual(reported, []);
+  });
+
+  test('reports a failure raised after the answer already settled', async () => {
+    // `fail` only transitions away from 'loading', so a throw once the snapshot
+    // is already 'ready' — rendering the settled answer, for instance — made the
+    // controller skip both the panel refresh and the only path to the output
+    // channel, leaving the panel on stale loading markup with nothing logged.
+    const requestUri = 'file:///project/Assets/Shaders/Forward.shader';
+    setActiveShader(requestUri);
+    const api = new FakeRequestApi();
+    const reported: unknown[] = [];
+    const controller = track(controllerModule.createPassExplanationController(
+      api,
+      (message, error) => { reported.push({ message, error }); },
+    ));
+    const renderFailure = new Error('render defect');
+    renderHook = (snapshot) => {
+      if (snapshot.status === 'ready') throw renderFailure;
+    };
+
+    const run = controller.explainCurrentPass();
+    api.requests[0].completion.resolve({});
+    await run;
+
+    assert.strictEqual(reported.length, 1);
+    assert.deepStrictEqual(reported[0], {
+      message: 'Failed to explain the current Pass',
+      error: renderFailure,
+    });
   });
 
   test('invalidates a ready answer when any cited source changes', async () => {

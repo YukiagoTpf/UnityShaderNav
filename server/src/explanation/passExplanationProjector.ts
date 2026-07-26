@@ -171,7 +171,10 @@ implements PassExplanationGraphProvider {
       throwIfRequestCancelled(cancellation);
       return undefined;
     } finally {
-      await handle?.close();
+      // A throw in `finally` replaces whatever the body settled on, so a
+      // rejecting close would discard the source text, the deliberate undefined
+      // above, and any rethrown cancellation, failing the whole request.
+      await handle?.close().catch(() => undefined);
     }
   }
 }

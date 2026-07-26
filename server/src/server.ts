@@ -117,6 +117,10 @@ const visualLabSessions = new VisualLabSessionCoordinator({
 const suspender = new RequestSuspender({ timeoutMs: 5000 });
 const passExplanation = new PassExplanationService(
   new WorkspacePassExplanationProjector({ workspace: manager }),
+  (error) => {
+    const detail = error instanceof Error ? error.stack ?? error.message : String(error);
+    connection.console.error(`[UnityShaderNav] Pass explanation engine defect: ${detail}`);
+  },
 );
 let compilerEvidence!: CompilerEvidenceService;
 let globalStorageDir: string | undefined;

@@ -9,6 +9,7 @@ import {
   MAX_PASS_EXPLANATION_NESTED_ITEMS,
   MAX_PASS_EXPLANATION_NODES,
   MATERIAL_CONTEXT_ADAPTER_FEATURE,
+  PASS_EXPLANATION_CONTRADICTION_CODES,
   PASS_EXPLANATION_QUESTION,
   PASS_EXPLANATION_SCHEMA_VERSION,
   PASS_SELECTION_DECISION_CAPABILITY,
@@ -45,32 +46,11 @@ const EVIDENCE_REQUIREMENTS = new Set<PassExplanationEvidenceRequirement>([
   'generated-source-map-link',
 ]);
 
-const CONTRADICTION_CODES = new Set<PassExplanationContradictionCode>([
-  'invalid-graph',
-  'payload-limit-exceeded',
-  'node-limit-exceeded',
-  'edge-limit-exceeded',
-  'invalid-node',
-  'invalid-edge',
-  'duplicate-node-id',
-  'duplicate-edge-id',
-  'dangling-edge',
-  'edge-kind-mismatch',
-  'multiple-selection-decisions',
-  'multiple-primary-evidence',
-  'decision-provenance-mismatch',
-  'selected-program-mismatch',
-  'shader-identity-mismatch',
-  'shader-context-mismatch',
-  'source-revision-mismatch',
-  'project-identity-mismatch',
-  'instance-identity-mismatch',
-  'adapter-session-mismatch',
-  'variant-context-mismatch',
-  'compiler-context-mismatch',
-  'compiler-profile-mismatch',
-  'generated-mapping-mismatch',
-]);
+// Derived from the shared list so the client cannot reject a code the server
+// is allowed to emit.
+const CONTRADICTION_CODES = new Set<PassExplanationContradictionCode>(
+  PASS_EXPLANATION_CONTRADICTION_CODES,
+);
 
 const CITATION_KINDS = new Set<PassExplanationCitation['kind']>([
   'source-pass',

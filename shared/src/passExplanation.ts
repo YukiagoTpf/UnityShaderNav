@@ -339,31 +339,42 @@ export interface PassExplanationMissingEvidence {
   readonly detail: string;
 }
 
+/**
+ * One list, so the server vocabulary and the client's accepted set cannot
+ * drift. `internal-error` is the only code that does not describe the project's
+ * evidence: it reports that this engine failed to evaluate an already
+ * shape-valid graph.
+ */
+export const PASS_EXPLANATION_CONTRADICTION_CODES = [
+  'invalid-graph',
+  'internal-error',
+  'payload-limit-exceeded',
+  'node-limit-exceeded',
+  'edge-limit-exceeded',
+  'invalid-node',
+  'invalid-edge',
+  'duplicate-node-id',
+  'duplicate-edge-id',
+  'dangling-edge',
+  'edge-kind-mismatch',
+  'multiple-selection-decisions',
+  'multiple-primary-evidence',
+  'decision-provenance-mismatch',
+  'selected-program-mismatch',
+  'shader-identity-mismatch',
+  'shader-context-mismatch',
+  'source-revision-mismatch',
+  'project-identity-mismatch',
+  'instance-identity-mismatch',
+  'adapter-session-mismatch',
+  'variant-context-mismatch',
+  'compiler-context-mismatch',
+  'compiler-profile-mismatch',
+  'generated-mapping-mismatch',
+] as const;
+
 export type PassExplanationContradictionCode =
-  | 'invalid-graph'
-  | 'payload-limit-exceeded'
-  | 'node-limit-exceeded'
-  | 'edge-limit-exceeded'
-  | 'invalid-node'
-  | 'invalid-edge'
-  | 'duplicate-node-id'
-  | 'duplicate-edge-id'
-  | 'dangling-edge'
-  | 'edge-kind-mismatch'
-  | 'multiple-selection-decisions'
-  | 'multiple-primary-evidence'
-  | 'decision-provenance-mismatch'
-  | 'selected-program-mismatch'
-  | 'shader-identity-mismatch'
-  | 'shader-context-mismatch'
-  | 'source-revision-mismatch'
-  | 'project-identity-mismatch'
-  | 'instance-identity-mismatch'
-  | 'adapter-session-mismatch'
-  | 'variant-context-mismatch'
-  | 'compiler-context-mismatch'
-  | 'compiler-profile-mismatch'
-  | 'generated-mapping-mismatch';
+  typeof PASS_EXPLANATION_CONTRADICTION_CODES[number];
 
 export interface PassExplanationContradiction {
   readonly code: PassExplanationContradictionCode;
