@@ -104,4 +104,41 @@ describe('uriKey', () => {
       { platform: 'linux' },
     )).toBe(false);
   });
+
+  it('treats a percent sign in a plain compiler source name as data', () => {
+    // A `#line` directive reports a raw filesystem spelling, so '%' is part of
+    // the filename. Decoding it threw URIError on the first case and silently
+    // rewrote the second, collapsing correct evidence to invalid-evidence.
+    for (const platform of ['darwin', 'linux', 'win32'] as const) {
+      expect(sourceNameMatchesUri(
+        'file:///Project/Assets/Shaders/50%25Blend.hlsl',
+        'Assets/Shaders/50%Blend.hlsl',
+        { platform },
+      )).toBe(true);
+      expect(sourceNameMatchesUri(
+        'file:///Project/Assets/A%2520B.hlsl',
+        'Assets/A%20B.hlsl',
+        { platform },
+      )).toBe(true);
+    }
+    // A literal '%20' name must not match the file whose name is 'A B.hlsl'.
+    expect(sourceNameMatchesUri(
+      'file:///Project/Assets/A%20B.hlsl',
+      'Assets/A%20B.hlsl',
+      { platform: 'linux' },
+    )).toBe(false);
+  });
+
+  it('still decodes percent-encoded segments of a file: URL source name', () => {
+    expect(sourceNameMatchesUri(
+      'file:///Project/Assets/A%20B.hlsl',
+      'file:///Project/Assets/A%20B.hlsl',
+      { platform: 'linux' },
+    )).toBe(true);
+    expect(sourceNameMatchesUri(
+      'file:///Project/Assets/Shaders/50%25Blend.hlsl',
+      'file:///Project/Assets/Shaders/50%25Blend.hlsl',
+      { platform: 'linux' },
+    )).toBe(true);
+  });
 });
