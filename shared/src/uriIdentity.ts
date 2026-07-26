@@ -67,20 +67,30 @@ function sourceNameSegments(
   platform: NodeJS.Platform,
 ): readonly string[] | undefined {
   let path = sourceName.replace(/\\/g, '/');
+  // Compiler source names are commonly project-relative paths, not URIs, so a
+  // literal '%' in a filename is data rather than an escape. Only the file: URL
+  // spelling carries percent-encoded segments; decoding a plain path would
+  // throw URIError on `50%Blend.hlsl` and silently rewrite `A%20B.hlsl`.
+  let percentEncoded = false;
   try {
     const parsed = new URL(sourceName);
-    if (parsed.protocol === 'file:') path = parsed.pathname;
+    if (parsed.protocol === 'file:') {
+      path = parsed.pathname;
+      percentEncoded = true;
+    }
   } catch {
-    // Compiler source names are commonly project-relative paths, not URIs.
+    // Not a URI spelling.
   }
   const result: string[] = [];
-  for (const encoded of path.split('/')) {
-    if (encoded === '') continue;
-    let segment: string;
-    try {
-      segment = decodeURIComponent(encoded);
-    } catch {
-      return undefined;
+  for (const raw of path.split('/')) {
+    if (raw === '') continue;
+    let segment = raw;
+    if (percentEncoded) {
+      try {
+        segment = decodeURIComponent(raw);
+      } catch {
+        return undefined;
+      }
     }
     if (segment === '.' || segment === '..') return undefined;
     result.push(normalizeFileIdentity(segment, platform));
