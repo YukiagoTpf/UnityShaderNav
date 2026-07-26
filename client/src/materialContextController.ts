@@ -164,6 +164,8 @@ function unavailableMessage(reason: Extract<
       return 'Material Context is stale for the current asset revision.';
     case 'selection-changed':
       return 'The Unity selection changed while Material Context was loading.';
+    case 'source-out-of-context':
+      return 'The selected Material does not cover this file.';
     default:
       return 'Material Context is unavailable from the connected Unity Editor Adapter.';
   }

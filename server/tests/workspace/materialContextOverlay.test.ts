@@ -208,12 +208,47 @@ describe('Workspace selected Material Context overlay', () => {
   it('does not project the selected Material onto an unrelated indexed Shader', async () => {
     const test = await fixture();
     try {
+      // `source-unavailable` blamed the Adapter for a state where the Adapter,
+      // the Material and the validation are all fine; the context simply does
+      // not cover this file.
       await expect(
         test.workspace.materialContextAt(test.otherShaderUri),
       ).resolves.toEqual({
         status: 'unavailable',
-        reason: 'source-unavailable',
+        reason: 'source-out-of-context',
       });
+    } finally {
+      await rm(test.root, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps the folder Material Context after a request it does not cover', async () => {
+    const test = await fixture();
+    try {
+      const lines = test.shaderText.split('\n');
+      const completionLine = lines.findIndex((line) => line.trim() === '_');
+      const document = {
+        uri: test.shaderUri,
+        languageId: 'shaderlab',
+        text: test.shaderText,
+        openId: 1,
+        version: 1,
+      } as const;
+      await test.workspace.updateDocument(document);
+      await test.workspace.materialContextAt(test.shaderUri);
+
+      // The store is folder-scoped and every reader re-checks applicability per
+      // URI, so a miss for one file must not strip the Material detail from the
+      // Shader the Material actually selects.
+      await test.workspace.materialContextAt(test.otherShaderUri);
+
+      const items = await test.workspace.completionAt({
+        document,
+        position: { line: completionLine, character: lines[completionLine].length },
+      });
+      const tint = items?.find(({ label }) => label === '_Tint');
+      expect(tint?.detail).toContain('Material Ship override: [1, 1, 1, 1]');
+      expect(tint?.sortText).toMatch(/^0_material_/);
     } finally {
       await rm(test.root, { recursive: true, force: true });
     }
