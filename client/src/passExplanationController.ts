@@ -9,6 +9,7 @@ import {
   type PassExplanationParams,
 } from '@unity-shader-nav/shared';
 import type { LanguageClient } from 'vscode-languageclient/node';
+import type { NotificationHub } from './notificationHub';
 import {
   PassExplanationClientSession,
   passExplanationSourceUris,
@@ -37,6 +38,7 @@ export interface ExplainCurrentPassArgument {
 
 export function createLanguageClientPassExplanationApi(
   client: LanguageClient,
+  notifications: NotificationHub,
 ): PassExplanationRequestApi {
   return {
     request: (params, cancellation) => client.sendRequest<PassExplanationAnswer>(
@@ -44,7 +46,10 @@ export function createLanguageClientPassExplanationApi(
       params,
       cancellation,
     ),
-    onMaterialContextChanged: (handler) => client.onNotification(
+    // Shared with materialContextController, so this must go through the hub:
+    // a direct client.onNotification for the same method is evicted by whoever
+    // registers last.
+    onMaterialContextChanged: (handler) => notifications.on(
       MATERIAL_CONTEXT_CHANGED_NOTIFICATION,
       handler,
     ),

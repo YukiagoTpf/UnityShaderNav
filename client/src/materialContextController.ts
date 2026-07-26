@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { State, type LanguageClient } from 'vscode-languageclient/node';
+import type { NotificationHub } from './notificationHub';
 import {
   INDEX_STATUS_NOTIFICATION,
   MATERIAL_CONTEXT_CHANGED_NOTIFICATION,
@@ -30,6 +31,7 @@ export interface MaterialContextController {
  */
 export function createMaterialContextController(
   client: LanguageClient,
+  notifications: NotificationHub,
   refreshFeatures: () => void,
 ): MaterialContextController {
   const statusItem = vscode.window.createStatusBarItem(
@@ -114,11 +116,13 @@ export function createMaterialContextController(
   const activeEditor = vscode.window.onDidChangeActiveTextEditor(() => {
     void refresh();
   });
-  const materialSelection = client.onNotification(
+  // Both methods have other subscribers, so they go through the hub rather than
+  // client.onNotification, which keeps only the last registration per method.
+  const materialSelection = notifications.on(
     MATERIAL_CONTEXT_CHANGED_NOTIFICATION,
     () => { void refresh(); },
   );
-  const indexStatus = client.onNotification(
+  const indexStatus = notifications.on(
     INDEX_STATUS_NOTIFICATION,
     (_snapshot: IndexStatusSnapshot) => { void refresh(); },
   );

@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
 import { State, type LanguageClient } from 'vscode-languageclient/node';
+import type { NotificationHub } from './notificationHub';
 import {
   OPEN_VISUAL_LAB_COMMAND,
   VISUAL_LAB_CAPTURE_REQUEST,
@@ -52,6 +53,7 @@ export interface OpenVisualLabArgument {
  */
 export function createLanguageClientVisualLabApi(
   client: LanguageClient,
+  notifications: NotificationHub,
 ): VisualLabRequestApi {
   return {
     get connected() {
@@ -69,7 +71,7 @@ export function createLanguageClientVisualLabApi(
       VISUAL_LAB_CAPTURE_REQUEST,
       params,
     ),
-    onStateChanged: (handler) => client.onNotification(
+    onStateChanged: (handler) => notifications.on(
       VISUAL_LAB_STATE_CHANGED_NOTIFICATION,
       handler,
     ),

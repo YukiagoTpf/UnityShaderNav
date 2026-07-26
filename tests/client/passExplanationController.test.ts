@@ -1,6 +1,9 @@
 import * as assert from 'node:assert';
 import * as path from 'node:path';
-import { PASS_EXPLANATION_REQUEST } from '@unity-shader-nav/shared';
+import {
+  MATERIAL_CONTEXT_CHANGED_NOTIFICATION,
+  PASS_EXPLANATION_REQUEST,
+} from '@unity-shader-nav/shared';
 
 interface Disposable {
   dispose(): void;
@@ -148,8 +151,9 @@ interface ControllerModule {
     api: FakeRequestApi,
     reportError: (message: string, error: unknown) => void,
   ): TestController;
-  createLanguageClientPassExplanationApi(client: unknown): {
+  createLanguageClientPassExplanationApi(client: unknown, notifications: unknown): {
     request(params: unknown, token: FakeCancellationToken): Promise<unknown>;
+    onMaterialContextChanged(handler: () => void): Disposable;
   };
 }
 
@@ -306,7 +310,9 @@ suite('Pass explanation controller request lifecycle', () => {
       },
       onNotification: () => ({ dispose() {} }),
     };
-    const api = controllerModule.createLanguageClientPassExplanationApi(client);
+    const api = controllerModule.createLanguageClientPassExplanationApi(client, {
+      on: () => ({ dispose() {} }),
+    });
     const token = new FakeCancellationToken();
     const params = {
       textDocument: { uri: 'file:///project/Assets/Forward.shader' },
@@ -318,6 +324,32 @@ suite('Pass explanation controller request lifecycle', () => {
     assert.strictEqual(calls[0][0], PASS_EXPLANATION_REQUEST);
     assert.deepStrictEqual(calls[0][1], params);
     assert.strictEqual(calls[0][2], token);
+  });
+
+  test('subscribes to Material Context changes through the shared hub', () => {
+    // materialContextController subscribes to the same method. LanguageClient
+    // keeps one handler per method, so a direct client.onNotification here was
+    // silently evicted and this panel never invalidated on a Material change.
+    const clientRegistrations: string[] = [];
+    const hubRegistrations: string[] = [];
+    const client = {
+      sendRequest: () => Promise.resolve({}),
+      onNotification: (method: string) => {
+        clientRegistrations.push(method);
+        return { dispose() {} };
+      },
+    };
+    const api = controllerModule.createLanguageClientPassExplanationApi(client, {
+      on: (method: string) => {
+        hubRegistrations.push(method);
+        return { dispose() {} };
+      },
+    });
+
+    api.onMaterialContextChanged(() => {});
+
+    assert.deepStrictEqual(clientRegistrations, []);
+    assert.deepStrictEqual(hubRegistrations, [MATERIAL_CONTEXT_CHANGED_NOTIFICATION]);
   });
 
   test('cancels a superseded generation and reports only the current error', async () => {

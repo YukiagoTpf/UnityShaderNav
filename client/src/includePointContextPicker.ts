@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { State, type LanguageClient } from 'vscode-languageclient/node';
+import type { NotificationHub } from './notificationHub';
 import {
   INCLUDE_POINT_CONTEXT_CHANGED_NOTIFICATION,
   INCLUDE_POINT_CONTEXTS_REQUEST,
@@ -48,6 +49,7 @@ export interface IncludePointContextPicker {
  */
 export function createIncludePointContextPicker(
   client: LanguageClient,
+  notifications: NotificationHub,
   refreshFeatures: () => void,
 ): IncludePointContextPicker {
   const statusItem = vscode.window.createStatusBarItem(
@@ -228,7 +230,9 @@ export function createIncludePointContextPicker(
   const activeEditor = vscode.window.onDidChangeActiveTextEditor(() => {
     void updateStatus();
   });
-  const indexStatus = client.onNotification(
+  // INDEX_STATUS_NOTIFICATION has other subscribers; a direct
+  // client.onNotification here would be evicted by whoever registers last.
+  const indexStatus = notifications.on(
     INDEX_STATUS_NOTIFICATION,
     (snapshot: IndexStatusSnapshot) => {
       let cleared = false;
