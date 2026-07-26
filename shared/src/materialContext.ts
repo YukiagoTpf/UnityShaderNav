@@ -79,6 +79,8 @@ export type MaterialContextUnavailableReason =
   | AdapterUnavailableReason
   | 'capability-unavailable'
   | 'source-unavailable'
+  /** A valid Material Context exists, but it does not cover the requested file. */
+  | 'source-out-of-context'
   | 'source-identity-mismatch'
   | 'connection-changed'
   | 'selection-changed'

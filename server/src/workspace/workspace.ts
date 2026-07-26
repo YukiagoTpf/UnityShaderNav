@@ -349,16 +349,19 @@ export class Workspace implements IndexedWorkspace {
       materialContextStore.set(this.folderUri, null);
       return unavailableMaterialContext('stale-source');
     }
-    if (!appliesToRequestedSource) {
-      materialContextStore.set(this.folderUri, null);
-      return unavailableMaterialContext('source-unavailable');
-    }
+    // Prime the folder-scoped store even when the context does not cover this
+    // URI. The store is keyed by folder and every reader already re-checks
+    // applicability per URI, so discarding it here would strip Material
+    // ranking and completion detail from every other file in the folder.
     materialContextStore.set(
       this.folderUri,
       result.status === 'available'
         ? { publicationId: revision.publicationId, context: result.context }
         : null,
     );
+    if (!appliesToRequestedSource) {
+      return unavailableMaterialContext('source-out-of-context');
+    }
     return result;
   }
 
