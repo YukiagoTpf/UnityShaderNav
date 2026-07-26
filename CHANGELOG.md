@@ -113,7 +113,8 @@ and uses semantic versioning for extension releases.
   files. Each published revision derives known Shader, Pass, stage, source
   location, and deterministic macro state; selecting one sharpens inactive
   regions, semantic tokens, completion, and diagnostics while Definition,
-  References, and Highlights retain every conservative candidate. Stale or
+  References, and Highlights select the candidates the Context proves active
+  and retain every conservative candidate when it proves none active. Stale or
   deleted include points fall back to Auto without rebuilding unrelated roots
   or persisting the selection in the index/cache. (#88)
 - Added declared/static Variant cost CodeLens for explicit `multi_compile` and

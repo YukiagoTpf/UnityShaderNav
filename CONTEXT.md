@@ -58,7 +58,7 @@ _Avoid_: declarative macro, macro declaration
 Problems 面板中与当前 Published indexed revision 和当前编辑器文档版本一致的诊断。过期异步结果不得覆盖新版本；关闭文档必须清除旧诊断。共享文件在 Auto 下只分析有显式上限的已知 Shader Context 集合；等价 finding 按 identity 合并并同时报告 affected/analyzed 数量，展开项保留精确 Context 与 static/compiler provenance。未分析、未知或不支持的维度显式为 `unverified`，不得解释为 passing。`unresolved-entry-point` 只在 pragma 引用没有保守可见的函数候选时报告；`srp-batcher-property`、`srp-batcher-property-type` 与 `srp-batcher-layout` 只在 SRP 和 material-cbuffer 事实充分时报告；`shader-graph-source-missing`、`shader-graph-invalid-precision-suffix` 与 `shader-graph-signature-mismatch` 只在精确、受信任且版本受支持的 Adapter graph 事实充分时报告。分支、多候选、宏展开或 Adapter 事实不足时保持中性。
 
 **Multi-candidate Peek**:
-同名符号有多个定义，例如预处理分支、多 Pass 同名或 HLSL overload 时，F12 返回全部保守候选，由 VS Code 原生 Peek UI 让用户选择。详见 [ADR-0001](docs/adr/0001-multi-candidate-peek-for-ambiguous-symbols.md)。
+同名符号有多个定义，例如预处理分支、多 Pass 同名或 HLSL overload 时，F12 返回全部保守候选，由 VS Code 原生 Peek UI 让用户选择。这是没有 Context 时的默认与兜底语义；选中 Variant Context 或 Shader Context 后，导航会选中该 Context 可证明 active 的候选，只有在证明不出任何 active 候选时才退回全部保守候选。详见 [ADR-0001](docs/adr/0001-multi-candidate-peek-for-ambiguous-symbols.md) 与 [ADR-0009](docs/adr/0009-context-matrix-semantics-preserving-multi-candidate-peek.md)。
 
 **Proximity tie-break**:
 同一函数内多个同名局部声明都可见时，选择引用位置之前最近声明的消歧规则。跨文件或全局歧义不使用该规则删除候选。
@@ -238,9 +238,9 @@ _Avoid_: trace guess, generated-text source match
 ## 示例对话
 
 > **TA**：“F12 在 `TransformObjectToHClip` 上跳到了 4 个地方，怎么回事？”
-> **开发者**：“这是 Multi-candidate Peek。这个函数存在多个预处理分支版本；UnityShaderNav 不猜测激活分支，所以返回全部保守候选。”
+> **开发者**：“这是 Multi-candidate Peek。没有选中 Context 时，UnityShaderNav 不猜测激活分支，所以返回全部保守候选。”
 > **TA**：“Rider 就跳一个啊。”
-> **开发者**：“Rider 会根据 Shader Context 推断分支；UnityShaderNav 采用 ADR-0001 的保守多候选语义。”
+> **开发者**：“选一个 Variant Context 或 Shader Context 就也是跳一个：能证明 active 的候选会被选中。区别在于 UnityShaderNav 只在证得出来的时候收窄，证不出来就退回全部候选，而不是猜。”
 >
 > **TA**：“我 F12 在 `_MainTex` 上跳不到声明。”
 > **开发者**：“如果声明是 `TEXTURE2D(_MainTex)`，它属于 Declaration macro。项目自定义宏需要加入 `unityShaderNav.declarationMacros`。”
