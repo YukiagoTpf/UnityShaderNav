@@ -96,9 +96,11 @@ never enumerated. Concretely, the first slice is bounded by:
 | Index, cache, lifecycle | None | Context is never embedded in a Published indexed revision or cache manifest; selecting a Context never rebuilds an index |
 
 Navigation core (Definition, References, Highlight) is the MUST-retain
-class: all valid candidates survive any Context. Presentation and analysis
-features are the MAY-consume class: they may sharpen what they show, but
-only within their existing conservative guards.
+class: a Context may select the candidates it proves active, but it may never
+empty the result set. When a Context proves no candidate active, every
+conservative candidate survives, exactly as the table above records.
+Presentation and analysis features are the MAY-consume class: they may sharpen
+what they show, but only within their existing conservative guards.
 
 ### Persistence scope
 
@@ -146,8 +148,9 @@ shared file stays `UNKNOWN` and visible. Selecting the Forward-Pass
 include-point Context (Shader, Pass, Stage, include point) resolves the
 branch `TRUE`/`FALSE` for dimming, Semantic Tokens, and Completion ranking
 in that file; selecting the Unlit-Pass Context resolves it `FALSE`.
-Navigation candidates in the shared file keep all valid targets in both
-cases.
+Navigation in the shared file selects the declaration the chosen Context
+proves active in both cases, and falls back to every valid target when the
+Context proves none of them active.
 
 ### Variant keyword selection
 

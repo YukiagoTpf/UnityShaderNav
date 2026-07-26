@@ -848,9 +848,10 @@ macro state from indexed structural facts and that revision's Include chain.
 The client owns the session-scoped selection; the server keeps only an
 ephemeral mirror whose publication identity must match before any request can
 consume it. Every new publication therefore invalidates the selection to Auto,
-and no Context state crosses into the persistent index or cache. Context can
-rank navigation candidates but never removes the conservative Definition,
-References, or Highlight result set.
+and no Context state crosses into the persistent index or cache. Context
+selects the Definition, References, and Highlight candidates it proves active
+and returns the full conservative result set when it proves none of them
+active; it never empties the result set.
 
 Package include candidates consume the physical-path map already captured by
 the Workspace revision's `PackageContext`. The same context captures package
