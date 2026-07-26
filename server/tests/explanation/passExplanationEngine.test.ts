@@ -1015,4 +1015,33 @@ describe('deterministic Pass selection explanation engine', () => {
       reason: 'invalid-evidence',
     });
   });
+
+  it('reports an engine defect as internal-error rather than bad project data', () => {
+    // The graph passes shape validation and this module throws nothing itself,
+    // so anything the evaluate catch sees is a defect here. It used to surface
+    // as `invalid-graph` with no trace, telling the user to fix their evidence.
+    const graph = completeGraph();
+    const defect = new Error('citation projection defect');
+    const reported: unknown[] = [];
+    const answer = explainPassSelection(
+      {
+        ...graph,
+        // Throw only once evaluation reads the nodes, so the graph has already
+        // passed the shape check. Keyed on the frame rather than a read count so
+        // it survives a change in how often the validator walks the graph.
+        get nodes(): readonly unknown[] {
+          if (new Error().stack?.includes('evaluateGraph')) throw defect;
+          return graph.nodes;
+        },
+      },
+      (error) => { reported.push(error); },
+    );
+
+    expect(reported).toEqual([defect]);
+    expect(answer.disclosures.contradictions).toEqual([
+      expect.objectContaining({ code: 'internal-error' }),
+    ]);
+    expect(answer.observation.statement).toContain('failed to evaluate');
+    expect(answer.causalExplanation.statement).toContain('failed to evaluate');
+  });
 });

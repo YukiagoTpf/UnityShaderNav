@@ -15,7 +15,11 @@ import type { PassExplanationGraphProvider } from './passExplanationProjector';
  * is retained.
  */
 export class PassExplanationService {
-  constructor(private readonly evidence: PassExplanationGraphProvider) {}
+  constructor(
+    private readonly evidence: PassExplanationGraphProvider,
+    /** Receives engine defects so they leave a trace instead of reading as bad project data. */
+    private readonly reportInternalError?: (error: unknown) => void,
+  ) {}
 
   async explain(
     uri: string,
@@ -23,6 +27,7 @@ export class PassExplanationService {
   ): Promise<PassExplanationAnswer> {
     return explainPassSelection(
       await this.evidence.graphFor(uri, cancellation),
+      this.reportInternalError,
     );
   }
 
