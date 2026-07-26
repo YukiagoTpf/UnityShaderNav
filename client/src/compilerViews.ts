@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import type { LanguageClient } from 'vscode-languageclient/node';
+import type { NotificationHub } from './notificationHub';
 import {
   COMPILER_MAPPING_REQUEST,
   COMPILER_PROFILES_REQUEST,
@@ -34,6 +35,7 @@ export interface CompilerViewCommandArgument {
 
 export function setupCompilerViews(
   client: LanguageClient,
+  notifications: NotificationHub,
   context: vscode.ExtensionContext,
   reportError: (message: string, error: unknown) => void,
 ): void {
@@ -62,7 +64,7 @@ export function setupCompilerViews(
       },
     },
   ));
-  context.subscriptions.push(client.onNotification(
+  context.subscriptions.push(notifications.on(
     COMPILER_VIRTUAL_DOCUMENT_CHANGED_NOTIFICATION,
     (params: CompilerVirtualDocumentChangedParams) => {
       for (const uri of params.uris) changed.fire(vscode.Uri.parse(uri));

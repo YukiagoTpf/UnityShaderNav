@@ -15,6 +15,7 @@ import { createVariantContextPicker } from './variantContextPicker';
 import { createIncludePointContextPicker } from './includePointContextPicker';
 import { createVariantComparisonCommand } from './variantComparison';
 import { createMaterialContextController } from './materialContextController';
+import { NotificationHub } from './notificationHub';
 import { setupCompilerViews } from './compilerViews';
 import { IndexStatusController, indexStatusDetails } from './indexStatus';
 import { IndexStatusSession } from './indexStatusSession';
@@ -54,10 +55,17 @@ export async function activate(context: ExtensionContext): Promise<void> {
   context.subscriptions.push(statusBar);
 
   client = createLanguageClient(context, outputChannel);
+  // One registration per notification method; see NotificationHub for why a
+  // direct client.onNotification cannot be shared between subscribers.
+  const notifications = new NotificationHub(
+    (method, handler) => client!.onNotification(method, handler),
+    reportError,
+  );
+  context.subscriptions.push(notifications);
   const indexStatus = new IndexStatusController(statusBar);
   const indexStatusSession = new IndexStatusSession(indexStatus, {
     request: () => client!.sendRequest<IndexStatusSnapshot>(INDEX_STATUS_REQUEST),
-    subscribe: (handler) => client!.onNotification(INDEX_STATUS_NOTIFICATION, handler),
+    subscribe: (handler) => notifications.on(INDEX_STATUS_NOTIFICATION, handler),
   }, (error) => reportError('Failed to refresh index status', error));
   indexStatusSession.subscribe();
   context.subscriptions.push(indexStatusSession);
@@ -95,11 +103,11 @@ export async function activate(context: ExtensionContext): Promise<void> {
   context.subscriptions.push(createVariantComparisonCommand(client, reportError));
   context.subscriptions.push(registerPropertyRenameCommand(client, reportError));
   context.subscriptions.push(createVisualLabController(
-    createLanguageClientVisualLabApi(client),
+    createLanguageClientVisualLabApi(client, notifications),
     reportError,
   ));
   context.subscriptions.push(createPassExplanationController(
-    createLanguageClientPassExplanationApi(client),
+    createLanguageClientPassExplanationApi(client, notifications),
     reportError,
   ));
   setupCSharpCurrentSource(client, context, reportError);
@@ -116,15 +124,15 @@ export async function activate(context: ExtensionContext): Promise<void> {
     commands.executeCommand('unityShaderNav.refreshInactiveRegions');
   });
   context.subscriptions.push(picker);
-  const includePointPicker = createIncludePointContextPicker(client, () => {
+  const includePointPicker = createIncludePointContextPicker(client, notifications, () => {
     commands.executeCommand('unityShaderNav.refreshInactiveRegions');
   });
   context.subscriptions.push(includePointPicker);
-  const materialContext = createMaterialContextController(client, () => {
+  const materialContext = createMaterialContextController(client, notifications, () => {
     commands.executeCommand('unityShaderNav.refreshInactiveRegions');
   });
   context.subscriptions.push(materialContext);
-  setupCompilerViews(client, context, reportError);
+  setupCompilerViews(client, notifications, context, reportError);
   context.subscriptions.push(registerPortabilityReportCommand(client, reportError));
 }
 
