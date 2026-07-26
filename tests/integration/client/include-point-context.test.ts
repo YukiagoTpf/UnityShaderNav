@@ -221,17 +221,17 @@ suite('Shader include-point Context', () => {
           assert.ok(completions.items.some(({ label }) => label === 'BranchValue'));
 
           const definitions = await waitForEventually(
-            'Context-preserving conservative definitions',
+            'active Shader Context definition',
             () => vscode.commands.executeCommand<Array<vscode.LocationLink | vscode.Location>>(
               'vscode.executeDefinitionProvider',
               sharedUri,
               new vscode.Position(6, 15),
             ),
-            (locations) => locations?.length === 2,
+            (locations) => locations?.length === 1,
           );
-          // VS Code normalizes provider results by source location before this
-          // command returns them; server unit tests pin Context-first ranking.
-          assert.deepEqual(definitions.map(targetLine).sort((a, b) => a - b), [1, 4]);
+          // The selected Unlit Context proves the #else declaration active and
+          // narrows away the inactive #ifdef declaration (issue #156).
+          assert.deepEqual(definitions.map(targetLine), [4]);
 
           await runContextCommand(
             { entryPoint: 'FragForward' },

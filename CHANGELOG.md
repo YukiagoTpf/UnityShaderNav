@@ -126,8 +126,9 @@ and uses semantic versioning for extension releases.
   let the user toggle active `multi_compile` / `shader_feature` keywords for the
   current `.shader` / `.hlsl` document. With a context selected, variant-gated
   branches resolve to active (bright) or inactive (dimmed), and F12 / Find
-  References / Highlights prefer active candidates without removing any
-  conservative result. The default (no context) behaviour is unchanged.
+  References / Highlights select the candidates the context proves active,
+  falling back to every conservative result when it proves none of them
+  active. The default (no context) behaviour is unchanged.
   (Epic #77, slices #154–#158.)
 - Added a presentation-only `UNITY_VERSION` Hover derived from the captured
   project Editor version. Unknown projects stay neutral, and indexed macro
