@@ -106,13 +106,21 @@ describe('Adapter descriptor-bound RPC connection', () => {
     const connection = await AdapterRpcConnection.connect(fixture.descriptor);
     cleanups.push(() => connection.close());
     const events: string[] = [];
-    connection.onDidReceiveEvent((event) => { events.push(event.event); });
+    // The fixture writes the response and the event back to back. A Unix domain
+    // socket usually delivers both in one read, but a Windows named pipe can
+    // split them, so await the event itself instead of a fixed number of ticks.
+    const firstEvent = new Promise<void>((resolve) => {
+      connection.onDidReceiveEvent((event) => {
+        events.push(event.event);
+        resolve();
+      });
+    });
 
     await expect(connection.request(
       'material-context',
       'get-selected-material-context',
     )).resolves.toEqual({ status: 'none' });
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await firstEvent;
 
     expect(seen).toEqual([
       {
