@@ -639,7 +639,7 @@ suite('verification command contract', () => {
     );
     assert.strictEqual(
       scripts['test:client-unit'],
-      'mocha tests/out/client/visualLabPresentation.test.js tests/out/client/passExplanationPresentation.test.js tests/out/client/passExplanationController.test.js --ui tdd --timeout 60000',
+      'mocha tests/out/client/visualLabPresentation.test.js tests/out/client/passExplanationPresentation.test.js tests/out/client/passExplanationController.test.js tests/out/client/notificationHub.test.js --ui tdd --timeout 60000',
     );
     assert.strictEqual(
       scripts['test:integration'],
