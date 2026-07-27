@@ -684,6 +684,39 @@ suite('Pass explanation client presentation', () => {
     );
   });
 
+  test('accepts the suspended-request answer and renders it as not evaluated', () => {
+    const answer: any = JSON.parse(JSON.stringify(refusedAnswer()));
+    answer.observation = {
+      status: 'not-observed',
+      reason: 'request-suspended',
+      statement: 'Pass selection was not evaluated because the language server was still starting.',
+      citationNodeIds: [],
+    };
+    answer.causalExplanation = {
+      status: 'refused',
+      reason: 'insufficient-evidence',
+      statement: 'No causal explanation is claimed because this request was suspended before any evidence was evaluated.',
+      citationNodeIds: [],
+    };
+    answer.disclosures = { missing: [], contradictions: [] };
+    answer.citations = [];
+
+    assert.doesNotThrow(
+      () => presentation.validatePassExplanationAnswer(answer),
+    );
+    const html = presentation.renderPassExplanationHtml(
+      {
+        status: 'ready',
+        sourceUri: 'file:///project/Assets/Preview.shader',
+        answer,
+      },
+      { nonce: 'suspended-nonce' },
+    );
+    assert.ok(html.includes('request-suspended'));
+    assert.ok(html.includes('Pass selection was not evaluated'));
+    assert.ok(!html.includes('Missing ·'));
+  });
+
   test('rejects a generated citation with two fully matching compiler owners', () => {
     const answer: any = JSON.parse(JSON.stringify(supportedAnswer()));
     const owner: any = citation(answer, 'compiler');

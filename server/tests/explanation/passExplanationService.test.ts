@@ -598,6 +598,37 @@ describe('PassExplanationService', () => {
     expect(readSource).not.toHaveBeenCalled();
   });
 
+  it('answers a suspended request as not evaluated, not as an authoritative absence', async () => {
+    const service = new PassExplanationService(
+      new WorkspacePassExplanationProjector({
+        workspace: {
+          materialContextFor: async () => (
+            { status: 'unavailable', reason: 'no-selection' }
+          ),
+        },
+      }),
+    );
+
+    const suspended = service.neutral(ROOT_A_URI);
+    const genuinelyAbsent = await service.explain(ROOT_A_URI);
+
+    // Suspension means nothing was evaluated; claiming investigated absence
+    // here would be indistinguishable from a real no-selection answer.
+    expect(suspended.observation).toMatchObject({
+      status: 'not-observed',
+      reason: 'request-suspended',
+    });
+    expect(suspended.disclosures.missing).toEqual([]);
+    expect(suspended.disclosures.contradictions).toEqual([]);
+    expect(suspended.citations).toEqual([]);
+    expect(genuinelyAbsent.observation).toMatchObject({
+      status: 'not-observed',
+      reason: 'material-context-missing',
+    });
+    expect(genuinelyAbsent.disclosures.missing.length).toBeGreaterThan(0);
+    expect(JSON.stringify(suspended)).not.toContain('material-context-missing');
+  });
+
   describe('source Pass location when the pass list is flattened', () => {
     it.each([
       ['GrabPass', twoPassShaderSource(GRAB_PASS_LINES)],

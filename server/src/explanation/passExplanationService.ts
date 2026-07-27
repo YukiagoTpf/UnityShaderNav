@@ -1,12 +1,9 @@
-import { createHash } from 'node:crypto';
-import {
-  PASS_EXPLANATION_QUESTION,
-  PASS_EXPLANATION_SCHEMA_VERSION,
-  type PassExplanationAnswer,
-  type PassExplanationEvidenceGraph,
-} from '@unity-shader-nav/shared';
+import type { PassExplanationAnswer } from '@unity-shader-nav/shared';
 import type { CancellationToken } from 'vscode-languageserver/node';
-import { explainPassSelection } from './passExplanationEngine';
+import {
+  explainPassSelection,
+  suspendedAnswer,
+} from './passExplanationEngine';
 import type { PassExplanationGraphProvider } from './passExplanationProjector';
 
 /**
@@ -31,22 +28,12 @@ export class PassExplanationService {
     );
   }
 
-  /** Stable neutral answer used only when the common request boundary suspends. */
+  /**
+   * Fixed not-evaluated answer used only when the common request boundary
+   * suspends. Deliberately not an empty-graph evaluation: that would read
+   * byte-identical to a genuinely absent Material Context.
+   */
   neutral(uri: string): PassExplanationAnswer {
-    return explainPassSelection(emptyGraph(uri));
+    return suspendedAnswer(uri);
   }
-}
-
-function emptyGraph(uri: string): PassExplanationEvidenceGraph {
-  const graphId = createHash('sha256')
-    .update('suspended\0', 'utf8')
-    .update(uri, 'utf8')
-    .digest('hex');
-  return {
-    schemaVersion: PASS_EXPLANATION_SCHEMA_VERSION,
-    question: PASS_EXPLANATION_QUESTION,
-    graphId: `pass-${graphId}`,
-    nodes: [],
-    edges: [],
-  };
 }
