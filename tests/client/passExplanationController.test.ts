@@ -232,7 +232,13 @@ const vscodeMock = {
     get activeTextEditor() {
       return activeEditor;
     },
-    createWebviewPanel: () => {
+    createWebviewPanel: (
+      _viewType: string,
+      _title: string,
+      _showOptions: unknown,
+      options: WebviewPanelOptions,
+    ) => {
+      lastWebviewOptions = options;
       let disposeHandler: (() => void) | undefined;
       return {
         webview: { html: '' },
@@ -251,6 +257,14 @@ const vscodeMock = {
     },
   },
 };
+
+interface WebviewPanelOptions {
+  readonly enableScripts?: boolean;
+  readonly retainContextWhenHidden?: boolean;
+  readonly localResourceRoots?: readonly unknown[];
+}
+
+let lastWebviewOptions: WebviewPanelOptions | undefined;
 
 let renderHook: ((snapshot: Snapshot) => void) | undefined;
 
@@ -308,6 +322,7 @@ suite('Pass explanation controller request lifecycle', () => {
     watchedSourceDeletedHandlers.clear();
     watchedPatterns.length = 0;
     controllers.length = 0;
+    lastWebviewOptions = undefined;
   });
 
   teardown(() => {
@@ -364,6 +379,26 @@ suite('Pass explanation controller request lifecycle', () => {
 
     assert.deepStrictEqual(clientRegistrations, []);
     assert.deepStrictEqual(hubRegistrations, [MATERIAL_CONTEXT_CHANGED_NOTIFICATION]);
+  });
+
+  test('creates a static panel without scripts or local resource roots', () => {
+    const sourceUri = 'file:///project/Assets/Forward.shader';
+    setActiveShader(sourceUri);
+    const api = new FakeRequestApi();
+    const controller = track(controllerModule.createPassExplanationController(
+      api,
+      () => {},
+    ));
+
+    // The panel opens synchronously before the request settles; the request
+    // itself is intentionally left pending.
+    void controller.explainCurrentPass();
+
+    assert.deepStrictEqual(lastWebviewOptions, {
+      enableScripts: false,
+      retainContextWhenHidden: true,
+      localResourceRoots: [],
+    });
   });
 
   test('cancels a superseded generation and reports only the current error', async () => {
