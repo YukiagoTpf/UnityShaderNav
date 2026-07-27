@@ -27,6 +27,7 @@ import { throwIfRequestCancelled } from '../lifecycle/requestCancellation';
 const MAX_PROJECTED_SHADER_SOURCE_BYTES = 4 * 1_024 * 1_024;
 const MATERIAL_NODE_ID = 'current-material-context';
 const SOURCE_NODE_ID = 'selected-source-pass';
+const FLATTENED_PASS_DIRECTIVE = /\b(?:GrabPass|UsePass)\b/;
 
 export interface PassExplanationWorkspaceProjection {
   materialContextFor(uri: string): Promise<MaterialContextResult>;
@@ -285,6 +286,19 @@ function locatePass(
   );
   const subShader = subShaders[selected.subShaderIndex];
   if (!subShader) return undefined;
+  // Unity counts flattened GrabPass and UsePass entries in a SubShader's pass
+  // list, but the structure scanner records neither as a 'pass' node. With an
+  // index-only selection (no passName for exactPass to cross-check), the
+  // shorter scanner list can realign the index onto the wrong Pass, and the
+  // scanShaderContextSource check below derives its passIndex from the same
+  // filtered list, so it cannot catch the misalignment. Refuse the location
+  // rather than cite a misaligned Pass as hash-gated evidence; the answer
+  // degrades to the Material-only projection.
+  if (
+    selected.passIndex !== undefined
+    && selected.passName === undefined
+    && subShaderHasFlattenedPasses(analysis, subShader)
+  ) return undefined;
   const passes = subShader.children.filter(({ kind }) => kind === 'pass');
   const selectedPass = exactPass(passes, selected);
   if (!selectedPass) return undefined;
@@ -306,6 +320,21 @@ function locatePass(
   if (programs.length !== 1) return undefined;
   const range = exactPassRange(analysis, selectedPass.node);
   return range ? { program: programs[0], range } : undefined;
+}
+
+function subShaderHasFlattenedPasses(
+  analysis: DocumentAnalysis,
+  subShader: ShaderLabStructureNode,
+): boolean {
+  for (let line = subShader.headerLine; line <= subShader.closeLine; line++) {
+    // Program-block lines can legitimately name GrabPass/UsePass as HLSL
+    // identifiers; only ShaderLab code lines carry the directives.
+    if (analysis.layout.lines[line]?.protected === true) continue;
+    if (FLATTENED_PASS_DIRECTIVE.test(
+      analysis.sourceCodeWithoutStringLines[line] ?? '',
+    )) return true;
+  }
+  return false;
 }
 
 function exactPass(

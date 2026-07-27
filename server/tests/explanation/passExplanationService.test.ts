@@ -51,6 +51,65 @@ function shaderSource(
   ].join('\n');
 }
 
+const GRAB_PASS_LINES = [
+  '    GrabPass',
+  '    {',
+  '      "_GrabTexture"',
+  '    }',
+] as const;
+const USE_PASS_LINES = [
+  '    UsePass "Tests/Flattened/SECOND"',
+] as const;
+
+function twoPassShaderSource(
+  flattenedLines: readonly string[],
+): string {
+  return [
+    'Shader "Tests/Flattened"',
+    '{',
+    '  SubShader',
+    '  {',
+    '    Pass',
+    '    {',
+    '      HLSLPROGRAM',
+    '      #pragma vertex vert',
+    '      #pragma fragment fragFirst',
+    '      float4 vert(float4 value : POSITION) : SV_POSITION { return value; }',
+    '      float4 fragFirst() : SV_Target { return 1; }',
+    '      ENDHLSL',
+    '    }',
+    ...flattenedLines,
+    '    Pass',
+    '    {',
+    '      Name "Second"',
+    '      HLSLPROGRAM',
+    '      #pragma vertex vert',
+    '      #pragma fragment fragSecond',
+    '      float4 vert(float4 value : POSITION) : SV_POSITION { return value; }',
+    '      float4 fragSecond() : SV_Target { return 1; }',
+    '      ENDHLSL',
+    '    }',
+    '  }',
+    '}',
+  ].join('\n');
+}
+
+function flattenedPassService(
+  source: string,
+  selected: SelectedMaterialContext,
+): PassExplanationService {
+  return new PassExplanationService(
+    new WorkspacePassExplanationProjector({
+      workspace: {
+        materialContextFor: async () => (
+          available('file:///roots/a', 'publication-a', selected)
+        ),
+      },
+      readSource: async () => source,
+    }),
+  );
+}
+
 function context(
   id: 'a' | 'b',
   shaderUri: string,
@@ -537,5 +596,93 @@ describe('PassExplanationService', () => {
       code: LSPErrorCodes.RequestCancelled,
     });
     expect(readSource).not.toHaveBeenCalled();
+  });
+
+  describe('source Pass location when the pass list is flattened', () => {
+    it.each([
+      ['GrabPass', twoPassShaderSource(GRAB_PASS_LINES)],
+      ['UsePass', twoPassShaderSource(USE_PASS_LINES)],
+    ])(
+      'refuses an index-only selection when %s flattens the SubShader pass list',
+      async (_directive, source) => {
+        const selected: SelectedMaterialContext = {
+          ...context('a', SHADER_A_URI, source, 'Tests/Flattened', 'Second'),
+          selectedProgram: { subShaderIndex: 0, passIndex: 1 },
+        };
+
+        const answer = await flattenedPassService(source, selected).explain(ROOT_A_URI);
+
+        // Unity's flattened passIndex 1 names the flattened directive itself,
+        // while the scanner's second Pass sits at filtered index 1. Citing it
+        // would present the wrong Pass as hash-gated evidence, so the answer
+        // must degrade to the Material-only projection.
+        expect(answer.observation).toMatchObject({
+          status: 'observed',
+          selectedProgram: { subShaderIndex: 0, passIndex: 1 },
+        });
+        expect(answer.citations.map(({ kind }) => kind)).toEqual([
+          'material-context',
+        ]);
+        expect(answer.disclosures.missing).toContainEqual({
+          evidence: 'source-pass',
+          blocksCausalClaim: true,
+          detail: 'Exact source Pass evidence is absent.',
+        });
+      },
+    );
+
+    it('still resolves a named selection when the pass list is flattened', async () => {
+      const source = twoPassShaderSource(GRAB_PASS_LINES);
+      const selected: SelectedMaterialContext = {
+        ...context('a', SHADER_A_URI, source, 'Tests/Flattened', 'Second'),
+        selectedProgram: { subShaderIndex: 0, passName: 'Second' },
+      };
+
+      const answer = await flattenedPassService(source, selected).explain(ROOT_A_URI);
+
+      expect(answer.citations.map(({ kind }) => kind)).toEqual([
+        'source-pass',
+        'material-context',
+      ]);
+      expect(answer.citations[0]).toMatchObject({
+        kind: 'source-pass',
+        program: {
+          shaderName: 'Tests/Flattened',
+          subShaderIndex: 0,
+          passName: 'Second',
+          stages: [
+            { stage: 'vertex', entryPoint: 'vert' },
+            { stage: 'fragment', entryPoint: 'fragSecond' },
+          ],
+        },
+      });
+    });
+
+    it('still resolves an index-only selection when nothing flattens the list', async () => {
+      const source = twoPassShaderSource([]);
+      const selected: SelectedMaterialContext = {
+        ...context('a', SHADER_A_URI, source, 'Tests/Flattened', 'Second'),
+        selectedProgram: { subShaderIndex: 0, passIndex: 1 },
+      };
+
+      const answer = await flattenedPassService(source, selected).explain(ROOT_A_URI);
+
+      expect(answer.citations.map(({ kind }) => kind)).toEqual([
+        'source-pass',
+        'material-context',
+      ]);
+      expect(answer.citations[0]).toMatchObject({
+        kind: 'source-pass',
+        program: {
+          shaderName: 'Tests/Flattened',
+          subShaderIndex: 0,
+          passIndex: 1,
+          stages: [
+            { stage: 'vertex', entryPoint: 'vert' },
+            { stage: 'fragment', entryPoint: 'fragSecond' },
+          ],
+        },
+      });
+    });
   });
 });
