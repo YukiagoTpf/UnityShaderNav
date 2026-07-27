@@ -451,7 +451,10 @@ export type PassSelectionObservation =
       readonly reason:
         | 'material-context-missing'
         | 'material-context-ambiguous'
-        | 'selected-program-unavailable';
+        | 'selected-program-unavailable'
+        // The request hit the cold-start suspension gate; nothing was
+        // evaluated, so this is not an investigated absence.
+        | 'request-suspended';
       readonly statement: string;
       readonly citationNodeIds: readonly string[];
     };

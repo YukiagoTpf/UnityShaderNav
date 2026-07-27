@@ -477,6 +477,7 @@ export function validatePassExplanationAnswer(
         'material-context-missing',
         'material-context-ambiguous',
         'selected-program-unavailable',
+        'request-suspended',
       ],
       'answer.observation.reason',
     );
@@ -982,6 +983,14 @@ function validateObservationCitationClosure(
     if (citationIds.length !== 0) {
       throw new Error(
         'A missing Material Context observation cannot cite Material evidence.',
+      );
+    }
+    return;
+  }
+  if (observation.reason === 'request-suspended') {
+    if (citationIds.length !== 0) {
+      throw new Error(
+        'A suspended request observation cannot cite evidence that was never evaluated.',
       );
     }
     return;

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   MAX_PASS_EXPLANATION_EDGES,
   MAX_PASS_EXPLANATION_ANSWER_BYTES,
@@ -119,6 +120,44 @@ function executionPolicy(): PassExplanationAnswer['execution'] {
 function safeGraphId(value: unknown): string {
   if (!record(value) || !validId(value.graphId)) return 'invalid-graph';
   return value.graphId;
+}
+
+/**
+ * Fixed answer for a request the common request boundary suspended (the
+ * server cold-start gate). Nothing was evaluated, so unlike an empty-graph
+ * evaluation this claims neither an observation nor any missing evidence:
+ * disclosing "evidence is absent" for evidence that was never looked for
+ * would violate the rule that missing evidence must have been sought.
+ */
+export function suspendedAnswer(uri: string): PassExplanationAnswer {
+  const graphId = createHash('sha256')
+    .update('suspended\0', 'utf8')
+    .update(uri, 'utf8')
+    .digest('hex');
+  return {
+    schemaVersion: PASS_EXPLANATION_SCHEMA_VERSION,
+    question: PASS_EXPLANATION_QUESTION,
+    graphId: `pass-${graphId}`,
+    observation: {
+      status: 'not-observed',
+      reason: 'request-suspended',
+      statement: 'Pass selection was not evaluated because the language server was still starting. Run “Explain Current Pass” again in a moment.',
+      citationNodeIds: [],
+    },
+    causalExplanation: {
+      status: 'refused',
+      reason: 'insufficient-evidence',
+      statement: 'No causal explanation is claimed because this request was suspended before any evidence was evaluated.',
+      citationNodeIds: [],
+    },
+    disclosures: {
+      missing: [],
+      contradictions: [],
+    },
+    citations: [],
+    suggestedEdits: [],
+    execution: executionPolicy(),
+  };
 }
 
 function invalidAnswer(
