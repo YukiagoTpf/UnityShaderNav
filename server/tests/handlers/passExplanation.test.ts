@@ -81,4 +81,30 @@ describe('registerPassExplanationHandler', () => {
     expect(explain).toHaveBeenCalledWith(uri, cancellation);
     expect(neutral).not.toHaveBeenCalled();
   });
+
+  it('returns the neutral answer when the request suspension times out', async () => {
+    let registered: Handler | undefined;
+    const connection = {
+      onRequest(method: string, handler: Handler) {
+        registered = handler;
+        return { dispose() {} };
+      },
+    } as unknown as Connection;
+    const suspended = answer('suspended-answer');
+    const explain = vi.fn(async () => answer('requested-answer'));
+    const neutral = vi.fn(() => suspended);
+
+    registerPassExplanationHandler(
+      connection,
+      { explain, neutral } as unknown as PassExplanationService,
+      { run: async () => null } as never,
+    );
+    if (!registered) throw new Error('Pass explanation handler was not registered');
+
+    const uri = 'file:///project/Assets/Shaders/Lit.shader';
+    await expect(registered({ textDocument: { uri } })).resolves.toBe(suspended);
+    expect(neutral).toHaveBeenCalledTimes(1);
+    expect(neutral).toHaveBeenCalledWith(uri);
+    expect(explain).not.toHaveBeenCalled();
+  });
 });
