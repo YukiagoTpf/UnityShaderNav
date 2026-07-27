@@ -1756,24 +1756,30 @@ function validateCitationJoins(
   }
 
   for (const generated of generatedCitations) {
+    // The engine selects a generated citation's compiler owner through its
+    // compiler-generated edge, which the answer does not carry. Re-derive the
+    // owner from every owner-relative predicate the answer does carry: two
+    // compiler records can legitimately share one evidenceId (the same capture
+    // compiled under two profiles), so the evidenceId alone is not a key.
     const owners = compilers.filter(
-      ({ record }) => record.evidenceId === generated.evidenceId,
+      ({ record }) => (
+        record.evidenceId === generated.evidenceId
+        && record.views.some((view) => (
+          view.kind === generated.view.kind
+          && view.uri === generated.view.uri
+          && view.contentHash === generated.document.contentHash
+        ))
+        && sameCompilerProvenance(
+          generated.mapping.provenance.evidence,
+          record.provenance,
+        )
+      ),
     );
     if (owners.length !== 1) {
-      throw new Error(`Generated citation "${generated.nodeId}" has no unique compiler evidenceId owner.`);
+      throw new Error(`Generated citation "${generated.nodeId}" has no unique compiler owner.`);
     }
-    const owner = owners[0]!;
     if (
-      !owner.record.views.some((view) => (
-        view.kind === generated.view.kind
-        && view.uri === generated.view.uri
-        && view.contentHash === generated.document.contentHash
-      ))
-      || !sameCompilerProvenance(
-        generated.mapping.provenance.evidence,
-        owner.record.provenance,
-      )
-      || uriIdentityKey(generated.mapping.uri)
+      uriIdentityKey(generated.mapping.uri)
         !== uriIdentityKey(source.source.uri)
       || !sameSourceIdentity(
         generated.mapping.sourceIdentity,
@@ -1782,7 +1788,7 @@ function validateCitationJoins(
       || !containsRange(source.range, generated.mapping.range)
     ) {
       throw new Error(
-        `Generated citation "${generated.nodeId}" does not bind its compiler record or exact source mapping.`,
+        `Generated citation "${generated.nodeId}" does not bind its exact source mapping.`,
       );
     }
   }
