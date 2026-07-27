@@ -1341,6 +1341,19 @@ function positionAtOrBefore(
     || (left.line === right.line && left.character <= right.character);
 }
 
+// Each interpolated evidence field is bounded to 16KiB before the engine
+// runs, but a statement composes several of them, and the client re-validates
+// the composed statement against that same per-text bound. Clip every
+// interpolated fragment so the composition cannot overflow it (worst case:
+// the supported causal statement interpolates four free-text fragments).
+const MAX_STATEMENT_FRAGMENT_LENGTH = 2 * 1_024;
+
+function statementFragment(text: string): string {
+  const characters = Array.from(text);
+  if (characters.length <= MAX_STATEMENT_FRAGMENT_LENGTH) return text;
+  return `${characters.slice(0, MAX_STATEMENT_FRAGMENT_LENGTH).join('')}…`;
+}
+
 function observationFor(
   materials: readonly PassExplanationMaterialNode[],
 ): PassSelectionObservation {
@@ -1357,7 +1370,9 @@ function observationFor(
       status: 'not-observed',
       reason: 'material-context-ambiguous',
       statement: 'Multiple Material Context selections were supplied; none is reported as current.',
-      citationNodeIds: materials.map(({ id }) => id).sort(ordinalCompare),
+      // Duplicate node ids are already disclosed as contradictions; the
+      // client rejects repeated ids in citationNodeIds.
+      citationNodeIds: [...new Set(materials.map(({ id }) => id))].sort(ordinalCompare),
     };
   }
   const material = materials[0];
@@ -1366,13 +1381,13 @@ function observationFor(
     return {
       status: 'not-observed',
       reason: 'selected-program-unavailable',
-      statement: `Material '${material.context.material.name}' does not report a selected Pass.`,
+      statement: `Material '${statementFragment(material.context.material.name)}' does not report a selected Pass.`,
       citationNodeIds: [material.id],
     };
   }
   return {
     status: 'observed',
-    statement: `Material '${material.context.material.name}' reports ${formatPass(selected!)} in Shader '${material.context.shader.name}'.`,
+    statement: `Material '${statementFragment(material.context.material.name)}' reports ${formatPass(selected!)} in Shader '${statementFragment(material.context.shader.name)}'.`,
     materialName: material.context.material.name,
     shaderName: material.context.shader.name,
     selectedProgram: cloneJson(selected!),
@@ -1382,7 +1397,7 @@ function observationFor(
 
 function formatPass(program: MaterialContextProgram): string {
   const pass = program.passName !== undefined
-    ? `Pass '${program.passName}'${program.passIndex !== undefined ? ` (index ${program.passIndex})` : ''}`
+    ? `Pass '${statementFragment(program.passName)}'${program.passIndex !== undefined ? ` (index ${program.passIndex})` : ''}`
     : `Pass index ${program.passIndex}`;
   return `SubShader ${program.subShaderIndex}, ${pass}`;
 }
@@ -1429,7 +1444,7 @@ function causalExplanationFor(
   return {
     status: 'supported',
     reason: 'authoritative-selection-decision',
-    statement: `Authoritative Adapter decision '${decision.decision.decisionId}' reports "${decision.decision.rationale.summary}" (rule '${decision.decision.rationale.ruleId}') and links Material '${material.context.material.name}' to ${formatPass(context.correlation.context)} in exact source Shader '${source.program.shaderName}'.`,
+    statement: `Authoritative Adapter decision '${decision.decision.decisionId}' reports "${statementFragment(decision.decision.rationale.summary)}" (rule '${decision.decision.rationale.ruleId}') and links Material '${statementFragment(material.context.material.name)}' to ${formatPass(context.correlation.context)} in exact source Shader '${statementFragment(source.program.shaderName)}'.`,
     decision: cloneJson(decision),
     citationNodeIds,
   };
@@ -1510,10 +1525,14 @@ function addContradiction(
   target: PassExplanationContradiction[],
   contradiction: PassExplanationContradiction,
 ): void {
+  // A hostile or buggy graph can make one disclosure name the same id twice
+  // (a self-loop edge, or two primary nodes sharing an id). The client
+  // validates every disclosure id array as a set and rejects repeats, so the
+  // engine must never emit them.
   target.push({
     ...contradiction,
-    nodeIds: [...contradiction.nodeIds].sort(ordinalCompare),
-    edgeIds: [...contradiction.edgeIds].sort(ordinalCompare),
+    nodeIds: [...new Set(contradiction.nodeIds)].sort(ordinalCompare),
+    edgeIds: [...new Set(contradiction.edgeIds)].sort(ordinalCompare),
   });
 }
 

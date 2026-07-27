@@ -380,7 +380,7 @@ suite('Pass explanation client presentation', () => {
       `unity-shader-nav-compiler://evidence/${'f'.repeat(64)}/generated.hlsl`;
     assert.throws(
       () => presentation.validatePassExplanationAnswer(wrongEvidenceId),
-      /no unique compiler evidenceId owner/,
+      /no unique compiler owner/,
     );
 
     const wrongDocumentHash: any = JSON.parse(JSON.stringify(supportedAnswer()));
@@ -389,7 +389,7 @@ suite('Pass explanation client presentation', () => {
     ).document.contentHash = 'f'.repeat(64);
     assert.throws(
       () => presentation.validatePassExplanationAnswer(wrongDocumentHash),
-      /does not bind its compiler record/,
+      /no unique compiler owner/,
     );
 
     const staleCompiler: any = JSON.parse(JSON.stringify(supportedAnswer()));
@@ -593,7 +593,7 @@ suite('Pass explanation client presentation', () => {
       },
       {
         name: 'foreign generated provenance',
-        pattern: /does not bind its compiler record/,
+        pattern: /no unique compiler owner/,
         mutate(answer) {
           citation(
             answer,
@@ -658,6 +658,47 @@ suite('Pass explanation client presentation', () => {
         /exact generated\/source line pair/,
       );
     }
+  });
+
+  test('accepts a compiler citation sharing its evidenceId with the generated owner', () => {
+    const answer: any = JSON.parse(JSON.stringify(supportedAnswer()));
+    const owner: any = citation(answer, 'compiler');
+    const sibling = JSON.parse(JSON.stringify(owner));
+    sibling.nodeId = 'compiler-node-2';
+    // Same evidenceId and view URI as the owner (the client pins view URIs to
+    // the evidenceId), but a different content hash: this record compiled the
+    // capture under another profile and does not own the generated document.
+    sibling.record.views = [{
+      kind: 'generated',
+      uri: owner.record.views[0].uri,
+      contentHash: 'f'.repeat(64),
+    }];
+    answer.citations.push(sibling);
+    answer.causalExplanation.citationNodeIds = [
+      ...answer.causalExplanation.citationNodeIds,
+      'compiler-node-2',
+    ];
+
+    assert.doesNotThrow(
+      () => presentation.validatePassExplanationAnswer(answer),
+    );
+  });
+
+  test('rejects a generated citation with two fully matching compiler owners', () => {
+    const answer: any = JSON.parse(JSON.stringify(supportedAnswer()));
+    const owner: any = citation(answer, 'compiler');
+    const twin = JSON.parse(JSON.stringify(owner));
+    twin.nodeId = 'compiler-node-2';
+    answer.citations.push(twin);
+    answer.causalExplanation.citationNodeIds = [
+      ...answer.causalExplanation.citationNodeIds,
+      'compiler-node-2',
+    ];
+
+    assert.throws(
+      () => presentation.validatePassExplanationAnswer(answer),
+      /no unique compiler owner/,
+    );
   });
 });
 

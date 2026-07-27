@@ -799,6 +799,170 @@ describe('deterministic Pass selection explanation engine', () => {
     );
   });
 
+  it('emits unique id arrays even when the graph repeats ids', () => {
+    const graph = completeGraph();
+    const material = graph.nodes.find(
+      (node): node is PassExplanationMaterialNode => (
+        node.kind === 'material-context'
+      ),
+    );
+    const compilerGenerated = graph.edges.find(
+      ({ kind }) => kind === 'compiler-generated',
+    );
+    if (!material || !compilerGenerated) {
+      throw new Error('complete fixture is incomplete');
+    }
+
+    const answer = explainPassSelection({
+      ...graph,
+      graphId: 'repeated-ids',
+      // The duplicate Material id and the self-referencing dangling edge both
+      // used to surface as repeated entries in the answer's id arrays, which
+      // the client validates as sets and refuses outright.
+      nodes: [...graph.nodes, material],
+      edges: [
+        ...graph.edges,
+        {
+          ...compilerGenerated,
+          id: 'compiler-generated-self-loop',
+          fromNodeId: 'ghost-node',
+          toNodeId: 'ghost-node',
+        },
+      ],
+    });
+
+    const disclosedIdArrays = [
+      answer.observation.citationNodeIds,
+      answer.causalExplanation.citationNodeIds,
+      ...answer.disclosures.contradictions.flatMap(
+        ({ nodeIds, edgeIds }) => [nodeIds, edgeIds],
+      ),
+    ];
+    for (const ids of disclosedIdArrays) {
+      expect(new Set(ids).size).toBe(ids.length);
+    }
+    expect(answer.disclosures.contradictions).toContainEqual(
+      expect.objectContaining({
+        code: 'duplicate-node-id',
+        nodeIds: ['material-ship'],
+      }),
+    );
+    expect(answer.disclosures.contradictions).toContainEqual(
+      expect.objectContaining({
+        code: 'dangling-edge',
+        nodeIds: ['ghost-node'],
+      }),
+    );
+  });
+
+  it('keeps composed statements bounded when evidence fields hit the text limit', () => {
+    const graph = verifiedCompleteGraph();
+    const longName = 'a'.repeat(16 * 1_024);
+
+    const answer = explainPassSelection({
+      ...graph,
+      graphId: 'max-length-fields',
+      nodes: graph.nodes.map((node) => {
+        if (node.kind === 'material-context') {
+          return {
+            ...node,
+            context: {
+              ...node.context,
+              material: { ...node.context.material, name: longName },
+              shader: { ...node.context.shader, name: longName },
+              ...(node.context.selectedProgram
+                ? {
+                    selectedProgram: {
+                      ...node.context.selectedProgram,
+                      passName: longName,
+                    },
+                  }
+                : {}),
+            },
+          };
+        }
+        if (node.kind === 'source-pass') {
+          return {
+            ...node,
+            program: {
+              ...node.program,
+              shaderName: longName,
+              ...(node.program.passName !== undefined
+                ? { passName: longName }
+                : {}),
+            },
+          };
+        }
+        if (node.kind === 'shader-context') {
+          // correlation.context must exactly match evidence.context, so both
+          // copies carry the long names.
+          const longContext = {
+            ...node.correlation.context,
+            shaderName: longName,
+            ...(node.correlation.context.passName !== undefined
+              ? { passName: longName }
+              : {}),
+          };
+          return {
+            ...node,
+            correlation: {
+              ...node.correlation,
+              context: longContext,
+              evidence: {
+                ...node.correlation.evidence,
+                context: longContext,
+              },
+            },
+          };
+        }
+        if (node.kind === 'variant') {
+          return {
+            ...node,
+            context: {
+              ...node.context,
+              shaderName: longName,
+              ...(node.context.passName !== undefined
+                ? { passName: longName }
+                : {}),
+            },
+          };
+        }
+        return node;
+      }),
+      edges: graph.edges.map((edge) => (
+        edge.kind === 'selection-decision'
+          ? {
+              ...edge,
+              decision: {
+                ...edge.decision,
+                program: {
+                  ...edge.decision.program,
+                  ...(edge.decision.program.passName !== undefined
+                    ? { passName: longName }
+                    : {}),
+                },
+                rationale: {
+                  ...edge.decision.rationale,
+                  summary: longName,
+                },
+              },
+            }
+          : edge
+      )),
+    });
+
+    // Every interpolated field is independently legal (at the 16KiB text
+    // limit), but the composed statements must not exceed the same bound the
+    // client enforces on them.
+    expect(answer.causalExplanation.status).toBe('supported');
+    expect(answer.observation.statement.length).toBeLessThanOrEqual(16 * 1_024);
+    expect(answer.causalExplanation.statement.length).toBeLessThanOrEqual(
+      16 * 1_024,
+    );
+    expect(answer.observation.statement).toContain('…');
+    expect(answer.causalExplanation.statement).toContain('…');
+  });
+
   it('keeps optional corroboration missing without blocking an authoritative causal claim', () => {
     const graph = verifiedCompleteGraph();
     const authoritativeKinds = new Set([
