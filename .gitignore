@@ -156,6 +156,3 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
-
-# Cross-session handoff notes — process material, kept local per AGENTS.md 公共仓库边界
-docs/handoffs/
