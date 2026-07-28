@@ -13,6 +13,7 @@ import {
   type DeclaredVariantPragma,
   type DeclaredVariantProgramCost,
 } from '../parser/preproc/declaredVariantCost';
+import { splitSourceLines } from '../sourceLines';
 import { isShaderLabUri } from '../sourceLocation';
 
 interface ContributionReference {
@@ -41,7 +42,7 @@ export function registerCodeLensHandler(
 
 export function declaredVariantCostCodeLenses(uri: string, text: string): CodeLens[] {
   const analysis = analyzeDeclaredVariantCosts(text, isShaderLabUri(uri));
-  const sourceLines = text.split(/\r?\n/);
+  const sourceLines = splitSourceLines(text);
   const references = new Map<DeclaredVariantPragma, ContributionReference[]>();
   const ordered: OrderedCodeLens[] = [];
 

@@ -3,6 +3,7 @@ import type {
   Range,
   SymbolEntry,
 } from '@unity-shader-nav/shared';
+import { splitSourceLines } from './sourceLines';
 
 /** Line facts that are valid only for the exact retained source text. */
 export type ExactSourceColumnRole = 'code' | 'comment' | 'stringQuote' | 'stringBody';
@@ -28,7 +29,7 @@ export function exactSource(
   if (prepared?.sourceText === text) return prepared;
   return Object.freeze({
     sourceText: text,
-    sourceLines: text.split(/\r?\n/),
+    sourceLines: splitSourceLines(text),
   });
 }
 

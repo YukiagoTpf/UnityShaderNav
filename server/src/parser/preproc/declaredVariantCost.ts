@@ -1,5 +1,6 @@
 import type { ShaderLabBlock } from '@unity-shader-nav/shared';
 import { scanBlocks } from '../shaderlab/blockScanner';
+import { splitSourceLines } from '../../sourceLines';
 import { stripComments } from './stripComments';
 
 export type VariantPragmaFamily = 'multi_compile' | 'shader_feature';
@@ -66,7 +67,7 @@ const CONDITIONAL_RE = /^#\s*(if|ifdef|ifndef|endif)\b/;
  */
 export function scanDeclaredVariantPragmas(text: string): DeclaredVariantPragma[] {
   const pragmas: DeclaredVariantPragma[] = [];
-  const lines = text.split(/\r?\n/);
+  const lines = splitSourceLines(text);
   let inBlockComment = false;
   let conditionalDepth = 0;
 
@@ -93,7 +94,7 @@ export function analyzeDeclaredVariantCosts(
   isShaderLab: boolean,
 ): DeclaredVariantCostAnalysis {
   const scanned = scanDeclaredVariantPragmas(text);
-  const lineCount = text.split(/\r?\n/).length;
+  const lineCount = splitSourceLines(text).length;
 
   if (!isShaderLab) {
     return {

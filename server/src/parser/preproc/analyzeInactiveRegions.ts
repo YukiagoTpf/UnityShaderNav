@@ -1,5 +1,6 @@
 import type { Range } from '@unity-shader-nav/shared';
 import { scanBlocks } from '../shaderlab/blockScanner';
+import { splitSourceLines } from '../../sourceLines';
 import { scanVariantKeywords } from './scanVariantKeywords';
 import { stripComments } from './stripComments';
 import { evalCondition, type CondKind, type CondValue } from './evalCondition';
@@ -395,7 +396,7 @@ function analyzeLines(
 }
 
 export function analyzeInactiveRegions(text: string, options: AnalyzeOptions): DimmedRegion[] {
-  const lines = text.split(/\r?\n/);
+  const lines = splitSourceLines(text);
 
   if (!options.isShaderLab) {
     const variants = new Set([
