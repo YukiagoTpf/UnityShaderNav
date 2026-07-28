@@ -339,7 +339,7 @@ describe('analyzeCursor', () => {
       separator?: string | RegExp,
       limit?: number,
     ) {
-      if (String(this) === SHADER_DOC && String(separator) === '/\\r?\\n/') {
+      if (String(this) === SHADER_DOC && String(separator) === '/\\r\\n|\\r|\\n/') {
         sourceSplitCount++;
       }
       return originalSplit.call(this, separator, limit);

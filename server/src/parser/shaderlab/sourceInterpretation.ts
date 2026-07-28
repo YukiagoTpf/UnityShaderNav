@@ -3,6 +3,7 @@ import {
   scanCommentRoles,
   type CommentRole,
 } from '../masking';
+import { splitSourceLines } from '../../sourceLines';
 
 export interface ShaderLabSourceLine {
   readonly line: number;
@@ -33,7 +34,7 @@ export interface ShaderLabSourceInterpretation {
  * these width-preserving line facts instead of splitting and lexing the source again.
  */
 export function interpretShaderLabSource(text: string): ShaderLabSourceInterpretation {
-  return interpretShaderLabSourceLines(text, text.split(/\r?\n/));
+  return interpretShaderLabSourceLines(text, splitSourceLines(text));
 }
 
 /** Interpret already-split lines that are proven to belong to `text`. */
