@@ -5,7 +5,7 @@ All notable changes to UnityShaderNav are recorded here.
 This project follows the spirit of [Keep a Changelog](https://keepachangelog.com/)
 and uses semantic versioning for extension releases.
 
-## 0.2.0
+## 0.3.0
 
 ### Added
 
@@ -69,6 +69,31 @@ and uses semantic versioning for extension releases.
   explicitly uncertain and excluded from safe Rename edits. The exact-source
   bridge reuses VS Code's C# buffers/files without registering a competing C#
   language provider. (#95)
+
+### Fixed
+
+- Fixed line numbering for sources terminated by a lone CR or by `\r\r\n`. The
+  server split ShaderLab sources on `\r?\n` while VS Code ends a line on CRLF,
+  on a lone CR, or on a lone LF, so every position past the first divergence
+  named the wrong line; a file written entirely with lone CR read as a single
+  line and its Passes were invisible to Outline and navigation. The line model
+  is now centralized so the correct spelling is not a per-call-site decision.
+  (#165)
+- Made Find References on a large project roughly 7x faster by memoizing file
+  URI identity derivation, which a single request re-derived over a million
+  times for a few hundred distinct URIs. The memo is keyed by platform as well
+  as URI so two files cannot fold into one identity. (#165)
+- Fixed variant context not applying to document highlights. (#157)
+- Fixed `isShaderLab` resolution to be per-URI rather than per-session. (#156)
+- Registered the HLSL declaration keywords `struct`, `cbuffer`, and `typedef`
+  for semantic highlighting. (#160)
+- Fixed standalone mode not scanning the Workspace folder for Shader files.
+- Fixed cross-platform file URI path resolution to use the URL API.
+
+## 0.2.0
+
+### Added
+
 - Added explainable custom Shader portability reports for the current
   revision's Unity/URP versions or an Adapter-advertised graphics profile.
   Findings separate mechanical changes, human semantic work, unsupported
