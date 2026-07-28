@@ -52,6 +52,19 @@ function identityPlatform(
  */
 const IDENTITY_CACHE_LIMIT = 8_192;
 const identityCache = new Map<string, string>();
+let derivationCount = 0;
+
+/**
+ * How many times an identity has actually been derived in this process.
+ *
+ * Exposed so a test can assert that repeats are served from the memo. Counting
+ * derivations is deterministic, where timing the calls would really be
+ * measuring how loaded the machine is — a wall-clock bound written against this
+ * memo failed on a shared CI runner while the memo was working correctly.
+ */
+export function uriIdentityDerivationCount(): number {
+  return derivationCount;
+}
 
 /** Canonical process-local identity for a file URI. Non-file URIs are opaque. */
 export function uriIdentityKey(
@@ -65,6 +78,7 @@ export function uriIdentityKey(
   const cacheKey = `${requestedPlatform}\0${uri}`;
   const cached = identityCache.get(cacheKey);
   if (cached !== undefined) return cached;
+  derivationCount++;
   const identity = deriveUriIdentityKey(uri, options);
   // A plain insertion cap rather than an LRU: entries are per-URI and the
   // working set of a session is bounded by the indexed project, so the cap only

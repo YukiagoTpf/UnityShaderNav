@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { sourceNameMatchesUri } from '@unity-shader-nav/shared';
+import {
+  sourceNameMatchesUri,
+  uriIdentityDerivationCount,
+} from '@unity-shader-nav/shared';
 import { normalizePathForComparison } from '../src/pathIdentity';
 import { uriKey } from '../src/uriKey';
 
@@ -168,27 +171,24 @@ describe('uriKey', () => {
     );
     const cold = uris.map((uri) => uriKey(uri, { platform: 'darwin' }));
 
-    // Only the call under test goes inside the timed loop: an assertion per
-    // iteration costs more than a memo hit and would mask the difference.
-    const observed: string[] = [];
-    const start = process.hrtime.bigint();
-    for (let round = 0; round < 200; round++) {
-      for (let index = 0; index < uris.length; index++) {
-        observed.push(uriKey(uris[index]!, { platform: 'darwin' }));
-      }
-    }
-    const nanosecondsPerCall = Number(process.hrtime.bigint() - start)
-      / (200 * uris.length);
+    // Count derivations rather than time them: deterministic, where a
+    // wall-clock bound would really measure how loaded the machine is.
+    const before = uriIdentityDerivationCount();
+    const warm = uris.map((uri) => uriKey(uri, { platform: 'darwin' }));
 
-    // Every repeat still has to answer correctly, memo or not.
-    for (let round = 0; round < 200; round++) {
-      expect(observed.slice(round * uris.length, (round + 1) * uris.length))
-        .toStrictEqual(cold);
-    }
-    // A memo hit is a Map lookup plus a string concatenation and measures
-    // around 200ns here; re-deriving measures around 1800ns. The bound sits
-    // between them with room on both sides: loose enough for a loaded CI
-    // machine, tight enough to fail if the memo is ever bypassed.
-    expect(nanosecondsPerCall).toBeLessThan(700);
+    expect(warm).toStrictEqual(cold);
+    expect(uriIdentityDerivationCount()).toBe(before);
+  });
+
+  it('re-derives an identity the memo has not seen', () => {
+    // Negative control for the test above: proves the count is a live signal
+    // and not stuck at zero for every input.
+    const before = uriIdentityDerivationCount();
+
+    uriKey('file:///Project/Assets/Shaders/Unseen.shader', {
+      platform: 'darwin',
+    });
+
+    expect(uriIdentityDerivationCount()).toBe(before + 1);
   });
 });
