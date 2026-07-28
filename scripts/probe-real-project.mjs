@@ -14,6 +14,7 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { performance } from 'node:perf_hooks';
+import { TextDocument } from 'vscode-languageserver-textdocument';
 
 const SHADER_EXTENSIONS = new Set(['.shader', '.hlsl', '.cginc', '.hlslinc', '.compute']);
 const probeRuntime = { releaseVersion: `0.0.0-probe.${process.pid}` };
@@ -186,6 +187,32 @@ async function main() {
         }
         stats.analyzed++;
         const lines = analysis.sourceLines.length;
+        // Every line number we report is resolved by the client against its own
+        // TextDocument, so our line model has to agree with it exactly — both in
+        // count and in where each line starts. Real projects carry lone-CR and
+        // double-CR line endings that a `\r?\n` split silently merges, which
+        // shifts every subsequent line number.
+        const clientDocument = TextDocument.create(
+          uri, isShaderLab ? 'shaderlab' : 'hlsl', 1, text,
+        );
+        if (clientDocument.lineCount !== lines) {
+          fail('line model disagrees with the client', file,
+            `we see ${lines} lines, the client sees ${clientDocument.lineCount}`);
+        } else {
+          for (let line = 0; line < lines; line++) {
+            const ours = analysis.sourceLines[line];
+            const theirs = clientDocument.getText({
+              start: { line, character: 0 },
+              end: { line, character: ours.length },
+            });
+            if (theirs !== ours) {
+              fail('line content disagrees with the client', file,
+                `line ${line} is ${JSON.stringify(ours.slice(0, 40))} here, `
+                + `${JSON.stringify(theirs.slice(0, 40))} in the client`);
+              break;
+            }
+          }
+        }
         for (const projection of [
           'sourceCodeLines',
           'sourceCodeWithoutStringLines',
