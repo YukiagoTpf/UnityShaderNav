@@ -38,10 +38,45 @@ function identityPlatform(
     : options.platform ?? process.platform;
 }
 
+/**
+ * Bounded memo for `uriIdentityKey`. Every registry, index and cross-file
+ * navigation join re-derives the identity of the same handful of URIs, so on a
+ * production-scale project a single Find References resolves the same few
+ * hundred URIs a million times over. The derivation is pure — URL parse, then
+ * per-segment decode, Unicode fold and re-encode — but not cheap, so it is
+ * cached rather than repeated.
+ *
+ * Keyed by the requested platform as well as the URI: the same URI folds
+ * differently per platform, and callers pass an explicit platform in tests and
+ * when interpreting evidence recorded elsewhere.
+ */
+const IDENTITY_CACHE_LIMIT = 8_192;
+const identityCache = new Map<string, string>();
+
 /** Canonical process-local identity for a file URI. Non-file URIs are opaque. */
 export function uriIdentityKey(
   uri: string,
   options: UriIdentityOptions = {},
+): string {
+  // `identityPlatform` may still override this with win32 for an intrinsically
+  // Windows URI; that is a pure function of the URI, so it does not affect the
+  // key's soundness.
+  const requestedPlatform = options.platform ?? process.platform;
+  const cacheKey = `${requestedPlatform}\0${uri}`;
+  const cached = identityCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+  const identity = deriveUriIdentityKey(uri, options);
+  // A plain insertion cap rather than an LRU: entries are per-URI and the
+  // working set of a session is bounded by the indexed project, so the cap only
+  // exists to keep a pathological URI stream from growing without limit.
+  if (identityCache.size >= IDENTITY_CACHE_LIMIT) identityCache.clear();
+  identityCache.set(cacheKey, identity);
+  return identity;
+}
+
+function deriveUriIdentityKey(
+  uri: string,
+  options: UriIdentityOptions,
 ): string {
   try {
     const parsed = new URL(uri);

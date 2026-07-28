@@ -141,4 +141,54 @@ describe('uriKey', () => {
       { platform: 'linux' },
     )).toBe(true);
   });
+
+  it('keeps the requested platform part of the identity of one URI', () => {
+    // The derivation is memoized, so a cache keyed by the URI alone would
+    // answer the second call with the first platform's fold. On a real project
+    // that silently merges two files into one identity.
+    const uri = 'file:///Project/Assets/Shaders/Ship.shader';
+    const linux = uriKey(uri, { platform: 'linux' });
+    const darwin = uriKey(uri, { platform: 'darwin' });
+
+    expect(linux).toBe('file:///Project/Assets/Shaders/Ship.shader');
+    expect(darwin).toBe('file:///project/assets/shaders/ship.shader');
+    // Re-request in the opposite order: both answers must survive caching.
+    expect(uriKey(uri, { platform: 'darwin' })).toBe(darwin);
+    expect(uriKey(uri, { platform: 'linux' })).toBe(linux);
+  });
+
+  it('resolves a repeated URI without re-deriving its identity', () => {
+    // Registries, indexes and every cross-file navigation join re-derive the
+    // identity of the same few hundred URIs. Before this was memoized, one
+    // Find References on a production-scale project spent most of its time
+    // here: ~1.1M derivations over ~660 distinct URIs.
+    const uris = Array.from(
+      { length: 400 },
+      (_unused, index) => `file:///Project/Assets/Shaders/Ship${index}.shader`,
+    );
+    const cold = uris.map((uri) => uriKey(uri, { platform: 'darwin' }));
+
+    // Only the call under test goes inside the timed loop: an assertion per
+    // iteration costs more than a memo hit and would mask the difference.
+    const observed: string[] = [];
+    const start = process.hrtime.bigint();
+    for (let round = 0; round < 200; round++) {
+      for (let index = 0; index < uris.length; index++) {
+        observed.push(uriKey(uris[index]!, { platform: 'darwin' }));
+      }
+    }
+    const nanosecondsPerCall = Number(process.hrtime.bigint() - start)
+      / (200 * uris.length);
+
+    // Every repeat still has to answer correctly, memo or not.
+    for (let round = 0; round < 200; round++) {
+      expect(observed.slice(round * uris.length, (round + 1) * uris.length))
+        .toStrictEqual(cold);
+    }
+    // A memo hit is a Map lookup plus a string concatenation and measures
+    // around 200ns here; re-deriving measures around 1800ns. The bound sits
+    // between them with room on both sides: loose enough for a loaded CI
+    // machine, tight enough to fail if the memo is ever bypassed.
+    expect(nanosecondsPerCall).toBeLessThan(700);
+  });
 });
